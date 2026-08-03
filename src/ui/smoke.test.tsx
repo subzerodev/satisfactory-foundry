@@ -398,6 +398,6 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
     // Recipe-less default → the "no recipe" placeholder renders.
     expect(html).toContain("no recipe");
     // The ＋stage control is present in the canvas corner.
-    expect(html).toContain("stage");
+    expect(html).toContain("graph-add-stage");
   });
 });
