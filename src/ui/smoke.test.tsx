@@ -7,6 +7,7 @@ import type { Selection, SolveState } from "../state/store.ts";
 import { solveStage } from "../core/manifold.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import { FIXTURE_TIERS, WORKED_INPUT, workedResult } from "./fixtures.ts";
+import { BundledBanner } from "./App.tsx";
 import { UploadScreen } from "./UploadScreen.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
 import { SummaryCards } from "./SummaryCards.tsx";
@@ -262,5 +263,36 @@ describe("Legend", () => {
     // The app passes the full catalog TIER_TABLE (6 belt + 2 pipe).
     const html = renderToStaticMarkup(<Legend tiers={TIER_TABLE} />);
     expect((html.match(/legend-swatch/g) ?? []).length).toBe(6 + 2 + 2);
+  });
+});
+
+describe("App provenance banner (ticket #9)", () => {
+  it("renders the banner with the exact provenance string when source is bundled", () => {
+    const html = renderToStaticMarkup(
+      <BundledBanner
+        source={{
+          kind: "bundled",
+          steamBuild: "23855724",
+          extractedAt: "2026-04-30",
+        }}
+      />,
+    );
+    expect(html).toContain("bundled-banner");
+    // The full pinned copy (renderToStaticMarkup leaves the · and — as-is).
+    expect(html).toContain(
+      "bundled game data · Steam build 23855724 (2026-04-30) — upload your own Docs.json if your game is newer",
+    );
+  });
+
+  it("renders nothing when the source is user", () => {
+    const html = renderToStaticMarkup(
+      <BundledBanner source={{ kind: "user" }} />,
+    );
+    expect(html).toBe("");
+  });
+
+  it("renders nothing when the source is null (pre-ready)", () => {
+    const html = renderToStaticMarkup(<BundledBanner source={null} />);
+    expect(html).toBe("");
   });
 });

@@ -1,4 +1,5 @@
-import { useAppStore } from "../state/store.ts";
+import { useAppStore, setBundledDocsProvider } from "../state/store.ts";
+import type { CatalogSource } from "../data/catalog-store.ts";
 import type { Finding, StageSolveResult } from "../core/manifold.ts";
 import { decodeBytes } from "./decode.ts";
 import { UploadScreen } from "./UploadScreen.tsx";
@@ -10,6 +11,35 @@ import { FindingsPanel } from "./FindingsPanel.tsx";
 import { Legend } from "./Legend.tsx";
 import "./app.css";
 
+// Wire the bundled default catalog once, at module load: fetch the static
+// snapshot + its provenance sidecar (BASE_URL-relative so a subpath deploy
+// still resolves). Any failure — asset missing, non-OK, unparseable — degrades
+// to null as a UNIT, so init() falls back to the v1 needs-upload screen.
+setBundledDocsProvider(async () => {
+  const base = import.meta.env.BASE_URL;
+  try {
+    const [docsRes, provRes] = await Promise.all([
+      fetch(`${base}bundled-docs/en-US.json`),
+      fetch(`${base}bundled-docs/provenance.json`),
+    ]);
+    if (!docsRes.ok || !provRes.ok) return null;
+    const text = await docsRes.text();
+    const prov = (await provRes.json()) as {
+      steamBuild: string;
+      extractedAt: string;
+    };
+    return {
+      text,
+      provenance: {
+        steamBuild: prov.steamBuild,
+        extractedAt: prov.extractedAt,
+      },
+    };
+  } catch {
+    return null;
+  }
+});
+
 /** Stage-global ⊕ per-lane findings, flattened for the panel. */
 function allFindings(result: StageSolveResult): Finding[] {
   return [
@@ -17,6 +47,24 @@ function allFindings(result: StageSolveResult): Finding[] {
     ...result.feeds.flatMap((l) => l.findings),
     ...result.outputs.flatMap((l) => l.findings),
   ];
+}
+
+/** The provenance banner — rendered only for a bundled catalog. Extracted so
+ *  the smoke test can assert it directly (the connected shell is not rendered
+ *  in tests). Returns null for a user source, so the caller renders it
+ *  unconditionally. */
+export function BundledBanner({
+  source,
+}: {
+  source: CatalogSource | null;
+}): React.ReactElement | null {
+  if (source?.kind !== "bundled") return null;
+  return (
+    <p className="bundled-banner">
+      bundled game data · Steam build {source.steamBuild} ({source.extractedAt})
+      — upload your own Docs.json if your game is newer
+    </p>
+  );
 }
 
 /** True when any override cell (either side) is non-null. */
@@ -64,6 +112,7 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1>satisfactory-foundry</h1>
+        <BundledBanner source={s.catalogSource} />
         <Legend tiers={catalog.tiers} />
         <input
           type="file"
