@@ -52,6 +52,16 @@ argued at its design review.
 
 - 2026-08-03: Arc started; decomposition recorded on epic #12. Phase gates
   auto-greenlit per the sequential directive.
+- 2026-08-03 (P1 r1 fold): cycle-FLAGGING dropped from Phase 1 (per-link
+  reconciliation is cycle-indifferent; findings union carries no topology).
+  **Deferred to Phase 2 design:** whether the canvas wants a cycle
+  indicator (visual affordance, store-level detector) — decide with the
+  React Flow layout work.
+- 2026-08-03 (P1 r3 fold): **loadPlan no longer adopts a plan's saved
+  tiers** — the current global unlock state is preserved on load (tiers
+  are progression, not plan content; supersedes the Stage-2 tier-restore
+  semantics). The plan file still stores tiers (frozen format); they are
+  simply not read back in Phase 1+.
 
 ## Final report
 
