@@ -20,4 +20,7 @@ no DOM) — all solver math lives there, in exact rational arithmetic
 
 ## Workflow commands
 
-(to be filled in once the project is scaffolded: dev / build / test / check)
+lint: none
+test: none
+
+(both get wired by the Stage 0 scaffold — update this stanza when it lands)
