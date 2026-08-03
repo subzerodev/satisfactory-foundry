@@ -71,3 +71,44 @@ Note: the tiers-GLOBAL write (setUnlockedTiers → all stages) is NOT constraine
 single-stage v1 suite (BREAK D: tiers-not-global still passes all 53). That behavior is
 multi-stage and is pinned by the new matrix rows in Commit 3, where its break-restore is
 recorded.
+
+===================================================================================
+FAMILY: graph actions (addStage/removeStage/renameStage/setActiveStage/add-removeLink)  [Commit 3]
+===================================================================================
+PASS  : new matrix rows green (default-stage boot, CRUD, cursor rules, cascade,
+        link refusals vs kept-and-flagged).
+BREAK E (removeStage stops cascading links to the removed stage):
+        FAIL — "removeStage cascades links…" (links not emptied).
+BREAK F (addLink duplicate (toStageId,itemId) refusal removed):
+        FAIL — "duplicate (toStageId,itemId) is hard-refused" (2 links appear).
+BREAK K (removeStage last-stage no-op guard removed):
+        FAIL — "removing the LAST stage is refused" (stage graph emptied).
+RESTORE: green.
+Verdict: cascade, duplicate-refusal, and the ≥1-stage invariant are each constrained.
+(self-link refusal, cursor-to-first-remaining, addStage cursor-stability likewise pinned
+by their own rows, green on correct code.)
+
+===================================================================================
+FAMILY: reconciliation cadence + tiers-global + multi-stage #5  [Commit 3]
+===================================================================================
+PASS  : reconciliation math rows (exact / under / over / 75/2-class fractional),
+        removeLink→empty, producer-recipe-change recompute, cycles-permitted.
+BREAK G (setUnlockedTiers reverts to active-only instead of all-stages):
+        FAIL — "setUnlockedTiers writes ALL stages…" (inactive stages keep old tiers).
+BREAK I (loadPlan adopts the saved plan's tiers instead of preserving global):
+        FAIL — "loadPlan PRESERVES the current global tiers".
+BREAK J (uploadDocsText success drops the #5 treatment — identity map):
+        FAIL — "re-upload re-validates EVERY stage" (inactive dangling recipeId kept).
+RESTORE: green.
+Verdict: tiers-global write, loadPlan tiers-preservation, and the multi-stage #5
+re-validation on catalog replacement are each genuinely constrained by a test.
+
+Note: the compatibility-shim family (Commit 2) recorded BREAK D (tiers-not-global passes
+the single-stage v1 suite) as expected — that behavior is pinned HERE (BREAK G) by the
+new multi-stage row, closing the deferral.
+
+-----------------------------------------------------------------------------------
+FINAL: check clean (tsc -b + eslint + prettier), 295/295 tests, build green.
+All four behavior families (reconcile math, graph actions, cadence, compatibility shim)
+verified bidirectional (PASS → break → FAIL → restore → PASS).
+-----------------------------------------------------------------------------------
