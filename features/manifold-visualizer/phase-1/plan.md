@@ -27,8 +27,10 @@ improvise.
   lanes) and the degenerate short-circuit (N=0 / empty / zero-rate lanes →
   empty lanes, no findings — precedes lane solve).
 - `src/core/manifold.test.ts`: spec test rows 9 (degenerate incl. pipes
-  capacity table) + 10 (validation reasons) + the N=0 × oversize-overrides
-  precedence case.
+  capacity table — the pipe sub-case exercises the pipe table through the
+  **degenerate path only** (N=0 / empty lane); no real pipe combination
+  solve exists anywhere in the ten rows) + 10 (validation reasons) + the
+  N=0 × oversize-overrides precedence case.
 - Lane solvers stubbed to empty results (typed, compiling) — greened in
   Tasks 2–3.
 - Commit: `feat(core): manifold types, stage validation, degenerate handling`.
@@ -55,8 +57,11 @@ improvise.
   (capacity by index, positions fixed); segments (peak at tail, beltIndex =
   collecting belt); `segment-over-capacity` with binding-limit `busCapacity`.
 - `solveStage` wires lane mapping + findings routing (stage-global vs lane).
-- Tests: row 1 output mirror; output override undersize case; full-stage
-  integration asserting the complete 20-smelter `StageSolveResult` shape.
+- Tests: row 1 output mirror; output override undersize case; **output
+  infeasibility mirror (`p > T`)** — covers the implemented spec behaviour
+  the ten-row plan left untested (coverage fold from plan review, not new
+  design); full-stage integration asserting the complete 20-smelter
+  `StageSolveResult` shape.
 - Commit: `feat(core): output lane solver + solveStage integration`.
 
 ## Definition of done (the agent's exit gate)
