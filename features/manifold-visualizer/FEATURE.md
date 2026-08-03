@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-03
 **Status:** in-progress
-**Current phase:** Phase 1 COMPLETE (merged to develop 2026-08-03) — Phase 2 at USER GATE
+**Current phase:** Phase 2 COMPLETE (merged to develop 2026-08-03) — Phase 3 at USER GATE
 **Final PR:** —
 **Epic:** #2 (board #21, Stage 1 milestone)
 
@@ -43,19 +43,19 @@ Feature spec: `docs/superpowers/specs/2026-08-03-manifold-visualizer-design.md`
 
 ### Phase 2 — src/data Docs.json parser + catalog
 
-- **Status:** ready-to-design (trigger met: Phase 1 merged to develop
-  2026-08-03) — awaiting USER GATE greenlight
-- **Spec:** feature spec §Architecture (src/data) — port of satisfactory-planner's parser, trimmed to v1 reads; IndexedDB cache
-- **Plan:** N/A — written after the Phase 2 brainstorm+spec freeze
-- **Contract to target:** `StageInput` (locked on develop in src/core/manifold.ts): ascending Fraction capacity lists per kind; decimal strings → Fraction.parse; per-machine rates at 100% clock
+- **Status:** complete (merged --no-ff to develop 2026-08-03; 131/131 tests;
+  boundary review first-try double-APPROVED zero findings; ticket #4 Done)
+- **Ticket:** #4 (Done, closed)
+- **Brainstorm/Spec/Plan:** all FROZEN in `features/manifold-visualizer/phase-2/`
+- **Phase report:** `features/manifold-visualizer/phase-2/completion.md`
 
 ### Phase 3 — src/state Zustand store
 
-- **Status:** defer-until-phase-2-lands
+- **Status:** ready-to-design (trigger met: Phase 2 merged to develop
+  2026-08-03) — awaiting USER GATE greenlight
 - **Spec:** feature spec §Architecture (src/state) — one store: selection (recipe, machine count, clock %, unlocked tiers, overrides) + derived solve result; unlocked tiers in localStorage
-- **Plan:** N/A — deferred
-- **Reason for defer:** consumes the solver result type (Phase 1) and the catalog types (Phase 2).
-- **Trigger to re-classify:** Phase 2 merged to develop.
+- **Plan:** N/A — written after the Phase 3 brainstorm+spec freeze
+- **Contracts to target:** `toStageInput(recipe, catalog, opts)` + `solveStage` + `loadCatalog`/`saveCatalog` (all live on develop)
 
 ### Phase 4 — src/ui React SVG schematic
 
