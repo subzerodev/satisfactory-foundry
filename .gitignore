@@ -1,4 +1,4 @@
+.worktrees/
+graphify-out/
 node_modules/
 dist/
-graphify-out/
-.worktrees/

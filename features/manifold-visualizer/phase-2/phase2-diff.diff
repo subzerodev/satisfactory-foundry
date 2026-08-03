@@ -1,0 +1,1679 @@
+diff --git a/features/manifold-visualizer/phase-2/plan.md b/features/manifold-visualizer/phase-2/plan.md
+new file mode 100644
+index 0000000..7b032d8
+--- /dev/null
++++ b/features/manifold-visualizer/phase-2/plan.md
+@@ -0,0 +1,86 @@
++# Phase 2 implementation plan — src/data parser + catalog (ticket #4)
++
++Date: 2026-08-03 · Status: v1, plan dual-review pending · Branch: `feature/phase-2.0`
++Spec: `features/manifold-visualizer/phase-2/spec.md` (FROZEN — the contract;
++this plan adds no design). Worktree: `.worktrees/phase-2.0/`.
++Port source: `~/workspace/satisfactory-planner/src/` (read-only reference —
++the implementer PORTS from it; never modifies it).
++
++## Shape
++
++One implementation agent, one worktree, three sequential TDD tasks, one
++commit each. `npm test` + `npm run check` green before every commit;
++bidirectionality log at the end.
++
++**Pre-impl drift hunt (mandatory first step):** verify against live source —
++foundry `src/core/fraction.ts` (parse/of/from/mul/div/toString signatures)
++and `src/core/manifold.ts` (`StageInput`/`LaneInput` exact shapes); the port
++source files the spec cites (`src/data/docs-loader.ts` incl. the NativeClass
++regexes :13-22 and ingredient regex :185, `src/persistence/catalog-store.ts`,
++`src/persistence/db.ts`, `src/core/transport.ts` tier values); foundry
++`eslint.config.js` (core-scoped rules only — src/data unrestricted) and
++`tsconfig`/vitest config. Any spec-vs-source drift → stop and report.
++
++## Task 1 — types + tiers + parser (`docs-loader.ts`, `catalog.ts`)
++
++- `src/data/types.ts` (spec types verbatim), `src/data/tiers.ts`
++  (`TIER_TABLE` as ascending `Fraction`s), `src/data/docs-loader.ts` ported
++  per the spec's five pinned deltas (exactness via `Fraction.parse`; loud
++  `DocsParseError`s; ported filters; power/stack removed; `primaryOutputId =
++  outputs[0].itemId`), `src/data/catalog.ts` (`parseCatalogFromText`).
++- Tests (spec rows 1–4): DOCS_FRAGMENT-style embedded fixture (port +
++  extend), fluid ÷1000 exactness (`Amount=10000`/dur `"6"` → exactly 100),
++  fractional exactness (`"2.5"`/`"4"` → 75/2), loud failures, ported filters.
++- Commit: `feat(data): Docs.json parser + catalog types — exact-Fraction port`.
++
++## Task 2 — toStageInput + parseRational (`stage-input.ts`)
++
++- Per the spec: lane mapping (kind from isFluid), tier-prefix slicing,
++  lane-addressed overrides with the distinctness assertion, the
++  throw-vs-finding boundary (all listed throw cases), `parseRational`.
++- Tests (spec rows 5–6): the live-solver integration proof (fixture recipe
++  reproducing the Phase 1 20-smelter worked example — dur `"2"`, ingredient
++  `Amount="1"` → d=30 AND product `Amount="1"` → p=30, so the output mirror
++  (breakouts after 16, loads 480/120) reproduces too; assert the solver's
++  known belts/segments both sides), pipe-lane capacities,
++  tier slicing, override landing/throw cases, `parseRational` round-trips.
++- Commit: `feat(data): catalog→StageInput mapping + rational reviver`.
++
++## Task 3 — cache (`db.ts`, `catalog-store.ts`)
++
++- Per the spec: raw-IDB wrapper, database `satis_foundry` v1, store
++  `catalog` key `'current'`; `StoredCatalog` with `toString()`-serialized
++  Fractions + SHA-256 `source_hash` + `parser_version`; `saveCatalog` /
++  `loadCatalog` never-throw `{hit|stale|empty}`.
++- Add devDependency `fake-indexeddb` (the ONE allowed dep change).
++- Tests (spec row 7, `fake-indexeddb/auto`): save→load hit with
++  Fraction-equal catalog; version bump → stale; corrupted shape → stale;
++  hash recorded.
++- Commit: `feat(data): IndexedDB catalog cache (satis_foundry, versioned)`.
++
++## Definition of done
++
++1. `npm test` green (all existing 100 + new data tests); `npm run check`
++   green; `npm run build` green.
++2. Core purity untouched: `git diff` shows NOTHING under `src/core/`;
++   `eslint.config.js`/tsconfigs unchanged; `package.json` delta =
++   `fake-indexeddb` devDep only.
++3. Bidirectionality log `features/manifold-visualizer/phase-2/r2-verification.log`
++   (worktree): per behaviour class (exact rate math, loud-failure boundary,
++   ported filters, toStageInput mapping/overrides, parseRational round-trip,
++   cache stale/hit) — PASS → break → genuine referenced vitest FAIL →
++   restore → green.
++4. Three commits as named, co-author trailer, no push, no merge, `develop`
++   untouched, planner repo untouched.
++
++## Out of scope (hard guardrails)
++
++No `src/core` changes; no store/UI; no upload screen; no belt-class parsing
++from Docs.json; no deps beyond `fake-indexeddb`; spec is frozen —
++contradictions are stop-and-report.
++
++## Assumptions
++
++- Spec test expectations are implementation-ready (both reviewers hand-verified
++  the exactness rows + the d=30 integration fixture hint).
++- Node ≥ 20 (`crypto.subtle` global) — repo toolchain satisfies.
+diff --git a/features/manifold-visualizer/phase-2/r2-verification.log b/features/manifold-visualizer/phase-2/r2-verification.log
+new file mode 100644
+index 0000000..9214093
+--- /dev/null
++++ b/features/manifold-visualizer/phase-2/r2-verification.log
+@@ -0,0 +1,107 @@
++Phase 2 src/data bidirectionality verification log
++(per behaviour class: PASS -> genuine referenced FAIL -> restore -> green)
++
++======================================================================
++BEHAVIOUR CLASS: exact rate math
++  break: fluid divide-by-1000 changed to divide-by-100 (rate math corrupted)
++  test:  src/data/docs-loader.test.ts :: filter='fluid'
++======================================================================
++--- [1] PASS baseline (referenced test green) ---
++      Tests  1 passed | 15 skipped (16)
++--- [2] BREAK applied, referenced test FAILS ---
++     × fluid ×1000→m³ exactness: water perMinute is EXACTLY 100 (Amount=10000/dur 6) 5ms
++      Tests  1 failed | 15 skipped (16)
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
++ FAIL  src/data/docs-loader.test.ts > parseDocsJson — items + machines + shape (spec row 1) > fluid ×1000→m³ exactness: water perMinute is EXACTLY 100 (Amount=10000/dur 6)
++AssertionError: expected false to be true // Object.is equality
++    144|     // 10000 L = 10 m³; 10 × 60 / 6 = 100 m³/min, exact via .div(1000).
++    147|     // Stone: 12 × 60 / 6 = 120/min (solid, untouched).
++--- [3] RESTORE (git checkout), referenced test GREEN again ---
++      Tests  1 passed | 15 skipped (16)
++
++======================================================================
++BEHAVIOUR CLASS: loud-failure boundary
++  break: zero/negative-duration throw guard disabled (silent instead of loud)
++  test:  src/data/docs-loader.test.ts :: filter='zero duration'
++======================================================================
++--- [1] PASS baseline (referenced test green) ---
++      Tests  1 passed | 15 skipped (16)
++--- [2] BREAK applied, referenced test FAILS ---
++     × zero duration throws DocsParseError (no ≤0 → 0 fallback) 4ms
++      Tests  1 failed | 15 skipped (16)
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
++ FAIL  src/data/docs-loader.test.ts > parseDocsJson — loud failures (spec row 3) > zero duration throws DocsParseError (no ≤0 → 0 fallback)
++AssertionError: expected error to be instance of DocsParseError
++--- [3] RESTORE (git checkout), referenced test GREEN again ---
++      Tests  1 passed | 15 skipped (16)
++
++======================================================================
++BEHAVIOUR CLASS: ported filters
++  break: unknown-building filter weakened (recipe leaks through)
++  test:  src/data/docs-loader.test.ts :: filter='producing building is unknown'
++======================================================================
++--- [1] PASS baseline (referenced test green) ---
++      Tests  1 passed | 15 skipped (16)
++--- [2] BREAK applied, referenced test FAILS ---
++     × skips a recipe whose producing building is unknown 4ms
++      Tests  1 failed | 15 skipped (16)
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
++ FAIL  src/data/docs-loader.test.ts > parseDocsJson — ported filters (spec row 4) > skips a recipe whose producing building is unknown
++AssertionError: expected { id: 'thing', …(6) } to be undefined
++--- [3] RESTORE (git checkout), referenced test GREEN again ---
++      Tests  1 passed | 15 skipped (16)
++
++======================================================================
++BEHAVIOUR CLASS: toStageInput mapping/overrides
++  break: isFluid-to-pipe mapping forced to belt (fluid lane mis-typed)
++  test:  src/data/stage-input.test.ts :: filter='pipe lane'
++======================================================================
++--- [1] PASS baseline (referenced test green) ---
++      Tests  1 passed | 10 skipped (11)
++--- [2] BREAK applied, referenced test FAILS ---
++     × maps a fluid ingredient onto a pipe lane with pipe capacities 6ms
++      Tests  1 failed | 10 skipped (11)
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
++ FAIL  src/data/stage-input.test.ts > toStageInput — live-solver integration proof (spec row 5) > maps a fluid ingredient onto a pipe lane with pipe capacities
++AssertionError: expected 'belt' to be 'pipe' // Object.is equality
++--- [3] RESTORE (git checkout), referenced test GREEN again ---
++      Tests  1 passed | 10 skipped (11)
++
++======================================================================
++BEHAVIOUR CLASS: parseRational round-trip
++  break: signed-int validation disabled (garbage coerces instead of throwing)
++  test:  src/data/stage-input.test.ts :: filter='throws on garbage'
++======================================================================
++--- [1] PASS baseline (referenced test green) ---
++      Tests  1 passed | 10 skipped (11)
++--- [2] BREAK applied, referenced test FAILS ---
++     × throws on garbage (never a Fraction.toString() form) 3ms
++      Tests  1 failed | 10 skipped (11)
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
++ FAIL  src/data/stage-input.test.ts > parseRational — round-trip reviver (spec row 6) > throws on garbage (never a Fraction.toString() form)
++AssertionError: expected throw for "": expected [Function] to throw an error
++    245|         `expected throw for ${JSON.stringify(bad)}`,
++--- [3] RESTORE (git checkout), referenced test GREEN again ---
++      Tests  1 passed | 10 skipped (11)
++
++======================================================================
++BEHAVIOUR CLASS: cache stale/hit
++  break: version-mismatch stale gate removed (stale row served as hit)
++  test:  src/data/catalog-store.test.ts :: filter='version mismatch'
++======================================================================
++--- [1] PASS baseline (referenced test green) ---
++      Tests  1 passed | 3 skipped (4)
++--- [2] BREAK applied, referenced test FAILS ---
++     × returns stale (never throws) on a parser-version mismatch 14ms
++      Tests  1 failed | 3 skipped (4)
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
++ FAIL  src/data/catalog-store.test.ts > catalog cache — round-trip (spec row 7) > returns stale (never throws) on a parser-version mismatch
++AssertionError: expected 'hit' to be 'stale' // Object.is equality
++--- [3] RESTORE (git checkout), referenced test GREEN again ---
++      Tests  1 passed | 3 skipped (4)
++
++======================================================================
++FINAL: full suite green after all restores
++======================================================================
++ Test Files  5 passed (5)
++      Tests  131 passed (131)
+diff --git a/package.json b/package.json
+index a31ac3c..410af8f 100644
+--- a/package.json
++++ b/package.json
+@@ -22,6 +22,7 @@
+     "@types/react-dom": "^19.2.3",
+     "@vitejs/plugin-react": "^6.0.4",
+     "eslint": "^10.8.0",
++    "fake-indexeddb": "^6.2.5",
+     "prettier": "^3.9.6",
+     "typescript": "~6.0.2",
+     "typescript-eslint": "^8.65.0",
+diff --git a/src/data/catalog-store.test.ts b/src/data/catalog-store.test.ts
+new file mode 100644
+index 0000000..6675865
+--- /dev/null
++++ b/src/data/catalog-store.test.ts
+@@ -0,0 +1,113 @@
++import "fake-indexeddb/auto";
++import { describe, it, expect, beforeEach } from "vitest";
++import { Fraction } from "../core/fraction.ts";
++import type { Catalog } from "./types.ts";
++import { TIER_TABLE } from "./tiers.ts";
++import { openDb, resetDbCache } from "./db.ts";
++import {
++  saveCatalog,
++  loadCatalog,
++  CATALOG_PARSER_VERSION,
++} from "./catalog-store.ts";
++
++// A small catalog with a fractional rate, to prove Fraction-equality survives
++// the toString()/parseRational round-trip through IndexedDB.
++function sampleCatalog(): Catalog {
++  return {
++    items: {
++      ore_iron: { id: "ore_iron", displayName: "Iron Ore", isFluid: false },
++      iron_ingot: {
++        id: "iron_ingot",
++        displayName: "Iron Ingot",
++        isFluid: false,
++      },
++    },
++    machines: {
++      smelter_mk1: { id: "smelter_mk1", displayName: "Smelter" },
++    },
++    recipes: {
++      ingot_iron: {
++        id: "ingot_iron",
++        displayName: "Iron Ingot",
++        machineId: "smelter_mk1",
++        isAlternate: false,
++        inputs: [{ itemId: "ore_iron", perMinute: Fraction.of(75, 2) }],
++        outputs: [{ itemId: "iron_ingot", perMinute: Fraction.from(30) }],
++        primaryOutputId: "iron_ingot",
++      },
++    },
++    tiers: TIER_TABLE,
++  };
++}
++
++// Each test starts from a clean, freshly-opened database.
++beforeEach(async () => {
++  resetDbCache();
++  // eslint-disable-next-line @typescript-eslint/no-explicit-any
++  (globalThis as any).indexedDB = new (
++    await import("fake-indexeddb")
++  ).IDBFactory();
++});
++
++describe("catalog cache — round-trip (spec row 7)", () => {
++  it("save → load returns a hit with Fraction-equal catalog + records a hash", async () => {
++    const cat = sampleCatalog();
++    await saveCatalog("raw docs text", cat);
++
++    const result = await loadCatalog();
++    expect(result.status).toBe("hit");
++    if (result.status !== "hit") return;
++
++    // Fractions survive exactly through toString()/parseRational.
++    const rate = result.catalog.recipes["ingot_iron"]!.inputs[0]!.perMinute;
++    expect(rate.eq(Fraction.of(75, 2))).toBe(true);
++    const out = result.catalog.recipes["ingot_iron"]!.outputs[0]!.perMinute;
++    expect(out.eq(Fraction.from(30))).toBe(true);
++    // Non-Fraction fields survive too; tiers are the curated table.
++    expect(result.catalog.items["ore_iron"]!.displayName).toBe("Iron Ore");
++    expect(result.catalog.tiers).toBe(TIER_TABLE);
++
++    // The source hash is recorded (SHA-256 hex = 64 chars).
++    const db = await openDb();
++    const stored = await db.get<{
++      source_hash: string;
++      parser_version: number;
++    }>("catalog", "current");
++    expect(stored!.source_hash).toMatch(/^[0-9a-f]{64}$/);
++    expect(stored!.parser_version).toBe(CATALOG_PARSER_VERSION);
++  });
++
++  it("returns empty when nothing is stored", async () => {
++    expect((await loadCatalog()).status).toBe("empty");
++  });
++
++  it("returns stale (never throws) on a parser-version mismatch", async () => {
++    await saveCatalog("raw", sampleCatalog());
++    // Rewrite the stored row with a bumped version, simulating an older cache.
++    const db = await openDb();
++    const stored = await db.get<Record<string, unknown>>("catalog", "current");
++    await db.put(
++      "catalog",
++      { ...stored, parser_version: CATALOG_PARSER_VERSION + 1 },
++      "current",
++    );
++    expect((await loadCatalog()).status).toBe("stale");
++  });
++
++  it("returns stale (never throws) on a corrupted stored shape", async () => {
++    const db = await openDb();
++    // A row at the right version but with a broken catalog payload: the reviver
++    // must fail into 'stale', not throw.
++    await db.put(
++      "catalog",
++      {
++        catalog: { items: {}, machines: {}, recipes: { bad: null } },
++        source_hash: "x",
++        cached_at: new Date().toISOString(),
++        parser_version: CATALOG_PARSER_VERSION,
++      },
++      "current",
++    );
++    expect((await loadCatalog()).status).toBe("stale");
++  });
++});
+diff --git a/src/data/catalog-store.ts b/src/data/catalog-store.ts
+new file mode 100644
+index 0000000..705fe35
+--- /dev/null
++++ b/src/data/catalog-store.ts
+@@ -0,0 +1,164 @@
++import type { Fraction } from "../core/fraction.ts";
++import type {
++  Catalog,
++  CatalogItem,
++  CatalogMachine,
++  RecipeIO,
++} from "./types.ts";
++import { TIER_TABLE } from "./tiers.ts";
++import { parseRational } from "./stage-input.ts";
++import { openDb } from "./db.ts";
++
++const CATALOG_STORE = "catalog";
++const CATALOG_KEY = "current";
++
++/**
++ * Bump when the parser schema changes in a way that invalidates previously
++ * cached catalogs. A reader that sees a mismatch treats the cache as stale and
++ * re-uploads Docs.json. Starts at 1 (Phase 2).
++ */
++export const CATALOG_PARSER_VERSION = 1;
++
++/** JSON-safe RecipeIO — the Fraction is serialized via toString(). */
++interface StoredRecipeIO {
++  itemId: string;
++  perMinute: string;
++}
++interface StoredRecipe {
++  id: string;
++  displayName: string;
++  machineId: string;
++  isAlternate: boolean;
++  inputs: StoredRecipeIO[];
++  outputs: StoredRecipeIO[];
++  primaryOutputId: string;
++}
++/** JSON-safe catalog: every Fraction is a toString() string. Tiers are NOT
++ *  stored — they are always TIER_TABLE, rebuilt on revive. */
++interface StoredCatalogData {
++  items: Record<string, CatalogItem>;
++  machines: Record<string, CatalogMachine>;
++  recipes: Record<string, StoredRecipe>;
++}
++
++export interface StoredCatalog {
++  catalog: StoredCatalogData;
++  source_hash: string; // SHA-256 hex of the uploaded text
++  cached_at: string; // ISO timestamp
++  parser_version: number;
++}
++
++export type CacheLoadResult =
++  | { status: "hit"; catalog: Catalog }
++  | { status: "stale" }
++  | { status: "empty" };
++
++/**
++ * Serialize + persist a parsed catalog under the current parser version, with a
++ * SHA-256 hash of the source text. Throws only on genuine IndexedDB failure —
++ * serialization itself cannot fail (every Fraction has a total toString()).
++ */
++export async function saveCatalog(
++  text: string,
++  catalog: Catalog,
++): Promise<void> {
++  const stored: StoredCatalog = {
++    catalog: serializeCatalog(catalog),
++    source_hash: await sha256Hex(text),
++    cached_at: new Date().toISOString(),
++    parser_version: CATALOG_PARSER_VERSION,
++  };
++  const db = await openDb();
++  await db.put(CATALOG_STORE, stored, CATALOG_KEY);
++}
++
++/**
++ * Load the cached catalog. Never throws to the caller: any failure — no row,
++ * version mismatch, or a reviver that chokes on a corrupted payload — collapses
++ * to a `{status}` the Phase 4 UI turns into a generic re-upload prompt. The
++ * planner's cachedVersion/currentVersion diagnostics are deliberately dropped.
++ */
++export async function loadCatalog(): Promise<CacheLoadResult> {
++  let stored: StoredCatalog | undefined;
++  try {
++    const db = await openDb();
++    stored = await db.get<StoredCatalog>(CATALOG_STORE, CATALOG_KEY);
++  } catch {
++    return { status: "stale" };
++  }
++  if (stored === undefined) return { status: "empty" };
++  if (stored.parser_version !== CATALOG_PARSER_VERSION) {
++    return { status: "stale" };
++  }
++  try {
++    return { status: "hit", catalog: reviveCatalog(stored.catalog) };
++  } catch {
++    // A corrupted stored shape (missing fields, un-parseable rational) fails the
++    // reviver: treat as stale, not a thrown error.
++    return { status: "stale" };
++  }
++}
++
++function serializeCatalog(catalog: Catalog): StoredCatalogData {
++  const recipes: Record<string, StoredRecipe> = {};
++  for (const [id, r] of Object.entries(catalog.recipes)) {
++    recipes[id] = {
++      id: r.id,
++      displayName: r.displayName,
++      machineId: r.machineId,
++      isAlternate: r.isAlternate,
++      inputs: r.inputs.map(serializeIO),
++      outputs: r.outputs.map(serializeIO),
++      primaryOutputId: r.primaryOutputId,
++    };
++  }
++  return { items: catalog.items, machines: catalog.machines, recipes };
++}
++
++function serializeIO(io: RecipeIO): StoredRecipeIO {
++  return { itemId: io.itemId, perMinute: io.perMinute.toString() };
++}
++
++function reviveCatalog(data: StoredCatalogData): Catalog {
++  if (
++    data === null ||
++    typeof data !== "object" ||
++    typeof data.items !== "object" ||
++    typeof data.machines !== "object" ||
++    typeof data.recipes !== "object"
++  ) {
++    throw new Error("catalog-store: corrupted stored catalog shape.");
++  }
++  const recipes: Catalog["recipes"] = {};
++  for (const [id, r] of Object.entries(data.recipes)) {
++    recipes[id] = {
++      id: r.id,
++      displayName: r.displayName,
++      machineId: r.machineId,
++      isAlternate: r.isAlternate,
++      inputs: r.inputs.map(reviveIO),
++      outputs: r.outputs.map(reviveIO),
++      primaryOutputId: r.primaryOutputId,
++    };
++  }
++  // Tiers are always the curated table, never round-tripped through storage.
++  return {
++    items: data.items,
++    machines: data.machines,
++    recipes,
++    tiers: TIER_TABLE,
++  };
++}
++
++function reviveIO(io: StoredRecipeIO): RecipeIO {
++  const perMinute: Fraction = parseRational(io.perMinute);
++  return { itemId: io.itemId, perMinute };
++}
++
++async function sha256Hex(text: string): Promise<string> {
++  const bytes = new TextEncoder().encode(text);
++  const digest = await crypto.subtle.digest("SHA-256", bytes);
++  return Array.from(new Uint8Array(digest))
++    .map((b) => b.toString(16).padStart(2, "0"))
++    .join("");
++}
+diff --git a/src/data/catalog.ts b/src/data/catalog.ts
+new file mode 100644
+index 0000000..e40b043
+--- /dev/null
++++ b/src/data/catalog.ts
+@@ -0,0 +1,7 @@
++import type { Catalog } from "./types.ts";
++import { parseDocsJson } from "./docs-loader.ts";
++
++/** Parse raw Docs.json text into a Catalog (JSON.parse + parseDocsJson). */
++export function parseCatalogFromText(text: string): Catalog {
++  return parseDocsJson(JSON.parse(text));
++}
+diff --git a/src/data/db.ts b/src/data/db.ts
+new file mode 100644
+index 0000000..ef603ae
+--- /dev/null
++++ b/src/data/db.ts
+@@ -0,0 +1,71 @@
++/**
++ * Raw IndexedDB promise wrapper (ported shape from the planner's db.ts).
++ * Database `satis_foundry` — deliberately NOT the planner's `satis_planner`, so
++ * the two apps never collide on the same origin. One object store, `catalog`,
++ * out-of-line keyed (the caller supplies `'current'`).
++ */
++
++const DB_NAME = "satis_foundry";
++const DB_VERSION = 1;
++const CATALOG_STORE = "catalog";
++
++export interface SatisDb {
++  get<T>(store: string, key: string): Promise<T | undefined>;
++  put(store: string, value: unknown, key: string): Promise<void>;
++}
++
++let _dbPromise: Promise<SatisDb> | null = null;
++let _rawDb: IDBDatabase | null = null;
++
++export function openDb(): Promise<SatisDb> {
++  if (_dbPromise) return _dbPromise;
++  _dbPromise = new Promise((resolve, reject) => {
++    const req = indexedDB.open(DB_NAME, DB_VERSION);
++    req.onupgradeneeded = () => {
++      const db = req.result;
++      if (!db.objectStoreNames.contains(CATALOG_STORE)) {
++        db.createObjectStore(CATALOG_STORE);
++      }
++    };
++    req.onsuccess = () => {
++      _rawDb = req.result;
++      resolve(wrap(req.result));
++    };
++    req.onerror = () => reject(req.error ?? new Error("IndexedDB open failed"));
++  });
++  return _dbPromise;
++}
++
++/** Close any open connection and clear the cached promise (test helper). */
++export function resetDbCache(): void {
++  if (_rawDb) {
++    try {
++      _rawDb.close();
++    } catch {
++      /* ignore */
++    }
++    _rawDb = null;
++  }
++  _dbPromise = null;
++}
++
++function wrap(idb: IDBDatabase): SatisDb {
++  return {
++    get<T>(store: string, key: string): Promise<T | undefined> {
++      return new Promise((resolve, reject) => {
++        const tx = idb.transaction(store, "readonly");
++        const req = tx.objectStore(store).get(key);
++        req.onsuccess = () => resolve(req.result as T | undefined);
++        req.onerror = () => reject(req.error);
++      });
++    },
++    put(store: string, value: unknown, key: string): Promise<void> {
++      return new Promise((resolve, reject) => {
++        const tx = idb.transaction(store, "readwrite");
++        const req = tx.objectStore(store).put(value, key);
++        req.onsuccess = () => resolve();
++        req.onerror = () => reject(req.error);
++      });
++    },
++  };
++}
+diff --git a/src/data/docs-loader.test.ts b/src/data/docs-loader.test.ts
+new file mode 100644
+index 0000000..846c8c6
+--- /dev/null
++++ b/src/data/docs-loader.test.ts
+@@ -0,0 +1,340 @@
++import { describe, it, expect } from "vitest";
++import { Fraction } from "../core/fraction.ts";
++import { parseDocsJson, DocsParseError } from "./docs-loader.ts";
++import { parseCatalogFromText } from "./catalog.ts";
++import { TIER_TABLE } from "./tiers.ts";
++
++// Minimal Docs.json fragments mirroring the real Satisfactory schema (ported
++// from the planner's docs-loader.test.ts, extended for the exact-Fraction
++// deltas). Serialized ingredient/product strings use the real
++// ItemClass=…Desc_X_C…,Amount=N shape the ported regex matches.
++const DOCS_FRAGMENT = [
++  {
++    NativeClass:
++      "/Script/CoreUObject.Class'/Script/FactoryGame.FGResourceDescriptor'",
++    Classes: [
++      {
++        ClassName: "Desc_OreIron_C",
++        mDisplayName: "Iron Ore",
++        mForm: "RF_SOLID",
++      },
++      {
++        ClassName: "Desc_Stone_C",
++        mDisplayName: "Limestone",
++        mForm: "RF_SOLID",
++      },
++      { ClassName: "Desc_Water_C", mDisplayName: "Water", mForm: "RF_LIQUID" },
++    ],
++  },
++  {
++    NativeClass:
++      "/Script/CoreUObject.Class'/Script/FactoryGame.FGItemDescriptor'",
++    Classes: [
++      {
++        ClassName: "Desc_IronIngot_C",
++        mDisplayName: "Iron Ingot",
++        mForm: "RF_SOLID",
++      },
++      {
++        ClassName: "Desc_Concrete_C",
++        mDisplayName: "Concrete",
++        mForm: "RF_SOLID",
++      },
++    ],
++  },
++  {
++    NativeClass:
++      "/Script/CoreUObject.Class'/Script/FactoryGame.FGItemDescriptorBiomass'",
++    Classes: [
++      { ClassName: "Desc_Wood_C", mDisplayName: "Wood", mForm: "RF_SOLID" },
++    ],
++  },
++  {
++    NativeClass:
++      "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'",
++    Classes: [
++      { ClassName: "Build_SmelterMk1_C", mDisplayName: "Smelter" },
++      { ClassName: "Build_OilRefinery_C", mDisplayName: "Refinery" },
++    ],
++  },
++  {
++    NativeClass: "/Script/CoreUObject.Class'/Script/FactoryGame.FGRecipe'",
++    Classes: [
++      {
++        ClassName: "Recipe_IngotIron_C",
++        mDisplayName: "Iron Ingot",
++        mIngredients:
++          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_OreIron_C\"',Amount=1))",
++        mProduct:
++          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_IronIngot_C\"',Amount=1))",
++        mManufactoringDuration: "2",
++        mProducedIn: "/Game/Path/Build_SmelterMk1_C",
++      },
++      {
++        ClassName: "Recipe_Alternate_WetConcrete_C",
++        mDisplayName: "Alternate: Wet Concrete",
++        mIngredients:
++          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Stone_C\"',Amount=12)," +
++          "(ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Water_C\"',Amount=10000))",
++        mProduct:
++          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Concrete_C\"',Amount=8))",
++        mManufactoringDuration: "6",
++        mProducedIn: "/Game/Path/Build_OilRefinery_C",
++      },
++    ],
++  },
++];
++
++describe("parseDocsJson — items + machines + shape (spec row 1)", () => {
++  it("extracts items across FGResourceDescriptor/FGItemDescriptor/Biomass with correct isFluid", () => {
++    const cat = parseDocsJson(DOCS_FRAGMENT);
++    for (const id of [
++      "ore_iron",
++      "stone",
++      "water",
++      "iron_ingot",
++      "concrete",
++      "wood",
++    ]) {
++      expect(cat.items[id], `item ${id} missing`).toBeDefined();
++    }
++    expect(cat.items["water"]!.isFluid).toBe(true);
++    expect(cat.items["stone"]!.isFluid).toBe(false);
++    // Items carry id + displayName + isFluid only — no power, no stack size.
++    expect(Object.keys(cat.items["water"]!).sort()).toEqual([
++      "displayName",
++      "id",
++      "isFluid",
++    ]);
++  });
++
++  it("extracts machines with id + displayName only (no power)", () => {
++    const cat = parseDocsJson(DOCS_FRAGMENT);
++    expect(cat.machines["smelter_mk1"]).toEqual({
++      id: "smelter_mk1",
++      displayName: "Smelter",
++    });
++    expect(cat.machines["oil_refinery"]).toEqual({
++      id: "oil_refinery",
++      displayName: "Refinery",
++    });
++  });
++
++  it("attaches the shared TIER_TABLE to the catalog", () => {
++    const cat = parseDocsJson(DOCS_FRAGMENT);
++    expect(cat.tiers).toBe(TIER_TABLE);
++  });
++
++  it("sets primaryOutputId = outputs[0].itemId and Alternate strip + flag", () => {
++    const cat = parseDocsJson(DOCS_FRAGMENT);
++    const iron = cat.recipes["ingot_iron"]!;
++    expect(iron.primaryOutputId).toBe("iron_ingot");
++    expect(iron.isAlternate).toBe(false);
++    expect(iron.machineId).toBe("smelter_mk1");
++
++    const wet = cat.recipes["alternate_wet_concrete"]!;
++    expect(wet.displayName).toBe("Wet Concrete"); // Alternate: prefix stripped
++    expect(wet.isAlternate).toBe(true);
++    expect(wet.primaryOutputId).toBe("concrete");
++  });
++
++  it("fluid ×1000→m³ exactness: water perMinute is EXACTLY 100 (Amount=10000/dur 6)", () => {
++    const cat = parseDocsJson(DOCS_FRAGMENT);
++    const wet = cat.recipes["alternate_wet_concrete"]!;
++    // 10000 L = 10 m³; 10 × 60 / 6 = 100 m³/min, exact via .div(1000).
++    const water = wet.inputs.find((i) => i.itemId === "water")!;
++    expect(water.perMinute.eq(Fraction.from(100))).toBe(true);
++    // Stone: 12 × 60 / 6 = 120/min (solid, untouched).
++    const stone = wet.inputs.find((i) => i.itemId === "stone")!;
++    expect(stone.perMinute.eq(Fraction.from(120))).toBe(true);
++    // Concrete out: 8 × 60 / 6 = 80/min.
++    const concrete = wet.outputs.find((o) => o.itemId === "concrete")!;
++    expect(concrete.perMinute.eq(Fraction.from(80))).toBe(true);
++  });
++
++  it("parseCatalogFromText round-trips JSON text to the same catalog", () => {
++    const cat = parseCatalogFromText(JSON.stringify(DOCS_FRAGMENT));
++    expect(cat.recipes["ingot_iron"]!.primaryOutputId).toBe("iron_ingot");
++  });
++});
++
++describe("parseDocsJson — fractional exactness (spec row 2)", () => {
++  it('duration "4" + Amount "2.5" → perMinute EXACTLY 75/2 (no float)', () => {
++    const frag = [
++      {
++        NativeClass:
++          "/Script/CoreUObject.Class'/Script/FactoryGame.FGItemDescriptor'",
++        Classes: [
++          {
++            ClassName: "Desc_Thing_C",
++            mDisplayName: "Thing",
++            mForm: "RF_SOLID",
++          },
++        ],
++      },
++      {
++        NativeClass:
++          "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'",
++        Classes: [{ ClassName: "Build_Maker_C", mDisplayName: "Maker" }],
++      },
++      {
++        NativeClass: "/Script/CoreUObject.Class'/Script/FactoryGame.FGRecipe'",
++        Classes: [
++          {
++            ClassName: "Recipe_Thing_C",
++            mDisplayName: "Thing",
++            mIngredients:
++              "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Thing_C\"',Amount=2.5))",
++            mProduct:
++              "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Thing_C\"',Amount=2.5))",
++            mManufactoringDuration: "4",
++            mProducedIn: "/Game/Path/Build_Maker_C",
++          },
++        ],
++      },
++    ];
++    const cat = parseDocsJson(frag);
++    // 2.5 × 60 / 4 = 150/4 = 75/2, exact.
++    const io = cat.recipes["thing"]!.inputs[0]!;
++    expect(io.perMinute.eq(Fraction.of(75, 2))).toBe(true);
++  });
++});
++
++// Fragment builder for the loud-failure + filter rows: one item, one machine,
++// one recipe whose fields the test overrides.
++function oneRecipe(over: Record<string, string>) {
++  return [
++    {
++      NativeClass:
++        "/Script/CoreUObject.Class'/Script/FactoryGame.FGItemDescriptor'",
++      Classes: [
++        { ClassName: "Desc_Thing_C", mDisplayName: "Thing", mForm: "RF_SOLID" },
++      ],
++    },
++    {
++      NativeClass:
++        "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'",
++      Classes: [{ ClassName: "Build_Maker_C", mDisplayName: "Maker" }],
++    },
++    {
++      NativeClass: "/Script/CoreUObject.Class'/Script/FactoryGame.FGRecipe'",
++      Classes: [
++        {
++          ClassName: "Recipe_Thing_C",
++          mDisplayName: "Thing",
++          mIngredients:
++            "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Thing_C\"',Amount=1))",
++          mProduct:
++            "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Thing_C\"',Amount=1))",
++          mManufactoringDuration: "2",
++          mProducedIn: "/Game/Path/Build_Maker_C",
++          ...over,
++        },
++      ],
++    },
++  ];
++}
++
++describe("parseDocsJson — loud failures (spec row 3)", () => {
++  it("non-array root throws DocsParseError", () => {
++    expect(() => parseDocsJson({ not: "an array" })).toThrow(DocsParseError);
++  });
++
++  it("missing duration throws DocsParseError naming the recipe", () => {
++    const frag = oneRecipe({});
++    // Remove mManufactoringDuration from the recipe class.
++    const recipeClass = (frag[2] as { Classes: Record<string, unknown>[] })
++      .Classes[0]!;
++    delete recipeClass.mManufactoringDuration;
++    expect(() => parseDocsJson(frag)).toThrow(/ingot|thing/i);
++    expect(() => parseDocsJson(frag)).toThrow(DocsParseError);
++  });
++
++  it("zero duration throws DocsParseError (no ≤0 → 0 fallback)", () => {
++    expect(() =>
++      parseDocsJson(oneRecipe({ mManufactoringDuration: "0" })),
++    ).toThrow(DocsParseError);
++  });
++
++  it('malformed duration ("1.2.3") throws DocsParseError naming the recipe', () => {
++    let err: unknown;
++    try {
++      parseDocsJson(oneRecipe({ mManufactoringDuration: "1.2.3" }));
++    } catch (e) {
++      err = e;
++    }
++    expect(err).toBeInstanceOf(DocsParseError);
++    expect((err as Error).message).toMatch(/thing/i);
++  });
++
++  it("captured Amount that Fraction.parse rejects (two dots) throws DocsParseError", () => {
++    // The [0-9.]+ capture matches "1.2.3", but Fraction.parse rejects it →
++    // genuine corruption, throws (not a silent skip).
++    const frag = oneRecipe({
++      mIngredients:
++        "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Thing_C\"',Amount=1.2.3))",
++    });
++    let err: unknown;
++    try {
++      parseDocsJson(frag);
++    } catch (e) {
++      err = e;
++    }
++    expect(err).toBeInstanceOf(DocsParseError);
++    expect((err as Error).message).toMatch(/amount/i);
++  });
++});
++
++describe("parseDocsJson — ported filters (spec row 4)", () => {
++  it("skips a recipe whose producing building is unknown", () => {
++    const cat = parseDocsJson(
++      oneRecipe({ mProducedIn: "/Game/Path/Build_Nonexistent_C" }),
++    );
++    expect(cat.recipes["thing"]).toBeUndefined();
++  });
++
++  it("skips a recipe with zero outputs (empty product)", () => {
++    const cat = parseDocsJson(oneRecipe({ mProduct: "" }));
++    expect(cat.recipes["thing"]).toBeUndefined();
++  });
++
++  it("skips a recipe whose outputs reference no known item", () => {
++    const cat = parseDocsJson(
++      oneRecipe({
++        mProduct:
++          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Unknown_C\"',Amount=1))",
++      }),
++    );
++    expect(cat.recipes["thing"]).toBeUndefined();
++  });
++
++  it("ignores cosmetic/vehicle Descriptor classes (never enter items)", () => {
++    const polluted = [
++      ...DOCS_FRAGMENT,
++      {
++        NativeClass:
++          "/Script/CoreUObject.Class'/Script/FactoryGame.FGFactoryCustomizationDescriptor'",
++        Classes: [
++          {
++            ClassName: "Desc_PatternRemover_C",
++            mDisplayName: "Pattern Remover",
++          },
++        ],
++      },
++      {
++        NativeClass:
++          "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildingDescriptor'",
++        Classes: [{ ClassName: "Desc_Wall_C", mDisplayName: "Wall" }],
++      },
++      {
++        NativeClass:
++          "/Script/CoreUObject.Class'/Script/FactoryGame.FGVehicleDescriptor'",
++        Classes: [{ ClassName: "Desc_Truck_C", mDisplayName: "Truck" }],
++      },
++    ];
++    const cat = parseDocsJson(polluted);
++    expect(cat.items["pattern_remover"]).toBeUndefined();
++    expect(cat.items["wall"]).toBeUndefined();
++    expect(cat.items["truck"]).toBeUndefined();
++  });
++});
+diff --git a/src/data/docs-loader.ts b/src/data/docs-loader.ts
+new file mode 100644
+index 0000000..5803827
+--- /dev/null
++++ b/src/data/docs-loader.ts
+@@ -0,0 +1,234 @@
++import { Fraction } from "../core/fraction.ts";
++import type {
++  Catalog,
++  CatalogItem,
++  CatalogMachine,
++  CatalogRecipe,
++  RecipeIO,
++} from "./types.ts";
++import { TIER_TABLE } from "./tiers.ts";
++
++/**
++ * A human-readable parse failure. The Phase 4 upload UI shows `.message`
++ * verbatim; nothing reaches solve time. Every loud failure below (bad root,
++ * missing/malformed/≤0 duration, un-parseable Amount) surfaces as one of these
++ * so malformed uploads fail at parse time, not silently later.
++ */
++export class DocsParseError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "DocsParseError";
++  }
++}
++
++// Native-class filters, ported unchanged from the planner's docs-loader.ts.
++// Broad rule: buildings are the manufacturer/generator/extractor families;
++// items are the descriptor allowlist (subtypes covered by prefix match);
++// recipes are FGRecipe. Anything outside these (cosmetic/vehicle descriptors,
++// building-placeholder descriptors) never enters the catalog.
++const NATIVE_BUILDING_REGEX =
++  /FGBuildable(Manufacturer|Generator|Extractor|ResourceExtractor)/;
++const NATIVE_ITEM_REGEX =
++  /FG(ItemDescriptor|ResourceDescriptor|ConsumableDescriptor|EquipmentDescriptor|PowerShardDescriptor|ChainsawFuelDescriptor|AmmoType)/;
++const NATIVE_RECIPE = "FGRecipe";
++
++/** Raw recipe fields carried through extraction; strings stay strings until
++ *  the exact-Fraction post-processing step (no float ever). */
++interface RawRecipe {
++  className: string;
++  displayName: string;
++  ingredients: string;
++  product: string;
++  duration: string;
++  producedIn: string;
++}
++
++export function parseDocsJson(raw: unknown): Catalog {
++  if (!Array.isArray(raw)) {
++    throw new DocsParseError("Docs.json root must be an array.");
++  }
++
++  const items: Record<string, CatalogItem> = {};
++  const machines: Record<string, CatalogMachine> = {};
++  const recipesRaw: RawRecipe[] = [];
++
++  for (const group of raw) {
++    if (typeof group !== "object" || group === null) continue;
++    const g = group as { NativeClass?: string; Classes?: unknown[] };
++    const nativeClass = g.NativeClass ?? "";
++    const classes = Array.isArray(g.Classes) ? g.Classes : [];
++
++    if (NATIVE_ITEM_REGEX.test(nativeClass)) {
++      for (const cls of classes) {
++        const c = cls as Record<string, unknown>;
++        if (typeof c.ClassName !== "string") continue;
++        const id = normalizeClassName(c.ClassName, "Desc_");
++        const isFluid =
++          typeof c.mForm === "string" &&
++          (c.mForm === "RF_LIQUID" || c.mForm === "RF_GAS");
++        items[id] = {
++          id,
++          displayName: (c.mDisplayName as string | undefined) ?? id,
++          isFluid,
++        };
++      }
++    } else if (NATIVE_BUILDING_REGEX.test(nativeClass)) {
++      for (const cls of classes) {
++        const c = cls as Record<string, unknown>;
++        if (typeof c.ClassName !== "string") continue;
++        const id = normalizeClassName(c.ClassName, "Build_");
++        machines[id] = {
++          id,
++          displayName: (c.mDisplayName as string | undefined) ?? id,
++        };
++      }
++    } else if (nativeClass.includes(NATIVE_RECIPE)) {
++      for (const cls of classes) {
++        const c = cls as Record<string, unknown>;
++        if (typeof c.ClassName !== "string") continue;
++        // Duration stays a raw string here; the loud-failure check and
++        // Fraction.parse happen during post-processing so the message can
++        // name the recipe.
++        recipesRaw.push({
++          className: c.ClassName,
++          displayName: (c.mDisplayName as string | undefined) ?? c.ClassName,
++          ingredients: (c.mIngredients as string | undefined) ?? "",
++          product: (c.mProduct as string | undefined) ?? "",
++          duration:
++            typeof c.mManufactoringDuration === "string"
++              ? c.mManufactoringDuration
++              : "",
++          producedIn: (c.mProducedIn as string | undefined) ?? "",
++        });
++      }
++    }
++  }
++
++  const recipes: Record<string, CatalogRecipe> = {};
++  for (const r of recipesRaw) {
++    const id = normalizeClassName(r.className, "Recipe_");
++    const machineId = extractMachineId(r.producedIn);
++    // Ported filter: skip recipes whose producing building is unknown.
++    if (!machineId || !machines[machineId]) continue;
++
++    // Loud failure: the duration must parse to an exact positive Fraction.
++    // Replaces the planner's `?? '1'` default and its `≤0 → per_min 0`
++    // fallback — a malformed duration is genuine corruption, named here.
++    const duration = parseDuration(r.duration, id);
++
++    const inputs = parseIngredientList(r.ingredients, duration, items, id);
++    const outputs = parseIngredientList(r.product, duration, items, id);
++    // Ported filter: skip recipes with zero outputs.
++    if (outputs.length === 0) continue;
++    // Ported filter: skip recipes whose outputs reference no known item.
++    if (!outputs.some((o) => items[o.itemId])) continue;
++
++    const isAlternate =
++      id.includes("alternate_") || r.displayName.startsWith("Alternate:");
++
++    const firstOutput = outputs[0];
++    if (firstOutput === undefined) continue; // unreachable: length checked above
++
++    recipes[id] = {
++      id,
++      displayName: r.displayName.replace(/^Alternate:\s*/, ""),
++      machineId,
++      isAlternate,
++      inputs,
++      outputs,
++      primaryOutputId: firstOutput.itemId,
++    };
++  }
++
++  return { items, machines, recipes, tiers: TIER_TABLE };
++}
++
++/**
++ * Parse a recipe duration string into an exact positive Fraction, throwing a
++ * recipe-named `DocsParseError` on missing/malformed/≤0 input.
++ */
++function parseDuration(raw: string, recipeId: string): Fraction {
++  if (raw === "") {
++    throw new DocsParseError(
++      `Recipe ${recipeId}: missing mManufactoringDuration.`,
++    );
++  }
++  let duration: Fraction;
++  try {
++    duration = Fraction.parse(raw);
++  } catch {
++    throw new DocsParseError(
++      `Recipe ${recipeId}: malformed mManufactoringDuration ${JSON.stringify(raw)}.`,
++    );
++  }
++  if (duration.lte(Fraction.from(0))) {
++    throw new DocsParseError(
++      `Recipe ${recipeId}: mManufactoringDuration must be > 0; got ${duration.toString()}.`,
++    );
++  }
++  return duration;
++}
++
++/** ClassName → snake-case id (ported normalization scheme). */
++function normalizeClassName(cls: string, prefix: string): string {
++  const bare = cls.split(/[./']/).pop() ?? cls;
++  let name = bare;
++  if (name.startsWith(prefix)) name = name.slice(prefix.length);
++  if (name.endsWith("_C")) name = name.slice(0, -2);
++  return name
++    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
++    .replace(/([A-Z])([A-Z][a-z])/g, "$1_$2")
++    .toLowerCase();
++}
++
++// Ported unchanged (planner docs-loader.ts:185): the Amount capture is
++// `[0-9.]+`. A non-match skips the entry silently (extractors/empty lists);
++// a captured string Fraction.parse rejects (e.g. two dots) throws loudly.
++const ENTRY_REGEX =
++  /ItemClass=[^,]*?Desc_([A-Za-z0-9_]+)_C[^,]*?,Amount=([0-9.]+)/g;
++
++function parseIngredientList(
++  serialized: string,
++  duration: Fraction,
++  items: Record<string, CatalogItem>,
++  recipeId: string,
++): RecipeIO[] {
++  if (!serialized) return [];
++  const result: RecipeIO[] = [];
++  // Fresh lastIndex per call: ENTRY_REGEX is a module-level /g regex.
++  ENTRY_REGEX.lastIndex = 0;
++  let m: RegExpExecArray | null;
++  while ((m = ENTRY_REGEX.exec(serialized)) !== null) {
++    const rawName = m[1];
++    const rawAmount = m[2];
++    if (rawName === undefined || rawAmount === undefined) continue;
++    const itemId = normalizeClassName(`Desc_${rawName}_C`, "Desc_");
++
++    // Loud failure: a captured Amount that isn't an exact decimal is genuine
++    // corruption. Name recipe + item so the upload UI can point at it.
++    let amount: Fraction;
++    try {
++      amount = Fraction.parse(rawAmount);
++    } catch {
++      throw new DocsParseError(
++        `Recipe ${recipeId}, item ${itemId}: malformed Amount ${JSON.stringify(rawAmount)}.`,
++      );
++    }
++
++    // Fluids are stored in liters (×1000 of the m³ display value); normalize
++    // exactly so rates match the pipe tier table. Solids are untouched.
++    if (items[itemId]?.isFluid) {
++      amount = amount.div(Fraction.from(1000));
++    }
++    // Exact per-minute flow at 100% clock: amount × 60 / duration.
++    const perMinute = amount.mul(Fraction.from(60)).div(duration);
++    result.push({ itemId, perMinute });
++  }
++  return result;
++}
++
++function extractMachineId(producedIn: string): string | null {
++  const m = /Build_([A-Za-z0-9_]+)_C/.exec(producedIn);
++  if (!m || m[1] === undefined) return null;
++  return normalizeClassName(`Build_${m[1]}_C`, "Build_");
++}
+diff --git a/src/data/stage-input.test.ts b/src/data/stage-input.test.ts
+new file mode 100644
+index 0000000..4008c96
+--- /dev/null
++++ b/src/data/stage-input.test.ts
+@@ -0,0 +1,249 @@
++import { describe, it, expect } from "vitest";
++import { Fraction } from "../core/fraction.ts";
++import { solveStage } from "../core/manifold.ts";
++import type { Catalog, CatalogRecipe } from "./types.ts";
++import { TIER_TABLE } from "./tiers.ts";
++import { toStageInput, parseRational } from "./stage-input.ts";
++
++// A minimal catalog carrying just the items the fixtures reference; recipes is
++// empty because toStageInput reads only recipe.inputs/outputs + catalog.items.
++function catalogWith(items: Record<string, { isFluid: boolean }>): Catalog {
++  const full: Catalog["items"] = {};
++  for (const [id, { isFluid }] of Object.entries(items)) {
++    full[id] = { id, displayName: id, isFluid };
++  }
++  return { items: full, machines: {}, recipes: {}, tiers: TIER_TABLE };
++}
++
++function io(itemId: string, perMinute: Fraction) {
++  return { itemId, perMinute };
++}
++
++// The Phase 1 20-smelter worked example, reproduced through a recipe: one solid
++// ingredient at 30/min and one solid product at 30/min. dur "2", Amount "1" on
++// both sides gives 1×60/2 = 30 (mirrored so BOTH feed and output sides match
++// the known result).
++const IRON: CatalogRecipe = {
++  id: "ingot_iron",
++  displayName: "Iron Ingot",
++  machineId: "smelter_mk1",
++  isAlternate: false,
++  inputs: [io("ore_iron", Fraction.from(30))],
++  outputs: [io("iron_ingot", Fraction.from(30))],
++  primaryOutputId: "iron_ingot",
++};
++const IRON_CATALOG = catalogWith({
++  ore_iron: { isFluid: false },
++  iron_ingot: { isFluid: false },
++});
++
++describe("toStageInput — live-solver integration proof (spec row 5)", () => {
++  it("reproduces the Phase 1 20-smelter result on the REAL solver (both sides)", () => {
++    const input = toStageInput(IRON, IRON_CATALOG, {
++      machineCount: 20,
++      clockPercent: Fraction.from(100),
++      unlockedTiers: { belt: 4, pipe: 2 },
++    });
++    // Capacities are the sliced belt table [60,120,270,480].
++    expect(input.capacities.belt.map((c) => c.toString())).toEqual([
++      "60",
++      "120",
++      "270",
++      "480",
++    ]);
++
++    const result = solveStage(input);
++    expect(result.findings).toEqual([]);
++
++    // FEED lane: belts [480, 120@after-16]; segments [1..16]@480 / [17..20]@120.
++    const feed = result.feeds[0]!;
++    expect(feed.findings).toEqual([]);
++    expect(feed.belts.map((b) => b.capacity.toString())).toEqual([
++      "480",
++      "120",
++    ]);
++    expect(feed.belts.map((b) => b.entersAfterMachine)).toEqual([0, 16]);
++    expect(
++      feed.segments.map((s) => [
++        s.fromMachine,
++        s.toMachine,
++        s.peakFlow.toString(),
++      ]),
++    ).toEqual([
++      [1, 16, "480"],
++      [17, 20, "120"],
++    ]);
++
++    // OUTPUT mirror: breakouts after 16, loads 480/120, capacities 480/120.
++    const out = result.outputs[0]!;
++    expect(out.findings).toEqual([]);
++    expect(out.breakouts.map((b) => b.capacity.toString())).toEqual([
++      "480",
++      "120",
++    ]);
++    expect(out.breakouts.map((b) => b.startsAfterMachine)).toEqual([0, 16]);
++    expect(out.breakouts.map((b) => b.load.toString())).toEqual(["480", "120"]);
++  });
++
++  it("maps a fluid ingredient onto a pipe lane with pipe capacities", () => {
++    const recipe: CatalogRecipe = {
++      id: "wet_concrete",
++      displayName: "Wet Concrete",
++      machineId: "oil_refinery",
++      isAlternate: true,
++      inputs: [
++        io("water", Fraction.from(100)),
++        io("stone", Fraction.from(120)),
++      ],
++      outputs: [io("concrete", Fraction.from(80))],
++      primaryOutputId: "concrete",
++    };
++    const catalog = catalogWith({
++      water: { isFluid: true },
++      stone: { isFluid: false },
++      concrete: { isFluid: false },
++    });
++    const input = toStageInput(recipe, catalog, {
++      machineCount: 3,
++      clockPercent: Fraction.from(100),
++      unlockedTiers: { belt: 4, pipe: 2 },
++    });
++    const waterLane = input.feeds.find((l) => l.itemId === "water")!;
++    const stoneLane = input.feeds.find((l) => l.itemId === "stone")!;
++    expect(waterLane.kind).toBe("pipe");
++    expect(stoneLane.kind).toBe("belt");
++    expect(input.capacities.pipe.map((c) => c.toString())).toEqual([
++      "300",
++      "600",
++    ]);
++    // Base rate is the 100%-clock perMinute; the solver applies clock.
++    expect(waterLane.perMachineRate.eq(Fraction.from(100))).toBe(true);
++  });
++});
++
++describe("toStageInput — tier slicing + overrides (spec row 5)", () => {
++  it("slices the first N belt tiers ({belt:4} → [60,120,270,480])", () => {
++    const input = toStageInput(IRON, IRON_CATALOG, {
++      machineCount: 1,
++      clockPercent: Fraction.from(100),
++      unlockedTiers: { belt: 4, pipe: 1 },
++    });
++    expect(input.capacities.belt.map((c) => c.toString())).toEqual([
++      "60",
++      "120",
++      "270",
++      "480",
++    ]);
++    expect(input.capacities.pipe.map((c) => c.toString())).toEqual(["300"]);
++  });
++
++  it("lands a lane-addressed override on the matching lane", () => {
++    const input = toStageInput(IRON, IRON_CATALOG, {
++      machineCount: 20,
++      clockPercent: Fraction.from(100),
++      unlockedTiers: { belt: 4, pipe: 1 },
++      overrides: {
++        feeds: { ore_iron: [null, Fraction.from(270)] },
++        outputs: { iron_ingot: [Fraction.from(480)] },
++      },
++    });
++    const feed = input.feeds.find((l) => l.itemId === "ore_iron")!;
++    expect(feed.overrides).toBeDefined();
++    expect(feed.overrides![0]).toBeNull();
++    expect(feed.overrides![1]!.eq(Fraction.from(270))).toBe(true);
++    const out = input.outputs.find((l) => l.itemId === "iron_ingot")!;
++    expect(out.overrides![0]!.eq(Fraction.from(480))).toBe(true);
++  });
++
++  it("throws on a duplicate (itemId, side) lane", () => {
++    const dup: CatalogRecipe = {
++      ...IRON,
++      inputs: [
++        io("ore_iron", Fraction.from(30)),
++        io("ore_iron", Fraction.from(10)),
++      ],
++    };
++    expect(() => toStageInput(dup, IRON_CATALOG, base())).toThrow(/duplicate/i);
++  });
++
++  it("throws on an override for an unknown item", () => {
++    expect(() =>
++      toStageInput(IRON, IRON_CATALOG, {
++        ...base(),
++        overrides: { feeds: { not_a_lane: [Fraction.from(60)] } },
++      }),
++    ).toThrow(/unknown/i);
++  });
++
++  it("throws when unlockedTiers < 1", () => {
++    expect(() =>
++      toStageInput(IRON, IRON_CATALOG, {
++        ...base(),
++        unlockedTiers: { belt: 0, pipe: 1 },
++      }),
++    ).toThrow(RangeError);
++  });
++
++  it("throws when unlockedTiers exceeds the table length", () => {
++    expect(() =>
++      toStageInput(IRON, IRON_CATALOG, {
++        ...base(),
++        unlockedTiers: { belt: 7, pipe: 1 },
++      }),
++    ).toThrow(RangeError);
++    expect(() =>
++      toStageInput(IRON, IRON_CATALOG, {
++        ...base(),
++        unlockedTiers: { belt: 4, pipe: 3 },
++      }),
++    ).toThrow(RangeError);
++  });
++});
++
++function base() {
++  return {
++    machineCount: 20,
++    clockPercent: Fraction.from(100),
++    unlockedTiers: { belt: 4, pipe: 2 },
++  };
++}
++
++describe("parseRational — round-trip reviver (spec row 6)", () => {
++  it("revives Fraction.toString() output exactly", () => {
++    expect(parseRational("75/2").eq(Fraction.of(75, 2))).toBe(true);
++    expect(parseRational("120").eq(Fraction.from(120))).toBe(true);
++    expect(parseRational("-3/4").eq(Fraction.of(-3, 4))).toBe(true);
++    expect(parseRational("0").eq(Fraction.from(0))).toBe(true);
++  });
++
++  it("round-trips through toString() for representative values", () => {
++    for (const f of [
++      Fraction.of(75, 2),
++      Fraction.from(120),
++      Fraction.of(-3, 4),
++      Fraction.from(0),
++    ]) {
++      expect(parseRational(f.toString()).eq(f)).toBe(true);
++    }
++  });
++
++  it("throws on garbage (never a Fraction.toString() form)", () => {
++    for (const bad of [
++      "",
++      " ",
++      "abc",
++      "1.5",
++      "0x10",
++      "+3",
++      "1/2/3",
++      "/2",
++      "3/",
++      "5 ",
++    ]) {
++      expect(
++        () => parseRational(bad),
++        `expected throw for ${JSON.stringify(bad)}`,
++      ).toThrow();
++    }
++  });
++});
+diff --git a/src/data/stage-input.ts b/src/data/stage-input.ts
+new file mode 100644
+index 0000000..93881eb
+--- /dev/null
++++ b/src/data/stage-input.ts
+@@ -0,0 +1,167 @@
++import { Fraction } from "../core/fraction.ts";
++import type { LaneInput, LaneKind, StageInput } from "../core/manifold.ts";
++import type { Catalog, CatalogRecipe, RecipeIO } from "./types.ts";
++import { TIER_TABLE } from "./tiers.ts";
++
++export interface StageOptions {
++  machineCount: number;
++  clockPercent: Fraction;
++  /** Prefix count of unlocked tiers per kind (≥ 1). */
++  unlockedTiers: { belt: number; pipe: number };
++  overrides?: {
++    /** Per-belt capacity overrides keyed by feed itemId (null = keep auto). */
++    feeds?: Record<string, (Fraction | null)[]>;
++    /** Per-belt capacity overrides keyed by output itemId. */
++    outputs?: Record<string, (Fraction | null)[]>;
++  };
++}
++
++/**
++ * Map a catalog recipe onto a solver `StageInput`. Lane kind comes from each
++ * item's `isFluid` (fluid → pipe, solid → belt); `perMachineRate` is the base
++ * 100%-clock `RecipeIO.perMinute` (the solver scales by clock).
++ *
++ * Throw-vs-finding boundary: `toStageInput` throws on caller-bug SHAPE errors
++ * the solver's `Finding` union cannot express (duplicate lanes on a side,
++ * unknown override keys, `unlockedTiers` below 1 or beyond the table). VALUE
++ * errors (over-capacity, starvation, non-ascending capacities, negative rate)
++ * stay the solver's findings-out contract. One boundary, two error channels.
++ */
++export function toStageInput(
++  recipe: CatalogRecipe,
++  catalog: Catalog,
++  opts: StageOptions,
++): StageInput {
++  const capacities = {
++    belt: sliceTier("belt", opts.unlockedTiers.belt),
++    pipe: sliceTier("pipe", opts.unlockedTiers.pipe),
++  };
++
++  const feeds = buildLanes(
++    recipe.inputs,
++    catalog,
++    opts.overrides?.feeds,
++    "feed",
++  );
++  const outputs = buildLanes(
++    recipe.outputs,
++    catalog,
++    opts.overrides?.outputs,
++    "output",
++  );
++
++  return {
++    machineCount: opts.machineCount,
++    clockPercent: opts.clockPercent,
++    capacities,
++    feeds,
++    outputs,
++  };
++}
++
++/**
++ * Slice the first `count` unlocked tiers of a kind. `count` must be ≥ 1 and
++ * within the table: an empty capacity list would pass the solver's ascending
++ * check yet crash its top-tier assert, so it is a SHAPE error thrown here (not
++ * a solver finding). Ascending order is inherited from TIER_TABLE.
++ */
++function sliceTier(kind: LaneKind, count: number): Fraction[] {
++  const table = TIER_TABLE[kind];
++  if (!Number.isInteger(count) || count < 1 || count > table.length) {
++    throw new RangeError(
++      `toStageInput: unlockedTiers.${kind} must be an integer in [1, ${table.length}]; got ${count}.`,
++    );
++  }
++  return table.slice(0, count);
++}
++
++/**
++ * Build the lanes for one side, mapping item kind and distributing overrides.
++ * Throws on a duplicate (itemId, side) — real Docs.json never repeats an item
++ * on one side, so a duplicate is a modded-data shape error the solver cannot
++ * express — and on an override key that matches no lane.
++ */
++function buildLanes(
++  ios: RecipeIO[],
++  catalog: Catalog,
++  overrides: Record<string, (Fraction | null)[]> | undefined,
++  side: "feed" | "output",
++): LaneInput[] {
++  const lanes: LaneInput[] = [];
++  const seen = new Set<string>();
++  for (const io of ios) {
++    if (seen.has(io.itemId)) {
++      throw new Error(
++        `toStageInput: duplicate ${side} lane for item ${io.itemId}.`,
++      );
++    }
++    seen.add(io.itemId);
++
++    const kind: LaneKind = catalog.items[io.itemId]?.isFluid ? "pipe" : "belt";
++    const lane: LaneInput = {
++      itemId: io.itemId,
++      kind,
++      perMachineRate: io.perMinute,
++    };
++    const override = overrides?.[io.itemId];
++    if (override !== undefined) {
++      lane.overrides = override;
++    }
++    lanes.push(lane);
++  }
++
++  // Every override key must address an existing lane; an unknown key is a
++  // caller shape bug, not a solver value the findings union can carry.
++  if (overrides) {
++    for (const key of Object.keys(overrides)) {
++      if (!seen.has(key)) {
++        throw new Error(
++          `toStageInput: override for unknown ${side} item ${key}.`,
++        );
++      }
++    }
++  }
++  return lanes;
++}
++
++/**
++ * Revive a `Fraction.toString()` string: "num/den" → `Fraction.of(BigInt(num),
++ * BigInt(den))`; a plain integer → `Fraction.from(BigInt(s))`. Throws on any
++ * other form.
++ *
++ * `Fraction.toString()` emits only `-?\d+` (with the sign on the numerator) and
++ * `\d+` for a denominator. `BigInt` is looser than that — it coerces "",
++ * "0x10", "+3", and surrounding whitespace — so each side is validated against
++ * the strict digit pattern first, keeping this a faithful reviver that throws
++ * on anything the type never produced.
++ */
++export function parseRational(s: string): Fraction {
++  const slash = s.indexOf("/");
++  if (slash === -1) {
++    return Fraction.from(toSignedBigInt(s));
++  }
++  const num = s.slice(0, slash);
++  const den = s.slice(slash + 1);
++  return Fraction.of(toSignedBigInt(num), toUnsignedBigInt(den));
++}
++
++const SIGNED_INT = /^-?\d+$/;
++const UNSIGNED_INT = /^\d+$/;
++
++function toSignedBigInt(s: string): bigint {
++  if (!SIGNED_INT.test(s)) {
++    throw new SyntaxError(
++      `parseRational: malformed rational component ${JSON.stringify(s)}.`,
++    );
++  }
++  return BigInt(s);
++}
++
++function toUnsignedBigInt(s: string): bigint {
++  if (!UNSIGNED_INT.test(s)) {
++    throw new SyntaxError(
++      `parseRational: malformed rational component ${JSON.stringify(s)}.`,
++    );
++  }
++  return BigInt(s);
++}
+diff --git a/src/data/tiers.ts b/src/data/tiers.ts
+new file mode 100644
+index 0000000..a8f5aea
+--- /dev/null
++++ b/src/data/tiers.ts
+@@ -0,0 +1,13 @@
++import { Fraction } from "../core/fraction.ts";
++import type { TierTable } from "./types.ts";
++
++/**
++ * Curated transport-tier throughputs (items/min for belts, m³/min for pipes),
++ * ascending. Values are the planner's transport.ts constants (belts
++ * 60/120/270/480/780/1200; pipes 300/600), matching the v1 design spec's
++ * worked examples. Exact `Fraction`s so tier arithmetic never leaks a float.
++ */
++export const TIER_TABLE: TierTable = {
++  belt: [60, 120, 270, 480, 780, 1200].map((n) => Fraction.from(n)),
++  pipe: [300, 600].map((n) => Fraction.from(n)),
++};
+diff --git a/src/data/types.ts b/src/data/types.ts
+new file mode 100644
+index 0000000..e27f355
+--- /dev/null
++++ b/src/data/types.ts
+@@ -0,0 +1,44 @@
++import { Fraction } from "../core/fraction.ts";
++
++/** A game item — solid or fluid. `isFluid` drives lane kind (belt vs pipe). */
++export interface CatalogItem {
++  id: string;
++  displayName: string;
++  isFluid: boolean;
++}
++
++/** A producing machine (Smelter, Constructor, …). Id + name only — no power. */
++export interface CatalogMachine {
++  id: string;
++  displayName: string;
++}
++
++/** One recipe input/output at 100% clock, exact per-minute flow. */
++export interface RecipeIO {
++  itemId: string;
++  perMinute: Fraction;
++}
++
++export interface CatalogRecipe {
++  id: string;
++  displayName: string;
++  machineId: string;
++  isAlternate: boolean;
++  inputs: RecipeIO[];
++  outputs: RecipeIO[];
++  /** = outputs[0].itemId (the port's primary-output rule, renamed field). */
++  primaryOutputId: string;
++}
++
++/** Unlocked transport-tier throughputs per kind, ascending. */
++export interface TierTable {
++  belt: Fraction[];
++  pipe: Fraction[];
++}
++
++export interface Catalog {
++  items: Record<string, CatalogItem>;
++  machines: Record<string, CatalogMachine>;
++  recipes: Record<string, CatalogRecipe>;
++  tiers: TierTable;
++}
