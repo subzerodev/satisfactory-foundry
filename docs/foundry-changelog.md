@@ -3,6 +3,18 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-03 — Stage 1, Phase 3: the app's memory
+
+> Hey Michael — the app now has its working memory: it remembers which
+> recipe you picked, how many machines, your overclock, which belt and pipe
+> tiers you've unlocked (that part survives closing the browser), and any
+> per-belt tweaks — and it recalculates the whole manifold instantly every
+> time you change any of them. It's also careful around re-uploads: a broken
+> file never wipes anything, and a genuinely new game-data file safely
+> resets only what can no longer be trusted.
+>
+> One more piece to go: the screen itself. Next phase draws the schematic.
+
 ## 2026-08-03 — Stage 1, Phase 2: reading your game's data
 
 > Hey Michael — the app can now read the game's own Docs.json file. Drop the

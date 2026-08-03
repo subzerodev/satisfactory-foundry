@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-03
 **Status:** in-progress
-**Current phase:** Phase 2 COMPLETE (merged to develop 2026-08-03) — Phase 3 at USER GATE
+**Current phase:** Phase 3 COMPLETE (merged to develop 2026-08-03) — Phase 4 at USER GATE
 **Final PR:** —
 **Epic:** #2 (board #21, Stage 1 milestone)
 
@@ -51,19 +51,19 @@ Feature spec: `docs/superpowers/specs/2026-08-03-manifold-visualizer-design.md`
 
 ### Phase 3 — src/state Zustand store
 
-- **Status:** ready-to-design (trigger met: Phase 2 merged to develop
-  2026-08-03) — awaiting USER GATE greenlight
-- **Spec:** feature spec §Architecture (src/state) — one store: selection (recipe, machine count, clock %, unlocked tiers, overrides) + derived solve result; unlocked tiers in localStorage
-- **Plan:** N/A — written after the Phase 3 brainstorm+spec freeze
-- **Contracts to target:** `toStageInput(recipe, catalog, opts)` + `solveStage` + `loadCatalog`/`saveCatalog` (all live on develop)
+- **Status:** complete (merged --no-ff to develop 2026-08-03; 155/155 tests;
+  boundary review converged first-try; ticket #5 Done)
+- **Ticket:** #5 (Done, closed)
+- **Brainstorm/Spec/Plan:** all FROZEN in `features/manifold-visualizer/phase-3/`
+- **Phase report:** `features/manifold-visualizer/phase-3/completion.md`
 
 ### Phase 4 — src/ui React SVG schematic
 
-- **Status:** defer-until-phase-3-lands
+- **Status:** ready-to-design (trigger met: Phase 3 merged to develop
+  2026-08-03) — awaiting USER GATE greenlight
 - **Spec:** feature spec §UI (approved mockup: controls strip, summary cards, SVG schematic with entry/break-out arrows, findings panel)
-- **Plan:** N/A — deferred
-- **Reason for defer:** consumes the store's selectors/actions (Phase 3).
-- **Trigger to re-classify:** Phase 3 merged to develop.
+- **Plan:** N/A — written after the Phase 4 brainstorm+spec freeze
+- **Contracts to target:** `useAppStore` + the eight store actions + `solve` state (all live on develop; see phase-3/completion.md §Handed to Phase 4)
 
 ## Cross-phase dependencies
 
