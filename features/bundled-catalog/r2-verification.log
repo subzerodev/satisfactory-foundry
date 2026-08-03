@@ -32,17 +32,29 @@ Family 2 — init bundled fallback branch (src/state/store.ts)
 Break: `bundled = await bundledDocsProvider();`
     →  `bundled = null; // bundled fallback disabled`   (never consult provider)
 
-`npx vitest run src/state/store.test.ts`:
+`npx vitest run src/state/store.test.ts` (the committed suite, 35 tests):
 
     × empty cache + bundled provider → bundled-ready, cached, source persisted
     × version-stale cache + bundled provider → bundled-ready
-    × bundled-ready but save fails (broken IDB) → usable this session + note
+    × empty cache + bundled provider but SAVE fails → bundled-ready +
+      could-not-cache note (never-block save)
+    × IDB unavailable (broken open) → bundled-ready WITHOUT save + distinct note
+      (boundary r1 fold)
+    × preserves an unreadable user row — no destructive bundled overwrite
+      (data-loss proof)
     × uploading over a bundled catalog flips the source to user
-    FAIL  … > empty cache + bundled provider → bundled-ready …
+
+    FAIL  src/state/store.test.ts > bundled default catalog (ticket #9) >
+          empty cache + bundled provider → bundled-ready, cached, source persisted
     AssertionError: expected 'needs-upload' to be 'ready' // Object.is equality
-    FAIL  … > uploading over a bundled catalog flips the source to user
+    FAIL  src/state/store.test.ts > bundled default catalog (ticket #9) >
+          empty cache + bundled provider but SAVE fails → bundled-ready +
+          could-not-cache note (never-block save)
+    AssertionError: expected 'needs-upload' to be 'ready' // Object.is equality
+    FAIL  src/state/store.test.ts > bundled default catalog (ticket #9) >
+          uploading over a bundled catalog flips the source to user
     AssertionError: expected null to match object { kind: 'bundled' }
-    Tests  4 failed | 28 passed (32)
+    Tests  6 failed | 29 passed (35)
 
 Restore → `await bundledDocsProvider()` → PASS.
 
@@ -91,15 +103,25 @@ Break: `catch { return { status: "unavailable" }; }`
           destructive bundled overwrite (data-loss proof)
     AssertionError: expected 'bundled catalog loaded but could not …' to be
       'cached data couldn't be read this session — using bundled data'
-    Tests  3 failed | 39 passed (42)
+    Tests  3 failed | 40 passed (43)
 
-The data-loss proof failing on the reverted classification is the key signal:
-with the access failure re-mapped to stale, init takes the SAVE path and the
-memoized-healthy connection lets the put overwrite the user row — exactly the
-defect. Restore → `unavailable` → PASS.
+Key signal — and a precise note on what this test does and does NOT reproduce:
+the injected break in the data-preservation test is a broken `open()` (the
+whole IDB is down), not a healthy-open/failing-get. So under the reverted
+`stale` classification, init takes the empty/stale SAVE path and calls
+saveCatalog — but that save is *attempted and FAILS* (openDb rejects, memoized),
+so the catalog is NOT literally overwritten in THIS scenario. What the test
+catches is the wrong RECOVERY: on boot-2 the note is the save-fail
+"could not be cached" string instead of the unavailable "couldn't be read" one,
+which asserts init wrongly classified the access failure as stale. The
+production overwrite path (healthy open, get rejects, put SUCCEEDS on the
+memoized-healthy connection) is the real defect the FIX forecloses — and the fix
+gates the invariant unconditionally: the `unavailable` branch skips saveCatalog
+regardless of whether the subsequent write would have succeeded or failed, so no
+`unavailable` boot ever writes. Restore → `unavailable` → PASS.
 
 --------------------------------------------------------------------------
-Final: `npm test` → Test Files 11 passed (11), Tests 225 passed (225).
+Final: `npm test` → Test Files 11 passed (11), Tests 226 passed (226).
 
 All four families are bidirectional: the tests fail when their behavior is
 removed and pass when it is restored — they gate real behavior, not tautology.

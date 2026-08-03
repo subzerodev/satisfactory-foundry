@@ -665,6 +665,90 @@ describe("bundled default catalog (ticket #9)", () => {
     expect(s.catalogSource).toMatchObject({ kind: "bundled" });
   });
 
+  it("empty cache + bundled provider but SAVE fails → bundled-ready + could-not-cache note (never-block save)", async () => {
+    setBundledDocsProvider(async () => ({
+      text: DOCS_TEXT,
+      provenance: BUNDLED_PROVENANCE,
+    }));
+    // A stub IDB where open + a readonly get SUCCEED (so loadCatalog reads an
+    // EMPTY row, not 'unavailable') but a readwrite put FAILS — so init takes
+    // the empty→bundled+SAVE path and hits the never-block save catch
+    // (store.ts:377-385), NOT the unavailable path. This is the one branch the
+    // broken-open tests can't reach (there open itself fails → unavailable).
+    resetDbCache();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).indexedDB = {
+      open: () => {
+        const req: Record<string, unknown> = {
+          result: {
+            transaction(_store: string, mode: string) {
+              return {
+                objectStore() {
+                  return {
+                    get() {
+                      const r: Record<string, unknown> = {
+                        result: undefined,
+                        onsuccess: null,
+                        onerror: null,
+                      };
+                      queueMicrotask(() => {
+                        // readonly get → resolve empty (undefined row).
+                        if (typeof r.onsuccess === "function")
+                          (r.onsuccess as () => void)();
+                      });
+                      return r;
+                    },
+                    put() {
+                      const r: Record<string, unknown> = {
+                        error: new Error("boom: readwrite put failed"),
+                        onsuccess: null,
+                        onerror: null,
+                      };
+                      queueMicrotask(() => {
+                        // readwrite put → reject, exercising the save catch.
+                        if (
+                          mode === "readwrite" &&
+                          typeof r.onerror === "function"
+                        )
+                          (r.onerror as () => void)();
+                        else if (typeof r.onsuccess === "function")
+                          (r.onsuccess as () => void)();
+                      });
+                      return r;
+                    },
+                  };
+                },
+              };
+            },
+          },
+          onupgradeneeded: null,
+          onsuccess: null,
+          onerror: null,
+        };
+        queueMicrotask(() => {
+          if (typeof req.onsuccess === "function")
+            (req.onsuccess as () => void)();
+        });
+        return req;
+      },
+    };
+
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    const s = store.getState();
+    // Bundled catalog usable this session even though it could not be cached.
+    expect(s.catalog.status).toBe("ready");
+    if (s.catalog.status === "ready") {
+      expect(s.catalog.catalog.recipes["ingot_iron"]).toBeDefined();
+    }
+    expect(s.catalogSource).toMatchObject({ kind: "bundled" });
+    // The save-fail note (store.ts:377-385) — distinct from the unavailable
+    // "couldn't be read" note.
+    expect(s.uploadError).toMatch(
+      /^bundled catalog loaded but could not be cached: /,
+    );
+  });
+
   it("a cache hit BEATS the bundled provider (source from the row)", async () => {
     // Seed a user catalog through the real save path → loadCatalog hits it.
     await saveCatalog(DOCS_TEXT, parseCatalogFromText(DOCS_TEXT));
