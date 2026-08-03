@@ -107,8 +107,8 @@ export class Fraction {
       );
     }
     const digits = intPart + fracPart;
-    const num = sign * BigInt(digits === "" ? "0" : digits);
-    const den = ONE * 10n ** BigInt(fracPart.length);
+    const num = sign * BigInt(digits);
+    const den = 10n ** BigInt(fracPart.length);
     return Fraction.normalize(num, den);
   }
 
