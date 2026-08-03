@@ -3,6 +3,18 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-03 — Stage 2: save your factory plans
+
+> Hey Michael — you can name and keep your setups now. Dial in a stage
+> (recipe, machines, overclock, tiers, belt tweaks), type a name, hit
+> Save — it's stored in your browser and survives closing the tab. Load
+> any saved plan and everything comes back exactly as you left it, down
+> to fractional overclocks. Rename and delete work as you'd expect;
+> saving under an existing name updates that plan. Two plans can never
+> share a name, and even a double-click on Save can't create a
+> duplicate. This is also the foundation for what's next: chaining
+> stages together into a whole-factory view.
+
 ## 2026-08-03 — Bundled game data: no more file hunting
 
 > Hey Michael — the app now just works on first open. It ships with a

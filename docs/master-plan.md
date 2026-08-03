@@ -33,4 +33,42 @@ note at `features/stage0-bootstrap/completion.md`).
   released via PR #7 (`develop → main`, merge 8875c4a); 208/208 tests.
   Record: `features/manifold-visualizer/final-report.md`.
 - **Post-release follow-on:** #9 bundled default catalog (decision #8 —
-  boot-ready without an upload; not part of the Stage 1 release).
+  boot-ready without an upload; not part of the Stage 1 release). SHIPPED
+  2026-08-03 via PR #10 (merge 7de608a); 226/226 tests.
+
+## Growth-path sequence (Stages 2–5)
+
+**Decision (Michael, 2026-08-03):** run all four v1 growth-path arcs
+sequentially — save/load → chained stages → physical layout → polish — with
+opus/sonnet implementation-agent dispatch (opus for design-judgment tasks,
+sonnet for mechanical; review roster stays all-Claude per epic #2). Order
+rationale: serialization de-risks chaining; layout builds on the chained
+canvas; polish lands last on the finished surface.
+
+## Stage 2 — Plan save/load
+
+- **Goal:** serialize the store to named, locally-persisted factory plans
+  (save/list/load/rename/delete), exactness preserved, format forward-open
+  for Stage 3's stage graphs.
+- **Ticket:** #11 (milestone 73). **Status: SHIPPED 2026-08-03** — merged
+  to develop (264/264 tests; 6-round design gate + first-try boundary
+  convergence); released via the Stage 2 PR.
+
+## Stage 3 — Chained stages (graph editor)
+
+- **Goal:** the endgame — a factory graph of linked manifold stages (React
+  Flow node editor); one stage's outputs feed the next; supersedes the
+  third-party Modeler. Tier-3 multi-phase arc; decomposition at pickup.
+- **Epic:** #12 (milestone 74). Blocked-by Stage 2.
+
+## Stage 4 — Physical layout layer
+
+- **Goal:** geometry over the solve — footprints, splitter placement,
+  foundation alignment; the schematic becomes a buildable blueprint view.
+- **Ticket:** #13 (milestone 75). Blocked-by Stage 3.
+
+## Stage 5 — Polish round
+
+- **Goal:** UX batch on the finished surface (styled tooltips, drag-drop
+  upload, dark mode, large-N labels + accumulated small items).
+- **Ticket:** #14 (milestone 76). Blocked-by Stage 4.

@@ -5,6 +5,8 @@ import { resetDbCache } from "../data/db.ts";
 import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
+import { TIER_TABLE } from "../data/tiers.ts";
+import type { PlanFileV1 } from "../data/plan-store.ts";
 import { createAppStore, setBundledDocsProvider } from "./store.ts";
 import type { StateStorage } from "zustand/middleware";
 
@@ -173,6 +175,22 @@ const BUNDLED_PROVENANCE = {
   steamBuild: "23855724",
   extractedAt: "2026-04-30",
 };
+
+/**
+ * Build a valid StoredCatalog row (the exact shape loadCatalog revives) by
+ * running the real save path against a throwaway fake-idb, reading the row, then
+ * discarding that database. Used to seed a v1 database for the upgrade test
+ * without opening at v2 ourselves.
+ */
+async function buildV1CatalogRow(): Promise<unknown> {
+  await freshIdb();
+  await saveCatalog(DOCS_TEXT, parseCatalogFromText(DOCS_TEXT));
+  const { openDb } = await import("../data/db.ts");
+  const db = await openDb();
+  const row = await db.get<unknown>("catalog", "current");
+  await freshIdb(); // discard the throwaway database
+  return row;
+}
 
 beforeEach(async () => {
   await freshIdb();
@@ -916,5 +934,311 @@ describe("bundled default catalog (ticket #9)", () => {
     // A user upload replaces the catalog and its provenance.
     await store.getState().uploadDocsText(DOCS_TEXT_COPPER);
     expect(store.getState().catalogSource).toEqual({ kind: "user" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan lifecycle (ticket #11) — the full save/load matrix
+// ---------------------------------------------------------------------------
+
+describe("plan lifecycle (ticket #11)", () => {
+  // A ready store with a real iron catalog + a selection worth round-tripping.
+  async function readyStore() {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    return store;
+  }
+
+  it("save → list → load round-trips the EXACT selection (fractional clock + override strings + tiers)", async () => {
+    const store = await readyStore();
+    store.getState().setUnlockedTiers({ belt: 4, pipe: 1 });
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setMachineCount(20);
+    store.getState().setClockPercentText("37.5");
+    store.getState().setOverride("feeds", "ore_iron", 0, "480");
+
+    const saved = store.getState().selection;
+    await store.getState().savePlanAs("Iron Line");
+    expect(store.getState().plans).toHaveLength(1);
+    const id = store.getState().plans![0]!.id;
+
+    // Mutate the live selection away, then load the plan back.
+    store.getState().setClockPercentText("999");
+    store.getState().setMachineCount(3);
+    await store.getState().loadPlan(id);
+
+    const s = store.getState().selection;
+    expect(s.clockPercentText).toBe("37.5");
+    expect(s.machineCount).toBe(20);
+    expect(s.recipeId).toBe("ingot_iron");
+    expect(s.unlockedTiers).toEqual(saved.unlockedTiers);
+    expect(s.overrides.feeds.ore_iron).toEqual(["480"]);
+    // A single derive ran on load → the restored selection solves.
+    expect(store.getState().solve.status).toBe("solved");
+  });
+
+  it("save-by-name overwrites (same id, bumped updatedAt), never duplicates", async () => {
+    const store = await readyStore();
+    store.getState().setClockPercentText("100");
+    await store.getState().savePlanAs("Plan");
+    const first = store.getState().plans![0]!;
+
+    store.getState().setClockPercentText("250");
+    await store.getState().savePlanAs("Plan");
+    const plans = store.getState().plans!;
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!.id).toBe(first.id);
+    expect(plans[0]!.updatedAt >= first.updatedAt).toBe(true);
+
+    // The overwrite carries the new selection.
+    await store.getState().loadPlan(first.id);
+    expect(store.getState().selection.clockPercentText).toBe("250");
+  });
+
+  it("rename changes the name under the same id", async () => {
+    const store = await readyStore();
+    await store.getState().savePlanAs("Before");
+    const id = store.getState().plans![0]!.id;
+    await store.getState().renamePlan(id, "After");
+    const plans = store.getState().plans!;
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!.id).toBe(id);
+    expect(plans[0]!.name).toBe("After");
+  });
+
+  it("rename-to-collision is REFUSED with planError (state untouched)", async () => {
+    const store = await readyStore();
+    await store.getState().savePlanAs("Alpha");
+    await store.getState().savePlanAs("Beta");
+    const beta = store.getState().plans!.find((p) => p.name === "Beta")!;
+    await store.getState().renamePlan(beta.id, "Alpha");
+    expect(store.getState().planError).toMatch(/already exists/);
+    // Beta is still Beta (no rename happened).
+    expect(store.getState().plans!.find((p) => p.id === beta.id)!.name).toBe(
+      "Beta",
+    );
+  });
+
+  it("empty / whitespace name is rejected with planError", async () => {
+    const store = await readyStore();
+    await store.getState().savePlanAs("   ");
+    expect(store.getState().planError).toBe("plan name required");
+    expect(store.getState().plans ?? []).toHaveLength(0);
+  });
+
+  it("name matching is trimmed (savePlanAs('  X  ') overwrites 'X')", async () => {
+    const store = await readyStore();
+    await store.getState().savePlanAs("X");
+    await store.getState().savePlanAs("  X  ");
+    expect(store.getState().plans).toHaveLength(1);
+    expect(store.getState().plans![0]!.name).toBe("X");
+  });
+
+  it("null-window uniqueness: savePlanAs overwrites an existing name with state.plans still null", async () => {
+    // Seed a plan through one store, then a FRESH store that never refreshed
+    // (state.plans === null) saves the same name — the fresh listPlans() read at
+    // op time must see the existing row and OVERWRITE, not duplicate.
+    const seedStore = await readyStore();
+    await seedStore.getState().savePlanAs("Shared");
+    const seedId = seedStore.getState().plans![0]!.id;
+
+    const fresh = await readyStore();
+    expect(fresh.getState().plans).toBeNull(); // never refreshed
+    await fresh.getState().savePlanAs("Shared");
+    // Exactly one row, and it reused the existing id.
+    const all = await (await import("../data/plan-store.ts")).listPlans();
+    expect(all).toHaveLength(1);
+    expect(all[0]!.id).toBe(seedId);
+  });
+
+  it("concurrent double savePlanAs('A') (two unawaited calls) → exactly ONE row", async () => {
+    const store = await readyStore();
+    // Two unawaited calls before either resolves: without serialization both
+    // would see no "A" and both create. The chain forces create-then-overwrite.
+    const p1 = store.getState().savePlanAs("A");
+    const p2 = store.getState().savePlanAs("A");
+    await Promise.all([p1, p2]);
+    const all = await (await import("../data/plan-store.ts")).listPlans();
+    expect(all).toHaveLength(1);
+  });
+
+  it("chain rejection-resilience: an op forced to fail sets planError, and the NEXT op still runs", async () => {
+    const store = await readyStore();
+    // Break IDB so the next enqueued op fails, then restore for the following op.
+    breakIdbOpen();
+    await store.getState().savePlanAs("WillFail");
+    expect(store.getState().planError).not.toBeNull();
+
+    // The chain is NOT poisoned — a following op runs to completion.
+    await freshIdb();
+    await store.getState().savePlanAs("Works");
+    const all = await (await import("../data/plan-store.ts")).listPlans();
+    expect(all.map((p) => p.name)).toEqual(["Works"]);
+  });
+
+  it("delete removes the plan; refresh reflects it", async () => {
+    const store = await readyStore();
+    await store.getState().savePlanAs("Doomed");
+    const id = store.getState().plans![0]!.id;
+    await store.getState().deletePlan(id);
+    expect(store.getState().plans).toHaveLength(0);
+  });
+
+  it("load-corrupt → planError, selection untouched", async () => {
+    const store = await readyStore();
+    store.getState().selectRecipe("ingot_iron");
+    const before = store.getState().selection;
+    // Write a corrupt row directly, then load it.
+    const db = await (await import("../data/db.ts")).openDb();
+    await db.put("plans", { format_version: 2 }, "corrupt-id");
+    await store.getState().loadPlan("corrupt-id");
+    expect(store.getState().planError).not.toBeNull();
+    expect(store.getState().selection).toEqual(before);
+  });
+
+  it("corrupt row is skipped in the list", async () => {
+    const store = await readyStore();
+    await store.getState().savePlanAs("Good");
+    const db = await (await import("../data/db.ts")).openDb();
+    await db.put("plans", { garbage: true }, "corrupt-id");
+    await store.getState().refreshPlans();
+    expect(store.getState().plans!.map((p) => p.name)).toEqual(["Good"]);
+  });
+
+  it("dangling recipeId on load → null + idle solve (#5 re-validation)", async () => {
+    // Save a plan referencing ingot_iron, then load it against a catalog that
+    // dropped that recipe (uploaded copper). The recipeId re-validates to null.
+    const store = await readyStore();
+    store.getState().selectRecipe("ingot_iron");
+    await store.getState().savePlanAs("Iron");
+    const id = store.getState().plans![0]!.id;
+
+    await store.getState().uploadDocsText(DOCS_TEXT_COPPER);
+    await store.getState().loadPlan(id);
+    expect(store.getState().selection.recipeId).toBeNull();
+    expect(store.getState().solve.status).toBe("idle");
+  });
+
+  it("out-of-range tiers on load → clamped via clampTier", async () => {
+    const store = await readyStore();
+    await store.getState().savePlanAs("Base");
+    const id = store.getState().plans![0]!.id;
+    // Hand-edit the stored plan to hold an absurd tier count.
+    const db = await (await import("../data/db.ts")).openDb();
+    const plan = (await db.get<PlanFileV1>("plans", id))!;
+    plan.stages[0]!.selection.unlockedTiers = { belt: 999, pipe: -3 };
+    await db.put("plans", plan, id);
+
+    await store.getState().loadPlan(id);
+    const t = store.getState().selection.unlockedTiers;
+    expect(t.belt).toBe(TIER_TABLE.belt.length); // clamped to max
+    expect(t.pipe).toBe(1); // clamped to min
+  });
+
+  it("machineCount null in file → NaN → rendered invalid on load", async () => {
+    const store = await readyStore();
+    store.getState().selectRecipe("ingot_iron");
+    await store.getState().savePlanAs("Base");
+    const id = store.getState().plans![0]!.id;
+    const db = await (await import("../data/db.ts")).openDb();
+    const plan = (await db.get<PlanFileV1>("plans", id))!;
+    // JSON.stringify(NaN) emits null; the stored file legitimately holds it.
+    (
+      plan.stages[0]!.selection as { machineCount: number | null }
+    ).machineCount = null;
+    await db.put("plans", plan, id);
+
+    await store.getState().loadPlan(id);
+    expect(Number.isNaN(store.getState().selection.machineCount)).toBe(true);
+    const solve = store.getState().solve;
+    expect(solve.status).toBe("invalid");
+    if (solve.status === "invalid")
+      expect(solve.reason).toBe("bad-machine-count");
+  });
+
+  it("plan ops with broken IDB → planError, never a crash", async () => {
+    const store = await readyStore();
+    breakIdbOpen();
+    await store.getState().refreshPlans();
+    expect(store.getState().planError).not.toBeNull();
+  });
+
+  it("loading a plan never touches the catalog or catalogSource", async () => {
+    const store = await readyStore();
+    store.getState().selectRecipe("ingot_iron");
+    await store.getState().savePlanAs("Base");
+    const id = store.getState().plans![0]!.id;
+    const catBefore = store.getState().catalog;
+    const sourceBefore = store.getState().catalogSource;
+    await store.getState().loadPlan(id);
+    expect(store.getState().catalog).toBe(catBefore);
+    expect(store.getState().catalogSource).toBe(sourceBefore);
+  });
+
+  it("v1→v2 DB upgrade preserves the catalog row (init reads it back as ready)", async () => {
+    // Seed the database at v1 (single `catalog` store) with a real, revivable
+    // StoredCatalog row — exactly what the pre-#11 build wrote — WITHOUT going
+    // through the app's save path (which would open at v2 and skip the upgrade).
+    // Then boot: openDb's additive v2 upgrade must leave the row intact, so init
+    // lands 'ready' and the newly-created plans store is usable alongside it.
+    const storedRow = await buildV1CatalogRow();
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open("satis_foundry", 1);
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore("catalog");
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction("catalog", "readwrite");
+        tx.objectStore("catalog").put(storedRow, "current");
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+      req.onerror = () => reject(req.error);
+    });
+
+    resetDbCache();
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    if (s.catalog.status === "ready") {
+      expect(s.catalog.catalog.recipes["ingot_iron"]).toBeDefined();
+    }
+    // The plans store is present post-upgrade: a plan op runs cleanly.
+    await store.getState().refreshPlans();
+    expect(store.getState().planError).toBeNull();
+    expect(store.getState().plans).toEqual([]);
+  });
+
+  it("onblocked open → unavailable degrade, never a hang", async () => {
+    // A concurrent old-version connection blocks the upgrade: openDb fires
+    // onblocked → reject, which loadCatalog collapses to 'unavailable'. With no
+    // bundled provider, init must SETTLE in the unavailable degrade (mapped to
+    // needs-upload{stale}) — the key assertion is that init resolves at all.
+    resetDbCache();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).indexedDB = {
+      open: () => {
+        const req: Record<string, unknown> = {
+          onupgradeneeded: null,
+          onsuccess: null,
+          onerror: null,
+          onblocked: null,
+        };
+        queueMicrotask(() => {
+          if (typeof req.onblocked === "function")
+            (req.onblocked as () => void)();
+        });
+        return req;
+      },
+    };
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init(); // must resolve, not hang
+    const s = store.getState();
+    expect(s.catalog.status).toBe("needs-upload");
   });
 });
