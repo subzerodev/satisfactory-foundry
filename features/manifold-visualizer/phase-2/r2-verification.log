@@ -1,0 +1,107 @@
+Phase 2 src/data bidirectionality verification log
+(per behaviour class: PASS -> genuine referenced FAIL -> restore -> green)
+
+======================================================================
+BEHAVIOUR CLASS: exact rate math
+  break: fluid divide-by-1000 changed to divide-by-100 (rate math corrupted)
+  test:  src/data/docs-loader.test.ts :: filter='fluid'
+======================================================================
+--- [1] PASS baseline (referenced test green) ---
+      Tests  1 passed | 15 skipped (16)
+--- [2] BREAK applied, referenced test FAILS ---
+     × fluid ×1000→m³ exactness: water perMinute is EXACTLY 100 (Amount=10000/dur 6) 5ms
+      Tests  1 failed | 15 skipped (16)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/docs-loader.test.ts > parseDocsJson — items + machines + shape (spec row 1) > fluid ×1000→m³ exactness: water perMinute is EXACTLY 100 (Amount=10000/dur 6)
+AssertionError: expected false to be true // Object.is equality
+    144|     // 10000 L = 10 m³; 10 × 60 / 6 = 100 m³/min, exact via .div(1000).
+    147|     // Stone: 12 × 60 / 6 = 120/min (solid, untouched).
+--- [3] RESTORE (git checkout), referenced test GREEN again ---
+      Tests  1 passed | 15 skipped (16)
+
+======================================================================
+BEHAVIOUR CLASS: loud-failure boundary
+  break: zero/negative-duration throw guard disabled (silent instead of loud)
+  test:  src/data/docs-loader.test.ts :: filter='zero duration'
+======================================================================
+--- [1] PASS baseline (referenced test green) ---
+      Tests  1 passed | 15 skipped (16)
+--- [2] BREAK applied, referenced test FAILS ---
+     × zero duration throws DocsParseError (no ≤0 → 0 fallback) 4ms
+      Tests  1 failed | 15 skipped (16)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/docs-loader.test.ts > parseDocsJson — loud failures (spec row 3) > zero duration throws DocsParseError (no ≤0 → 0 fallback)
+AssertionError: expected error to be instance of DocsParseError
+--- [3] RESTORE (git checkout), referenced test GREEN again ---
+      Tests  1 passed | 15 skipped (16)
+
+======================================================================
+BEHAVIOUR CLASS: ported filters
+  break: unknown-building filter weakened (recipe leaks through)
+  test:  src/data/docs-loader.test.ts :: filter='producing building is unknown'
+======================================================================
+--- [1] PASS baseline (referenced test green) ---
+      Tests  1 passed | 15 skipped (16)
+--- [2] BREAK applied, referenced test FAILS ---
+     × skips a recipe whose producing building is unknown 4ms
+      Tests  1 failed | 15 skipped (16)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/docs-loader.test.ts > parseDocsJson — ported filters (spec row 4) > skips a recipe whose producing building is unknown
+AssertionError: expected { id: 'thing', …(6) } to be undefined
+--- [3] RESTORE (git checkout), referenced test GREEN again ---
+      Tests  1 passed | 15 skipped (16)
+
+======================================================================
+BEHAVIOUR CLASS: toStageInput mapping/overrides
+  break: isFluid-to-pipe mapping forced to belt (fluid lane mis-typed)
+  test:  src/data/stage-input.test.ts :: filter='pipe lane'
+======================================================================
+--- [1] PASS baseline (referenced test green) ---
+      Tests  1 passed | 10 skipped (11)
+--- [2] BREAK applied, referenced test FAILS ---
+     × maps a fluid ingredient onto a pipe lane with pipe capacities 6ms
+      Tests  1 failed | 10 skipped (11)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/stage-input.test.ts > toStageInput — live-solver integration proof (spec row 5) > maps a fluid ingredient onto a pipe lane with pipe capacities
+AssertionError: expected 'belt' to be 'pipe' // Object.is equality
+--- [3] RESTORE (git checkout), referenced test GREEN again ---
+      Tests  1 passed | 10 skipped (11)
+
+======================================================================
+BEHAVIOUR CLASS: parseRational round-trip
+  break: signed-int validation disabled (garbage coerces instead of throwing)
+  test:  src/data/stage-input.test.ts :: filter='throws on garbage'
+======================================================================
+--- [1] PASS baseline (referenced test green) ---
+      Tests  1 passed | 10 skipped (11)
+--- [2] BREAK applied, referenced test FAILS ---
+     × throws on garbage (never a Fraction.toString() form) 3ms
+      Tests  1 failed | 10 skipped (11)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/stage-input.test.ts > parseRational — round-trip reviver (spec row 6) > throws on garbage (never a Fraction.toString() form)
+AssertionError: expected throw for "": expected [Function] to throw an error
+    245|         `expected throw for ${JSON.stringify(bad)}`,
+--- [3] RESTORE (git checkout), referenced test GREEN again ---
+      Tests  1 passed | 10 skipped (11)
+
+======================================================================
+BEHAVIOUR CLASS: cache stale/hit
+  break: version-mismatch stale gate removed (stale row served as hit)
+  test:  src/data/catalog-store.test.ts :: filter='version mismatch'
+======================================================================
+--- [1] PASS baseline (referenced test green) ---
+      Tests  1 passed | 3 skipped (4)
+--- [2] BREAK applied, referenced test FAILS ---
+     × returns stale (never throws) on a parser-version mismatch 14ms
+      Tests  1 failed | 3 skipped (4)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/catalog-store.test.ts > catalog cache — round-trip (spec row 7) > returns stale (never throws) on a parser-version mismatch
+AssertionError: expected 'hit' to be 'stale' // Object.is equality
+--- [3] RESTORE (git checkout), referenced test GREEN again ---
+      Tests  1 passed | 3 skipped (4)
+
+======================================================================
+FINAL: full suite green after all restores
+======================================================================
+ Test Files  5 passed (5)
+      Tests  131 passed (131)
