@@ -1,0 +1,97 @@
+Phase 3 bidirectionality verification log (ticket #5)
+=====================================================
+
+Method (per the workflow rule): for each behaviour class, confirm the test
+suite is GREEN with the correct production code (PASS), then introduce a
+targeted break in src/state/store.ts, run the specific referenced Vitest test,
+observe a GENUINE FAIL with the assertion delta, then restore the code and
+confirm GREEN again. The break is a real behavioural inversion — not a syntax
+error — so the FAIL proves the test actually pins the behaviour.
+
+Environment: node-env Vitest 4.1.10; fake-indexeddb for the catalog path;
+plain-object StateStorage stub for persistence. Baseline runtime-confirmed at
+drift-hunt: 131 existing tests green (not the trusted "131 figure" — re-run).
+After Task 1 + Task 2: 155 tests green (131 baseline + 24 store).
+
+Post-verification: src/state/store.ts restored byte-identical to the committed
+Task-1 version (`diff -q` clean; `git diff HEAD` empty).
+
+-----------------------------------------------------------------------------
+1. DERIVE RECOMPUTE  (frozen Axis 3 — every mutating action derives once)
+-----------------------------------------------------------------------------
+Test: "live derivation (spec row 4) > reproduces the Phase 1 20-machine worked
+       example through the REAL pipeline"
+PASS (baseline): feed belts = ['480','120'], enters [0,16]; output mirror.
+BREAK: setMachineCount omits its trailing derive() call.
+FAIL (genuine):
+  AssertionError: expected [ '60' ] to deeply equal [ '480', '120' ]
+  (solve reflects the pre-machineCount(20) state — stale, so the belts are the
+  1-machine result, proving the derive is what refreshes solve.)
+RESTORE → GREEN.
+
+-----------------------------------------------------------------------------
+2. CLEAR RULE  (frozen Axis 4 — clear iff the in-memory catalog is REPLACED)
+-----------------------------------------------------------------------------
+Test: "upload matrix (spec row 2) > parse + save success → ready(new),
+       overrides cleared, uploadError null" (+ two sibling replacement tests)
+PASS (baseline): after a successful re-upload, selection.overrides = {feeds:{},
+       outputs:{}}.
+BREAK: the parse-success set() no longer resets overrides on replacement.
+FAIL (genuine, 3 tests):
+  AssertionError: expected { feeds: { ore_iron: [ '60' ] }, …(1) } to deeply
+  equal { feeds: {}, outputs: {} }
+  (the stale override survives catalog replacement — the exact stale-solve lie
+  the design forbids; also fails the save-fail sub-case and the surviving-id
+  re-validation test, confirming all three pin the replacement-keyed clear.)
+RESTORE → GREEN.
+
+-----------------------------------------------------------------------------
+3. INVALID ROUTING  (frozen Axis 3 — parse/shape throw → invalid 'bad-override')
+-----------------------------------------------------------------------------
+Test: "invalid-input routing (spec row 5) > override on an item absent from the
+       recipe → invalid bad-override (buildLanes throws)"
+PASS (baseline): solve = invalid, reason 'bad-override'.
+BREAK: the toStageInput/override catch mis-routes reason to 'bad-clock'.
+FAIL (genuine):
+  AssertionError: expected 'bad-clock' to be 'bad-override'
+  (the shape throw is caught but tagged with the wrong channel — proves the
+  test pins the routing tag, not merely that SOMETHING is invalid.)
+RESTORE → GREEN.
+
+-----------------------------------------------------------------------------
+4. UPLOAD MATRIX BRANCH  (frozen Axis 4 — fresh-boot vs while-ready routing)
+-----------------------------------------------------------------------------
+Test: "upload matrix (spec row 2) > parse-fail on fresh boot →
+       needs-upload{upload-error, message}, solve idle"
+PASS (baseline): catalog = needs-upload{reason:'upload-error'}.
+BREAK: a parse failure always sets the transient uploadError channel, never the
+       needs-upload{upload-error} fresh-boot branch (hadReadyCatalog ignored).
+FAIL (genuine):
+  AssertionError: expected 'empty' to be 'upload-error'
+  (with the fresh-boot branch removed the catalog stays at its prior
+  needs-upload{empty}; proves the disjoint routing is what promotes fresh-boot
+  failure into the catalog channel.)
+RESTORE → GREEN.
+
+-----------------------------------------------------------------------------
+5. PERSISTENCE MERGE  (frozen Axis 5 — validating merge clamps/defaults tiers)
+-----------------------------------------------------------------------------
+Test: "persistence (spec row 7) > out-of-range persisted tiers are clamped on
+       hydration"
+PASS (baseline): persisted {belt:99, pipe:0} hydrates to {belt:6, pipe:1}.
+BREAK: merge passes persisted tier values through raw (clamp + default removed).
+FAIL (genuine):
+  AssertionError: expected { belt: 99, pipe: +0 } to deeply equal
+  { belt: 6, pipe: 1 }
+  (unclamped values reach selection.unlockedTiers — proves the custom
+  validating merge is what enforces [1..table-length].)
+  Cross-check: the "corrupt stored JSON → defaults" test stayed GREEN under this
+  break (zustand drops an unparseable payload before merge), so the clamp path
+  and the corrupt-drop path are independently exercised.
+RESTORE → GREEN.
+
+-----------------------------------------------------------------------------
+Result: all five behaviour classes bidirectionally verified — each has a test
+that GENUINELY fails when its production behaviour is inverted and passes when
+restored. No production fix was forced by the Task 2 tests (no drift-hunt
+re-trigger, no divergence note required).

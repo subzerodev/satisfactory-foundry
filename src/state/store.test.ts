@@ -63,6 +63,57 @@ const DOCS_TEXT = JSON.stringify([
   },
 ]);
 
+// A second catalog fragment that DROPS `ingot_iron` and adds `ingot_copper`,
+// to exercise re-upload re-validation (a dangling recipeId).
+const DOCS_TEXT_COPPER = JSON.stringify([
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGResourceDescriptor'",
+    Classes: [
+      {
+        ClassName: "Desc_OreCopper_C",
+        mDisplayName: "Copper Ore",
+        mForm: "RF_SOLID",
+      },
+    ],
+  },
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGItemDescriptor'",
+    Classes: [
+      {
+        ClassName: "Desc_CopperIngot_C",
+        mDisplayName: "Copper Ingot",
+        mForm: "RF_SOLID",
+      },
+    ],
+  },
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'",
+    Classes: [{ ClassName: "Build_SmelterMk1_C", mDisplayName: "Smelter" }],
+  },
+  {
+    NativeClass: "/Script/CoreUObject.Class'/Script/FactoryGame.FGRecipe'",
+    Classes: [
+      {
+        ClassName: "Recipe_IngotCopper_C",
+        mDisplayName: "Copper Ingot",
+        mIngredients:
+          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_OreCopper_C\"',Amount=1))",
+        mProduct:
+          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_CopperIngot_C\"',Amount=1))",
+        mManufactoringDuration: "2",
+        mProducedIn: "/Game/Path/Build_SmelterMk1_C",
+      },
+    ],
+  },
+]);
+
+// A second catalog fragment that KEEPS `ingot_iron` (same id) so re-upload
+// re-validation keeps the recipe but still clears overrides on replacement.
+const DOCS_TEXT_IRON_V2 = DOCS_TEXT;
+
 /** A fresh in-memory object-backed StateStorage stub (persist's storage API). */
 function makeStorageStub(seed?: Record<string, string>): {
   storage: StateStorage;
@@ -342,6 +393,204 @@ describe("overrides discipline (spec row 6)", () => {
     expect(store.getState().selection.overrides).toEqual({
       feeds: {},
       outputs: {},
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Row 2 — upload matrix (all FOUR sub-cases) + wide catch
+// ---------------------------------------------------------------------------
+
+describe("upload matrix (spec row 2)", () => {
+  it("parse-fail on fresh boot → needs-upload{upload-error, message}, solve idle", async () => {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init(); // needs-upload{empty}
+    // Non-JSON text → SyntaxError from JSON.parse — the wide catch routes it.
+    await store.getState().uploadDocsText("this is not json {");
+    const s = store.getState();
+    expect(s.catalog.status).toBe("needs-upload");
+    if (s.catalog.status === "needs-upload") {
+      expect(s.catalog.reason).toBe("upload-error");
+      expect(typeof s.catalog.message).toBe("string");
+      expect(s.catalog.message!.length).toBeGreaterThan(0);
+    }
+    // Fresh-boot failure lands in needs-upload, NOT the transient channel.
+    expect(s.uploadError).toBeNull();
+    expect(s.solve.status).toBe("idle");
+  });
+
+  it("parse-fail while ready → stays ready, overrides KEPT, uploadError set (DocsParseError)", async () => {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setOverride("feeds", "ore_iron", 0, "60");
+
+    // Valid JSON but a bad Docs schema → DocsParseError (non-array root).
+    await store.getState().uploadDocsText(JSON.stringify({ not: "an array" }));
+    const s = store.getState();
+    // A bad re-upload never bricks a working session.
+    expect(s.catalog.status).toBe("ready");
+    if (s.catalog.status === "ready") {
+      expect(s.catalog.catalog.recipes["ingot_iron"]).toBeDefined();
+    }
+    // Parse FAILURE keeps the old catalog AND its still-valid overrides.
+    expect(s.selection.overrides.feeds["ore_iron"]).toEqual(["60"]);
+    expect(s.uploadError).not.toBeNull();
+  });
+
+  it("parse + save success → ready(new), overrides cleared, uploadError null", async () => {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setOverride("feeds", "ore_iron", 0, "60");
+
+    // Re-upload a DIFFERENT valid catalog: catalog replaced → overrides clear.
+    await store.getState().uploadDocsText(DOCS_TEXT_COPPER);
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    if (s.catalog.status === "ready") {
+      expect(s.catalog.catalog.recipes["ingot_copper"]).toBeDefined();
+      expect(s.catalog.catalog.recipes["ingot_iron"]).toBeUndefined();
+    }
+    expect(s.selection.overrides).toEqual({ feeds: {}, outputs: {} });
+    expect(s.uploadError).toBeNull();
+  });
+
+  it("parse success + save fail (broken IDB) → ready(new) in memory, overrides cleared, uploadError notes cache miss", async () => {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setOverride("feeds", "ore_iron", 0, "60");
+
+    // Break the IDB layer test-side: reset the db-cache singleton, then swap
+    // globalThis.indexedDB for a factory whose open() synchronously errors, so
+    // saveCatalog's openDb rejects AFTER a successful parse.
+    resetDbCache();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).indexedDB = {
+      open: () => {
+        const req: Record<string, unknown> = {
+          error: new Error("boom: IDB open failed"),
+          onupgradeneeded: null,
+          onsuccess: null,
+          onerror: null,
+        };
+        // Fire the error callback asynchronously, like a real IDBOpenDBRequest.
+        queueMicrotask(() => {
+          if (typeof req.onerror === "function") (req.onerror as () => void)();
+        });
+        return req;
+      },
+    };
+
+    await store.getState().uploadDocsText(DOCS_TEXT_COPPER);
+    const s = store.getState();
+    // The catalog is usable this session even though it could not be cached.
+    expect(s.catalog.status).toBe("ready");
+    if (s.catalog.status === "ready") {
+      expect(s.catalog.catalog.recipes["ingot_copper"]).toBeDefined();
+    }
+    // Replacement still clears overrides regardless of the save outcome.
+    expect(s.selection.overrides).toEqual({ feeds: {}, outputs: {} });
+    // The save failure surfaces on the transient channel, noting the cache miss.
+    expect(s.uploadError).not.toBeNull();
+    expect(s.uploadError).toMatch(/cache/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Row 3 — re-upload re-validation
+// ---------------------------------------------------------------------------
+
+describe("re-upload re-validation (spec row 3)", () => {
+  it("recipeId missing from the new catalog → reset to null → idle", async () => {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setMachineCount(5);
+    expect(store.getState().solve.status).toBe("solved");
+
+    // Copper catalog drops ingot_iron → the selection's recipeId dangles.
+    await store.getState().uploadDocsText(DOCS_TEXT_COPPER);
+    const s = store.getState();
+    expect(s.selection.recipeId).toBeNull();
+    expect(s.solve.status).toBe("idle");
+  });
+
+  it("recipeId surviving the new catalog → kept, overrides cleared, fresh solve", async () => {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    store.getState().setUnlockedTiers({ belt: 4, pipe: 1 });
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setMachineCount(20);
+    store.getState().setOverride("feeds", "ore_iron", 0, "60");
+
+    // Re-upload a catalog that KEEPS ingot_iron (same id): recipeId survives,
+    // overrides clear (catalog replaced), and a fresh solve runs.
+    await store.getState().uploadDocsText(DOCS_TEXT_IRON_V2);
+    const s = store.getState();
+    expect(s.selection.recipeId).toBe("ingot_iron");
+    expect(s.selection.overrides).toEqual({ feeds: {}, outputs: {} });
+    expect(s.solve.status).toBe("solved");
+    if (s.solve.status === "solved") {
+      // Fresh solve on the surviving recipe with no override → [480, 120].
+      expect(
+        s.solve.result.feeds[0]!.belts.map((b) => b.capacity.toString()),
+      ).toEqual(["480", "120"]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Row 7 — persistence (tiers only, via the object-stub storage)
+// ---------------------------------------------------------------------------
+
+describe("persistence (spec row 7)", () => {
+  it("tiers survive a store re-create via the stub; stored value is exactly {unlockedTiers} under satis_foundry:tiers", async () => {
+    const { storage, backing } = makeStorageStub();
+    const store = createAppStore(storage);
+    store.getState().setUnlockedTiers({ belt: 3, pipe: 1 });
+
+    // The stored value is written under the pinned key and carries ONLY the
+    // projected slice: { state: { unlockedTiers }, version }.
+    const raw = backing["satis_foundry:tiers"];
+    expect(raw).toBeDefined();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.state).toEqual({ unlockedTiers: { belt: 3, pipe: 1 } });
+
+    // Re-create the store against the SAME backing → hydration restores tiers
+    // before any action runs.
+    const store2 = createAppStore(storage);
+    expect(store2.getState().selection.unlockedTiers).toEqual({
+      belt: 3,
+      pipe: 1,
+    });
+  });
+
+  it("corrupt stored JSON → defaults (full table)", async () => {
+    const { storage } = makeStorageStub({
+      "satis_foundry:tiers": "{ this is not valid json",
+    });
+    const store = createAppStore(storage);
+    // The validating merge defaults corrupt/missing values to the full table.
+    expect(store.getState().selection.unlockedTiers).toEqual({
+      belt: 6,
+      pipe: 2,
+    });
+  });
+
+  it("out-of-range persisted tiers are clamped on hydration", async () => {
+    const { storage } = makeStorageStub({
+      "satis_foundry:tiers": JSON.stringify({
+        state: { unlockedTiers: { belt: 99, pipe: 0 } },
+        version: 0,
+      }),
+    });
+    const store = createAppStore(storage);
+    // belt clamps to the table length (6); pipe clamps up to the floor (1).
+    expect(store.getState().selection.unlockedTiers).toEqual({
+      belt: 6,
+      pipe: 1,
     });
   });
 });
