@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "forgejo-satisfactory-foundry": {
+      "type": "stdio",
+      "command": "${HOME}/.local/bin/forgejo-mcp",
+      "args": [],
+      "env": {
+        "FORGEJO_IDENTITY": "lumi2bot",
+        "FORGEJO_REPO_ROOT": "/home/subzerodev/workspace/satisfactory-foundry",
+        "XDG_RUNTIME_DIR": "/run/user/1000"
+      }
+    }
+  }
+}

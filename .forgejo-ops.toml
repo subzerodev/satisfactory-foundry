@@ -1,0 +1,24 @@
+# .forgejo-ops.toml — per-repo operating-model marker.
+# Read by the operating-model skill + forgejo-ops-mcp.
+#
+# NOTE: all top-level (table-less) keys come FIRST, before any [table] — in TOML
+# a key after [stages] would nest as stages.<key>, not a top-level key.
+
+board_project_id = 21
+wiki_pages       = ["Operating Model"]
+master_plan      = "docs/master-plan.md"
+operating_model  = "docs/operating-model.md"
+
+[board]
+columns        = ["Backlog", "To Do", "In Progress", "Done"]
+default_column = "To Do"       # where a newly-carded issue lands
+# Review/Blocked behaviour is INFERRED from `columns`: neither is a column here,
+# so review verdicts are audit comments and `blocked` is a label.
+
+[labels]
+type  = ["feat", "docs", "design", "fix", "chore", "test", "refactor"]
+extra = ["epic", "blocked"]    # stage:N labels are generated from [stages]
+
+[stages]
+"0" = "Stage 0 — Bootstrap"
+"1" = "Stage 1 — Manifold visualizer (v1)"

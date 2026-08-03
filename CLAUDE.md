@@ -8,8 +8,9 @@ third-party Satisfactory Modeler). Features are added one at a time, each in
 its correct architectural place. v1 = the manifold visualizer; design spec at
 `docs/superpowers/specs/2026-08-03-manifold-visualizer-design.md`.
 
-**Local until release** — no Forgejo repo exists yet; do not push any branch
-until Michael explicitly authorizes the first push.
+Forge: `sudohworks/satisfactory-foundry` on the sudohworks Forgejo (HTTP+broker
+origin; regular-push default applies). Board `#21`; operating model per
+`.forgejo-ops.toml` + `docs/operating-model.md`.
 
 ## Stack
 
