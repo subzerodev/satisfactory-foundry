@@ -144,6 +144,31 @@ async function freshIdb(): Promise<void> {
 }
 
 /** Fixed provenance for the bundled-fallback fixtures. */
+/**
+ * Swap globalThis.indexedDB for a factory whose open() always errors (after
+ * resetting the db-cache singleton) — the shared broken-IDB fault injection
+ * used by the save-fail (Phase 3) and unavailable-path (#9) tests.
+ */
+function breakIdbOpen(): void {
+  resetDbCache();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).indexedDB = {
+    open: () => {
+      const req: Record<string, unknown> = {
+        error: new Error("boom: IDB open failed"),
+        onupgradeneeded: null,
+        onsuccess: null,
+        onerror: null,
+      };
+      // Fire the error callback asynchronously, like a real IDBOpenDBRequest.
+      queueMicrotask(() => {
+        if (typeof req.onerror === "function") (req.onerror as () => void)();
+      });
+      return req;
+    },
+  };
+}
+
 const BUNDLED_PROVENANCE = {
   steamBuild: "23855724",
   extractedAt: "2026-04-30",
@@ -474,23 +499,7 @@ describe("upload matrix (spec row 2)", () => {
     // Break the IDB layer test-side: reset the db-cache singleton, then swap
     // globalThis.indexedDB for a factory whose open() synchronously errors, so
     // saveCatalog's openDb rejects AFTER a successful parse.
-    resetDbCache();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).indexedDB = {
-      open: () => {
-        const req: Record<string, unknown> = {
-          error: new Error("boom: IDB open failed"),
-          onupgradeneeded: null,
-          onsuccess: null,
-          onerror: null,
-        };
-        // Fire the error callback asynchronously, like a real IDBOpenDBRequest.
-        queueMicrotask(() => {
-          if (typeof req.onerror === "function") (req.onerror as () => void)();
-        });
-        return req;
-      },
-    };
+    breakIdbOpen();
 
     await store.getState().uploadDocsText(DOCS_TEXT_COPPER);
     const s = store.getState();
@@ -817,22 +826,7 @@ describe("bundled default catalog (ticket #9)", () => {
     // Break the IDB layer: loadCatalog now returns 'unavailable' (an access
     // failure, NOT stale). init runs the bundled fallback WITHOUT saving — so
     // the note is the distinct "couldn't be read" one, not the save-fail note.
-    resetDbCache();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).indexedDB = {
-      open: () => {
-        const req: Record<string, unknown> = {
-          error: new Error("boom: IDB open failed"),
-          onupgradeneeded: null,
-          onsuccess: null,
-          onerror: null,
-        };
-        queueMicrotask(() => {
-          if (typeof req.onerror === "function") (req.onerror as () => void)();
-        });
-        return req;
-      },
-    };
+    breakIdbOpen();
 
     const store = createAppStore(makeStorageStub().storage);
     await store.getState().init();
@@ -852,22 +846,7 @@ describe("bundled default catalog (ticket #9)", () => {
 
   it("IDB unavailable + provider degrades → needs-upload{stale} (unavailable is not a UI reason)", async () => {
     setBundledDocsProvider(async () => null);
-    resetDbCache();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).indexedDB = {
-      open: () => {
-        const req: Record<string, unknown> = {
-          error: new Error("boom: IDB open failed"),
-          onupgradeneeded: null,
-          onsuccess: null,
-          onerror: null,
-        };
-        queueMicrotask(() => {
-          if (typeof req.onerror === "function") (req.onerror as () => void)();
-        });
-        return req;
-      },
-    };
+    breakIdbOpen();
 
     const store = createAppStore(makeStorageStub().storage);
     await store.getState().init();
@@ -889,24 +868,9 @@ describe("bundled default catalog (ticket #9)", () => {
 
     // 2. Break IDB (open fails) and boot with a COPPER bundled provider. init
     //    sees 'unavailable' → bundled-ready (copper) WITHOUT saving.
-    resetDbCache();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const goodIdb = (globalThis as any).indexedDB;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).indexedDB = {
-      open: () => {
-        const req: Record<string, unknown> = {
-          error: new Error("boom: IDB open failed"),
-          onupgradeneeded: null,
-          onsuccess: null,
-          onerror: null,
-        };
-        queueMicrotask(() => {
-          if (typeof req.onerror === "function") (req.onerror as () => void)();
-        });
-        return req;
-      },
-    };
+    breakIdbOpen();
     setBundledDocsProvider(async () => ({
       text: DOCS_TEXT_COPPER,
       provenance: BUNDLED_PROVENANCE,
