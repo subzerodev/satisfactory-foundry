@@ -9,6 +9,7 @@ import {
   loadCatalog,
   CATALOG_PARSER_VERSION,
 } from "./catalog-store.ts";
+import type { CatalogSource } from "./catalog-store.ts";
 
 // A small catalog with a fractional rate, to prove Fraction-equality survives
 // the toString()/parseRational round-trip through IndexedDB.
@@ -111,3 +112,80 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     expect((await loadCatalog()).status).toBe("stale");
   });
 });
+
+describe("catalog cache — source provenance (ticket #9)", () => {
+  it("round-trips a bundled source on the hit", async () => {
+    const source: CatalogSource = {
+      kind: "bundled",
+      steamBuild: "23855724",
+      extractedAt: "2026-04-30",
+    };
+    await saveCatalog("raw docs text", sampleCatalog(), source);
+
+    const result = await loadCatalog();
+    expect(result.status).toBe("hit");
+    if (result.status !== "hit") return;
+    expect(result.source).toEqual(source);
+  });
+
+  it("defaults the source to user when saveCatalog omits it", async () => {
+    // The two-arg call site (upload's implicit user) persists no explicit
+    // source; the hit still carries a concrete { kind: 'user' }.
+    await saveCatalog("raw docs text", sampleCatalog());
+
+    const result = await loadCatalog();
+    expect(result.status).toBe("hit");
+    if (result.status !== "hit") return;
+    expect(result.source).toEqual({ kind: "user" });
+  });
+
+  it("revives a legacy row (no source field) as user", async () => {
+    // A row written before the source field existed: loadCatalog's
+    // `stored.source ?? { kind: 'user' }` default backfills it.
+    const db = await openDb();
+    await db.put(
+      "catalog",
+      {
+        catalog: serializedSample(),
+        source_hash: "x",
+        cached_at: new Date().toISOString(),
+        parser_version: CATALOG_PARSER_VERSION,
+      },
+      "current",
+    );
+
+    const result = await loadCatalog();
+    expect(result.status).toBe("hit");
+    if (result.status !== "hit") return;
+    expect(result.source).toEqual({ kind: "user" });
+  });
+});
+
+/** The JSON-safe shape saveCatalog would write for `sampleCatalog()`, used to
+ *  seed a legacy row directly (bypassing saveCatalog's source write). */
+function serializedSample() {
+  return {
+    items: {
+      ore_iron: { id: "ore_iron", displayName: "Iron Ore", isFluid: false },
+      iron_ingot: {
+        id: "iron_ingot",
+        displayName: "Iron Ingot",
+        isFluid: false,
+      },
+    },
+    machines: {
+      smelter_mk1: { id: "smelter_mk1", displayName: "Smelter" },
+    },
+    recipes: {
+      ingot_iron: {
+        id: "ingot_iron",
+        displayName: "Iron Ingot",
+        machineId: "smelter_mk1",
+        isAlternate: false,
+        inputs: [{ itemId: "ore_iron", perMinute: "75/2" }],
+        outputs: [{ itemId: "iron_ingot", perMinute: "30" }],
+        primaryOutputId: "iron_ingot",
+      },
+    },
+  };
+}

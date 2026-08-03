@@ -41,15 +41,29 @@ interface StoredCatalogData {
   recipes: Record<string, StoredRecipe>;
 }
 
+/**
+ * Provenance of the ready catalog: a user-uploaded Docs.json, or the bundled
+ * snapshot (with the Steam build + extraction date it was cut from). Persisted
+ * on the cache row so a reboot's `hit` still knows which one it is showing —
+ * that's what keeps the bundled-provenance banner from vanishing after the
+ * first reboot (ticket #9).
+ */
+export type CatalogSource =
+  | { kind: "user" }
+  | { kind: "bundled"; steamBuild: string; extractedAt: string };
+
 export interface StoredCatalog {
   catalog: StoredCatalogData;
   source_hash: string; // SHA-256 hex of the uploaded text
   cached_at: string; // ISO timestamp
   parser_version: number;
+  /** Absent on legacy rows written before this field existed; loadCatalog
+   *  backfills those as { kind: 'user' }. */
+  source?: CatalogSource;
 }
 
 export type CacheLoadResult =
-  | { status: "hit"; catalog: Catalog }
+  | { status: "hit"; catalog: Catalog; source: CatalogSource }
   | { status: "stale" }
   | { status: "empty" };
 
@@ -61,12 +75,14 @@ export type CacheLoadResult =
 export async function saveCatalog(
   text: string,
   catalog: Catalog,
+  source: CatalogSource = { kind: "user" },
 ): Promise<void> {
   const stored: StoredCatalog = {
     catalog: serializeCatalog(catalog),
     source_hash: await sha256Hex(text),
     cached_at: new Date().toISOString(),
     parser_version: CATALOG_PARSER_VERSION,
+    source,
   };
   const db = await openDb();
   await db.put(CATALOG_STORE, stored, CATALOG_KEY);
@@ -91,7 +107,14 @@ export async function loadCatalog(): Promise<CacheLoadResult> {
     return { status: "stale" };
   }
   try {
-    return { status: "hit", catalog: reviveCatalog(stored.catalog) };
+    // The legacy-row default lives here, not in the reviver: the reviver only
+    // validates StoredCatalogData (items/machines/recipes) and never touches
+    // row-level fields, so `source` stays transparent to it (no version bump).
+    return {
+      status: "hit",
+      catalog: reviveCatalog(stored.catalog),
+      source: stored.source ?? { kind: "user" },
+    };
   } catch {
     // A corrupted stored shape (missing fields, un-parseable rational) fails the
     // reviver: treat as stale, not a thrown error.
