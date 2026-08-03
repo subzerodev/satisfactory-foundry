@@ -24,6 +24,13 @@ import { loadCatalog, saveCatalog } from "../data/catalog-store.ts";
 import type { CatalogSource } from "../data/catalog-store.ts";
 import { toStageInput } from "../data/stage-input.ts";
 import type { StageOptions } from "../data/stage-input.ts";
+import {
+  savePlan as savePlanFile,
+  listPlans as listPlanFiles,
+  loadPlan as loadPlanFile,
+  deletePlan as deletePlanFile,
+} from "../data/plan-store.ts";
+import type { PlanFileV1, PlanListEntry } from "../data/plan-store.ts";
 
 // ---------------------------------------------------------------------------
 // State shape (frozen brainstorm Axis 2)
@@ -81,6 +88,19 @@ export interface AppState {
    * cases are DISJOINT by construction.
    */
   uploadError: string | null;
+  /**
+   * The saved-plan list — a DISPLAY CACHE only, refreshed after every plan
+   * mutation. null = not-yet-listed (transient: App refreshes on ready-mount);
+   * [] = listed, none. Name→id lookups NEVER read this (it's nullable/stale) —
+   * they read a fresh listPlans() at op time (ticket #11 uniqueness mechanism).
+   */
+  plans: PlanListEntry[] | null;
+  /**
+   * Transient last plan-op failure, mirroring uploadError's posture (set by a
+   * failed plan op, cleared at the next plan op). Kept SEPARATE from
+   * uploadError, whose semantics are catalog-specific.
+   */
+  planError: string | null;
 }
 
 export interface Actions {
@@ -97,6 +117,11 @@ export interface Actions {
     capacityText: string | null,
   ): void;
   clearOverrides(): void;
+  refreshPlans(): Promise<void>;
+  savePlanAs(name: string): Promise<void>;
+  loadPlan(id: string): Promise<void>;
+  renamePlan(id: string, name: string): Promise<void>;
+  deletePlan(id: string): Promise<void>;
 }
 
 export type Store = AppState & Actions;
@@ -253,6 +278,11 @@ function clampTier(kind: "belt" | "pipe", value: unknown): number {
   return value;
 }
 
+/** Normalize a caught plan-op failure to a string for `planError`. */
+function planErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * The store's `storage` is injectable so tests supply a plain-object stub and
  * the app supplies localStorage. A module-level slot lets `createAppStore`
@@ -307,256 +337,449 @@ export function createAppStore(storage?: StateStorage) {
   if (storage) {
     storageProvider = () => storage;
   }
+
+  // Plan-op serialization (frozen Axis 3). A fresh listPlans() read alone is not
+  // atomic — two savePlanAs("A") calls interleaving across its await boundary (a
+  // double-click) would both see no "A" and both create. So all EXTERNALLY-
+  // initiated plan ops enqueue on this per-store chain, and each enqueued op is
+  // TOTAL by construction (it catches its own failure into planError and always
+  // resolves), so the value reassigned to the chain is always fulfilled —
+  // poisoning is impossible, and each op observes the committed result of every
+  // prior op. Cross-tab writes are out of scope (plans are a single-tab surface).
+  let planOpChain: Promise<void> = Promise.resolve();
+
   return createStore<Store>()(
     persist(
-      (set, get) => ({
-        catalog: { status: "initializing" },
-        selection: defaultSelection(),
-        solve: { status: "idle" },
-        catalogSource: null,
-        uploadError: null,
+      (set, get) => {
+        // The one non-enqueuing refresh, shared by the refreshPlans action and
+        // every op's terminal inline refresh (a re-entrant refreshPlans() enqueue
+        // would await a chained op that can't start until the current op resolves
+        // — self-deadlock). Op bodies compose plan-store MODULE primitives only,
+        // never the identically-named enqueuing store actions.
+        const doRefresh = async (): Promise<void> => {
+          const list = await listPlanFiles();
+          set({ plans: list });
+        };
 
-        async init() {
-          const result = await loadCatalog();
-          if (result.status === "hit") {
-            // Cache wins: a user upload or a previously-cached bundled catalog
-            // never regresses. The persisted row's source drives the banner.
-            set({
-              catalog: { status: "ready", catalog: result.catalog },
-              catalogSource: result.source,
-            });
-          } else {
-            // empty / stale / unavailable → try the bundled default before
-            // giving up. The provider call is try/caught: a REJECTED promise
-            // degrades exactly like a resolved null.
-            //
-            // The 'unavailable' carve-out (boundary r1 fold): the cache row
-            // may be a valid, possibly newer user catalog we merely couldn't
-            // READ this session. empty/stale rows are absent or genuinely
-            // unusable, so bundled data may replace them (SAVE). But an
-            // unavailable row must NOT be overwritten — because openDb is
-            // memoized, a get-failure leaves a healthy connection through which
-            // a save would DESTRUCTIVELY clobber that row. So on 'unavailable'
-            // we run bundled WITHOUT saving (usable this session, cache
-            // untouched) and note it distinctly.
-            const unavailable = result.status === "unavailable";
-            let bundled: { text: string; provenance: Provenance } | null;
-            try {
-              bundled = await bundledDocsProvider();
-            } catch {
-              bundled = null;
-            }
+        // Enqueue an externally-initiated op. The op body owns the entire
+        // read→decide→write→refresh sequence AND its own catch-into-planError,
+        // so this wrapper never adds a .catch that would poison the chain.
+        const enqueue = (op: () => Promise<void>): Promise<void> => {
+          planOpChain = planOpChain.then(op);
+          return planOpChain;
+        };
 
-            let ready = false;
-            if (bundled !== null) {
+        return {
+          catalog: { status: "initializing" },
+          selection: defaultSelection(),
+          solve: { status: "idle" },
+          catalogSource: null,
+          uploadError: null,
+          plans: null,
+          planError: null,
+
+          async init() {
+            const result = await loadCatalog();
+            if (result.status === "hit") {
+              // Cache wins: a user upload or a previously-cached bundled catalog
+              // never regresses. The persisted row's source drives the banner.
+              set({
+                catalog: { status: "ready", catalog: result.catalog },
+                catalogSource: result.source,
+              });
+            } else {
+              // empty / stale / unavailable → try the bundled default before
+              // giving up. The provider call is try/caught: a REJECTED promise
+              // degrades exactly like a resolved null.
+              //
+              // The 'unavailable' carve-out (boundary r1 fold): the cache row
+              // may be a valid, possibly newer user catalog we merely couldn't
+              // READ this session. empty/stale rows are absent or genuinely
+              // unusable, so bundled data may replace them (SAVE). But an
+              // unavailable row must NOT be overwritten — because openDb is
+              // memoized, a get-failure leaves a healthy connection through which
+              // a save would DESTRUCTIVELY clobber that row. So on 'unavailable'
+              // we run bundled WITHOUT saving (usable this session, cache
+              // untouched) and note it distinctly.
+              const unavailable = result.status === "unavailable";
+              let bundled: { text: string; provenance: Provenance } | null;
               try {
-                const catalog = parseCatalogFromText(bundled.text);
-                const source: CatalogSource = {
-                  kind: "bundled",
-                  steamBuild: bundled.provenance.steamBuild,
-                  extractedAt: bundled.provenance.extractedAt,
-                };
-                set({
-                  catalog: { status: "ready", catalog },
-                  catalogSource: source,
-                });
-                ready = true;
-                if (unavailable) {
-                  // Do NOT save: the unreadable row stays intact for a later
-                  // boot that can read it again (proven by the data-
-                  // preservation test).
-                  set({
-                    uploadError:
-                      "cached data couldn't be read this session — using bundled data",
-                  });
-                } else {
-                  // empty / stale: cache the bundled catalog so later boots hit
-                  // the fast path (and keep the banner). Never-block save: a
-                  // failure leaves it usable this session, merely uncached,
-                  // with an uploadError note — same semantics as the upload path.
-                  try {
-                    await saveCatalog(bundled.text, catalog, source);
-                  } catch (err) {
-                    const message =
-                      err instanceof Error ? err.message : String(err);
-                    set({
-                      uploadError: `bundled catalog loaded but could not be cached: ${message}`,
-                    });
-                  }
-                }
+                bundled = await bundledDocsProvider();
               } catch {
-                // A corrupt bundled asset degrades to needs-upload below.
-                ready = false;
+                bundled = null;
+              }
+
+              let ready = false;
+              if (bundled !== null) {
+                try {
+                  const catalog = parseCatalogFromText(bundled.text);
+                  const source: CatalogSource = {
+                    kind: "bundled",
+                    steamBuild: bundled.provenance.steamBuild,
+                    extractedAt: bundled.provenance.extractedAt,
+                  };
+                  set({
+                    catalog: { status: "ready", catalog },
+                    catalogSource: source,
+                  });
+                  ready = true;
+                  if (unavailable) {
+                    // Do NOT save: the unreadable row stays intact for a later
+                    // boot that can read it again (proven by the data-
+                    // preservation test).
+                    set({
+                      uploadError:
+                        "cached data couldn't be read this session — using bundled data",
+                    });
+                  } else {
+                    // empty / stale: cache the bundled catalog so later boots hit
+                    // the fast path (and keep the banner). Never-block save: a
+                    // failure leaves it usable this session, merely uncached,
+                    // with an uploadError note — same semantics as the upload path.
+                    try {
+                      await saveCatalog(bundled.text, catalog, source);
+                    } catch (err) {
+                      const message =
+                        err instanceof Error ? err.message : String(err);
+                      set({
+                        uploadError: `bundled catalog loaded but could not be cached: ${message}`,
+                      });
+                    }
+                  }
+                } catch {
+                  // A corrupt bundled asset degrades to needs-upload below.
+                  ready = false;
+                }
+              }
+
+              if (!ready) {
+                // 'unavailable' is not a UI reason (the frozen union has only
+                // empty / stale / upload-error); map it to 'stale' so the degrade
+                // lands on the generic re-upload screen.
+                const reason = unavailable ? "stale" : result.status;
+                set({
+                  catalog: { status: "needs-upload", reason },
+                });
               }
             }
+            // Single first derive, after hydration + the catalog resolves.
+            const { catalog, selection } = get();
+            set({ solve: derive(catalog, selection) });
+          },
 
-            if (!ready) {
-              // 'unavailable' is not a UI reason (the frozen union has only
-              // empty / stale / upload-error); map it to 'stale' so the degrade
-              // lands on the generic re-upload screen.
-              const reason = unavailable ? "stale" : result.status;
-              set({
-                catalog: { status: "needs-upload", reason },
-              });
+          async uploadDocsText(text: string) {
+            // Clear any prior transient error at entry — both the success and
+            // failure paths start clean (frozen Axis 4).
+            set({ uploadError: null });
+            const hadReadyCatalog = get().catalog.status === "ready";
+
+            let catalog: Catalog;
+            try {
+              // parseCatalogFromText = JSON.parse + parseDocsJson: a non-JSON
+              // file throws SyntaxError, a bad schema throws DocsParseError.
+              catalog = parseCatalogFromText(text);
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              // Parse FAILURE: the in-memory catalog is NOT replaced, so
+              // overrides are kept. Route by whether a working catalog existed.
+              if (hadReadyCatalog) {
+                set({ uploadError: message });
+              } else {
+                set({
+                  catalog: {
+                    status: "needs-upload",
+                    reason: "upload-error",
+                    message,
+                  },
+                });
+              }
+              const state = get();
+              set({ solve: derive(state.catalog, state.selection) });
+              return;
             }
-          }
-          // Single first derive, after hydration + the catalog resolves.
-          const { catalog, selection } = get();
-          set({ solve: derive(catalog, selection) });
-        },
 
-        async uploadDocsText(text: string) {
-          // Clear any prior transient error at entry — both the success and
-          // failure paths start clean (frozen Axis 4).
-          set({ uploadError: null });
-          const hadReadyCatalog = get().catalog.status === "ready";
-
-          let catalog: Catalog;
-          try {
-            // parseCatalogFromText = JSON.parse + parseDocsJson: a non-JSON
-            // file throws SyntaxError, a bad schema throws DocsParseError.
-            catalog = parseCatalogFromText(text);
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            // Parse FAILURE: the in-memory catalog is NOT replaced, so
-            // overrides are kept. Route by whether a working catalog existed.
-            if (hadReadyCatalog) {
-              set({ uploadError: message });
-            } else {
-              set({
-                catalog: {
-                  status: "needs-upload",
-                  reason: "upload-error",
-                  message,
-                },
-              });
-            }
-            const state = get();
-            set({ solve: derive(state.catalog, state.selection) });
-            return;
-          }
-
-          // Parse SUCCESS: the in-memory catalog IS replaced this session,
-          // regardless of the save outcome — so overrides clear and the
-          // recipeId is re-validated against the new catalog.
-          const survivingRecipeId =
-            get().selection.recipeId !== null &&
-            catalog.recipes[get().selection.recipeId!] !== undefined
-              ? get().selection.recipeId
-              : null;
-          set((s) => ({
-            catalog: { status: "ready", catalog },
-            // An upload flips provenance to user, hiding the bundled banner.
-            catalogSource: { kind: "user" },
-            selection: {
-              ...s.selection,
-              recipeId: survivingRecipeId,
-              overrides: { feeds: {}, outputs: {} },
-            },
-          }));
-
-          // Persist to the cache. A save failure does NOT block 'ready' — the
-          // catalog is usable this session, merely uncached — with uploadError
-          // noting the cache miss (frozen Axis 4 wide catch).
-          try {
-            await saveCatalog(text, catalog, { kind: "user" });
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            set({
-              uploadError: `catalog loaded but could not be cached: ${message}`,
-            });
-          }
-
-          const state = get();
-          set({ solve: derive(state.catalog, state.selection) });
-        },
-
-        selectRecipe(recipeId: string | null) {
-          // Overrides are lane-addressed per recipe; carrying them across
-          // recipes would misaddress lanes, so a recipe change clears them.
-          set((s) => ({
-            selection: {
-              ...s.selection,
-              recipeId,
-              overrides: { feeds: {}, outputs: {} },
-            },
-          }));
-          const { catalog, selection } = get();
-          set({ solve: derive(catalog, selection) });
-        },
-
-        setMachineCount(n: number) {
-          set((s) => ({ selection: { ...s.selection, machineCount: n } }));
-          const { catalog, selection } = get();
-          set({ solve: derive(catalog, selection) });
-        },
-
-        setClockPercentText(text: string) {
-          set((s) => ({
-            selection: { ...s.selection, clockPercentText: text },
-          }));
-          const { catalog, selection } = get();
-          set({ solve: derive(catalog, selection) });
-        },
-
-        setUnlockedTiers(t: { belt: number; pipe: number }) {
-          // Clamp at the action boundary so toStageInput's tier-range throw is
-          // unreachable from store-driven flows (derive still catches).
-          set((s) => ({
-            selection: {
-              ...s.selection,
-              unlockedTiers: {
-                belt: clampTier("belt", t.belt),
-                pipe: clampTier("pipe", t.pipe),
-              },
-            },
-          }));
-          const { catalog, selection } = get();
-          set({ solve: derive(catalog, selection) });
-        },
-
-        setOverride(
-          side: "feeds" | "outputs",
-          itemId: string,
-          beltIndex: number,
-          capacityText: string | null,
-        ) {
-          set((s) => {
-            const sideMap = s.selection.overrides[side];
-            const existing = sideMap[itemId] ?? [];
-            // Dense write: grow to beltIndex, padding intermediate slots with
-            // null. Never sparse — a sparse array's .length counts holes and
-            // would trip the solver's overrides-exceed-belt-count check.
-            const next = existing.slice();
-            while (next.length <= beltIndex) {
-              next.push(null);
-            }
-            next[beltIndex] = capacityText;
-            return {
+            // Parse SUCCESS: the in-memory catalog IS replaced this session,
+            // regardless of the save outcome — so overrides clear and the
+            // recipeId is re-validated against the new catalog.
+            const survivingRecipeId =
+              get().selection.recipeId !== null &&
+              catalog.recipes[get().selection.recipeId!] !== undefined
+                ? get().selection.recipeId
+                : null;
+            set((s) => ({
+              catalog: { status: "ready", catalog },
+              // An upload flips provenance to user, hiding the bundled banner.
+              catalogSource: { kind: "user" },
               selection: {
                 ...s.selection,
-                overrides: {
-                  ...s.selection.overrides,
-                  [side]: { ...sideMap, [itemId]: next },
+                recipeId: survivingRecipeId,
+                overrides: { feeds: {}, outputs: {} },
+              },
+            }));
+
+            // Persist to the cache. A save failure does NOT block 'ready' — the
+            // catalog is usable this session, merely uncached — with uploadError
+            // noting the cache miss (frozen Axis 4 wide catch).
+            try {
+              await saveCatalog(text, catalog, { kind: "user" });
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              set({
+                uploadError: `catalog loaded but could not be cached: ${message}`,
+              });
+            }
+
+            const state = get();
+            set({ solve: derive(state.catalog, state.selection) });
+          },
+
+          selectRecipe(recipeId: string | null) {
+            // Overrides are lane-addressed per recipe; carrying them across
+            // recipes would misaddress lanes, so a recipe change clears them.
+            set((s) => ({
+              selection: {
+                ...s.selection,
+                recipeId,
+                overrides: { feeds: {}, outputs: {} },
+              },
+            }));
+            const { catalog, selection } = get();
+            set({ solve: derive(catalog, selection) });
+          },
+
+          setMachineCount(n: number) {
+            set((s) => ({ selection: { ...s.selection, machineCount: n } }));
+            const { catalog, selection } = get();
+            set({ solve: derive(catalog, selection) });
+          },
+
+          setClockPercentText(text: string) {
+            set((s) => ({
+              selection: { ...s.selection, clockPercentText: text },
+            }));
+            const { catalog, selection } = get();
+            set({ solve: derive(catalog, selection) });
+          },
+
+          setUnlockedTiers(t: { belt: number; pipe: number }) {
+            // Clamp at the action boundary so toStageInput's tier-range throw is
+            // unreachable from store-driven flows (derive still catches).
+            set((s) => ({
+              selection: {
+                ...s.selection,
+                unlockedTiers: {
+                  belt: clampTier("belt", t.belt),
+                  pipe: clampTier("pipe", t.pipe),
                 },
               },
-            };
-          });
-          const { catalog, selection } = get();
-          set({ solve: derive(catalog, selection) });
-        },
+            }));
+            const { catalog, selection } = get();
+            set({ solve: derive(catalog, selection) });
+          },
 
-        clearOverrides() {
-          set((s) => ({
-            selection: {
-              ...s.selection,
-              overrides: { feeds: {}, outputs: {} },
-            },
-          }));
-          const { catalog, selection } = get();
-          set({ solve: derive(catalog, selection) });
-        },
-      }),
+          setOverride(
+            side: "feeds" | "outputs",
+            itemId: string,
+            beltIndex: number,
+            capacityText: string | null,
+          ) {
+            set((s) => {
+              const sideMap = s.selection.overrides[side];
+              const existing = sideMap[itemId] ?? [];
+              // Dense write: grow to beltIndex, padding intermediate slots with
+              // null. Never sparse — a sparse array's .length counts holes and
+              // would trip the solver's overrides-exceed-belt-count check.
+              const next = existing.slice();
+              while (next.length <= beltIndex) {
+                next.push(null);
+              }
+              next[beltIndex] = capacityText;
+              return {
+                selection: {
+                  ...s.selection,
+                  overrides: {
+                    ...s.selection.overrides,
+                    [side]: { ...sideMap, [itemId]: next },
+                  },
+                },
+              };
+            });
+            const { catalog, selection } = get();
+            set({ solve: derive(catalog, selection) });
+          },
+
+          clearOverrides() {
+            set((s) => ({
+              selection: {
+                ...s.selection,
+                overrides: { feeds: {}, outputs: {} },
+              },
+            }));
+            const { catalog, selection } = get();
+            set({ solve: derive(catalog, selection) });
+          },
+
+          // --- Plan lifecycle (frozen Axis 3) --------------------------------
+          // All five enqueue on planOpChain via `enqueue`; each op body is total
+          // (own catch-into-planError, always resolves) and composes plan-store
+          // MODULE primitives only. The terminal refresh is the inline doRefresh,
+          // never the enqueuing refreshPlans() action (would self-deadlock).
+
+          refreshPlans() {
+            return enqueue(async () => {
+              set({ planError: null });
+              try {
+                await doRefresh();
+              } catch (err) {
+                set({ planError: planErrorMessage(err) });
+              }
+            });
+          },
+
+          savePlanAs(name: string) {
+            return enqueue(async () => {
+              set({ planError: null });
+              try {
+                const trimmed = name.trim();
+                if (trimmed === "") {
+                  set({ planError: "plan name required" });
+                  return;
+                }
+                // Name→id lookup against a FRESH read (never state.plans — nullable
+                // /stale, the null-window duplicate trace). Overwrite the unique
+                // holder or create; uniqueness is preserved by construction.
+                const existing = await listPlanFiles();
+                const match = existing.find((p) => p.name === trimmed);
+                const now = new Date().toISOString();
+                const selection = get().selection;
+                if (match) {
+                  const prior = await loadPlanFile(match.id);
+                  const plan: PlanFileV1 = {
+                    format_version: 1,
+                    name: trimmed,
+                    createdAt: prior?.createdAt ?? now,
+                    updatedAt: now,
+                    stages: [{ selection }],
+                    links: [],
+                  };
+                  await savePlanFile(plan, match.id);
+                } else {
+                  const plan: PlanFileV1 = {
+                    format_version: 1,
+                    name: trimmed,
+                    createdAt: now,
+                    updatedAt: now,
+                    stages: [{ selection }],
+                    links: [],
+                  };
+                  await savePlanFile(plan, crypto.randomUUID());
+                }
+                await doRefresh();
+              } catch (err) {
+                set({ planError: planErrorMessage(err) });
+              }
+            });
+          },
+
+          loadPlan(id: string) {
+            return enqueue(async () => {
+              set({ planError: null });
+              try {
+                const plan = await loadPlanFile(id);
+                if (plan === null) {
+                  // Corrupt/missing → planError, state untouched.
+                  set({ planError: "plan could not be loaded" });
+                  return;
+                }
+                const saved = plan.stages[0]!.selection;
+                const { catalog } = get();
+                // Apply with the same guards as every store entry point:
+                // recipeId re-validated against the live catalog (#5 rule),
+                // unlockedTiers clamped (must not bypass the setter invariant),
+                // machineCount null → NaN (saved-invalid loads rendered-invalid).
+                const recipeId =
+                  saved.recipeId !== null &&
+                  catalog.status === "ready" &&
+                  catalog.catalog.recipes[saved.recipeId] !== undefined
+                    ? saved.recipeId
+                    : null;
+                const machineCount =
+                  saved.machineCount === null ? NaN : saved.machineCount;
+                const nextSelection: Selection = {
+                  recipeId,
+                  machineCount,
+                  clockPercentText: saved.clockPercentText,
+                  unlockedTiers: {
+                    belt: clampTier("belt", saved.unlockedTiers.belt),
+                    pipe: clampTier("pipe", saved.unlockedTiers.pipe),
+                  },
+                  // Overrides apply verbatim; malformed strings / count excess
+                  // surface through the existing derive/findings paths.
+                  overrides: saved.overrides,
+                };
+                set({ selection: nextSelection });
+                const { catalog: cat, selection } = get();
+                set({ solve: derive(cat, selection) });
+                // Loading a plan never touches the catalog or catalogSource.
+              } catch (err) {
+                set({ planError: planErrorMessage(err) });
+              }
+            });
+          },
+
+          renamePlan(id: string, name: string) {
+            return enqueue(async () => {
+              set({ planError: null });
+              try {
+                const trimmed = name.trim();
+                if (trimmed === "") {
+                  set({ planError: "plan name required" });
+                  return;
+                }
+                // Uniqueness invariant: renaming to a name held by a DIFFERENT
+                // plan is refused (an op refusal that resolves, not a rejection).
+                const existing = await listPlanFiles();
+                const collision = existing.find(
+                  (p) => p.name === trimmed && p.id !== id,
+                );
+                if (collision) {
+                  set({
+                    planError: `a plan named "${trimmed}" already exists`,
+                  });
+                  return;
+                }
+                // Load via the plan-store MODULE fn, never the enqueuing action.
+                const plan = await loadPlanFile(id);
+                if (plan === null) {
+                  set({ planError: "plan could not be loaded" });
+                  return;
+                }
+                const renamed: PlanFileV1 = {
+                  ...plan,
+                  name: trimmed,
+                  updatedAt: new Date().toISOString(),
+                };
+                await savePlanFile(renamed, id);
+                await doRefresh();
+              } catch (err) {
+                set({ planError: planErrorMessage(err) });
+              }
+            });
+          },
+
+          deletePlan(id: string) {
+            return enqueue(async () => {
+              set({ planError: null });
+              try {
+                await deletePlanFile(id);
+                await doRefresh();
+              } catch (err) {
+                set({ planError: planErrorMessage(err) });
+              }
+            });
+          },
+        };
+      },
       {
         name: PERSIST_KEY,
         storage: createJSONStorage<PersistedShape>(() => storageProvider()),
