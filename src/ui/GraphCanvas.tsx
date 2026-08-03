@@ -49,12 +49,7 @@ import type { StageNodeData, EdgeState } from "./graph-flow.ts";
  * with an index signature so it satisfies RF's `Node<Data extends
  * Record<string, unknown>>` constraint.
  */
-interface StageCardData extends Record<string, unknown> {
-  name: StageNodeData["name"];
-  recipeName: StageNodeData["recipeName"];
-  machineCount: StageNodeData["machineCount"];
-  solveStatus: StageNodeData["solveStatus"];
-  findingCount: StageNodeData["findingCount"];
+interface StageCardData extends StageNodeData, Record<string, unknown> {
   removable: boolean;
   onRemove: () => void;
   onRename: (name: string) => void;
