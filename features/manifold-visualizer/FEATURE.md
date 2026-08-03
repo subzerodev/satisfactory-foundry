@@ -95,4 +95,5 @@ digraph deps {
 
 ## Final report
 
-—
+`features/manifold-visualizer/final-report.md` (2026-08-03) — v1
+feature-complete; 208/208 tests; release PR develop → main open for review.
