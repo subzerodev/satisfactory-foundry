@@ -1,0 +1,56 @@
+Stage 3 / Phase 1 — bidirectionality (R2) verification log
+==========================================================
+Ticket #16, epic #12. Contract: features/chained-stages/phase-1/brainstorm.md (v5 FROZEN).
+Method per behavior family: assert PASS on correct code → break the code → observe FAIL
+(the test actually constrains the behavior) → restore → PASS. A test that stays green
+through a real break is not testing anything.
+
+Baseline at dispatch: 264/264 tests, check + build green.
+
+-----------------------------------------------------------------------------------
+DRIFT HUNT (pre-implementation; file:line evidence)
+-----------------------------------------------------------------------------------
+DRIFT: none blocking. All spec-named shapes match live source.
+  store.ts — 13 actions present (init, uploadDocsText, selectRecipe, setMachineCount,
+    setClockPercentText, setUnlockedTiers, setOverride, clearOverrides, refreshPlans,
+    savePlanAs, loadPlan, renamePlan, deletePlan). Plan chain present (planOpChain /
+    enqueue / doRefresh @ store.ts:349-370). partialize reads s.selection.unlockedTiers
+    (store.ts:786-788); merge writes current.selection.unlockedTiers (store.ts:791-804).
+    loadPlan reads saved.unlockedTiers via clampTier @ store.ts:712-715 — the code path
+    REMOVED by sanctioned edit 1.
+  plan-store.ts — isSelectionShape present (plan-store.ts:101); PlanFileV1.stages[].selection
+    + links: never[] (plan-store.ts:19-26). Untouched this phase.
+  manifold.ts — FeedLaneResult.totalDemand (manifold.ts:52) and OutputLaneResult.totalOutput
+    (manifold.ts:69), both Fraction. Confirmed as reconcile supply/demand inputs.
+  App.tsx (src/ui/App.tsx) — reads s.selection/s.solve directly; calls the six setters +
+    loadPlan/uploadDocsText. src/App.tsx re-exports src/ui/App.tsx.
+  eslint.config.js — src/core allowlist bans package imports, relative escapes to
+    state/ui/data, dynamic imports, host globals. reconcile.ts imports only ./fraction.ts
+    → within the allowlist.
+  tsconfig — verbatimModuleSyntax:true (import type required for type-only),
+    noUncheckedIndexedAccess:true (index access guarded).
+
+CONTRACT RECONCILIATION (load-bearing, not blocking drift):
+  The existing 54-row store suite reads store.getState().selection and .solve as TOP-LEVEL
+  state fields (28 read sites across ~20 tests). The spec's hard pin — "54-row suite passes
+  with ONLY two sanctioned edits" — is satisfiable only if top-level selection/solve remain
+  live and mirror the active stage. Implementation: stages[activeStageId] is canonical; the
+  top-level selection/solve are kept identical to the active stage's copy after every
+  mutation. activeSelection(s)/activeSolve(s) read those mirror fields. This is the single
+  reading consistent with both "replace the singleton pair" (Axis 1) and "suite unchanged".
+
+-----------------------------------------------------------------------------------
+Behavior families verified below (filled per commit).
+-----------------------------------------------------------------------------------
+
+===================================================================================
+FAMILY: reconcile math (src/core/reconcile.ts, reconcile.test.ts)  [Commit 1]
+===================================================================================
+PASS  : 11/11 reconcile tests green on correct code.
+BREAK A (swap lt/gt → under-supply and over-supply reported inverted):
+        5/11 FAIL (under, over, fractional-under, fractional-over, batch order).
+BREAK B (both-null tie-break emit "to" instead of "from"):
+        1/11 FAIL (BOTH null → end:from row).
+RESTORE: 11/11 green.
+Verdict: the exact-comparison branches AND the deterministic both-null tie-break are
+each genuinely constrained by a test.
