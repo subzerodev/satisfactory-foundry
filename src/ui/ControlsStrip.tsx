@@ -35,7 +35,7 @@ function TierToggles({
         <button
           key={k}
           type="button"
-          className={k <= count ? "tier-on" : "tier-off"}
+          className={k <= count ? "tier-on" : undefined}
           onClick={() => onCount(k)}
         >
           Mk{k}
