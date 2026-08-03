@@ -97,6 +97,23 @@ interface AppState {
   complete inventory, every path preserves all-stages-identical, so
   "active = any" holds inductively.
 
+## Boundary amendment (2026-08-03, boundary r1 — the mirror)
+
+The implementation surfaced a contract reconciliation both boundary
+reviewers ratified: Axis 1's "replace the singleton selection/solve pair"
+and the "54-row suite passes with only two sanctioned edits" pin are
+jointly satisfiable ONLY by keeping top-level `selection`/`solve` as
+**live mirrors of the active stage** — `stages[activeStageId]` is
+canonical; every mutation that touches the active stage (or moves the
+cursor) re-points the mirrors to the same freshly-built objects
+(`mirrorActive`); no path mutates a stage's selection in place, so the
+two references are identical by construction. `activeSelection`/
+`activeSolve` read the mirrors (behavior-equivalent to reading the
+canonical map). Precision note: the parse-FAILURE upload path re-derives
+the active stage + recomputes reconciliation — idempotent (unchanged
+inputs → unchanged outputs), behavior-equivalent to the cadence table's
+"none".
+
 ## Axis 2 — Link model
 
 ```ts

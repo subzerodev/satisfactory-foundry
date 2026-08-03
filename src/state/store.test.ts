@@ -1239,8 +1239,8 @@ describe("plan lifecycle (ticket #11)", () => {
 // ---------------------------------------------------------------------------
 
 // A chain catalog: ingot_iron (ore_iron → iron_ingot, 30/min each) PLUS
-// plate_iron (iron_ingot → iron_plate, 30/min each). A link ingot_iron-stage →
-// plate_iron-stage on iron_ingot has a real supply (producer output) and demand
+// iron_plate (iron_ingot → iron_plate, 30/min each). A link ingot_iron-stage →
+// iron_plate-stage on iron_ingot has a real supply (producer output) and demand
 // (consumer feed), so reconciliation compares exact totals.
 const DOCS_TEXT_CHAIN = JSON.stringify([
   {
