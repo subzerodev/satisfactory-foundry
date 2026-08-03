@@ -1,0 +1,116 @@
+Phase 1 — manifold solver: test-bidirectionality verification log
+Ticket #3 (epic #2). Worktree: .worktrees/phase-1.0 (branch feature/phase-1.0).
+Date: 2026-08-03
+
+Method (workflow test-bidirectionality rule): for each behaviour class, confirm
+the suite is GREEN (PASS), then break the specific production line that
+implements the behaviour (sed), run the named referencing test and observe a
+GENUINE, class-specific vitest FAIL (not a compile error, not an unrelated
+assertion), then restore (git checkout) and re-green. A test that cannot be made
+to fail by breaking its behaviour is not testing that behaviour.
+
+Baseline: `npm test` → 98 passed (98)  [70 Fraction + 28 manifold]  ✓ PASS
+Final:    `npm test` → 98 passed (98)  ✓ PASS   (working tree clean after all restores)
+
+────────────────────────────────────────────────────────────────────────────
+Class 1 — COMBINATION MATH  (feed belt count k = D.ceilDiv(B))
+────────────────────────────────────────────────────────────────────────────
+Production line (manifold.ts:292):  const k = toIndex(D.ceilDiv(B));
+Break:  D.ceilDiv(B) → D.floorDiv(B)   (k = floor(600/480) = 1 instead of 2)
+Referencing test: "20-smelter worked example: k=2, belts [480, 120@after-16]"
+
+GENUINE FAIL:
+  × 20-smelter worked example: k=2, belts [480, 120@after-16]
+  FAIL  solveFeedLane — combination + entries + segments (spec row 1)
+  AssertionError: expected [ { index: +0, …(3) } ] to have a length of 2 but got 1
+
+Restored → GREEN.
+
+────────────────────────────────────────────────────────────────────────────
+Class 2 — ENTRY POINTS  (belt j enters after machine floor(S/d))
+────────────────────────────────────────────────────────────────────────────
+Production line (manifold.ts:354):
+  const entersAfterMachine = j === 0 ? 0 : toIndex(cumulative.floorDiv(d));
+Break:  cumulative.floorDiv(d) → cumulative.ceilDiv(d)
+        (floor(480/37.5)=12  vs  ceil=13 — a non-integral boundary that
+         distinguishes floor from ceil, unlike the row-1 exact case)
+Referencing test: "N=13, d=37.5: k=2, remainder 7.5 -> 60-tier, entry after machine 12"
+
+GENUINE FAIL:
+  × N=13, d=37.5: k=2, remainder 7.5 -> 60-tier, entry after machine 12
+  FAIL  solveFeedLane — fractional rates (spec row 2)
+  AssertionError: expected 13 to be 12 // Object.is equality
+
+Restored → GREEN.
+
+────────────────────────────────────────────────────────────────────────────
+Class 3 — STARVATION EMISSION  (per-span starved-machines findings)
+────────────────────────────────────────────────────────────────────────────
+Production line (manifold.ts:400):  if (drain.fullServed < span) {
+Break:  drain.fullServed < span → drain.fullServed > span
+        (fullServed is never > span, so the starvation finding is suppressed)
+Referencing test: "override 480->240 (D=300): machines 9-10 fully starved, no partial"
+
+  (First-tried break `available.floorDiv(d) → ceilDiv` was rejected as a
+   non-witnessing mutant: at the row-5A exact boundary floor==ceil, so it did
+   not fail — the suppression break above is the genuine class witness.)
+
+GENUINE FAIL:
+  × override 480->240 (D=300): machines 9-10 fully starved, no partial
+  FAIL  solveFeedLane — override breaks manifold (spec row 5)
+  AssertionError: expected [] to have a length of 1 but got +0
+
+Restored → GREEN.
+
+────────────────────────────────────────────────────────────────────────────
+Class 4 — OVER-CAPACITY  (feed peakFlow > B → segment-over-capacity)
+────────────────────────────────────────────────────────────────────────────
+Production line (manifold.ts:388):  if (peakFlow.gt(B)) {
+Break:  peakFlow.gt(B) → peakFlow.lt(B)   (480 > 270 no longer flagged)
+Referencing test: "B=270, override->480: segment-over-capacity peakFlow 480 / busCapacity 270"
+
+GENUINE FAIL:
+  × B=270, override->480: segment-over-capacity peakFlow 480 / busCapacity 270
+  FAIL  solveFeedLane — override exceeds bus cap (spec row 6)
+  AssertionError: expected [] to have a length of 1 but got +0
+
+Restored → GREEN.
+
+────────────────────────────────────────────────────────────────────────────
+Class 5 — OUTPUT BREAK-OUTS  (break-out position startsAfterMachine = start-1)
+────────────────────────────────────────────────────────────────────────────
+Production line (manifold.ts:499):  startsAfterMachine: start - 1,
+Break:  start - 1 → start   (off-by-one on every break-out position)
+Referencing test: "break-outs after 16, loads 480/120, capacities 480/120"
+
+  (First-tried break `T.floorDiv(p) → ceilDiv` was rejected as a non-witnessing
+   mutant: floor(480/30)=ceil=16 exactly; the position off-by-one above is the
+   genuine class witness.)
+
+GENUINE FAIL:
+  × break-outs after 16, loads 480/120, capacities 480/120
+  FAIL  solveOutputLane — mirror of the 20-smelter example (spec row 1)
+  AssertionError: expected { index: +0, …(3) } to match object
+                  { index: +0, startsAfterMachine: +0 }
+
+Restored → GREEN.
+
+────────────────────────────────────────────────────────────────────────────
+Purity proof (DoD item 2)
+────────────────────────────────────────────────────────────────────────────
+Added a temporary `import React from "react"` (+ a use, so tsc does not short-
+circuit on the unused-import error before eslint runs) to src/core/manifold.ts.
+`npm run check` FAILED at the eslint stage citing the src/core allowlist:
+
+  src/core/manifold.ts
+    14:1  error  'react' import is restricted from being used by a pattern.
+          src/core is zero-dependency: no package imports allowed
+          @typescript-eslint/no-restricted-imports
+  ✖ 1 problem (1 error, 0 warnings)
+
+Removed the import → `npm run check` GREEN. Working tree clean (probe reverted).
+
+────────────────────────────────────────────────────────────────────────────
+Result: all five behaviour classes are genuinely test-covered (each fails when
+its production line is broken and greens when restored); the src/core purity
+allowlist is intact and enforced. Suite green, check green, build green.
