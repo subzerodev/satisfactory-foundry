@@ -5,7 +5,6 @@ import { resetDbCache } from "../data/db.ts";
 import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
-import { TIER_TABLE } from "../data/tiers.ts";
 import type { PlanFileV1 } from "../data/plan-store.ts";
 import { createAppStore, setBundledDocsProvider } from "./store.ts";
 import type { StateStorage } from "zustand/middleware";
@@ -957,7 +956,6 @@ describe("plan lifecycle (ticket #11)", () => {
     store.getState().setClockPercentText("37.5");
     store.getState().setOverride("feeds", "ore_iron", 0, "480");
 
-    const saved = store.getState().selection;
     await store.getState().savePlanAs("Iron Line");
     expect(store.getState().plans).toHaveLength(1);
     const id = store.getState().plans![0]!.id;
@@ -971,7 +969,11 @@ describe("plan lifecycle (ticket #11)", () => {
     expect(s.clockPercentText).toBe("37.5");
     expect(s.machineCount).toBe(20);
     expect(s.recipeId).toBe("ingot_iron");
-    expect(s.unlockedTiers).toEqual(saved.unlockedTiers);
+    // Stage 3 / Phase 1: loadPlan PRESERVES the current global tiers (progression,
+    // not plan content) rather than restoring the saved plan's. Here the tiers were
+    // unmutated between save and load, so the current-global value equals what was
+    // saved — the assertion re-points at the live global tiers for honesty.
+    expect(s.unlockedTiers).toEqual(store.getState().selection.unlockedTiers);
     expect(s.overrides.feeds.ore_iron).toEqual(["480"]);
     // A single derive ran on load → the restored selection solves.
     expect(store.getState().solve.status).toBe("solved");
@@ -1119,21 +1121,10 @@ describe("plan lifecycle (ticket #11)", () => {
     expect(store.getState().solve.status).toBe("idle");
   });
 
-  it("out-of-range tiers on load → clamped via clampTier", async () => {
-    const store = await readyStore();
-    await store.getState().savePlanAs("Base");
-    const id = store.getState().plans![0]!.id;
-    // Hand-edit the stored plan to hold an absurd tier count.
-    const db = await (await import("../data/db.ts")).openDb();
-    const plan = (await db.get<PlanFileV1>("plans", id))!;
-    plan.stages[0]!.selection.unlockedTiers = { belt: 999, pipe: -3 };
-    await db.put("plans", plan, id);
-
-    await store.getState().loadPlan(id);
-    const t = store.getState().selection.unlockedTiers;
-    expect(t.belt).toBe(TIER_TABLE.belt.length); // clamped to max
-    expect(t.pipe).toBe(1); // clamped to min
-  });
+  // NOTE (Stage 3 / Phase 1): the former "out-of-range tiers on load → clamped
+  // via clampTier" row is DELETED with its code path. loadPlan no longer reads
+  // saved.unlockedTiers (tiers are progression, not plan content — the current
+  // global value is preserved), so there is nothing to clamp on load.
 
   it("machineCount null in file → NaN → rendered invalid on load", async () => {
     const store = await readyStore();

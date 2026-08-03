@@ -54,3 +54,20 @@ BREAK B (both-null tie-break emit "to" instead of "from"):
 RESTORE: 11/11 green.
 Verdict: the exact-comparison branches AND the deterministic both-null tie-break are
 each genuinely constrained by a test.
+
+===================================================================================
+FAMILY: compatibility shim (top-level selection/solve mirror)  [Commit 2]
+===================================================================================
+PASS  : 53/53 store suite green (was 54; the clamp-on-load row DELETED with its path
+        per sanctioned edit 1; round-trip tiers assertion re-pointed per edit 2).
+BREAK C (mirrorActive stops syncing the top-level selection/solve to the active stage):
+        16/53 FAIL — the existing suite's getState().selection / .solve reads are
+        genuinely load-bearing; the mirror is real, not vestigial.
+RESTORE: 53/53 green.
+Verdict: the shim (active stage mirrored to top-level) is what makes the v1 suite pass
+unchanged; removing the sync breaks it exactly as required.
+
+Note: the tiers-GLOBAL write (setUnlockedTiers → all stages) is NOT constrained by the
+single-stage v1 suite (BREAK D: tiers-not-global still passes all 53). That behavior is
+multi-stage and is pinned by the new matrix rows in Commit 3, where its break-restore is
+recorded.
