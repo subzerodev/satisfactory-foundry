@@ -2,9 +2,12 @@
  * Pure schematic geometry: solve result + machine count → plain-number layout.
  * Coordinates derive ONLY from integer machine indices, counts, and array
  * positions — never from a Fraction (rates appear only as formatted strings,
- * elsewhere). Spans, belt indices, and item ids pass through untouched.
+ * elsewhere). Spans, belt indices, item ids, and each segment's exact
+ * `peakFlow` pass through untouched (peakFlow is display data, never a
+ * coordinate).
  */
 
+import type { Fraction } from "../core/fraction.ts";
 import type {
   StageSolveResult,
   FeedLaneResult,
@@ -31,6 +34,7 @@ export interface SchematicLayout {
   pitch: number;
   labelStep: number;
   scrolled: boolean;
+  machineTop: number; // machine-row top y (consumed, never re-derived)
   machines: { index: number; x: number; labeled: boolean }[];
   feeds: LaneTrack[];
   outputs: LaneTrack[];
@@ -47,6 +51,7 @@ export interface LaneTrack {
     x1: number;
     x2: number;
     beltIndex: number;
+    peakFlow: Fraction; // solver's span maximum, passed through for the title
   }[];
   seams: number[];
 }
@@ -79,6 +84,7 @@ function feedTrack(
       x1: boundaryX(s.fromMachine - 1, pitch),
       x2: boundaryX(s.toMachine, pitch),
       beltIndex: s.beltIndex,
+      peakFlow: s.peakFlow,
     })),
     // Interior seams: each segment start boundary except the head (machine 1).
     seams: lane.segments
@@ -106,6 +112,7 @@ function outputTrack(
       x1: boundaryX(s.fromMachine - 1, pitch),
       x2: boundaryX(s.toMachine, pitch),
       beltIndex: s.beltIndex,
+      peakFlow: s.peakFlow,
     })),
     seams: lane.segments
       .filter((s) => s.fromMachine > 1)
@@ -163,6 +170,7 @@ export function computeLayout(
     pitch,
     labelStep,
     scrolled,
+    machineTop,
     machines,
     feeds,
     outputs,

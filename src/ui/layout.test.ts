@@ -67,6 +67,37 @@ describe("computeLayout — worked example (N=20)", () => {
       [17, 20],
     ]);
   });
+
+  it("exposes machineTop for the component to consume, not re-derive", () => {
+    expect(layout.machineTop).toBe(
+      LAYOUT.marginY + 1 * LAYOUT.laneH + LAYOUT.busH,
+    );
+  });
+
+  it("passes each segment's exact peakFlow through", () => {
+    const feed = layout.feeds[0]!;
+    // Head segment peaks at belt 1's 480 entry (exact-drain worked example).
+    expect(feed.segments[0]!.peakFlow.eq(Fraction.from(480))).toBe(true);
+    expect(feed.segments[1]!.peakFlow.eq(Fraction.from(120))).toBe(true);
+  });
+});
+
+describe("computeLayout — peakFlow ≠ belt capacity (N=17 under-filled span)", () => {
+  it("keeps the honest span peak when the breakout's tier exceeds its load", () => {
+    // Output side, N=17: the second breakout spans machine 17 only — load
+    // 30/min but assigned tier Mk1 (60/min). peakFlow must stay 30, not the
+    // belt's capacity — the divergence the boundary review r1 caught.
+    const result = solveStage(stage(17));
+    const out = computeLayout(result, 17).outputs[0]!;
+    const last = out.segments[out.segments.length - 1]!;
+    expect(last.fromMachine).toBe(17);
+    expect(last.peakFlow.eq(Fraction.from(30))).toBe(true);
+    expect(
+      result.outputs[0]!.breakouts[last.beltIndex]!.capacity.eq(
+        Fraction.from(60),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("computeLayout — compression", () => {

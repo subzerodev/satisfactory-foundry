@@ -93,7 +93,7 @@ function LaneG({
           >
             <title>
               {`machines ${seg.fromMachine}–${seg.toMachine} · peak ${formatRate(
-                belt.capacity,
+                seg.peakFlow,
               )}/min of ${busCapString}/min`}
             </title>
           </line>
@@ -141,9 +141,7 @@ export function Schematic({
     [result, machineCount],
   );
 
-  // Machine-row top y, mirroring layout.ts's machineTop (marginY + feeds×laneH
-  // + busH). The output arrows rise from the row's bottom (+ machineH).
-  const machineTopY = 16 + result.feeds.length * 56 + 28;
+  const machineTopY = layout.machineTop;
 
   return (
     <div className={layout.scrolled ? "schematic-scroll" : "schematic"}>

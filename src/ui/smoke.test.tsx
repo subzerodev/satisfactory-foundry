@@ -4,7 +4,9 @@ import { Fraction } from "../core/fraction.ts";
 import type { Finding, StageSolveResult } from "../core/manifold.ts";
 import type { CatalogRecipe, CatalogMachine } from "../data/types.ts";
 import type { Selection, SolveState } from "../state/store.ts";
-import { FIXTURE_TIERS, workedResult } from "./fixtures.ts";
+import { solveStage } from "../core/manifold.ts";
+import { TIER_TABLE } from "../data/tiers.ts";
+import { FIXTURE_TIERS, WORKED_INPUT, workedResult } from "./fixtures.ts";
 import { UploadScreen } from "./UploadScreen.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
 import { SummaryCards } from "./SummaryCards.tsx";
@@ -136,6 +138,27 @@ describe("Schematic", () => {
     expect(html).toContain("peak 480/min of 480/min");
   });
 
+  it("titles a segment with its honest peakFlow, not the belt's capacity", () => {
+    // N=17: the last output breakout carries 30/min on a Mk1 (60/min) belt —
+    // the tooltip must say peak 30, not 60 (boundary review r1 catch).
+    const result = solveStage({ ...WORKED_INPUT, machineCount: 17 });
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={result}
+        machineCount={17}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    // The output lane's span 17–17 must show its honest 30 (the broken
+    // belt.capacity stand-in rendered 60 here). The feed lane's own 17–17
+    // span legitimately reads peak 60 — its belt delivers capacity 60 —
+    // so the pin is the positive assertion, scoped by the 30 value only
+    // the output span carries.
+    expect(html).toContain("machines 17–17 · peak 30/min of 480/min");
+  });
+
   it("marks a segment implicated by an over-capacity finding", () => {
     const base = workedResult();
     const doctored: StageSolveResult = {
@@ -235,10 +258,9 @@ describe("FindingsPanel", () => {
 });
 
 describe("Legend", () => {
-  it("renders 6 belt + 2 pipe + override + problem swatches", () => {
-    const html = renderToStaticMarkup(<Legend tiers={FIXTURE_TIERS} />);
-    // FIXTURE_TIERS has 4 belt + 2 pipe; legend swatches iterate the passed
-    // tiers plus override + problem — 4 + 2 + 2 here.
-    expect((html.match(/legend-swatch/g) ?? []).length).toBe(4 + 2 + 2);
+  it("renders 6 belt + 2 pipe + override + problem swatches (spec §5 pin)", () => {
+    // The app passes the full catalog TIER_TABLE (6 belt + 2 pipe).
+    const html = renderToStaticMarkup(<Legend tiers={TIER_TABLE} />);
+    expect((html.match(/legend-swatch/g) ?? []).length).toBe(6 + 2 + 2);
   });
 });

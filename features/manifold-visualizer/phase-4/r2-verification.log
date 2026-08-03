@@ -89,3 +89,23 @@ AssertionError: expected '<div class="schematic"><svg width="96…' to contain '
 --- RESTORE (PASS again)
  Test Files  1 passed (1)
       Tests  1 passed | 11 skipped (12)
+
+## Family 6: peakFlow tooltip pass-through (boundary r1 fold)
+
+### PASS (production code present)
+      Tests  208 passed (208)
+
+### BREAK: revert Schematic title to the belt.capacity stand-in
+$ sed -i 's/seg.peakFlow,/belt.capacity,/' src/ui/Schematic.tsx
+     × titles a segment with its honest peakFlow, not the belt's capacity 6ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/smoke.test.tsx > Schematic > titles a segment with its honest peakFlow, not the belt's capacity
+      Tests  1 failed | 207 passed (208)
+
+### RESTORE
+$ sed -i 's/belt.capacity,/seg.peakFlow,/' src/ui/Schematic.tsx
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+      Tests  3 failed | 205 passed (208)
+
+### RESTORE corrected (the broad sed also touched two color call sites; reverted to belt.capacity — colors are belt-tier identity by contract). Final:
+      Tests  208 passed (208)
