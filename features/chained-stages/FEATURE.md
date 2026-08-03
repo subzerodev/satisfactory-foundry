@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-03
 **Status:** in-progress
-**Current phase:** Phase 1 (graph model) — designing
+**Current phase:** Phase 1 COMPLETE — Phase 2 (canvas) designing
 **Final PR:** —
 **Epic:** #12 (board #21, Stage 3 milestone 74)
 
@@ -27,8 +27,10 @@ argued at its design review.
 
 ### Phase 1 — graph model + cross-stage reconciliation (state + core boundary)
 
-- **Status:** designing
-- **Ticket:** #16 (to create)
+- **Status:** complete (merged --no-ff to develop 2026-08-03; 295/295 tests;
+  5-round design gate; boundary converged first-try incl. the ratified
+  mirror amendment; ticket #16 Done)
+- **Ticket:** #16 (Done, closed)
 - **Scope sketch (brainstorm decides):** multi-stage store shape (stages
   with ids/names + per-stage Selection + per-stage solve; typed links
   item-matched between stage outputs and downstream feeds); cross-stage
