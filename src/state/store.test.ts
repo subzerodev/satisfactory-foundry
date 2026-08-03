@@ -237,7 +237,7 @@ describe("live derivation (spec row 4)", () => {
     expect(solve.result.findings).toEqual([]);
   });
 
-  it("each setter triggers exactly one recompute with the updated result", async () => {
+  it("each setter re-derives with the updated result", async () => {
     const store = await readyStore();
     store.getState().setUnlockedTiers({ belt: 4, pipe: 1 });
     store.getState().selectRecipe("ingot_iron");
@@ -253,7 +253,7 @@ describe("live derivation (spec row 4)", () => {
       ).toEqual(["60"]);
     }
 
-    // clock text change re-solves: 200% doubles demand to 60 → single 60 belt.
+    // clock text change re-solves: 200% doubles per-machine demand to 60.
     store.getState().setClockPercentText("200");
     solve = store.getState().solve;
     expect(solve.status).toBe("solved");
