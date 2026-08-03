@@ -1,7 +1,7 @@
 # Stage 3 / Phase 1 brainstorm — graph model (ticket #16, epic #12)
 
 Date: 2026-08-03
-Status: v5 — r4 folds applied; under dual-review r5
+Status: v5 — FROZEN (correctness converged r5 after five rounds; simplify APPROVED_WITH_NITS, both prose nits folded). This document is the binding Phase 1 contract.
 Inputs: live post-#11 store (`src/state/store.ts` @ post-#11 develop: Selection,
 SolveState, derive, plans machinery incl. the serialized-op chain),
 `src/data/plan-store.ts` (PlanFileV1 `stages[]` + reserved `links[]`),
