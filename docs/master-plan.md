@@ -29,3 +29,8 @@ note at `features/stage0-bootstrap/completion.md`).
   arithmetic) + the visualizer UI on top of it.
 - **Decisions:** design decisions locked in the v1 spec (see its
   "Decisions made during brainstorming" section).
+- **Status: SHIPPED 2026-08-03** — epic #2 (children #3–#6, all Done);
+  released via PR #7 (`develop → main`, merge 8875c4a); 208/208 tests.
+  Record: `features/manifold-visualizer/final-report.md`.
+- **Post-release follow-on:** #9 bundled default catalog (decision #8 —
+  boot-ready without an upload; not part of the Stage 1 release).
