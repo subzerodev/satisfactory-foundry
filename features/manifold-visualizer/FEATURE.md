@@ -23,12 +23,14 @@ Feature spec: `docs/superpowers/specs/2026-08-03-manifold-visualizer-design.md`
 
 ### Phase 1 — src/core manifold solver
 
-- **Status:** spec-in-progress
+- **Status:** plan-pending
 - **Ticket:** #3 (In Progress)
 - **Brainstorm:** `features/manifold-visualizer/phase-1/brainstorm.md` v4 — FROZEN
   (4 correctness rounds, all-Claude roster: r4 both APPROVED_WITH_NITS, folded;
   simplify dispositioned 1-rejected/2-folded-forward)
-- **Spec:** `features/manifold-visualizer/phase-1/spec.md` — pending
+- **Spec:** `features/manifold-visualizer/phase-1/spec.md` v2 — FROZEN
+  (2 correctness rounds: r2 APPROVED + APPROVED_WITH_NITS folded; simplify
+  APPROVED clean)
 - **Plan:** `features/manifold-visualizer/phase-1/plan.md` — pending (written on the phase branch)
 - **Branch:** `feature/phase-1.0` (worktree `.worktrees/phase-1.0/`) — not yet cut
 - **Phase report:** —
