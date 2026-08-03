@@ -50,7 +50,9 @@ canvas; polish lands last on the finished surface.
 - **Goal:** serialize the store to named, locally-persisted factory plans
   (save/list/load/rename/delete), exactness preserved, format forward-open
   for Stage 3's stage graphs.
-- **Ticket:** #11 (milestone 73). **Status: in progress.**
+- **Ticket:** #11 (milestone 73). **Status: SHIPPED 2026-08-03** — merged
+  to develop (264/264 tests; 6-round design gate + first-try boundary
+  convergence); released via the Stage 2 PR.
 
 ## Stage 3 — Chained stages (graph editor)
 
