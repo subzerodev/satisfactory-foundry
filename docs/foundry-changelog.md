@@ -3,6 +3,19 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-03 — Bundled game data: no more file hunting
+
+> Hey Michael — the app now just works on first open. It ships with a
+> snapshot of your game's data built in (taken from your own install,
+> Steam build 23855724), so a fresh browser goes straight to the recipe
+> picker — no digging through the Steam folder. A small banner tells you
+> which game build the bundled data came from; if your game updates past
+> it, upload your newer Docs.json and yours takes over (and sticks).
+> After a game patch, one command refreshes the built-in snapshot. One
+> more safety net came out of review: if the browser's storage ever
+> hiccups, the app uses the bundled data for that session but will never
+> overwrite anything you uploaded.
+
 ## 2026-08-03 — Stage 1, Phase 4: the screen — v1 is complete
 
 > Hey Michael — it's on screen now. Open the app, upload your game's
