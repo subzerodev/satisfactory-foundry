@@ -3,7 +3,7 @@
 **Started:** 2026-08-03
 **Status:** phases complete — arc closing (final report + release PR)
 **Current phase:** Phase 4 COMPLETE (merged to develop 2026-08-03) — all four phases done
-**Final PR:** pending (develop → main)
+**Final PR:** #7 (develop → main) — open for review
 **Epic:** #2 (board #21, Stage 1 milestone)
 
 ## Phase decomposition
