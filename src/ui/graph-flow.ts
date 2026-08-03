@@ -42,11 +42,21 @@ export interface StageNodeData {
   findingCount: number;
 }
 
-/** A node handle (node-side, so RF12 can route/SSR edges). */
+/**
+ * A node handle (node-side, so RF12 can route/SSR edges). `x`/`y` are
+ * node-relative geometry: with them present, RF's parseHandles computes
+ * handleBounds directly from the node object — no DOM measurement needed
+ * (measurement never re-fires after a structure resync, so connections
+ * depend on this).
+ */
 export interface FlowHandle {
   id: string;
   type: "source" | "target";
   position: "left" | "right";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 /**
@@ -123,11 +133,33 @@ export function pickLinkItem(
  */
 const FALLBACK_POSITION = { x: 40, y: 40 };
 
-/** The node-side handles every stage card carries (one source, one target). */
+/**
+ * The node-side handles every stage card carries (one source, one target),
+ * centered on the card's left/right edges — geometry mirrors the rendered
+ * Handle elements (6px squares straddling the border).
+ */
+const HANDLE_SIZE = 6;
 function stageHandles(): FlowHandle[] {
+  const y = NODE_HEIGHT / 2 - HANDLE_SIZE / 2;
   return [
-    { id: "in", type: "target", position: "left" },
-    { id: "out", type: "source", position: "right" },
+    {
+      id: "in",
+      type: "target",
+      position: "left",
+      x: -HANDLE_SIZE / 2,
+      y,
+      width: HANDLE_SIZE,
+      height: HANDLE_SIZE,
+    },
+    {
+      id: "out",
+      type: "source",
+      position: "right",
+      x: NODE_WIDTH - HANDLE_SIZE / 2,
+      y,
+      width: HANDLE_SIZE,
+      height: HANDLE_SIZE,
+    },
   ];
 }
 

@@ -238,6 +238,12 @@ export function GraphCanvas() {
         position: n.position,
         width: n.width,
         height: n.height,
+        // Node-side handle geometry: RF derives handleBounds from these (no
+        // DOM measurement), which keeps connections alive across resyncs.
+        handles: n.handles.map((h) => ({
+          ...h,
+          position: h.position as Position,
+        })),
         selected: n.selected,
         data: {
           ...n.data,
@@ -281,12 +287,17 @@ export function GraphCanvas() {
     const byId = new Map(current.map((n) => [n.id, n]));
     const merged = derivedNodes.map((d) => {
       const live = byId.get(d.id);
+      if (live === undefined) return d;
+      // Preserve RF-owned measurement state: a fresh derived node without
+      // `measured` makes adoptUserNodes reset handleBounds, and since the DOM
+      // element never resizes RF won't re-measure — connections would die.
+      const base = { ...d, measured: live.measured };
       // Preserve an in-flight drag: keep the live interim position + flag, take
       // the rest of the structure (data, selection) from the derived node.
-      if (live?.dragging) {
-        return { ...d, position: live.position, dragging: true };
+      if (live.dragging) {
+        return { ...base, position: live.position, dragging: true };
       }
-      return d;
+      return base;
     });
     setNodes(merged);
     nodesRef.current = merged;

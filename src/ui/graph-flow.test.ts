@@ -199,10 +199,27 @@ describe("graphToFlow — nodes", () => {
     expect(n0!.width).toBe(NODE_WIDTH);
     expect(n0!.height).toBe(NODE_HEIGHT);
     expect(n0!.position).toEqual({ x: 40, y: 40 });
-    // Node-side handles: one source (right), one target (left).
+    // Node-side handles: one source (right), one target (left), with
+    // node-relative geometry so RF computes handleBounds without measuring.
     expect(n0!.handles).toEqual([
-      { id: "in", type: "target", position: "left" },
-      { id: "out", type: "source", position: "right" },
+      {
+        id: "in",
+        type: "target",
+        position: "left",
+        x: -3,
+        y: 45,
+        width: 6,
+        height: 6,
+      },
+      {
+        id: "out",
+        type: "source",
+        position: "right",
+        x: 217,
+        y: 45,
+        width: 6,
+        height: 6,
+      },
     ]);
   });
 
