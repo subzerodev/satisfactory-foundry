@@ -5,7 +5,7 @@
 # a key after [stages] would nest as stages.<key>, not a top-level key.
 
 board_project_id = 21
-wiki_pages       = ["Operating Model"]
+wiki_pages       = ["Home", "Operating Model"]
 master_plan      = "docs/master-plan.md"
 operating_model  = "docs/operating-model.md"
 
