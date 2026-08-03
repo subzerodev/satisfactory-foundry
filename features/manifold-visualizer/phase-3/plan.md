@@ -7,9 +7,13 @@ brainstorm's pinned rules are normative where cited). Worktree:
 
 ## Shape
 
-One implementation agent, one worktree, two sequential TDD tasks, one commit
-each. `npm test` + `npm run check` green before every commit;
-bidirectionality log at the end.
+One implementation agent, one worktree, **two commits with the test surface
+partitioned** (Task 1 is test-first for its own rows; the upload-matrix /
+persistence rows land in Task 2 against the already-written module — honest
+labelling per plan review, not strict per-branch TDD). `npm test` +
+`npm run check` green before every commit; bidirectionality log at the end.
+**Runtime-confirm the existing-test baseline (`npm test`) at drift-hunt**
+rather than trusting the 131 figure.
 
 **Pre-impl drift hunt (mandatory first step):** verify against live source —
 zustand 5.0.14 exports (`zustand/vanilla` createStore, `zustand/middleware`
@@ -31,11 +35,16 @@ Any drift → stop and report.
   mutate-fully-then-derive-once); `derive()` per the frozen Axis 3 pipeline;
   `useAppStore` hook export.
 - Tests (spec rows 1, 4, 5, 6): catalog lifecycle (empty/hit/stale via real
-  cache under fake-indexeddb); live derivation through the REAL
-  parse→toStageInput→solveStage pipeline (DOCS_FRAGMENT-style fixture,
-  20-machine iron worked example both sides); invalid-input routing (all
-  reasons + the count-excess `solved`+finding split); override discipline
-  (dense padding, clear triggers, machineCount/clock non-triggers).
+  cache under fake-indexeddb; stale produced by re-`db.put`ting the row with
+  a bumped parser_version — the shipped catalog-store.test.ts technique);
+  live derivation through the REAL parse→toStageInput→solveStage pipeline
+  (DOCS_FRAGMENT-style fixture, 20-machine iron worked example both sides —
+  **the test MUST first `setUnlockedTiers({ belt: 4, pipe: 1 })`**: the
+  Phase 1 `[480, 120@after-16]` values assume the 4-tier table; the store's
+  default 6-tier table would solve D=600 to a single 780 belt);
+  invalid-input routing (all reasons + the count-excess `solved`+finding
+  split); override discipline (dense padding, clear triggers,
+  machineCount/clock non-triggers).
 - Commit: `feat(state): app store — selection, catalog lifecycle, live derive`.
 
 ## Task 2 — upload matrix + persistence tests (no new production code expected)
@@ -48,7 +57,11 @@ Any drift → stop and report.
   overrides cleared); persistence (tiers survive store re-create via the
   object-stub storage; corrupt stored JSON → defaults; stored value is
   exactly `{unlockedTiers}`; key `satis_foundry:tiers`).
-- Any production fix these tests force goes in this commit with a note.
+- Any production fix these tests force goes in this commit, with the note
+  recorded in BOTH the commit body and the r2-verification.log, and
+  **re-triggers the pre-impl drift-hunt** for the touched surface (a forced
+  fix must never silently diverge from the frozen spec — design-level gaps
+  are stop-and-report, not fixes).
 - Commit: `test(state): upload matrix, re-validation, persistence`.
 
 ## Definition of done
