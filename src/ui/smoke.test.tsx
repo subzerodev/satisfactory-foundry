@@ -1,3 +1,16 @@
+/**
+ * Static-markup smoke suite (node env, no jsdom). Each pure/leaf UI piece is
+ * rendered through react-dom/server and asserted on its output string.
+ *
+ * GraphCanvas EXCLUSION (Stage 3 / Phase 2, frozen Axis 5): the canvas
+ * component is deliberately EXCLUDED from the smoke suite — graphToFlow (tested
+ * in graph-flow.test.ts) carries the render-contract weight, and the team-lead
+ * browser walk is the visual gate. The one opportunistic exception below (RF12
+ * SSR happens to work in node) asserts only that the store→card path emits the
+ * default stage's name + the recipe-less placeholder; it is a bonus, not the
+ * canvas's coverage.
+ */
+
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Fraction } from "../core/fraction.ts";
@@ -369,5 +382,22 @@ describe("PlansBar", () => {
     expect(html).toContain("plans-error");
     // renderToStaticMarkup entity-escapes the quotes; assert the surrounding copy.
     expect(html).toContain("already exists");
+  });
+});
+
+describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
+  it("renders the default stage card through RF12 SSR (name + recipe-less placeholder)", async () => {
+    // The canvas is EXCLUDED from smoke (header note); this row exists only
+    // because RF12 SSR happens to render the custom node card in node env. It
+    // reads the app-wide singleton store, which boots with one recipe-less
+    // "Stage 1" — so the store→graphToFlow→card path is exercised end-to-end.
+    const { GraphCanvas } = await import("./GraphCanvas.tsx");
+    const html = renderToStaticMarkup(<GraphCanvas />);
+    expect(html).toContain("stage-node");
+    expect(html).toContain("Stage 1");
+    // Recipe-less default → the "no recipe" placeholder renders.
+    expect(html).toContain("no recipe");
+    // The ＋stage control is present in the canvas corner.
+    expect(html).toContain("stage");
   });
 });
