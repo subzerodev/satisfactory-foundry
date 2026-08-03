@@ -27,7 +27,7 @@ export default tseslint.config(
               // Depth-robust ban on relative escapes into sibling layers,
               // matching ../state, ../../state/foo, ../../../data/x, etc. at
               // any nesting depth.
-              regex: '^\\.\\.?/(\\.\\./)*(state|ui|data)(/|$)',
+              regex: '^\\.\\./(\\.\\./)*(state|ui|data)(/|$)',
               message:
                 'src/core must not import from the state/ui/data layers.',
             },
