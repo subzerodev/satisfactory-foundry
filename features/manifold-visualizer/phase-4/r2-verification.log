@@ -1,0 +1,91 @@
+Phase 4 bidirectionality verification log
+Generated: 2026-08-03T19:57:07Z
+Method: for each pure-module family plus one component string, confirm the
+test PASSes, break the PRODUCTION behavior it pins, confirm a real vitest
+FAIL naming that test, restore, confirm PASS again. No test was weakened.
+
+
+===================================================================
+1. decode — UTF-16 LE BOM path (decode.test.ts)
+===================================================================
+--- BEFORE (PASS): decodeBytes decodes UTF-16 LE with BOM
+ Test Files  1 passed (1)
+      Tests  1 passed | 4 skipped (5)
+
+--- BREAK: swap the utf-16le decoder to utf-8 in decode.ts
+ ❯ src/ui/decode.test.ts (5 tests | 1 failed | 4 skipped) 7ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/decode.test.ts > decodeBytes > decodes UTF-16 LE with BOM
+AssertionError: expected '{\u0000"\u0000n\u0000a\u0000m\u0000e\…' to be '{"name":"Iron Ingot ×2","rate":37.5}' // Object.is equality
+
+--- RESTORE (PASS again)
+ Test Files  1 passed (1)
+      Tests  1 passed | 4 skipped (5)
+
+===================================================================
+2. format — mockup feed label (format.test.ts)
+===================================================================
+--- BEFORE (PASS): beltLabel matches the mockup feed string exactly
+ Test Files  1 passed (1)
+      Tests  1 passed | 17 skipped (18)
+
+--- BREAK: change 'enters' to 'joins' in the feed template (format.ts)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/format.test.ts > beltLabel > matches the mockup feed string exactly
+AssertionError: expected 'Feed 2 — Mk2 · 120/min · joins after …' to be 'Feed 2 — Mk2 · 120/min · enters after…' // Object.is equality
+      Tests  1 failed | 17 skipped (18)
+
+--- RESTORE (PASS again)
+ Test Files  1 passed (1)
+      Tests  1 passed | 17 skipped (18)
+
+===================================================================
+3. colors — belt tier positional color (colors.test.ts)
+===================================================================
+--- BEFORE (PASS): colorForCapacity resolves a belt tier to its positional color
+ Test Files  1 passed (1)
+      Tests  1 passed | 3 skipped (4)
+
+--- BREAK: force colorForCapacity to always use index 0 (colors.ts)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/colors.test.ts > colorForCapacity > resolves a belt tier to its positional color
+AssertionError: expected '#9e9e9e' to be '#7c5cd6' // Object.is equality
+      Tests  1 failed | 3 skipped (4)
+
+--- RESTORE (PASS again)
+ Test Files  1 passed (1)
+      Tests  1 passed | 3 skipped (4)
+
+===================================================================
+4. layout — boundary x for the second feed belt arrow (layout.test.ts)
+===================================================================
+--- BEFORE (PASS): places the second feed belt arrow at boundary 16
+ Test Files  1 passed (1)
+      Tests  1 passed | 9 skipped (10)
+
+--- BREAK: drop the marginX offset in boundaryX (layout.ts)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/layout.test.ts > computeLayout — worked example (N=20) > places the second feed belt arrow at boundary 16
+AssertionError: expected 720 to be 744 // Object.is equality
+      Tests  1 failed | 9 skipped (10)
+
+--- RESTORE (PASS again)
+ Test Files  1 passed (1)
+      Tests  1 passed | 9 skipped (10)
+
+===================================================================
+5. component — Schematic renders the mockup feed label (smoke.test.tsx)
+===================================================================
+--- BEFORE (PASS): Schematic > renders the worked example: rects, mockup label, tooltip form
+ Test Files  1 passed (1)
+      Tests  1 passed | 11 skipped (12)
+
+--- BREAK: change 'enters' to 'joins' in the feed template (format.ts, consumed by Schematic)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/smoke.test.tsx > Schematic > renders the worked example: rects, mockup label, tooltip form
+AssertionError: expected '<div class="schematic"><svg width="96…' to contain 'Feed 2 — Mk2 · 120/min · enters after…'
+      Tests  1 failed | 11 skipped (12)
+
+--- RESTORE (PASS again)
+ Test Files  1 passed (1)
+      Tests  1 passed | 11 skipped (12)
