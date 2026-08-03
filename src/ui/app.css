@@ -255,3 +255,129 @@ body {
   border-radius: 2px;
   border: 1px solid rgba(0, 0, 0, 0.15);
 }
+
+/* -------------------------------------------------------------------------
+   Stage-graph canvas (Stage 3 / Phase 2). The React Flow surface + the custom
+   StageNode card. Fixed-height panel between the header and the v1 surface.
+   ------------------------------------------------------------------------- */
+
+.graph-canvas {
+  width: 100%;
+  height: 340px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.graph-add-stage {
+  font-size: 13px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.graph-canvas-notice {
+  margin: 0;
+  max-width: 240px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--error);
+  background: var(--bg-panel);
+  border: 1px solid var(--error);
+  border-radius: 4px;
+}
+
+.stage-node {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.stage-node.selected {
+  border-color: #4f9dde;
+  box-shadow: 0 0 0 2px rgba(79, 157, 222, 0.35);
+}
+
+/* Solve-status tint — the only carrier of per-stage solve health on the card. */
+.stage-node.solve-invalid {
+  border-color: var(--error);
+}
+
+.stage-node.solve-idle {
+  color: var(--fg-muted);
+}
+
+.stage-node-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.stage-node-name {
+  font-weight: 600;
+  cursor: text;
+}
+
+.stage-node-rename {
+  width: 100%;
+  font: inherit;
+}
+
+.stage-node-remove {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--fg-muted);
+  padding: 0 2px;
+}
+
+.stage-node-remove:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.stage-node-recipe {
+  margin: 0;
+}
+
+.stage-node-no-recipe {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.stage-node-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.stage-node-findings {
+  color: #fff;
+  background: var(--error);
+  border-radius: 8px;
+  padding: 0 6px;
+  font-weight: 600;
+}
+
+/* Edge reconciliation styling. */
+.edge-under .react-flow__edge-path {
+  stroke: var(--error);
+}
+
+.edge-over .react-flow__edge-path {
+  stroke: var(--fg-muted);
+}
+
+.edge-dangling .react-flow__edge-path {
+  stroke: var(--error);
+  stroke-dasharray: 4 3;
+}

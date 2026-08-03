@@ -16,6 +16,7 @@ import { Schematic } from "./Schematic.tsx";
 import { LaneOverrides } from "./LaneOverrides.tsx";
 import { FindingsPanel } from "./FindingsPanel.tsx";
 import { Legend } from "./Legend.tsx";
+import { GraphCanvas } from "./GraphCanvas.tsx";
 import "./app.css";
 
 // Wire the bundled default catalog once, at module load: fetch the static
@@ -144,6 +145,10 @@ export default function App() {
       {s.uploadError !== null && (
         <p className="upload-banner">{s.uploadError}</p>
       )}
+      {/* Stage-graph canvas (Stage 3 / Phase 2): a fixed-height panel between the
+          header and the v1 surface. Clicking a node switches the whole lower
+          surface to that stage via the activeStageId mirror. */}
+      <GraphCanvas />
       <ControlsStrip
         recipes={recipes}
         machines={catalog.machines}
