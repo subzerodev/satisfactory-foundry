@@ -7,8 +7,10 @@ import type { Selection, SolveState } from "../state/store.ts";
 import { solveStage } from "../core/manifold.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import { FIXTURE_TIERS, WORKED_INPUT, workedResult } from "./fixtures.ts";
+import type { PlanListEntry } from "../data/plan-store.ts";
 import { BundledBanner } from "./App.tsx";
 import { UploadScreen } from "./UploadScreen.tsx";
+import { PlansBar } from "./PlansBar.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
 import { SummaryCards } from "./SummaryCards.tsx";
 import { Schematic } from "./Schematic.tsx";
@@ -294,5 +296,78 @@ describe("App provenance banner (ticket #9)", () => {
   it("renders nothing when the source is null (pre-ready)", () => {
     const html = renderToStaticMarkup(<BundledBanner source={null} />);
     expect(html).toBe("");
+  });
+});
+
+describe("PlansBar", () => {
+  const populated: PlanListEntry[] = [
+    { id: "id-a", name: "Alpha", updatedAt: "2026-08-03T12:00:00.000Z" },
+    { id: "id-b", name: "Beta", updatedAt: "2026-07-01T09:00:00.000Z" },
+  ];
+
+  it("renders the empty placeholder when plans is null (not-yet-listed)", () => {
+    const html = renderToStaticMarkup(
+      <PlansBar
+        plans={null}
+        planError={null}
+        onSave={noop}
+        onLoad={noop}
+        onRename={noop}
+        onDelete={noop}
+      />,
+    );
+    expect(html).toContain("— no saved plans —");
+    // The name input + Save are always present.
+    expect(html).toContain('placeholder="plan name"');
+    expect(html).toContain("Save");
+  });
+
+  it("renders the same placeholder when plans is [] (listed, none)", () => {
+    const html = renderToStaticMarkup(
+      <PlansBar
+        plans={[]}
+        planError={null}
+        onSave={noop}
+        onLoad={noop}
+        onRename={noop}
+        onDelete={noop}
+      />,
+    );
+    expect(html).toContain("— no saved plans —");
+  });
+
+  it("renders a populated select with name + date, plus Load/Rename/Delete", () => {
+    const html = renderToStaticMarkup(
+      <PlansBar
+        plans={populated}
+        planError={null}
+        onSave={noop}
+        onLoad={noop}
+        onRename={noop}
+        onDelete={noop}
+      />,
+    );
+    expect(html).toContain("Alpha (2026-08-03)");
+    expect(html).toContain("Beta (2026-07-01)");
+    expect(html).toContain("Load");
+    expect(html).toContain("Rename");
+    expect(html).toContain("Delete");
+    expect(html).not.toContain("— no saved plans —");
+  });
+
+  it("renders the planError banner", () => {
+    const html = renderToStaticMarkup(
+      <PlansBar
+        plans={[]}
+        planError='a plan named "Alpha" already exists'
+        onSave={noop}
+        onLoad={noop}
+        onRename={noop}
+        onDelete={noop}
+      />,
+    );
+    expect(html).toContain("plans-error");
+    // renderToStaticMarkup entity-escapes the quotes; assert the surrounding copy.
+    expect(html).toContain("already exists");
   });
 });

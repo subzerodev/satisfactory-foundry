@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { useAppStore, setBundledDocsProvider } from "../state/store.ts";
 import type { CatalogSource } from "../data/catalog-store.ts";
 import type { Finding, StageSolveResult } from "../core/manifold.ts";
 import { decodeBytes } from "./decode.ts";
 import { UploadScreen } from "./UploadScreen.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
+import { PlansBar } from "./PlansBar.tsx";
 import { SummaryCards } from "./SummaryCards.tsx";
 import { Schematic } from "./Schematic.tsx";
 import { LaneOverrides } from "./LaneOverrides.tsx";
@@ -82,6 +84,16 @@ function anyOverride(overrides: {
 export default function App() {
   const s = useAppStore();
 
+  // Refresh the saved-plan list once the catalog is ready (the ready layout's
+  // first mount). `plans` starts null; this makes that null transient, so
+  // PlansBar's null and [] states share one placeholder. refreshPlans enqueues
+  // + catches internally, so this fire-and-forget call is safe.
+  const ready = s.catalog.status === "ready";
+  const refreshPlans = s.refreshPlans;
+  useEffect(() => {
+    if (ready) void refreshPlans();
+  }, [ready, refreshPlans]);
+
   if (s.catalog.status === "initializing") {
     return <p className="boot">Loading…</p>;
   }
@@ -133,6 +145,14 @@ export default function App() {
         onClockText={s.setClockPercentText}
         onTiers={s.setUnlockedTiers}
         onClearOverrides={s.clearOverrides}
+      />
+      <PlansBar
+        plans={s.plans}
+        planError={s.planError}
+        onSave={s.savePlanAs}
+        onLoad={s.loadPlan}
+        onRename={s.renamePlan}
+        onDelete={s.deletePlan}
       />
       {s.solve.status === "idle" && (
         <p className="empty-state">Pick a recipe to see its manifold.</p>
