@@ -67,7 +67,39 @@ Break: banner copy `bundled game data · …`
 Restore → `bundled game data · …` → PASS.
 
 --------------------------------------------------------------------------
-Final: `npm test` → Test Files 11 passed (11), Tests 222 passed (222).
+Family 4 — unavailable classification / data preservation (boundary r1 fold)
+  (src/data/catalog-store.ts loadCatalog access-failure catch)
+--------------------------------------------------------------------------
 
-All three families are bidirectional: the tests fail when their behavior is
+Break: `catch { return { status: "unavailable" }; }`
+    →  `catch { return { status: "stale" }; }`   (re-conflate access failure
+                                                   with stale → destructive save)
+
+`npx vitest run src/data/catalog-store.test.ts src/state/store.test.ts`:
+
+    × returns unavailable (not stale) on an IDB access failure (boundary r1 fold)
+    × IDB unavailable (broken open) → bundled-ready WITHOUT save + distinct note
+    × preserves an unreadable user row — no destructive bundled overwrite
+    FAIL  src/data/catalog-store.test.ts > … > returns unavailable (not stale)
+          on an IDB access failure
+    AssertionError: expected 'stale' to be 'unavailable' // Object.is equality
+    FAIL  src/state/store.test.ts > … > IDB unavailable (broken open) →
+          bundled-ready WITHOUT save + distinct note
+    AssertionError: expected 'bundled catalog loaded but could not …' to be
+      'cached data couldn't be read this session — using bundled data'
+    FAIL  src/state/store.test.ts > … > preserves an unreadable user row — no
+          destructive bundled overwrite (data-loss proof)
+    AssertionError: expected 'bundled catalog loaded but could not …' to be
+      'cached data couldn't be read this session — using bundled data'
+    Tests  3 failed | 39 passed (42)
+
+The data-loss proof failing on the reverted classification is the key signal:
+with the access failure re-mapped to stale, init takes the SAVE path and the
+memoized-healthy connection lets the put overwrite the user row — exactly the
+defect. Restore → `unavailable` → PASS.
+
+--------------------------------------------------------------------------
+Final: `npm test` → Test Files 11 passed (11), Tests 225 passed (225).
+
+All four families are bidirectional: the tests fail when their behavior is
 removed and pass when it is restored — they gate real behavior, not tautology.

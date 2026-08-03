@@ -111,6 +111,29 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     );
     expect((await loadCatalog()).status).toBe("stale");
   });
+
+  it("returns unavailable (not stale) on an IDB access failure (boundary r1 fold)", async () => {
+    // An IDB access failure is DISTINCT from stale: the row may still hold a
+    // valid user catalog we merely couldn't read, so init must not overwrite
+    // it. Break the open() so openDb rejects.
+    resetDbCache();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).indexedDB = {
+      open: () => {
+        const req: Record<string, unknown> = {
+          error: new Error("boom: IDB open failed"),
+          onupgradeneeded: null,
+          onsuccess: null,
+          onerror: null,
+        };
+        queueMicrotask(() => {
+          if (typeof req.onerror === "function") (req.onerror as () => void)();
+        });
+        return req;
+      },
+    };
+    expect((await loadCatalog()).status).toBe("unavailable");
+  });
 });
 
 describe("catalog cache — source provenance (ticket #9)", () => {

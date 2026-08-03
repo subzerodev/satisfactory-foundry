@@ -65,7 +65,12 @@ export interface StoredCatalog {
 export type CacheLoadResult =
   | { status: "hit"; catalog: Catalog; source: CatalogSource }
   | { status: "stale" }
-  | { status: "empty" };
+  | { status: "empty" }
+  // A row we could NOT read this session (IDB access failure) — as opposed to
+  // a row that is absent (empty) or genuinely unusable (stale). It may still
+  // hold a valid, possibly newer, user catalog, so the caller must NOT
+  // overwrite it: the unavailable path degrades WITHOUT saving.
+  | { status: "unavailable" };
 
 /**
  * Serialize + persist a parsed catalog under the current parser version, with a
@@ -89,10 +94,16 @@ export async function saveCatalog(
 }
 
 /**
- * Load the cached catalog. Never throws to the caller: any failure — no row,
- * version mismatch, or a reviver that chokes on a corrupted payload — collapses
- * to a `{status}` the Phase 4 UI turns into a generic re-upload prompt. The
- * planner's cachedVersion/currentVersion diagnostics are deliberately dropped.
+ * Load the cached catalog. Never throws to the caller — but it distinguishes
+ * three failure causes that used to collapse together, because they demand
+ * different recovery:
+ *   - IDB ACCESS failure (openDb / get rejects) → "unavailable": the row may
+ *     be a valid, possibly newer user catalog we merely couldn't read, so the
+ *     caller must NOT overwrite it (data-preservation, boundary r1 fold).
+ *   - no row → "empty"; version mismatch or a reviver that chokes on a
+ *     corrupted payload → "stale": genuinely absent/unusable rows the caller
+ *     is free to replace with a bundled default.
+ * The planner's cachedVersion/currentVersion diagnostics are deliberately dropped.
  */
 export async function loadCatalog(): Promise<CacheLoadResult> {
   let stored: StoredCatalog | undefined;
@@ -100,7 +111,7 @@ export async function loadCatalog(): Promise<CacheLoadResult> {
     const db = await openDb();
     stored = await db.get<StoredCatalog>(CATALOG_STORE, CATALOG_KEY);
   } catch {
-    return { status: "stale" };
+    return { status: "unavailable" };
   }
   if (stored === undefined) return { status: "empty" };
   if (stored.parser_version !== CATALOG_PARSER_VERSION) {

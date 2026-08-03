@@ -725,16 +725,14 @@ describe("bundled default catalog (ticket #9)", () => {
     expect(s.catalogSource).toBeNull();
   });
 
-  it("bundled-ready but save fails (broken IDB) → usable this session + uploadError note", async () => {
+  it("IDB unavailable (broken open) → bundled-ready WITHOUT save + distinct note (boundary r1 fold)", async () => {
     setBundledDocsProvider(async () => ({
       text: DOCS_TEXT,
       provenance: BUNDLED_PROVENANCE,
     }));
-    // Break the IDB layer so loadCatalog reads empty (real fake-idb) but the
-    // subsequent saveCatalog rejects. loadCatalog swallows its own read error
-    // into 'stale' — either way init consults the bundled provider; we assert
-    // the save-failure branch: swap in a factory whose open() errors AFTER the
-    // provider resolves.
+    // Break the IDB layer: loadCatalog now returns 'unavailable' (an access
+    // failure, NOT stale). init runs the bundled fallback WITHOUT saving — so
+    // the note is the distinct "couldn't be read" one, not the save-fail note.
     resetDbCache();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).indexedDB = {
@@ -755,14 +753,107 @@ describe("bundled default catalog (ticket #9)", () => {
     const store = createAppStore(makeStorageStub().storage);
     await store.getState().init();
     const s = store.getState();
-    // The bundled catalog is usable this session even though it couldn't cache.
+    // The bundled catalog is usable this session even though the cache row
+    // couldn't be read — and was NOT overwritten.
     expect(s.catalog.status).toBe("ready");
     if (s.catalog.status === "ready") {
       expect(s.catalog.catalog.recipes["ingot_iron"]).toBeDefined();
     }
     expect(s.catalogSource).toMatchObject({ kind: "bundled" });
-    expect(s.uploadError).not.toBeNull();
-    expect(s.uploadError).toMatch(/cache/i);
+    // The distinct unavailable-path note (not the save-fail "cached" wording).
+    expect(s.uploadError).toBe(
+      "cached data couldn't be read this session — using bundled data",
+    );
+  });
+
+  it("IDB unavailable + provider degrades → needs-upload{stale} (unavailable is not a UI reason)", async () => {
+    setBundledDocsProvider(async () => null);
+    resetDbCache();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).indexedDB = {
+      open: () => {
+        const req: Record<string, unknown> = {
+          error: new Error("boom: IDB open failed"),
+          onupgradeneeded: null,
+          onsuccess: null,
+          onerror: null,
+        };
+        queueMicrotask(() => {
+          if (typeof req.onerror === "function") (req.onerror as () => void)();
+        });
+        return req;
+      },
+    };
+
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("needs-upload");
+    if (s.catalog.status === "needs-upload") {
+      // Mapped to 'stale' — the frozen UI union has no 'unavailable' reason.
+      expect(s.catalog.reason).toBe("stale");
+    }
+    expect(s.catalogSource).toBeNull();
+  });
+
+  it("preserves an unreadable user row — no destructive bundled overwrite (data-loss proof)", async () => {
+    // 1. Seed a real user IRON catalog into a HEALTHY fake IDB via a full boot.
+    setBundledDocsProvider(async () => null);
+    const seed = createAppStore(makeStorageStub().storage);
+    await seed.getState().uploadDocsText(DOCS_TEXT);
+    expect(seed.getState().catalogSource).toEqual({ kind: "user" });
+
+    // 2. Break IDB (open fails) and boot with a COPPER bundled provider. init
+    //    sees 'unavailable' → bundled-ready (copper) WITHOUT saving.
+    resetDbCache();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const goodIdb = (globalThis as any).indexedDB;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).indexedDB = {
+      open: () => {
+        const req: Record<string, unknown> = {
+          error: new Error("boom: IDB open failed"),
+          onupgradeneeded: null,
+          onsuccess: null,
+          onerror: null,
+        };
+        queueMicrotask(() => {
+          if (typeof req.onerror === "function") (req.onerror as () => void)();
+        });
+        return req;
+      },
+    };
+    setBundledDocsProvider(async () => ({
+      text: DOCS_TEXT_COPPER,
+      provenance: BUNDLED_PROVENANCE,
+    }));
+    const degraded = createAppStore(makeStorageStub().storage);
+    await degraded.getState().init();
+    const d = degraded.getState();
+    expect(d.catalog.status).toBe("ready");
+    if (d.catalog.status === "ready") {
+      expect(d.catalog.catalog.recipes["ingot_copper"]).toBeDefined();
+    }
+    expect(d.catalogSource).toMatchObject({ kind: "bundled" });
+    expect(d.uploadError).toBe(
+      "cached data couldn't be read this session — using bundled data",
+    );
+
+    // 3. Restore the HEALTHY IDB (same backing as step 1) and boot again. The
+    //    seeded IRON user row is intact — the unavailable path never wrote over
+    //    it with copper.
+    resetDbCache();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).indexedDB = goodIdb;
+    const recovered = createAppStore(makeStorageStub().storage);
+    await recovered.getState().init();
+    const r = recovered.getState();
+    expect(r.catalog.status).toBe("ready");
+    if (r.catalog.status === "ready") {
+      expect(r.catalog.catalog.recipes["ingot_iron"]).toBeDefined();
+      expect(r.catalog.catalog.recipes["ingot_copper"]).toBeUndefined();
+    }
+    expect(r.catalogSource).toEqual({ kind: "user" });
   });
 
   it("uploading over a bundled catalog flips the source to user", async () => {

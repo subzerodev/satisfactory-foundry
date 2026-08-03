@@ -48,14 +48,27 @@ needs-upload. New `init()`:
 
 1. `loadCatalog()` `hit` → ready (**cache wins** — a user's uploaded catalog,
    or a previously-cached bundled one, never regresses).
-2. `empty` / `stale` → **bundled fallback**: fetch the asset + provenance,
-   `parseCatalogFromText`, → ready + `saveCatalog` (same never-block save as
-   upload: save failure ⇒ usable-this-session + `uploadError` note).
+2. `empty` / `stale` → **bundled fallback + SAVE**: fetch the asset +
+   provenance, `parseCatalogFromText`, → ready + `saveCatalog` (same
+   never-block save as upload: save failure ⇒ usable-this-session +
+   `uploadError` note). These rows are absent (`empty`) or genuinely unusable
+   (`stale`), so replacing them with bundled data is safe.
+2b. `unavailable` → **bundled fallback WITHOUT save** (boundary r1 fold):
+   an IDB *access* failure means the cache row may be a valid, possibly newer
+   user catalog we merely couldn't READ — and because `openDb` is memoized, a
+   `db.get` rejection leaves a healthy connection through which a save would
+   *destructively* clobber that row. So the unavailable path runs bundled but
+   does **NOT** call `saveCatalog` (usable this session, cache untouched) and
+   sets a **distinct** note: `cached data couldn't be read this session —
+   using bundled data`. See `CacheLoadResult`'s `unavailable` variant.
 3. Bundled fetch/parse failure (asset missing, corrupt) → **degrade to v1
    behavior**: `needs-upload` with the existing reason. Never a crash, never
    a worse outcome than today. **The provider call itself is try/caught**
    (r1 fold): a *rejected* promise (thrown `fetch`) degrades identically to
-   a resolved `null` — both are the same degrade path.
+   a resolved `null` — both are the same degrade path. On the `unavailable`
+   path the degrade maps to `needs-upload{stale}` — the frozen UI reason union
+   (`empty` / `stale` / `upload-error`) is untouched, so `unavailable` never
+   leaks into it.
 
 State addition (one field, not a union change):
 `catalogSource: { kind: "user" } | { kind: "bundled"; steamBuild: string;
@@ -168,3 +181,26 @@ recorded). Run manually after game patches; documented in the script header
   unit-degrade wording (provenance failure ⇒ whole-null). Refuted clean:
   decode.ts has zero imports (node-safe end to end); .mjs→.ts import
   outside tsc's purview; import.meta.env isolated behind the seam.
+- **Boundary amendment (2026-08-03, boundary r1 fold — adversarial IMPORTANT):**
+  the implemented diff's boundary review found a real **destructive-overwrite /
+  data-loss defect**. Root cause: `loadCatalog`'s first try/catch **conflated
+  three distinct causes** — an IDB access failure (openDb/get rejection), an
+  absent row, and a corrupted/version-stale row — collapsing them all into
+  `stale`. init() then ran `empty`/`stale` → bundled + **SAVE**; because
+  `openDb` is memoized, a `db.get`-failure sub-case left a *healthy* connection,
+  so `saveCatalog`'s `put` SUCCEEDED and **overwrote a valid, possibly newer
+  user-uploaded catalog with older bundled data** — permanent silent data loss,
+  a regression vs v1 (whose stale screen was non-destructive), contradicting
+  "never a worse outcome than today". Amendment: (1) `CacheLoadResult` gains an
+  **`unavailable`** variant — IDB access failure → `unavailable`; absent →
+  `empty`; version mismatch / reviver failure → `stale`. (2) init's
+  `unavailable` path runs **bundled WITHOUT `saveCatalog`** (usable this
+  session, the user's row left intact) and sets the distinct note `cached data
+  couldn't be read this session — using bundled data`; `empty`/`stale` keep the
+  bundled + save semantics unchanged. (3) On the `unavailable` path a provider
+  degrade maps to **`needs-upload{stale}`** — the frozen UI reason union is
+  untouched. (4) A **data-preservation proof test** (seed a user IRON row into a
+  healthy IDB → break IDB → boot with a COPPER bundled provider → assert
+  bundled-ready + the couldn't-read note → restore the healthy IDB → assert the
+  next boot HITs the intact IRON user row, no copper) proves no overwrite
+  end-to-end.

@@ -326,9 +326,20 @@ export function createAppStore(storage?: StateStorage) {
               catalogSource: result.source,
             });
           } else {
-            // empty / stale → try the bundled default before giving up. The
-            // provider call is try/caught: a REJECTED promise degrades exactly
-            // like a resolved null (both → the v1 needs-upload behavior).
+            // empty / stale / unavailable → try the bundled default before
+            // giving up. The provider call is try/caught: a REJECTED promise
+            // degrades exactly like a resolved null.
+            //
+            // The 'unavailable' carve-out (boundary r1 fold): the cache row
+            // may be a valid, possibly newer user catalog we merely couldn't
+            // READ this session. empty/stale rows are absent or genuinely
+            // unusable, so bundled data may replace them (SAVE). But an
+            // unavailable row must NOT be overwritten — because openDb is
+            // memoized, a get-failure leaves a healthy connection through which
+            // a save would DESTRUCTIVELY clobber that row. So on 'unavailable'
+            // we run bundled WITHOUT saving (usable this session, cache
+            // untouched) and note it distinctly.
+            const unavailable = result.status === "unavailable";
             let bundled: { text: string; provenance: Provenance } | null;
             try {
               bundled = await bundledDocsProvider();
@@ -350,28 +361,42 @@ export function createAppStore(storage?: StateStorage) {
                   catalogSource: source,
                 });
                 ready = true;
-                // Cache the bundled catalog so later boots hit the fast path
-                // (and keep the banner). Never-block save: a failure leaves it
-                // usable this session, merely uncached, with an uploadError note
-                // — the same semantics as the upload path.
-                try {
-                  await saveCatalog(bundled.text, catalog, source);
-                } catch (err) {
-                  const message =
-                    err instanceof Error ? err.message : String(err);
+                if (unavailable) {
+                  // Do NOT save: the unreadable row stays intact for a later
+                  // boot that can read it again (proven by the data-
+                  // preservation test).
                   set({
-                    uploadError: `bundled catalog loaded but could not be cached: ${message}`,
+                    uploadError:
+                      "cached data couldn't be read this session — using bundled data",
                   });
+                } else {
+                  // empty / stale: cache the bundled catalog so later boots hit
+                  // the fast path (and keep the banner). Never-block save: a
+                  // failure leaves it usable this session, merely uncached,
+                  // with an uploadError note — same semantics as the upload path.
+                  try {
+                    await saveCatalog(bundled.text, catalog, source);
+                  } catch (err) {
+                    const message =
+                      err instanceof Error ? err.message : String(err);
+                    set({
+                      uploadError: `bundled catalog loaded but could not be cached: ${message}`,
+                    });
+                  }
                 }
               } catch {
-                // A corrupt bundled asset degrades to v1 needs-upload below.
+                // A corrupt bundled asset degrades to needs-upload below.
                 ready = false;
               }
             }
 
             if (!ready) {
+              // 'unavailable' is not a UI reason (the frozen union has only
+              // empty / stale / upload-error); map it to 'stale' so the degrade
+              // lands on the generic re-upload screen.
+              const reason = unavailable ? "stale" : result.status;
               set({
-                catalog: { status: "needs-upload", reason: result.status },
+                catalog: { status: "needs-upload", reason },
               });
             }
           }
