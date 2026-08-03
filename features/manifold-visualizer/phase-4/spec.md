@@ -128,6 +128,9 @@ export interface SchematicLayout {
   pitch: number;                          // per-machine x step
   labelStep: number;                      // label every k-th (plus 1 and N)
   scrolled: boolean;                      // pitch bottomed out at minPitch
+  machineTop: number;                     // AMENDED (boundary r1): machine-row
+                                          // top y, exposed so the component
+                                          // consumes rather than re-derives
   machines: { index: number; x: number; labeled: boolean }[]; // 1-based index
   feeds: LaneTrack[];                     // stacked top→down, feeds[0] outermost
   outputs: LaneTrack[];                   // stacked top→down below machines
@@ -137,7 +140,11 @@ export interface LaneTrack {
   busY: number;                           // this lane's bus rail y
   belts: { index: number; x: number }[];  // arrow x per belt (entry/break-out)
   segments: { fromMachine: number; toMachine: number;
-              x1: number; x2: number; beltIndex: number }[];
+              x1: number; x2: number; beltIndex: number;
+              peakFlow: Fraction }[];     // AMENDED (boundary r1): peakFlow
+                                          // passes through — §3.4's title
+                                          // contract renders it; its omission
+                                          // here was an internal inconsistency
   seams: number[];                        // x of dashed boundaries (interior)
 }
 export function computeLayout(result: StageSolveResult, machineCount: number):
@@ -366,6 +373,14 @@ review; `npm run build` green is an exit criterion.
   assessment rates the shapes near-equal ("either resolution is fine"), and
   the current shape is the one the frozen brainstorm's connected-shell
   discipline implies. No fold → no correctness re-run. Spec FROZEN.
+- **Boundary-review amendment (2026-08-03, boundary r1 fold):** §2.4's
+  `LaneTrack.segments` gains `peakFlow: Fraction` (pass-through) and
+  `SchematicLayout` gains `machineTop`. As frozen, the type omitted the very
+  field §3.4's title contract renders; the implementation's `belt.capacity`
+  stand-in showed a wrong peak on any under-filled span (both boundary
+  reviewers, independently). Divergent-case tests added (layout N=17 +
+  smoke title pin); Legend smoke row now asserts the §5-pinned 6+2+2 via
+  the full `TIER_TABLE`. Amendment enters the cumulative boundary re-review.
 
 ## Assumptions ledger
 
