@@ -85,7 +85,10 @@ function isPlanFileV1(value: unknown): value is PlanFileV1 {
   // `links` is reserved for Stage-3 edges: a populated links in a v1 file is
   // corrupt-for-this-build (reserved means reserved).
   if (!Array.isArray(v.links) || v.links.length !== 0) return false;
-  if (!Array.isArray(v.stages)) return false;
+  // At least one stage: Stage 2 writes exactly one, and loadPlan's
+  // stages[0] access is only sound when non-empty (a foreign empty-stages
+  // file must read as corrupt, not as a cryptic runtime error).
+  if (!Array.isArray(v.stages) || v.stages.length < 1) return false;
   return v.stages.every(isStageShape);
 }
 

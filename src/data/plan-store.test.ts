@@ -131,6 +131,12 @@ describe("plan-store — shape check (accept/reject)", () => {
     expect(await loadPlan("id")).toBeNull();
   });
 
+  it("rejects an empty stages array (loadPlan's stages[0] must be sound)", async () => {
+    const db = await (await import("./db.ts")).openDb();
+    await db.put("plans", { ...samplePlan(), stages: [] }, "id");
+    expect(await loadPlan("id")).toBeNull();
+  });
+
   it("accepts machineCount === null (what JSON.stringify(NaN) produces)", async () => {
     const plan = samplePlan();
     // Simulate a saved NaN count: JSON round-trips it to null.
