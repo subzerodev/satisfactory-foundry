@@ -1,5 +1,10 @@
 import { useEffect } from "react";
-import { useAppStore, setBundledDocsProvider } from "../state/store.ts";
+import {
+  useAppStore,
+  setBundledDocsProvider,
+  activeSelection,
+  activeSolve,
+} from "../state/store.ts";
 import type { CatalogSource } from "../data/catalog-store.ts";
 import type { Finding, StageSolveResult } from "../core/manifold.ts";
 import { decodeBytes } from "./decode.ts";
@@ -83,6 +88,10 @@ function anyOverride(overrides: {
 /** THE connected shell — the only file that touches the store. */
 export default function App() {
   const s = useAppStore();
+  // Read the active stage's selection/solve through the canonical selectors
+  // (Stage 3 / Phase 1); every downstream component stays v1-unchanged.
+  const selection = activeSelection(s);
+  const solve = activeSolve(s);
 
   // Refresh the saved-plan list once the catalog is ready (the ready layout's
   // first mount). `plans` starts null; this makes that null transient, so
@@ -138,8 +147,8 @@ export default function App() {
       <ControlsStrip
         recipes={recipes}
         machines={catalog.machines}
-        selection={s.selection}
-        hasOverrides={anyOverride(s.selection.overrides)}
+        selection={selection}
+        hasOverrides={anyOverride(selection.overrides)}
         onSelectRecipe={s.selectRecipe}
         onMachineCount={s.setMachineCount}
         onClockText={s.setClockPercentText}
@@ -154,30 +163,30 @@ export default function App() {
         onRename={s.renamePlan}
         onDelete={s.deletePlan}
       />
-      {s.solve.status === "idle" && (
+      {solve.status === "idle" && (
         <p className="empty-state">Pick a recipe to see its manifold.</p>
       )}
-      {s.solve.status === "invalid" && (
-        <FindingsPanel solve={s.solve} findings={[]} itemName={itemName} />
+      {solve.status === "invalid" && (
+        <FindingsPanel solve={solve} findings={[]} itemName={itemName} />
       )}
-      {s.solve.status === "solved" && (
+      {solve.status === "solved" && (
         <>
-          <SummaryCards result={s.solve.result} itemName={itemName} />
+          <SummaryCards result={solve.result} itemName={itemName} />
           <Schematic
-            result={s.solve.result}
-            machineCount={s.selection.machineCount}
+            result={solve.result}
+            machineCount={selection.machineCount}
             tiers={catalog.tiers}
-            unlocked={s.selection.unlockedTiers}
+            unlocked={selection.unlockedTiers}
             itemName={itemName}
           />
           <LaneOverrides
-            result={s.solve.result}
-            overrides={s.selection.overrides}
+            result={solve.result}
+            overrides={selection.overrides}
             onOverride={s.setOverride}
           />
           <FindingsPanel
-            solve={s.solve}
-            findings={allFindings(s.solve.result)}
+            solve={solve}
+            findings={allFindings(solve.result)}
             itemName={itemName}
           />
         </>
