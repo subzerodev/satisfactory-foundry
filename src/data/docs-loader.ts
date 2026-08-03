@@ -126,9 +126,6 @@ export function parseDocsJson(raw: unknown): Catalog {
     const isAlternate =
       id.includes("alternate_") || r.displayName.startsWith("Alternate:");
 
-    const firstOutput = outputs[0];
-    if (firstOutput === undefined) continue; // unreachable: length checked above
-
     recipes[id] = {
       id,
       displayName: r.displayName.replace(/^Alternate:\s*/, ""),
@@ -136,7 +133,7 @@ export function parseDocsJson(raw: unknown): Catalog {
       isAlternate,
       inputs,
       outputs,
-      primaryOutputId: firstOutput.itemId,
+      primaryOutputId: outputs[0]!.itemId,
     };
   }
 
