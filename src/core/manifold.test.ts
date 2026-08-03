@@ -524,6 +524,43 @@ describe("solveOutputLane — infeasibility mirror (p > T)", () => {
   });
 });
 
+describe("solveOutputLane — p ∤ T break-out walk (ticket #3 decision)", () => {
+  it("N=25, p=37.5, T=480: walk gives 3 belts (NOT ceil(937.5/480)=2)", () => {
+    // floor(T/p) = floor(480/37.5) = 12 machines per belt -> ceil(25/12) = 3.
+    // The design doc's ceil(N×p/T) = ceil(937.5/480) = 2 would under-count:
+    // 2 belts cap at 24 machines, leaving machine 25 uncollected. The walk is
+    // authoritative (independently verified against the implementation before
+    // asserting).
+    const r = solveOut({ n: 25, rate: R(75, 2) });
+    expect(r.perMachineOutput.eq(R(75, 2))).toBe(true);
+    expect(r.totalOutput.eq(R(1875, 2))).toBe(true); // 937.5
+    expect(r.breakouts).toHaveLength(3);
+
+    expect(r.breakouts[0]!).toMatchObject({ index: 0, startsAfterMachine: 0 });
+    expect(r.breakouts[0]!.load.eq(F(450))).toBe(true); // 12 × 37.5
+    expect(r.breakouts[0]!.capacity.eq(F(480))).toBe(true);
+
+    expect(r.breakouts[1]!).toMatchObject({ index: 1, startsAfterMachine: 12 });
+    expect(r.breakouts[1]!.load.eq(F(450))).toBe(true);
+    expect(r.breakouts[1]!.capacity.eq(F(480))).toBe(true);
+
+    expect(r.breakouts[2]!).toMatchObject({ index: 2, startsAfterMachine: 24 });
+    expect(r.breakouts[2]!.load.eq(R(75, 2))).toBe(true); // 1 × 37.5
+    expect(r.breakouts[2]!.capacity.eq(F(60))).toBe(true); // smallest tier ≥ 37.5
+
+    expect(r.segments.map((s) => [s.fromMachine, s.toMachine])).toEqual([
+      [1, 12],
+      [13, 24],
+      [25, 25],
+    ]);
+    // peak at the tail = span load
+    expect(r.segments[0]!.peakFlow.eq(F(450))).toBe(true);
+    expect(r.segments[1]!.peakFlow.eq(F(450))).toBe(true);
+    expect(r.segments[2]!.peakFlow.eq(R(75, 2))).toBe(true);
+    expect(r.findings).toEqual([]);
+  });
+});
+
 describe("solveStage — full 20-smelter integration", () => {
   it("assembles feed + output lanes with clean shape and no findings", () => {
     const result = solveStage(

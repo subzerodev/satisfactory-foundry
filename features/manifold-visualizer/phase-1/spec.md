@@ -163,9 +163,15 @@ past `Number.MAX_SAFE_INTEGER` (never truncates).
   output exceeds the best belt).
 - Break-outs: bus fills as it passes machines; break out after machine
   `floor(T/p)` cumulatively (belt `b` covers machines until its span load
-  would exceed `T`); count = `ceil(N×p / T)`. Each break-out belt's
-  `capacity` = smallest unlocked tier ≥ its `load`; `load` = its span's
-  total emissions. Output overrides apply to break-out belt capacities by
+  would exceed `T`) — **the walk is authoritative**: belt count =
+  `ceil(N / floor(T/p))`, one belt per contiguous run of at most `floor(T/p)`
+  machines. The v1 design doc's `ceil(N×p / T)` is an approximation that
+  **equals the walk's count only when `p` divides `T`** (as in every tested
+  clean-division row); when `p ∤ T` it can under-count (a belt carries whole
+  machines, so it caps at `floor(T/p)` machines, not a fractional fill to `T`).
+  The discrepancy is resolved toward the design doc's operative §Core-math
+  walk (ticket #3 decision, 2026-08-03). Each break-out belt's `capacity` =
+  smallest unlocked tier ≥ its `load`; `load` = its span's total emissions. Output overrides apply to break-out belt capacities by
   index, same pinned semantics (never move break-out positions, never change
   count); an override below its span load → `segment-over-capacity` on that
   span with `busCapacity` = the overridden belt's capacity (the binding
@@ -253,3 +259,14 @@ core defect). All folded; none rejected:
   row-2 fractional feasibility confirmed clean (span-2 supply 90 ≥ 37.5);
   busCapacity dual-source coherent; output side has no starvation mode;
   break-out positions independent of belt-capacity overrides.
+
+**Implementation amendment** (2026-08-03, ticket #3 decision): the Phase 1
+implementation drift-hunt surfaced that the output-side break-out **walk**
+(`floor(T/p)` machines per belt, count `ceil(N / floor(T/p))`) and the design
+doc's `ceil(N×p / T)` count diverge when `p ∤ T` (e.g. N=25, p=37.5, T=480 →
+walk 3 belts vs `ceil(937.5/480)` = 2). Team lead resolved toward the walk (the
+design doc's operative §Core-math procedure, physically correct); `ceil(N×p/T)`
+is now documented as an approximation valid only when `p | T`. The
+`solveOutputLane` count claim above was amended accordingly; a `p ∤ T` output
+test row (N=25) was added to `manifold.test.ts` asserting the 3-belt walk
+result. Provenance: implementation drift-hunt finding → team-lead decision.
