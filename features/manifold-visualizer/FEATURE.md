@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-03
 **Status:** in-progress
-**Current phase:** Phase 1 — src/core manifold solver (brainstorm-in-progress)
+**Current phase:** Phase 1 COMPLETE (merged to develop 2026-08-03) — Phase 2 at USER GATE
 **Final PR:** —
 **Epic:** #2 (board #21, Stage 1 milestone)
 
@@ -23,8 +23,11 @@ Feature spec: `docs/superpowers/specs/2026-08-03-manifold-visualizer-design.md`
 
 ### Phase 1 — src/core manifold solver
 
-- **Status:** plan-pending
-- **Ticket:** #3 (In Progress)
+- **Status:** complete (merged --no-ff to develop 2026-08-03; 100/100 tests;
+  boundary dual-review 2 rounds converged; phantom-index clamp + walk-authoritative
+  amendment landed via the gate)
+- **Ticket:** #3 (Done, closed)
+- **Phase report:** `features/manifold-visualizer/phase-1/completion.md`
 - **Brainstorm:** `features/manifold-visualizer/phase-1/brainstorm.md` v4 — FROZEN
   (4 correctness rounds, all-Claude roster: r4 both APPROVED_WITH_NITS, folded;
   simplify dispositioned 1-rejected/2-folded-forward)
@@ -40,11 +43,11 @@ Feature spec: `docs/superpowers/specs/2026-08-03-manifold-visualizer-design.md`
 
 ### Phase 2 — src/data Docs.json parser + catalog
 
-- **Status:** defer-until-phase-1-lands
+- **Status:** ready-to-design (trigger met: Phase 1 merged to develop
+  2026-08-03) — awaiting USER GATE greenlight
 - **Spec:** feature spec §Architecture (src/data) — port of satisfactory-planner's parser, trimmed to v1 reads; IndexedDB cache
-- **Plan:** N/A — deferred
-- **Reason for defer:** maps the catalog onto the solver's input types, which Phase 1 locks; parser must feed `Fraction.parse` original decimal strings (never JSON floats)
-- **Trigger to re-classify:** Phase 1 merged to develop.
+- **Plan:** N/A — written after the Phase 2 brainstorm+spec freeze
+- **Contract to target:** `StageInput` (locked on develop in src/core/manifold.ts): ascending Fraction capacity lists per kind; decimal strings → Fraction.parse; per-machine rates at 100% clock
 
 ### Phase 3 — src/state Zustand store
 
