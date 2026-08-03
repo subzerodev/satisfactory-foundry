@@ -23,9 +23,11 @@ Feature spec: `docs/superpowers/specs/2026-08-03-manifold-visualizer-design.md`
 
 ### Phase 1 — src/core manifold solver
 
-- **Status:** brainstorm-in-progress
+- **Status:** spec-in-progress
 - **Ticket:** #3 (In Progress)
-- **Brainstorm:** `features/manifold-visualizer/phase-1/brainstorm.md` — pending
+- **Brainstorm:** `features/manifold-visualizer/phase-1/brainstorm.md` v4 — FROZEN
+  (4 correctness rounds, all-Claude roster: r4 both APPROVED_WITH_NITS, folded;
+  simplify dispositioned 1-rejected/2-folded-forward)
 - **Spec:** `features/manifold-visualizer/phase-1/spec.md` — pending
 - **Plan:** `features/manifold-visualizer/phase-1/plan.md` — pending (written on the phase branch)
 - **Branch:** `feature/phase-1.0` (worktree `.worktrees/phase-1.0/`) — not yet cut
@@ -66,7 +68,7 @@ digraph deps {
     phase2 [label="Phase 2: data parser/catalog"];
     phase3 [label="Phase 3: state store"];
     phase4 [label="Phase 4: ui schematic"];
-    phase1 -> phase2 [label="solver input types (StageSpec, capacities)"];
+    phase1 -> phase2 [label="solver input types (StageInput, capacities)"];
     phase1 -> phase3 [label="solve result type"];
     phase2 -> phase3 [label="catalog types (recipes, machines, tiers)"];
     phase3 -> phase4 [label="store selectors/actions"];
