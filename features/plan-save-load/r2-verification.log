@@ -1,0 +1,102 @@
+plan-save-load — bidirectionality verification log (ticket #11, Stage 2)
+========================================================================
+
+One PASS → break → FAIL → restore → PASS cycle per behavior family, each with a
+real vitest FAIL line. The break is a temporary edit to the IMPLEMENTATION (not
+the test), proving the test would catch a regression, then reverted verbatim.
+
+All four families below were verified against the committed implementation; the
+final full-suite run (263 passed) confirms every restore landed clean.
+
+
+FAMILY 1 — db upgrade / onblocked (multi-tab open safety)
+---------------------------------------------------------
+Test: src/data/db.test.ts > "onblocked → the open promise REJECTS …"
+
+PASS (baseline):
+  Test Files  1 passed (1)
+  Tests  3 passed (3)
+
+BREAK: db.ts req.onblocked → no-op (do nothing instead of reject) — the boot
+hang the handler exists to prevent.
+
+FAIL (real vitest line, --testTimeout=3000):
+  ❯ src/data/db.test.ts (3 tests | 1 failed | 2 skipped) 3007ms
+     × onblocked → the open promise REJECTS (routes to the unavailable degrade, never a hang) 3006ms
+  ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+   FAIL  src/data/db.test.ts > db — multi-tab open safety > onblocked → the open promise REJECTS (routes to the unavailable degrade, never a hang)
+  Error: Test timed out in 3000ms.
+   Tests  1 failed | 2 skipped (3)
+
+RESTORE → PASS:
+  Test Files  1 passed (1)
+  Tests  3 passed (3)
+
+
+FAMILY 2 — plan-store validation (shape check)
+----------------------------------------------
+Test: src/data/plan-store.test.ts > "rejects a v1 file with a non-empty links array …"
+
+PASS (baseline):
+  Test Files  1 passed (1)
+  Tests  1 passed | 10 skipped (11)
+
+BREAK: plan-store.ts isPlanFileV1 accepts any array for `links` (drops the
+length !== 0 corrupt-for-this-build check).
+
+FAIL (real vitest line):
+     × rejects a v1 file with a non-empty links array (reserved means reserved) 6ms
+  ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+   FAIL  src/data/plan-store.test.ts > plan-store — shape check (accept/reject) > rejects a v1 file with a non-empty links array (reserved means reserved)
+  AssertionError: expected { format_version: 1, …(5) } to be null
+
+RESTORE → PASS:
+  Test Files  1 passed (1)
+  Tests  11 passed (11)
+
+
+FAMILY 3 — store lifecycle / serialization (the concurrency contract)
+---------------------------------------------------------------------
+Test: src/state/store.test.ts > "concurrent double savePlanAs('A') … → exactly ONE row"
+
+PASS (baseline):
+  Test Files  1 passed (1)
+  Tests  1 passed | 53 skipped (54)
+
+BREAK: store.ts enqueue() runs ops immediately (return op()) instead of chaining
+on planOpChain — so two savePlanAs interleave across the listPlans await and both
+create.
+
+FAIL (real vitest line):
+     × concurrent double savePlanAs('A') (two unawaited calls) → exactly ONE row 12ms
+  ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+   FAIL  src/state/store.test.ts > plan lifecycle (ticket #11) > concurrent double savePlanAs('A') (two unawaited calls) → exactly ONE row
+  AssertionError: expected [ { …(3) }, { …(3) } ] to have a length of 1 but got 2
+
+RESTORE → PASS:
+  Test Files  1 passed (1)
+  Tests  1 passed | 53 skipped (54)
+
+
+FAMILY 4 — UI strings (PlansBar placeholder)
+--------------------------------------------
+Test: src/ui/smoke.test.tsx > PlansBar > "renders the empty placeholder …"
+
+PASS (baseline):
+  Test Files  1 passed (1)
+  Tests  4 passed | 16 skipped (20)
+
+BREAK: PlansBar.tsx placeholder copy changed from "— no saved plans —" to
+"no plans yet".
+
+FAIL (real vitest line):
+     × renders the empty placeholder when plans is null (not-yet-listed) 7ms
+     × renders the same placeholder when plans is [] (listed, none) 1ms
+  ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+   FAIL  src/ui/smoke.test.tsx > PlansBar > renders the empty placeholder when plans is null (not-yet-listed)
+  AssertionError: expected '<div class="plans-bar"><div class="pl…' to contain '— no saved plans —'
+  Expected: "— no saved plans —"
+
+RESTORE → PASS:
+  Test Files  1 passed (1)
+  Tests  4 passed | 16 skipped (20)
