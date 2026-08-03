@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-03
 **Status:** in-progress
-**Current phase:** Phase 1 COMPLETE — Phase 2 (canvas) designing
+**Current phase:** Phase 2 COMPLETE — Phase 3 (plans carry the graph) next
 **Final PR:** —
 **Epic:** #12 (board #21, Stage 3 milestone 74)
 
@@ -39,11 +39,16 @@ argued at its design review.
   v1 behavior preserved as the one-stage case; migration of the current
   single-selection store surface.
 
-### Phase 2 — React Flow canvas (deferred design)
+### Phase 2 — React Flow canvas
 
-- Nodes = stage cards (name, recipe, machines, status), edges = item flows
-  with rates, selected stage opens the full v1 schematic; @xyflow/react
-  enters here.
+- **Status:** complete (merged --no-ff to develop 2026-08-04, 09cdcc5;
+  323/323 tests; 4-round design gate + design-simplify; boundary
+  converged first-try + diff-simplify fold; walk-verified end to end;
+  ticket #17 Done). @xyflow/react@12.11.2 = the first runtime dep since
+  Stage 0. One walk-caught defect (RF measured-state clobber killing
+  connections) fixed in-phase via measured preservation + node-side
+  handle geometry.
+- **Ticket:** #17 (Done, closed)
 
 ### Phase 3 — plans carry the graph + cross-stage findings (deferred design)
 
@@ -59,6 +64,18 @@ argued at its design review.
   **Deferred to Phase 2 design:** whether the canvas wants a cycle
   indicator (visual affordance, store-level detector) — decide with the
   React Flow layout work.
+- 2026-08-04 (P2 design): canvas brainstorm frozen v5 (4 rounds +
+  simplify): catalog-carrying graphToFlow; semi-controlled
+  applyNodeChanges drag; canLink fronting addLink (five literal notice
+  messages, no enum); recipe-less stages first-class; monotonic
+  placementSeq slots with NO collision machinery; canvas excluded from
+  smoke (SSR row landed as opportunistic bonus). Cycle indicator
+  DECLINED for Phase 2 (revisit only if Stage 5 surfaces a want).
+- 2026-08-04 (P2 implementation): node-side handle GEOMETRY (x/y/size)
+  is load-bearing — RF computes handleBounds from it with no DOM
+  measurement; the resync merge must preserve RF's measured state.
+  Positions remain session-state; persistence is Phase 3's plan-format
+  decision.
 - 2026-08-03 (P1 r3 fold): **loadPlan no longer adopts a plan's saved
   tiers** — the current global unlock state is preserved on load (tiers
   are progression, not plan content; supersedes the Stage-2 tier-restore
