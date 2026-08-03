@@ -9,8 +9,22 @@ GENUINE, class-specific vitest FAIL (not a compile error, not an unrelated
 assertion), then restore (git checkout) and re-green. A test that cannot be made
 to fail by breaking its behaviour is not testing that behaviour.
 
-Baseline: `npm test` → 98 passed (98)  [70 Fraction + 28 manifold]  ✓ PASS
-Final:    `npm test` → 98 passed (98)  ✓ PASS   (working tree clean after all restores)
+Suite count history (honest record; the bidirectionality witness sections below
+were captured at the 98-count checkpoint and remain valid — breaking each
+production line still fails its named test):
+  - Original Task-3 checkpoint (this log's witness runs): 98 passed
+    [70 Fraction + 28 manifold].
+  - + p∤T output walk row (ticket #3 decision fold):        99 passed [70 + 29].
+  - + over-B override entry/span clamp regression row
+    (phase-boundary review fold, MAJOR):                    100 passed [70 + 30].
+Current baseline/final: `npm test` → 100 passed (100)  ✓ PASS
+(working tree clean after all bidirectionality restores).
+
+NOTE on line references: the witness headers below cite manifold.ts line numbers
+as they stood at the Task-3 checkpoint. Subsequent review folds (the entry/span
+clamp and the exact-beltCount change) shifted those lines downward by a handful;
+the cited BEHAVIOURS and mutations are unchanged and still witnessing. The
+sections are intentionally left as-captured per the review directive.
 
 ────────────────────────────────────────────────────────────────────────────
 Class 1 — COMBINATION MATH  (feed belt count k = D.ceilDiv(B))
