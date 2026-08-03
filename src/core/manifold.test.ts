@@ -2,6 +2,7 @@ import { Fraction } from "./fraction.ts";
 import {
   solveStage,
   solveFeedLane,
+  solveOutputLane,
   type LaneInput,
   type StageInput,
   type Finding,
@@ -433,5 +434,133 @@ describe("solveFeedLane — infeasible single machine (spec row 8)", () => {
     if (f.type !== "infeasible-machine-demand") throw new Error("type");
     expect(f.demand.eq(F(812))).toBe(true);
     expect(f.topCapacity.eq(F(480))).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Task 3 — output lane solver + solveStage integration
+// ═══════════════════════════════════════════════════════════════════════════
+
+function solveOut(opts: {
+  n?: number;
+  rate?: Fraction;
+  clock?: Fraction;
+  belts?: Fraction[];
+  overrides?: (Fraction | null)[];
+}) {
+  const s = stage({
+    machineCount: opts.n ?? 20,
+    clockPercent: opts.clock ?? F(100),
+    capacities: { belt: opts.belts ?? BELTS, pipe: PIPES },
+  });
+  const lane = feed({
+    itemId: "iron-ingot",
+    perMachineRate: opts.rate ?? F(30),
+    overrides: opts.overrides,
+  });
+  return solveOutputLane(s, lane);
+}
+
+describe("solveOutputLane — mirror of the 20-smelter example (spec row 1)", () => {
+  it("break-outs after 16, loads 480/120, capacities 480/120", () => {
+    const r = solveOut({ n: 20, rate: F(30) });
+    expect(r.perMachineOutput.eq(F(30))).toBe(true);
+    expect(r.totalOutput.eq(F(600))).toBe(true);
+    expect(r.breakouts).toHaveLength(2);
+    expect(r.breakouts[0]!).toMatchObject({ index: 0, startsAfterMachine: 0 });
+    expect(r.breakouts[0]!.load.eq(F(480))).toBe(true);
+    expect(r.breakouts[0]!.capacity.eq(F(480))).toBe(true);
+    expect(r.breakouts[1]!).toMatchObject({ index: 1, startsAfterMachine: 16 });
+    expect(r.breakouts[1]!.load.eq(F(120))).toBe(true);
+    expect(r.breakouts[1]!.capacity.eq(F(120))).toBe(true);
+    expect(r.segments).toHaveLength(2);
+    // peak at the tail = span load
+    expect(r.segments[0]!).toMatchObject({
+      fromMachine: 1,
+      toMachine: 16,
+      beltIndex: 0,
+    });
+    expect(r.segments[0]!.peakFlow.eq(F(480))).toBe(true);
+    expect(r.segments[1]!).toMatchObject({
+      fromMachine: 17,
+      toMachine: 20,
+      beltIndex: 1,
+    });
+    expect(r.segments[1]!.peakFlow.eq(F(120))).toBe(true);
+    expect(r.findings).toEqual([]);
+  });
+});
+
+describe("solveOutputLane — override undersize (segment-over-capacity)", () => {
+  it("break-out 0 override 480->270 (< load 480): over-capacity, busCapacity=270", () => {
+    const r = solveOut({ n: 20, rate: F(30), overrides: [F(270)] });
+    expect(r.breakouts[0]!.capacity.eq(F(270))).toBe(true);
+    const over = r.findings.filter((f) => f.type === "segment-over-capacity");
+    expect(over).toHaveLength(1);
+    const o = over[0]!;
+    if (o.type !== "segment-over-capacity") throw new Error("type");
+    expect(o.fromMachine).toBe(1);
+    expect(o.toMachine).toBe(16);
+    expect(o.peakFlow.eq(F(480))).toBe(true); // the span load
+    expect(o.busCapacity.eq(F(270))).toBe(true); // the binding overridden cap
+    // no starvation on the output side, ever
+    expect(r.findings.some((f) => f.type === "starved-machines")).toBe(false);
+  });
+});
+
+describe("solveOutputLane — infeasibility mirror (p > T)", () => {
+  it("p=812 vs top 480 -> infeasible-machine-demand, empty lane", () => {
+    const r = solveOut({ n: 5, rate: F(812) });
+    expect(r.breakouts).toEqual([]);
+    expect(r.segments).toEqual([]);
+    const inf = r.findings.filter(
+      (f) => f.type === "infeasible-machine-demand",
+    );
+    expect(inf).toHaveLength(1);
+    const f = inf[0]!;
+    if (f.type !== "infeasible-machine-demand") throw new Error("type");
+    expect(f.demand.eq(F(812))).toBe(true);
+    expect(f.topCapacity.eq(F(480))).toBe(true);
+  });
+});
+
+describe("solveStage — full 20-smelter integration", () => {
+  it("assembles feed + output lanes with clean shape and no findings", () => {
+    const result = solveStage(
+      stage({
+        machineCount: 20,
+        feeds: [feed({ itemId: "iron-ore", perMachineRate: F(30) })],
+        outputs: [feed({ itemId: "iron-ingot", perMachineRate: F(30) })],
+      }),
+    );
+    expect(result.findings).toEqual([]);
+    expect(result.feeds).toHaveLength(1);
+    expect(result.outputs).toHaveLength(1);
+
+    const fe = result.feeds[0]!;
+    expect(fe.itemId).toBe("iron-ore");
+    expect(fe.totalDemand.eq(F(600))).toBe(true);
+    expect(fe.belts.map((b) => b.capacity.toString())).toEqual(["480", "120"]);
+    expect(fe.belts.map((b) => b.entersAfterMachine)).toEqual([0, 16]);
+    expect(fe.segments.map((s) => [s.fromMachine, s.toMachine])).toEqual([
+      [1, 16],
+      [17, 20],
+    ]);
+    expect(fe.findings).toEqual([]);
+
+    const ou = result.outputs[0]!;
+    expect(ou.itemId).toBe("iron-ingot");
+    expect(ou.totalOutput.eq(F(600))).toBe(true);
+    expect(ou.breakouts.map((b) => b.capacity.toString())).toEqual([
+      "480",
+      "120",
+    ]);
+    expect(ou.breakouts.map((b) => b.startsAfterMachine)).toEqual([0, 16]);
+    expect(ou.breakouts.map((b) => b.load.toString())).toEqual(["480", "120"]);
+    expect(ou.segments.map((s) => [s.fromMachine, s.toMachine])).toEqual([
+      [1, 16],
+      [17, 20],
+    ]);
+    expect(ou.findings).toEqual([]);
   });
 });

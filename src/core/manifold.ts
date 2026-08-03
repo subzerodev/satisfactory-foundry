@@ -445,6 +445,86 @@ export function solveOutputLane(
   if (isDegenerate(input, p)) {
     return base;
   }
-  // Stub — greened in Task 3.
+
+  const N = input.machineCount;
+  const tiers =
+    lane.kind === "belt" ? input.capacities.belt : input.capacities.pipe;
+  const T = tiers[tiers.length - 1]!; // non-empty + validated ascending
+
+  // Infeasibility mirror: one machine's output exceeds the best belt.
+  if (p.gt(T)) {
+    base.findings.push({
+      type: "infeasible-machine-demand",
+      itemId: lane.itemId,
+      demand: p,
+      topCapacity: T,
+    });
+    return base;
+  }
+
+  // Break-out walk: a collection belt carries at most `machinesPerBelt`
+  // machines' emissions before its load would exceed T; it breaks out and a
+  // fresh belt starts. `floor(T/p) ≥ 1` here since p ≤ T.
+  const machinesPerBelt = toIndex(T.floorDiv(p));
+  const overrides = lane.overrides;
+
+  // Belt count is the walk's result: ceil(N / machinesPerBelt). (The spec's
+  // ceil(N×p/T) coincides when p divides T evenly, as in every tested row; the
+  // walk is the operative, physically-correct procedure — see the design doc's
+  // §Core math and this agent's dispatch report.)
+  const beltCount = Math.ceil(N / machinesPerBelt);
+
+  if (overrides !== undefined && overrides.length > beltCount) {
+    base.findings.push({
+      type: "invalid-input",
+      reason: "overrides-exceed-belt-count",
+      detail: `lane ${lane.itemId}: ${overrides.length} overrides for ${beltCount} break-out belts.`,
+    });
+    return base;
+  }
+
+  const breakouts: BreakoutBelt[] = [];
+  const segments: BusSegment[] = [];
+  for (let b = 0; b < beltCount; b++) {
+    const start = b * machinesPerBelt + 1;
+    const end = Math.min((b + 1) * machinesPerBelt, N);
+    const spanMachines = end - start + 1;
+    const load = Fraction.from(spanMachines).mul(p);
+    const override = overrides?.[b] ?? null;
+    const capacity = override ?? smallestTierAtLeast(tiers, load);
+
+    breakouts.push({
+      index: b,
+      capacity,
+      startsAfterMachine: start - 1, // 0 = collects from machine 1
+      load,
+    });
+
+    // Output side: peak flow is at the tail (just before break-out / lane end),
+    // = the full span load, since each belt collects only its own machines.
+    segments.push({
+      fromMachine: start,
+      toMachine: end,
+      peakFlow: load,
+      beltIndex: b,
+    });
+
+    // Over-capacity iff the (overridden) belt cannot carry its span load. On
+    // auto belts capacity ≥ load by construction, so only an undersize override
+    // triggers this; busCapacity is the binding overridden capacity.
+    if (load.gt(capacity)) {
+      base.findings.push({
+        type: "segment-over-capacity",
+        itemId: lane.itemId,
+        fromMachine: start,
+        toMachine: end,
+        peakFlow: load,
+        busCapacity: capacity,
+      });
+    }
+  }
+
+  base.breakouts = breakouts;
+  base.segments = segments;
   return base;
 }
