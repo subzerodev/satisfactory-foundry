@@ -22,3 +22,7 @@ extra = ["epic", "blocked"]    # stage:N labels are generated from [stages]
 [stages]
 "0" = "Stage 0 — Bootstrap"
 "1" = "Stage 1 — Manifold visualizer (v1)"
+"2" = "Stage 2 — Plan save/load"
+"3" = "Stage 3 — Chained stages (graph editor)"
+"4" = "Stage 4 — Physical layout layer"
+"5" = "Stage 5 — Polish round"
