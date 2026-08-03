@@ -1,0 +1,134 @@
+Stage 3 / Phase 2 — bidirectionality verification log
+======================================================
+
+Purpose: for each production behavior family added this phase, prove the new
+tests are genuine — they PASS against correct code, and FAIL (naming the new
+tests, for the right reason) when the production behavior is deliberately
+broken. Each family: capture PASS → break production (sed) → genuine vitest FAIL
+→ restore (git checkout) → PASS.
+
+Worktree: .worktrees/chained-p2 (branch feature/chained-p2).
+Runner: vitest 4.1.10, node env (no jsdom). All -t filters scope to the new
+Phase-2 rows only.
+
+
+FAMILY 1 — graphToFlow emission (src/ui/graph-flow.ts)
+------------------------------------------------------
+Behavior: under-supply edge labels render the EXACT shortfall value.
+
+PASS (baseline):
+  $ npx vitest run src/ui/graph-flow.test.ts -t "graphToFlow"
+        Tests  13 passed | 3 skipped (16)
+
+BREAK: drop the shortfall value from the under-supply label —
+  sed -i 's|label: `${itemName} · short ${formatRate(finding.shortfall)}/min`,|label: `${itemName} · short`,|' src/ui/graph-flow.ts
+
+FAIL (broken, expected):
+  $ npx vitest run src/ui/graph-flow.test.ts -t "graphToFlow — edges"
+     × under-supply renders the exact shortfall
+     × under-supply exact fractional shortfall (75/2 class)
+   FAIL  … > under-supply renders the exact shortfall
+   AssertionError: expected 'Iron Ingot · short' to be 'Iron Ingot · short 150/min'
+   FAIL  … > under-supply exact fractional shortfall (75/2 class)
+   AssertionError: expected 'Iron Ingot · short' to be 'Iron Ingot · short 37.5/min'
+        Tests  2 failed | 5 passed | 9 skipped (16)
+
+RESTORE: git checkout src/ui/graph-flow.ts → Tests 7 passed | 9 skipped (16)
+
+
+FAMILY 2 — pickLinkItem (src/ui/graph-flow.ts)
+----------------------------------------------
+Behavior: >1 shared item resolves to "ambiguous" (never silently picks one).
+
+PASS (baseline):
+  $ npx vitest run src/ui/graph-flow.test.ts -t "pickLinkItem"
+        Tests  3 passed | 13 skipped (16)
+
+BREAK: remove the multi-match → "ambiguous" branch —
+  sed -i 's|if (matches.length > 1) return "ambiguous";|// (mutation) ambiguous branch removed|' src/ui/graph-flow.ts
+
+FAIL (broken, expected):
+  $ npx vitest run src/ui/graph-flow.test.ts -t "pickLinkItem"
+     × multi match → 'ambiguous'
+   FAIL  … > pickLinkItem > multi match → 'ambiguous'
+   AssertionError: expected 'iron_ingot' to be 'ambiguous'
+        Tests  1 failed | 2 passed | 13 skipped (16)
+
+RESTORE: git checkout src/ui/graph-flow.ts → Tests 3 passed | 13 skipped (16)
+
+
+FAMILY 3 — positions / auto-placement (src/state/store.ts)
+----------------------------------------------------------
+Behavior: placementSeq is MONOTONIC (never reused) so auto-placed slots never
+collide across a removeStage.
+
+PASS (baseline):
+  $ npx vitest run src/state/store.test.ts -t "canvas positions"
+        Tests  6 passed | 79 skipped (85)
+
+BREAK: stop incrementing placementSeq (slots become reusable) —
+  sed -i 's|placementSeq: s.placementSeq + 1,|placementSeq: s.placementSeq, // (mutation) not monotonic|' src/state/store.ts
+
+FAIL (broken, expected):
+  $ npx vitest run src/state/store.test.ts -t "canvas positions"
+     × addStage auto-places at the monotonic seq slot (column-flow)
+     × placementSeq is monotonic across removeStage (never reused, compaction-immune)
+   FAIL  … > addStage auto-places at the monotonic seq slot (column-flow)
+   FAIL  … > placementSeq is monotonic across removeStage …
+   AssertionError: expected { x: 300, y: 40 } to deeply equal { x: 560, y: 40 }
+        Tests  2 failed | 4 passed | 79 skipped (85)
+
+RESTORE: git checkout src/state/store.ts → Tests 6 passed | 79 skipped (85)
+
+
+FAMILY 4 — canLink (src/state/store.ts)
+---------------------------------------
+Behavior: canLink returns "duplicate" for an existing (toStageId, itemId) feed
+lane — mirroring addLink's refusal in lockstep.
+
+PASS (baseline):
+  $ npx vitest run src/state/store.test.ts -t "canLink"
+        Tests  5 passed | 80 skipped (85)
+
+BREAK: remove the duplicate refusal from canLink —
+  sed -i 's|if (duplicate) return "duplicate";|// (mutation) duplicate refusal removed|' src/state/store.ts
+
+FAIL (broken, expected):
+  $ npx vitest run src/state/store.test.ts -t "canLink"
+     × returns 'duplicate' for an existing (toStageId, itemId) feed lane
+   FAIL  … > canLink mirrors addLink refusals (Stage 3 P2) > returns 'duplicate' …
+   AssertionError: expected 'ok' to be 'duplicate'
+        Tests  1 failed | 4 passed | 80 skipped (85)
+
+RESTORE: git checkout src/state/store.ts → Tests 5 passed | 80 skipped (85)
+
+
+FAMILY 5 — removeStage positions pruning (src/state/store.ts)
+-------------------------------------------------------------
+Behavior: removeStage deletes positions[id] (no orphan position entries).
+
+PASS (baseline):
+  $ npx vitest run src/state/store.test.ts -t "prunes the removed stage"
+        Tests  1 passed | 84 skipped (85)
+
+BREAK: skip the positions prune in removeStage —
+  sed -i 's|delete positions\[id\];|/* (mutation) prune removed */|' src/state/store.ts
+
+FAIL (broken, expected):
+  $ npx vitest run src/state/store.test.ts -t "prunes the removed stage"
+     × removeStage prunes the removed stage's position entry (no orphans)
+   FAIL  … > removeStage prunes the removed stage's position entry (no orphans)
+   AssertionError: expected { x: 300, y: 40 } to be undefined
+        Tests  1 failed | 84 skipped (85)
+
+RESTORE: git checkout src/state/store.ts → Tests 1 passed | 84 skipped (85)
+
+
+Post-verification full-suite green (after all restores):
+  $ npm test
+        Test Files  15 passed (15)
+             Tests  323 passed (323)
+
+All five production behavior families are bidirectionally verified: each new
+test genuinely fails when its production behavior is broken, and the failure
+names the intended new test for the intended reason.
