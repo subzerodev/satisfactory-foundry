@@ -110,6 +110,20 @@ export interface AppState {
   /** Derived per-link reconciliation findings (see src/core/reconcile.ts). */
   reconciliation: LinkFinding[];
   /**
+   * Canvas node positions, keyed by stage id (Stage 3 / Phase 2). Session state
+   * this phase — persisting them is Phase 3's plan-format decision (deferred,
+   * mirroring the P1 links posture). `removeStage` prunes the removed id so no
+   * orphan entries accumulate.
+   */
+  positions: Record<string, { x: number; y: number }>;
+  /**
+   * Monotonic auto-placement counter (never reused, immune to stageOrder
+   * compaction). `addStage` maps the current value to a column-flow slot, then
+   * increments. Never-reused means two auto-placed nodes cannot share a slot by
+   * construction, so no collision handling is needed (frozen Axis 2 simplify).
+   */
+  placementSeq: number;
+  /**
    * The active stage's selection/solve, MIRRORED at top level so the frozen v1
    * UI + the existing store suite read `selection`/`solve` unchanged. Kept
    * byte-identical to `stages[activeStageId]` after every mutation; the
@@ -168,6 +182,7 @@ export interface Actions {
   setActiveStage(id: string): void;
   addLink(link: Omit<StageLink, "id">): void;
   removeLink(id: string): void;
+  setStagePosition(id: string, pos: { x: number; y: number }): void;
   refreshPlans(): Promise<void>;
   savePlanAs(name: string): Promise<void>;
   loadPlan(id: string): Promise<void>;
@@ -344,6 +359,7 @@ type GraphSlice = Pick<
   | "activeStageId"
   | "links"
   | "reconciliation"
+  | "positions"
   | "selection"
   | "solve"
 >;
@@ -425,6 +441,47 @@ function deriveAllStages(
     });
   }
   return recomputeReconciliation(mirrorActive({ ...slice, stages }));
+}
+
+// ---------------------------------------------------------------------------
+// Canvas helpers (Stage 3 / Phase 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * The column-flow slot a monotonic placement sequence maps to: four columns
+ * 260px apart, rows 140px apart (frozen Axis 2). Never-reused seq → no two
+ * auto-placed nodes share a slot, so no collision handling.
+ */
+function placementSlot(seq: number): { x: number; y: number } {
+  return {
+    x: 40 + (seq % 4) * 260,
+    y: 40 + Math.floor(seq / 4) * 140,
+  };
+}
+
+/**
+ * Pure READ mirror of `addLink`'s hard refusals (Stage 3 / Phase 2): "ok" when
+ * the link would be accepted, "self" for a self-link, "duplicate" for an
+ * existing (toStageId, itemId) feed lane. The canvas consults this to surface a
+ * notice BEFORE calling addLink; the enforcement itself stays in addLink.
+ *
+ * canLink and addLink MUST stay in lockstep — a drift degrades only to a stale
+ * notice (never a bad write), since addLink remains the sole enforcer, but the
+ * two refusal sets are meant to be identical. Any change to addLink's refusals
+ * must be mirrored here (and vice versa).
+ */
+export function canLink(
+  links: StageLink[],
+  from: string,
+  to: string,
+  itemId: string,
+): "ok" | "self" | "duplicate" {
+  if (from === to) return "self";
+  const duplicate = links.some(
+    (l) => l.toStageId === to && l.itemId === itemId,
+  );
+  if (duplicate) return "duplicate";
+  return "ok";
 }
 
 // ---------------------------------------------------------------------------
@@ -556,6 +613,10 @@ export function createAppStore(storage?: StateStorage) {
           activeStageId: firstStage.id,
           links: [],
           reconciliation: [],
+          // The default stage auto-places at seq 0's slot; placementSeq then
+          // points at the next free slot (Stage 3 / Phase 2).
+          positions: { [firstStage.id]: placementSlot(0) },
+          placementSeq: 1,
           selection: firstStage.selection,
           solve: firstStage.solve,
           catalogSource: null,
@@ -822,9 +883,16 @@ export function createAppStore(storage?: StateStorage) {
                 unlockedTiers: { ...active.selection.unlockedTiers },
               };
               const derived = deriveStage(s.catalog, stage);
+              // Auto-place at the current monotonic seq slot; bump the counter
+              // (never reused, so no collision handling — frozen Axis 2).
               return {
                 stages: { ...s.stages, [derived.id]: derived },
                 stageOrder: [...s.stageOrder, derived.id],
+                positions: {
+                  ...s.positions,
+                  [derived.id]: placementSlot(s.placementSeq),
+                },
+                placementSeq: s.placementSeq + 1,
               };
             });
           },
@@ -838,6 +906,11 @@ export function createAppStore(storage?: StateStorage) {
               const stages = { ...s.stages };
               delete stages[id];
               const stageOrder = s.stageOrder.filter((x) => x !== id);
+              // Prune the removed stage's canvas position (Stage 3 / Phase 2) —
+              // a P2 extension of this action body; the frozen P1 cascade/
+              // cursor/last-stage rules below are unchanged. No orphan entries.
+              const positions = { ...s.positions };
+              delete positions[id];
               // Cascade: links touching the removed stage go with it (structure
               // the user explicitly deleted), unlike a recipe-change dangling.
               const links = s.links.filter(
@@ -851,6 +924,7 @@ export function createAppStore(storage?: StateStorage) {
                   ...s,
                   stages,
                   stageOrder,
+                  positions,
                   links,
                   activeStageId,
                 }),
@@ -899,6 +973,15 @@ export function createAppStore(storage?: StateStorage) {
                 links: s.links.filter((l) => l.id !== id),
               }),
             );
+          },
+
+          setStagePosition(id: string, pos: { x: number; y: number }) {
+            // Pure position write — no derive, no reconciliation (cadence row:
+            // none/none). The canvas commits this once on drag-end.
+            set((s) => {
+              if (s.stages[id] === undefined) return {};
+              return { positions: { ...s.positions, [id]: pos } };
+            });
           },
 
           // --- Plan lifecycle (frozen Axis 3) --------------------------------

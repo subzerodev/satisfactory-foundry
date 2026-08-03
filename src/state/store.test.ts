@@ -6,7 +6,8 @@ import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
 import type { PlanFileV1 } from "../data/plan-store.ts";
-import { createAppStore, setBundledDocsProvider } from "./store.ts";
+import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
+import type { StageLink } from "./store.ts";
 import type { StateStorage } from "zustand/middleware";
 
 // ---------------------------------------------------------------------------
@@ -1623,5 +1624,106 @@ describe("stage graph — tiers-global + multi-stage re-upload (Stage 3 P1)", ()
       belt: 5,
       pipe: 2,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stage 3 / Phase 2 — canvas positions + auto-placement + canLink
+// ---------------------------------------------------------------------------
+
+describe("stage graph — canvas positions + auto-placement (Stage 3 P2)", () => {
+  it("boots with the default stage auto-placed at seq 0's slot", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    const s = store.getState();
+    // seq 0 → x = 40 + (0%4)*260 = 40, y = 40 + floor(0/4)*140 = 40.
+    expect(s.positions[s.activeStageId]).toEqual({ x: 40, y: 40 });
+  });
+
+  it("addStage auto-places at the monotonic seq slot (column-flow)", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    store.getState().addStage(); // seq 1 → x = 40 + 260 = 300, y = 40
+    store.getState().addStage(); // seq 2 → x = 40 + 520 = 560, y = 40
+    store.getState().addStage(); // seq 3 → x = 40 + 780 = 820, y = 40
+    store.getState().addStage(); // seq 4 → x = 40, y = 40 + 140 = 180 (wraps)
+    const s = store.getState();
+    const slots = s.stageOrder.map((id) => s.positions[id]);
+    expect(slots).toEqual([
+      { x: 40, y: 40 },
+      { x: 300, y: 40 },
+      { x: 560, y: 40 },
+      { x: 820, y: 40 },
+      { x: 40, y: 180 },
+    ]);
+  });
+
+  it("placementSeq is monotonic across removeStage (never reused, compaction-immune)", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    store.getState().addStage(); // seq 1 → x = 300
+    const second = store.getState().stageOrder[1]!;
+    store.getState().removeStage(second); // frees nothing — seq does not rewind
+    store.getState().addStage(); // seq 2 → x = 560, NOT 300 again
+    const s = store.getState();
+    const added = s.stages[s.stageOrder[1]!]!;
+    expect(s.positions[added.id]).toEqual({ x: 560, y: 40 });
+  });
+
+  it("removeStage prunes the removed stage's position entry (no orphans)", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    store.getState().addStage();
+    const second = store.getState().stageOrder[1]!;
+    expect(store.getState().positions[second]).toBeDefined();
+    store.getState().removeStage(second);
+    expect(store.getState().positions[second]).toBeUndefined();
+  });
+
+  it("setStagePosition writes the position without deriving (cadence none/none)", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    const id = store.getState().activeStageId;
+    const solveBefore = store.getState().solve;
+    const reconBefore = store.getState().reconciliation;
+    store.getState().setStagePosition(id, { x: 512, y: 128 });
+    const s = store.getState();
+    expect(s.positions[id]).toEqual({ x: 512, y: 128 });
+    // No derive / reconcile ran — the same object references survive.
+    expect(s.solve).toBe(solveBefore);
+    expect(s.reconciliation).toBe(reconBefore);
+  });
+
+  it("setStagePosition on an unknown id is a no-op", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    const before = store.getState().positions;
+    store.getState().setStagePosition("nope", { x: 9, y: 9 });
+    expect(store.getState().positions).toBe(before);
+  });
+});
+
+describe("stage graph — canLink mirrors addLink refusals (Stage 3 P2)", () => {
+  const link = (
+    fromStageId: string,
+    itemId: string,
+    toStageId: string,
+  ): StageLink => ({ id: crypto.randomUUID(), fromStageId, itemId, toStageId });
+
+  it("returns 'ok' when the link would be accepted", () => {
+    expect(canLink([], "a", "b", "iron_ingot")).toBe("ok");
+  });
+
+  it("returns 'self' for a self-link (from === to)", () => {
+    expect(canLink([], "a", "a", "iron_ingot")).toBe("self");
+  });
+
+  it("returns 'duplicate' for an existing (toStageId, itemId) feed lane", () => {
+    const existing = [link("a", "iron_ingot", "b")];
+    expect(canLink(existing, "c", "b", "iron_ingot")).toBe("duplicate");
+  });
+
+  it("a different item into the same consumer is NOT a duplicate", () => {
+    const existing = [link("a", "iron_ingot", "b")];
+    expect(canLink(existing, "a", "b", "copper_ingot")).toBe("ok");
+  });
+
+  it("the same item into a DIFFERENT consumer is NOT a duplicate", () => {
+    const existing = [link("a", "iron_ingot", "b")];
+    expect(canLink(existing, "a", "c", "iron_ingot")).toBe("ok");
   });
 });
