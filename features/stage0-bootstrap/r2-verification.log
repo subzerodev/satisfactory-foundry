@@ -1,0 +1,784 @@
+===================================================================
+Stage 0 bootstrap — verification log
+Generated: 2026-08-03T15:00:20Z
+Worktree: /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
+Branch:  feature/stage0-bootstrap
+Toolchain: node v26.3.0, npm 11.16.0
+===================================================================
+
+###################################################################
+# SECTION A — baseline: check / test / build all green
+###################################################################
+
+--- $ npm run check ---
+
+> satisfactory-foundry@0.0.0 check
+> tsc -b && eslint . && prettier --check src
+
+Checking formatting...
+All matched files use Prettier code style!
+
+--- $ npm test ---
+
+> satisfactory-foundry@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
+
+
+ Test Files  1 passed (1)
+      Tests  70 passed (70)
+   Start at  16:00:33
+   Duration  120ms (transform 23ms, setup 0ms, import 31ms, tests 7ms, environment 0ms)
+
+
+--- $ npm run build ---
+
+> satisfactory-foundry@0.0.0 build
+> vite build
+
+vite v8.2.0 building client environment for production...
+[2Ktransforming...✓ 15 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                  0.33 kB │ gzip:  0.23 kB
+dist/assets/index-BGz0gXcT.js  190.37 kB │ gzip: 59.95 kB
+
+✓ built in 69ms
+
+###################################################################
+# SECTION B — DoD #4: purity boundary PROVEN
+###################################################################
+
+Injected `import React from "react";` at the top of src/core/fraction.ts.
+Expectation: npm run check FAILS, citing @typescript-eslint/no-restricted-imports.
+
+--- diff of the injected line ---
+
+--- $ npm run check  (expected: NON-ZERO exit, restricted-import error) ---
+
+> satisfactory-foundry@0.0.0 check
+> tsc -b && eslint . && prettier --check src
+
+src/core/fraction.ts(10,1): error TS6133: 'React' is declared but its value is never read.
+
+>>> check exit status: 0
+
+  [note] The first attempt injected only the import; tsc's noUnusedLocals
+  (TS6133) tripped first, masking the ESLint rule. Re-run below references
+  React via `void React;` so tsc passes and the failure isolates to the
+  ESLint purity rule — which is the rule under proof.
+
+--- current injected diff (vs a clean copy of the file) ---
+16:+import React from "react";
+20:+void React;
+
+Injected lines:
+10:import React from "react";
+14:void React;
+
+--- $ npm run check  (expected: FAIL citing no-restricted-imports) ---
+
+> satisfactory-foundry@0.0.0 check
+> tsc -b && eslint . && prettier --check src
+
+
+/home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap/src/core/fraction.ts
+  10:1  error  'react' import is restricted from being used by a pattern. src/core is zero-dependency: no package imports allowed  @typescript-eslint/no-restricted-imports
+
+✖ 1 problem (1 error, 0 warnings)
+
+
+>>> check exit status: 1  (non-zero = FAIL, as expected)
+
+--- reverted the injection; $ npm run check  (expected: GREEN) ---
+
+> satisfactory-foundry@0.0.0 check
+> tsc -b && eslint . && prettier --check src
+
+Checking formatting...
+All matched files use Prettier code style!
+
+>>> check exit status: 0  (zero = green, purity restored)
+
+CONCLUSION (DoD #4): the src/core purity boundary is mechanically enforced —
+a bare package import ('react') in src/core fails 'npm run check' via
+@typescript-eslint/no-restricted-imports, and check returns green once removed.
+
+###################################################################
+# SECTION C — DoD #5: test bidirectionality
+# For each distinct production behaviour class: (a) tests PASS with
+# correct code, (b) a genuine vitest FAIL after breaking the
+# production code (referencing the diff's test blocks), (c) restore +
+# green re-run. One representative revert per behaviour class.
+###################################################################
+
+===================================================================
+BEHAVIOUR CLASS: normalization (sign carried on numerator)
+===================================================================
+Break applied: neutered the 'if (den < ZERO)' sign-normalization branch in normalize() -> 'if (false && den < ZERO)'
+
+--- $ npm test  (expected: FAIL) ---
+
+> satisfactory-foundry@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
+
+ ❯ src/core/fraction.test.ts (70 tests | 4 failed) 17ms
+     × of(2n, -4n) -> '-1/2' 5ms
+     × of(-2n, -4n) -> '1/2' 1ms
+     × mixed-sign arithmetic 1ms
+     × '-3/4' 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction normalization > of(2n, -4n) -> '-1/2'
+AssertionError: expected '1/-2' to be '-1/2' // Object.is equality
+
+Expected: "-1/2"
+Received: "1/-2"
+
+ ❯ src/core/fraction.test.ts:15:46
+     13|   ];
+     14|   it.each(cases)("of($num, $den) -> $expected", ({ num, den, expected …
+     15|     expect(Fraction.of(num, den).toString()).toBe(expected);
+       |                                              ^
+     16|   });
+     17| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction normalization > of(-2n, -4n) -> '1/2'
+AssertionError: expected '-1/-2' to be '1/2' // Object.is equality
+
+Expected: "1/2"
+Received: "-1/-2"
+
+ ❯ src/core/fraction.test.ts:15:46
+     13|   ];
+     14|   it.each(cases)("of($num, $den) -> $expected", ({ num, den, expected …
+     15|     expect(Fraction.of(num, den).toString()).toBe(expected);
+       |                                              ^
+     16|   });
+     17| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction arithmetic > mixed-sign arithmetic
+AssertionError: expected '3/-2' to be '-3/2' // Object.is equality
+
+Expected: "-3/2"
+Received: "3/-2"
+
+ ❯ src/core/fraction.test.ts:39:66
+     37|     expect(Fraction.of(-1, 2).add(Fraction.of(1, 3)).toString()).toBe(…
+     38|     expect(Fraction.of(-1, 2).mul(Fraction.of(-1, 3)).toString()).toBe…
+     39|     expect(Fraction.of(1, 2).div(Fraction.of(-1, 3)).toString()).toBe(…
+       |                                                                  ^
+     40|   });
+     41|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction.toString exactness > '-3/4'
+AssertionError: expected '3/-4' to be '-3/4' // Object.is equality
+
+Expected: "-3/4"
+Received: "3/-4"
+
+ ❯ src/core/fraction.test.ts:197:29
+    195|   ];
+    196|   it.each(cases)("$expected", ({ frac, expected }) => {
+    197|     expect(frac.toString()).toBe(expected);
+       |                             ^
+    198|   });
+    199| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 66 passed (70)
+   Start at  16:01:56
+   Duration  135ms (transform 28ms, setup 0ms, import 37ms, tests 17ms, environment 0ms)
+
+>>> test exit status: 1  (non-zero = FAIL, as expected)
+
+--- restored pristine; $ npm test  (expected: GREEN) ---
+
+> satisfactory-foundry@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
+
+
+ Test Files  1 passed (1)
+      Tests  70 passed (70)
+   Start at  16:01:57
+   Duration  105ms (transform 23ms, setup 0ms, import 30ms, tests 6ms, environment 0ms)
+
+>>> test exit status: 0  (zero = green, restored)
+
+===================================================================
+BEHAVIOUR CLASS: ceilDiv / ceil boundary + negative correctness
+===================================================================
+Break applied: bigintCeilDiv now returns 'q + ONE' unconditionally (drops the exact-boundary and sign guard)
+
+--- $ npm test  (expected: FAIL) ---
+
+> satisfactory-foundry@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
+
+ ❯ src/core/fraction.test.ts (70 tests | 4 failed) 11ms
+     × exact-multiple boundary ceils to itself, not itself+1 4ms
+     × fractional operands (belt-style D/B math) 0ms
+     × negative operands: floor toward -inf, ceil toward +inf 0ms
+     × floor() / ceil() directly, incl. negatives and boundaries 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction floorDiv / ceilDiv > exact-multiple boundary ceils to itself, not itself+1
+AssertionError: expected 3n to be 2n // Object.is equality
+
+- Expected
++ Received
+
+- 2n
++ 3n
+
+ ❯ src/core/fraction.test.ts:96:26
+     94|     const d = Fraction.from(6);
+     95|     const b = Fraction.from(3);
+     96|     expect(d.ceilDiv(b)).toBe(2n);
+       |                          ^
+     97|     expect(d.floorDiv(b)).toBe(2n);
+     98|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction floorDiv / ceilDiv > fractional operands (belt-style D/B math)
+AssertionError: expected 6n to be 5n // Object.is equality
+
+- Expected
++ Received
+
+- 5n
++ 6n
+
+ ❯ src/core/fraction.test.ts:110:67
+    108|   it("fractional operands (belt-style D/B math)", () => {
+    109|     // (37.5) / (7.5) = 5 exactly.
+    110|     expect(Fraction.parse("37.5").ceilDiv(Fraction.parse("7.5"))).toBe…
+       |                                                                   ^
+    111|     // (37.5) / (7) = 5.357... -> ceil 6, floor 5.
+    112|     expect(Fraction.parse("37.5").ceilDiv(Fraction.from(7))).toBe(6n);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction floorDiv / ceilDiv > negative operands: floor toward -inf, ceil toward +inf
+AssertionError: expected -1n to be -2n // Object.is equality
+
+- Expected
++ Received
+
+- -2n
++ -1n
+
+ ❯ src/core/fraction.test.ts:121:26
+    119|     const b = Fraction.from(3);
+    120|     expect(d.floorDiv(b)).toBe(-3n);
+    121|     expect(d.ceilDiv(b)).toBe(-2n);
+       |                          ^
+    122|     // -6 / 3 = -2 exactly (boundary, both are -2).
+    123|     expect(Fraction.from(-6).floorDiv(b)).toBe(-2n);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction floorDiv / ceilDiv > floor() / ceil() directly, incl. negatives and boundaries
+AssertionError: expected -1n to be -2n // Object.is equality
+
+- Expected
++ Received
+
+- -2n
++ -1n
+
+ ❯ src/core/fraction.test.ts:131:39
+    129|     expect(Fraction.of(7, 3).ceil()).toBe(3n);
+    130|     expect(Fraction.of(-7, 3).floor()).toBe(-3n);
+    131|     expect(Fraction.of(-7, 3).ceil()).toBe(-2n);
+       |                                       ^
+    132|     expect(Fraction.from(4).floor()).toBe(4n);
+    133|     expect(Fraction.from(4).ceil()).toBe(4n);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 66 passed (70)
+   Start at  16:02:19
+   Duration  126ms (transform 27ms, setup 0ms, import 38ms, tests 11ms, environment 0ms)
+
+>>> test exit status: 1  (non-zero = FAIL, as expected)
+
+--- restored pristine; $ npm test  (expected: GREEN) ---
+
+> satisfactory-foundry@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
+
+
+ Test Files  1 passed (1)
+      Tests  70 passed (70)
+   Start at  16:02:20
+   Duration  126ms (transform 29ms, setup 0ms, import 38ms, tests 10ms, environment 0ms)
+
+>>> test exit status: 0  (zero = green, restored)
+
+===================================================================
+BEHAVIOUR CLASS: parse decimal exactness
+===================================================================
+Break applied: Fraction.parse denominator forced to ONE (ignores decimal places)
+
+--- $ npm test  (expected: FAIL) ---
+
+> satisfactory-foundry@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
+
+ ❯ src/core/fraction.test.ts (70 tests | 9 failed) 12ms
+     × parse('37.5') -> '75/2' 3ms
+     × parse('0.25') -> '1/4' 1ms
+     × parse('-0.25') -> '-1/4' 0ms
+     × parse('+3.5') -> '7/2' 0ms
+     × parse('.5') -> '1/2' 0ms
+     × parse('2.50') -> '5/2' 0ms
+     × parse('  12.5  ') -> '25/2' 0ms
+     × round-trips a large fractional rate exactly 0ms
+     × fractional operands (belt-style D/B math) 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('37.5') -> '75/2'
+AssertionError: expected '375' to be '75/2' // Object.is equality
+
+Expected: "75/2"
+Received: "375"
+
+ ❯ src/core/fraction.test.ts:66:46
+     64|   ];
+     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
+     66|     expect(Fraction.parse(input).toString()).toBe(expected);
+       |                                              ^
+     67|   });
+     68|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('0.25') -> '1/4'
+AssertionError: expected '25' to be '1/4' // Object.is equality
+
+Expected: "1/4"
+Received: "25"
+
+ ❯ src/core/fraction.test.ts:66:46
+     64|   ];
+     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
+     66|     expect(Fraction.parse(input).toString()).toBe(expected);
+       |                                              ^
+     67|   });
+     68|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('-0.25') -> '-1/4'
+AssertionError: expected '-25' to be '-1/4' // Object.is equality
+
+Expected: "-1/4"
+Received: "-25"
+
+ ❯ src/core/fraction.test.ts:66:46
+     64|   ];
+     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
+     66|     expect(Fraction.parse(input).toString()).toBe(expected);
+       |                                              ^
+     67|   });
+     68|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('+3.5') -> '7/2'
+AssertionError: expected '35' to be '7/2' // Object.is equality
+
+Expected: "7/2"
+Received: "35"
+
+ ❯ src/core/fraction.test.ts:66:46
+     64|   ];
+     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
+     66|     expect(Fraction.parse(input).toString()).toBe(expected);
+       |                                              ^
+     67|   });
+     68|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('.5') -> '1/2'
+AssertionError: expected '5' to be '1/2' // Object.is equality
+
+Expected: "1/2"
+Received: "5"
+
+ ❯ src/core/fraction.test.ts:66:46
+     64|   ];
+     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
+     66|     expect(Fraction.parse(input).toString()).toBe(expected);
+       |                                              ^
+     67|   });
+     68|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('2.50') -> '5/2'
+AssertionError: expected '250' to be '5/2' // Object.is equality
+
+Expected: "5/2"
+Received: "250"
+
+ ❯ src/core/fraction.test.ts:66:46
+     64|   ];
+     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
+     66|     expect(Fraction.parse(input).toString()).toBe(expected);
+       |                                              ^
+     67|   });
+     68|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/9]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('  12.5  ') -> '25/2'
+AssertionError: expected '125' to be '25/2' // Object.is equality
+
+Expected: "25/2"
+Received: "125"
+
+ ❯ src/core/fraction.test.ts:66:46
+     64|   ];
+     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
+     66|     expect(Fraction.parse(input).toString()).toBe(expected);
+       |                                              ^
+     67|   });
+     68|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/9]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction.parse > round-trips a large fractional rate exactly
+AssertionError: expected '780375' to be '6243/8' // Object.is equality
+
+Expected: "6243/8"
+Received: "780375"
+
+ ❯ src/core/fraction.test.ts:71:50
+     69|   it("round-trips a large fractional rate exactly", () => {
+     70|     // 780.375 is exact; a float round-trip would corrupt it.
+     71|     expect(Fraction.parse("780.375").toString()).toBe("6243/8");
+       |                                                  ^
+     72|   });
+     73|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/9]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction floorDiv / ceilDiv > fractional operands (belt-style D/B math)
+AssertionError: expected 54n to be 6n // Object.is equality
+
+- Expected
++ Received
+
+- 6n
++ 54n
+
+ ❯ src/core/fraction.test.ts:112:62
+    110|     expect(Fraction.parse("37.5").ceilDiv(Fraction.parse("7.5"))).toBe…
+    111|     // (37.5) / (7) = 5.357... -> ceil 6, floor 5.
+    112|     expect(Fraction.parse("37.5").ceilDiv(Fraction.from(7))).toBe(6n);
+       |                                                              ^
+    113|     expect(Fraction.parse("37.5").floorDiv(Fraction.from(7))).toBe(5n);
+    114|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/9]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  9 failed | 61 passed (70)
+   Start at  16:02:20
+   Duration  135ms (transform 23ms, setup 0ms, import 33ms, tests 12ms, environment 0ms)
+
+>>> test exit status: 1  (non-zero = FAIL, as expected)
+
+--- restored pristine; $ npm test  (expected: GREEN) ---
+
+> satisfactory-foundry@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
+
+
+ Test Files  1 passed (1)
+      Tests  70 passed (70)
+   Start at  16:02:21
+   Duration  126ms (transform 24ms, setup 0ms, import 35ms, tests 10ms, environment 0ms)
+
+>>> test exit status: 0  (zero = green, restored)
+
+===================================================================
+BEHAVIOUR CLASS: toDecimalString half-up rounding
+===================================================================
+Break applied: removed the '+ this.den' half-up rounding bias -> becomes truncation
+
+--- $ npm test  (expected: FAIL) ---
+
+> satisfactory-foundry@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
+
+ ❯ src/core/fraction.test.ts (70 tests | 4 failed) 17ms
+     × '1' 4ms
+     × '0.67' 1ms
+     × '0.13' 0ms
+     × '-1' 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction.toDecimalString > '1'
+AssertionError: expected '0' to be '1' // Object.is equality
+
+Expected: "1"
+Received: "0"
+
+ ❯ src/core/fraction.test.ts:217:38
+    215|   ];
+    216|   it.each(cases)("$expected", ({ frac, dp, expected }) => {
+    217|     expect(frac.toDecimalString(dp)).toBe(expected);
+       |                                      ^
+    218|   });
+    219|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction.toDecimalString > '0.67'
+AssertionError: expected '0.66' to be '0.67' // Object.is equality
+
+Expected: "0.67"
+Received: "0.66"
+
+ ❯ src/core/fraction.test.ts:217:38
+    215|   ];
+    216|   it.each(cases)("$expected", ({ frac, dp, expected }) => {
+    217|     expect(frac.toDecimalString(dp)).toBe(expected);
+       |                                      ^
+    218|   });
+    219|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction.toDecimalString > '0.13'
+AssertionError: expected '0.12' to be '0.13' // Object.is equality
+
+Expected: "0.13"
+Received: "0.12"
+
+ ❯ src/core/fraction.test.ts:217:38
+    215|   ];
+    216|   it.each(cases)("$expected", ({ frac, dp, expected }) => {
+    217|     expect(frac.toDecimalString(dp)).toBe(expected);
+       |                                      ^
+    218|   });
+    219|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction.toDecimalString > '-1'
+AssertionError: expected '0' to be '-1' // Object.is equality
+
+Expected: "-1"
+Received: "0"
+
+ ❯ src/core/fraction.test.ts:217:38
+    215|   ];
+    216|   it.each(cases)("$expected", ({ frac, dp, expected }) => {
+    217|     expect(frac.toDecimalString(dp)).toBe(expected);
+       |                                      ^
+    218|   });
+    219|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 66 passed (70)
+   Start at  16:02:21
+   Duration  145ms (transform 24ms, setup 0ms, import 32ms, tests 17ms, environment 0ms)
+
+>>> test exit status: 1  (non-zero = FAIL, as expected)
+
+--- restored pristine; $ npm test  (expected: GREEN) ---
+
+> satisfactory-foundry@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
+
+
+ Test Files  1 passed (1)
+      Tests  70 passed (70)
+   Start at  16:02:21
+   Duration  120ms (transform 23ms, setup 0ms, import 32ms, tests 11ms, environment 0ms)
+
+>>> test exit status: 0  (zero = green, restored)
+
+===================================================================
+BEHAVIOUR CLASS: comparison (compare/lt/gt ordering)
+===================================================================
+Break applied: compare() returns +1 instead of -1 on the less-than branch (inverts ordering)
+
+--- $ npm test  (expected: FAIL) ---
+
+> satisfactory-foundry@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
+
+ ❯ src/core/fraction.test.ts (70 tests | 2 failed) 11ms
+     × compare returns -1 | 0 | 1 5ms
+     × eq / lt / lte / gt / gte 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction comparisons > compare returns -1 | 0 | 1
+AssertionError: expected 1 to be -1 // Object.is equality
+
+- Expected
++ Received
+
+- -1
++ 1
+
+ ❯ src/core/fraction.test.ts:157:58
+    155| describe("Fraction comparisons", () => {
+    156|   it("compare returns -1 | 0 | 1", () => {
+    157|     expect(Fraction.of(1, 3).compare(Fraction.of(1, 2))).toBe(-1);
+       |                                                          ^
+    158|     expect(Fraction.of(1, 2).compare(Fraction.of(1, 2))).toBe(0);
+    159|     expect(Fraction.of(1, 2).compare(Fraction.of(1, 3))).toBe(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/core/fraction.test.ts > Fraction comparisons > eq / lt / lte / gt / gte
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/core/fraction.test.ts:169:21
+    167|     const c = Fraction.of(3, 4);
+    168|     expect(a.eq(b)).toBe(true);
+    169|     expect(a.lt(c)).toBe(true);
+       |                     ^
+    170|     expect(a.lte(b)).toBe(true);
+    171|     expect(c.gt(a)).toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 68 passed (70)
+   Start at  16:02:22
+   Duration  126ms (transform 26ms, setup 0ms, import 35ms, tests 11ms, environment 0ms)
+
+>>> test exit status: 1  (non-zero = FAIL, as expected)
+
+--- restored pristine; $ npm test  (expected: GREEN) ---
+
+> satisfactory-foundry@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
+
+
+ Test Files  1 passed (1)
+      Tests  70 passed (70)
+   Start at  16:02:22
+   Duration  124ms (transform 25ms, setup 0ms, import 36ms, tests 12ms, environment 0ms)
+
+>>> test exit status: 0  (zero = green, restored)
+
+###################################################################
+# SECTION D — final gate after all reverts (working tree pristine)
+###################################################################
+
+--- $ npm run check ---
+
+> satisfactory-foundry@0.0.0 check
+> tsc -b && eslint . && prettier --check src
+
+Checking formatting...
+All matched files use Prettier code style!
+
+--- $ npm test ---
+
+> satisfactory-foundry@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
+
+
+ Test Files  1 passed (1)
+      Tests  70 passed (70)
+   Start at  16:02:48
+   Duration  127ms (transform 23ms, setup 0ms, import 33ms, tests 11ms, environment 0ms)
+
+
+--- $ npm run build ---
+
+> satisfactory-foundry@0.0.0 build
+> vite build
+
+vite v8.2.0 building client environment for production...
+[2Ktransforming...✓ 15 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                  0.33 kB │ gzip:  0.23 kB
+dist/assets/index-BGz0gXcT.js  190.37 kB │ gzip: 59.95 kB
+
+✓ built in 66ms
+
+===================================================================
+SUMMARY
+  DoD #1 npm run check : GREEN
+  DoD #2 npm test      : GREEN (70 tests)
+  DoD #3 npm run build : SUCCESS
+  DoD #4 purity proof  : react import in src/core fails check via
+                         @typescript-eslint/no-restricted-imports (Section B)
+  DoD #5 bidirectional : 5 behaviour classes, each PASS->break->genuine
+                         referenced FAIL->restore->GREEN (Section C)
+===================================================================
