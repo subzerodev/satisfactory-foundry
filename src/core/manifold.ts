@@ -351,7 +351,13 @@ export function solveFeedLane(
   for (let j = 0; j < autoCaps.length; j++) {
     const override = overrides?.[j] ?? null;
     const capacity = override ?? autoCaps[j]!;
-    const entersAfterMachine = j === 0 ? 0 : toIndex(cumulative.floorDiv(d));
+    // floor(S/d) on post-override capacities can exceed N when an oversize
+    // override pushes prior cumulative capacity past the whole stage's demand;
+    // clamp to N so a belt that would enter past the last machine reports
+    // entersAfterMachine = N (its span start = N+1 > end -> no segment, the
+    // belt is simply unused). Keeps every emitted index ≤ N.
+    const rawEnter = j === 0 ? 0 : toIndex(cumulative.floorDiv(d));
+    const entersAfterMachine = Math.min(rawEnter, N);
     belts.push({
       index: j,
       capacity,
@@ -369,7 +375,11 @@ export function solveFeedLane(
   for (let j = 0; j < belts.length; j++) {
     const belt = belts[j]!;
     const start = belt.entersAfterMachine + 1;
-    const end = j + 1 < belts.length ? belts[j + 1]!.entersAfterMachine : N;
+    // Clamp the non-last span end to N as well (mirrors the output side): the
+    // next belt's entersAfterMachine is already ≤ N, but this keeps the bound
+    // explicit and robust to any future entry-point change.
+    const end =
+      j + 1 < belts.length ? Math.min(belts[j + 1]!.entersAfterMachine, N) : N;
     const available = survivedIn.add(belt.capacity);
     if (start > end) {
       // No machines exclusively in this belt's span; capacity carries forward.
@@ -468,11 +478,14 @@ export function solveOutputLane(
   const machinesPerBelt = toIndex(T.floorDiv(p));
   const overrides = lane.overrides;
 
-  // Belt count is the walk's result: ceil(N / machinesPerBelt). (The spec's
-  // ceil(N×p/T) coincides when p divides T evenly, as in every tested row; the
-  // walk is the operative, physically-correct procedure — see the design doc's
-  // §Core math and this agent's dispatch report.)
-  const beltCount = Math.ceil(N / machinesPerBelt);
+  // Belt count is the walk's result: ceil(N / machinesPerBelt). Computed as an
+  // exact rational through the toIndex guard (mirroring the feed side) — no raw
+  // float division on machine-derived counts. (The spec's ceil(N×p/T) coincides
+  // only when p divides T evenly; the walk is authoritative — see the spec's
+  // solveOutputLane section, ticket #3 decision.)
+  const beltCount = toIndex(
+    Fraction.from(N).ceilDiv(Fraction.from(machinesPerBelt)),
+  );
 
   if (overrides !== undefined && overrides.length > beltCount) {
     base.findings.push({

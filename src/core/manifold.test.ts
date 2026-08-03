@@ -387,6 +387,57 @@ describe("solveFeedLane — override exceeds bus cap (spec row 6)", () => {
   });
 });
 
+describe("solveFeedLane — over-B override clamps entry/span to N (regression)", () => {
+  it("N=20, override belt0->630: entry <= 20, one span [1..20], no index > 20", () => {
+    // auto [480, 120@16]; override belt0->630 pushes belt1's raw entry to
+    // floor(630/30)=21 > N. Without the clamp, a phantom segment/finding
+    // toMachine:21 leaks for a 20-machine stage. Values independently verified
+    // against the implementation before asserting.
+    const r = solveFeed({ n: 20, rate: F(30), overrides: [F(630)] });
+
+    // Belt 1 would enter past the last machine -> clamped to N, so it is unused.
+    expect(r.belts[1]!.entersAfterMachine).toBeLessThanOrEqual(20);
+    expect(r.belts[1]!.entersAfterMachine).toBe(20);
+
+    // Exactly one real segment, spanning the whole stage, peakFlow 630.
+    expect(r.segments).toHaveLength(1);
+    expect(r.segments[0]!).toMatchObject({
+      fromMachine: 1,
+      toMachine: 20,
+      beltIndex: 0,
+    });
+    expect(r.segments[0]!.peakFlow.eq(F(630))).toBe(true);
+
+    // Exactly one over-capacity finding [1..20] vs busCapacity 480.
+    const over = r.findings.filter((f) => f.type === "segment-over-capacity");
+    expect(over).toHaveLength(1);
+    const o = over[0]!;
+    if (o.type !== "segment-over-capacity") throw new Error("type");
+    expect(o.fromMachine).toBe(1);
+    expect(o.toMachine).toBe(20);
+    expect(o.peakFlow.eq(F(630))).toBe(true);
+    expect(o.busCapacity.eq(F(480))).toBe(true);
+
+    // supply 630 >= demand 600 -> no starvation.
+    expect(r.findings.some((f) => f.type === "starved-machines")).toBe(false);
+
+    // No emitted index anywhere exceeds N.
+    for (const b of r.belts) {
+      expect(b.entersAfterMachine).toBeLessThanOrEqual(20);
+    }
+    for (const seg of r.segments) {
+      expect(seg.fromMachine).toBeLessThanOrEqual(20);
+      expect(seg.toMachine).toBeLessThanOrEqual(20);
+    }
+    for (const f of r.findings) {
+      if (f.type === "segment-over-capacity") {
+        expect(f.fromMachine).toBeLessThanOrEqual(20);
+        expect(f.toMachine).toBeLessThanOrEqual(20);
+      }
+    }
+  });
+});
+
 describe("solveFeedLane — oversize overrides array (spec row 7)", () => {
   it("overrides longer than k -> lane-local invalid-input, lane empty", () => {
     // k=1 (D=300 <= 480), overrides length 2 > 1.
