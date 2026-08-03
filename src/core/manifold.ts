@@ -118,6 +118,43 @@ export type Finding =
 const ZERO = Fraction.from(0);
 const HUNDREDTH = Fraction.of(1, 100);
 
+/**
+ * Convert an exact bigint machine index to a JS `number`, throwing (never
+ * truncating) past MAX_SAFE_INTEGER. Machine indices come from
+ * `Fraction.floorDiv`/`ceilDiv` bigints; the guard makes the boundary explicit
+ * rather than silently corrupting a plan.
+ */
+function toIndex(value: bigint): number {
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError(
+      `manifold: index ${value} exceeds Number.MAX_SAFE_INTEGER; ` +
+        "stage is implausibly large.",
+    );
+  }
+  return Number(value);
+}
+
+/**
+ * Smallest unlocked tier whose capacity ≥ `need`. Tiers are validated ascending
+ * before any lane solve, so the first satisfying entry is the smallest. Returns
+ * the top tier when `need` exceeds every tier (the caller guards feasibility
+ * separately: on the feed side `d ≤ B` is checked first, so a remainder ≤ B
+ * always has a satisfying tier).
+ */
+function smallestTierAtLeast(tiers: Fraction[], need: Fraction): Fraction {
+  for (const t of tiers) {
+    if (t.gte(need)) {
+      return t;
+    }
+  }
+  // Unreachable given the feasibility guard; return top tier as a total fn.
+  const top = tiers[tiers.length - 1];
+  if (top === undefined) {
+    throw new RangeError("smallestTierAtLeast: empty tier list.");
+  }
+  return top;
+}
+
 /** A capacity list is valid iff strictly ascending and every entry positive. */
 function capacitiesValid(list: Fraction[]): boolean {
   for (let i = 0; i < list.length; i++) {
@@ -209,12 +246,66 @@ function isDegenerate(input: StageInput, rate: Fraction): boolean {
   return input.machineCount === 0 || rate.isZero();
 }
 
+/**
+ * Result of draining one bus span under the head-first-draw model: how many
+ * machines were fully served, the (possibly zero) partial received by the next
+ * machine, and the flow that survives past the span's last machine.
+ */
+interface SpanDrain {
+  fullServed: number; // machines that drew a full `d`
+  partialReceived: Fraction; // what the (fullServed+1)-th machine got; < d
+  survived: Fraction; // flow surviving past the span's last machine
+}
+
+/**
+ * Drain a span of `machineCount` machines, each demanding `d`, from an
+ * `available` supply, head-first. `available >= 0`, `d > 0`, `machineCount >= 1`.
+ */
+function drainSpan(
+  available: Fraction,
+  d: Fraction,
+  machineCount: number,
+): SpanDrain {
+  const capacity = available.floorDiv(d); // bigint: machines a full-d draw covers
+  if (capacity >= BigInt(machineCount)) {
+    return {
+      fullServed: machineCount,
+      partialReceived: ZERO,
+      survived: available.sub(Fraction.from(machineCount).mul(d)),
+    };
+  }
+  const fullServed = toIndex(capacity);
+  const partialReceived = available.sub(Fraction.from(fullServed).mul(d));
+  return { fullServed, partialReceived, survived: ZERO };
+}
+
+/**
+ * Combine `D` demand into `k` belts on the given tiers: `k−1` top-tier belts +
+ * the smallest tier ≥ the remainder. `k = D.ceilDiv(B)` with `B` the top tier.
+ * Feasibility (`d ≤ B`) is guaranteed by the caller.
+ */
+function combineFeedBelts(
+  D: Fraction,
+  tiers: Fraction[],
+  B: Fraction,
+): Fraction[] {
+  const k = toIndex(D.ceilDiv(B));
+  const belts: Fraction[] = [];
+  for (let i = 0; i < k - 1; i++) {
+    belts.push(B);
+  }
+  const remainder = D.sub(B.mul(Fraction.from(k - 1)));
+  belts.push(smallestTierAtLeast(tiers, remainder));
+  return belts;
+}
+
 export function solveFeedLane(
   input: StageInput,
   lane: LaneInput,
 ): FeedLaneResult {
   const d = scaledRate(input, lane);
-  const D = Fraction.from(input.machineCount).mul(d);
+  const N = input.machineCount;
+  const D = Fraction.from(N).mul(d);
   const base: FeedLaneResult = {
     itemId: lane.itemId,
     kind: lane.kind,
@@ -227,7 +318,112 @@ export function solveFeedLane(
   if (isDegenerate(input, d)) {
     return base;
   }
-  // Stub — greened in Task 2.
+
+  const tiers =
+    lane.kind === "belt" ? input.capacities.belt : input.capacities.pipe;
+  const B = tiers[tiers.length - 1]!; // non-empty + validated ascending
+
+  // Infeasibility: a single machine outdemands the top belt. Render nothing.
+  if (d.gt(B)) {
+    base.findings.push({
+      type: "infeasible-machine-demand",
+      itemId: lane.itemId,
+      demand: d,
+      topCapacity: B,
+    });
+    return base;
+  }
+
+  // Combination, then override replacement by auto-slot index (count fixed).
+  const autoCaps = combineFeedBelts(D, tiers, B);
+  const overrides = lane.overrides;
+  if (overrides !== undefined && overrides.length > autoCaps.length) {
+    base.findings.push({
+      type: "invalid-input",
+      reason: "overrides-exceed-belt-count",
+      detail: `lane ${lane.itemId}: ${overrides.length} overrides for ${autoCaps.length} belts.`,
+    });
+    return base;
+  }
+
+  const belts: FeedBelt[] = [];
+  let cumulative = ZERO; // Σ capacities of prior belts (post-override)
+  for (let j = 0; j < autoCaps.length; j++) {
+    const override = overrides?.[j] ?? null;
+    const capacity = override ?? autoCaps[j]!;
+    const entersAfterMachine = j === 0 ? 0 : toIndex(cumulative.floorDiv(d));
+    belts.push({
+      index: j,
+      capacity,
+      overridden: override !== null,
+      entersAfterMachine,
+    });
+    cumulative = cumulative.add(capacity);
+  }
+
+  // Segments partitioned by entry points; drain head-first, carrying survived
+  // flow forward. Empty spans (two belts entering at the same machine) pass
+  // their capacity through without a segment.
+  const segments: BusSegment[] = [];
+  let survivedIn = ZERO;
+  for (let j = 0; j < belts.length; j++) {
+    const belt = belts[j]!;
+    const start = belt.entersAfterMachine + 1;
+    const end = j + 1 < belts.length ? belts[j + 1]!.entersAfterMachine : N;
+    const available = survivedIn.add(belt.capacity);
+    if (start > end) {
+      // No machines exclusively in this belt's span; capacity carries forward.
+      survivedIn = available;
+      continue;
+    }
+    const span = end - start + 1;
+    const peakFlow = available; // feed side: peak at the head, just after entry
+    segments.push({
+      fromMachine: start,
+      toMachine: end,
+      peakFlow,
+      beltIndex: belt.index,
+    });
+
+    if (peakFlow.gt(B)) {
+      base.findings.push({
+        type: "segment-over-capacity",
+        itemId: lane.itemId,
+        fromMachine: start,
+        toMachine: end,
+        peakFlow,
+        busCapacity: B,
+      });
+    }
+
+    const drain = drainSpan(available, d, span);
+    if (drain.fullServed < span) {
+      const finding: Extract<Finding, { type: "starved-machines" }> = {
+        type: "starved-machines",
+        itemId: lane.itemId,
+      };
+      // Global index of the machine after the fully-served ones.
+      const boundary = start + drain.fullServed;
+      let runStart = boundary;
+      if (!drain.partialReceived.isZero()) {
+        finding.partial = {
+          machine: boundary,
+          received: drain.partialReceived,
+          shortfall: d.sub(drain.partialReceived),
+        };
+        runStart = boundary + 1;
+      }
+      if (runStart <= end) {
+        finding.starvedFrom = runStart;
+        finding.starvedTo = end;
+      }
+      base.findings.push(finding);
+    }
+    survivedIn = drain.survived;
+  }
+
+  base.belts = belts;
+  base.segments = segments;
   return base;
 }
 
