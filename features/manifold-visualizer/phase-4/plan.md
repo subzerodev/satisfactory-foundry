@@ -1,7 +1,7 @@
 # Phase 4 implementation plan — src/ui (ticket #6, epic #2)
 
 Date: 2026-08-03
-Status: v1 — under dual-review
+Status: v2 — r1 folds applied; under dual-review r2
 Branch: `feature/phase-4.0` (worktree `.worktrees/phase-4.0/`), cut from
 develop @ 7b59c64.
 Binding contract: the FROZEN spec `features/manifold-visualizer/phase-4/spec.md`
@@ -15,7 +15,8 @@ Verify against live source in this worktree — do not trust this plan's or the
 spec's citations blindly:
 
 1. `src/core/fraction.ts` — exact names/signatures: `Fraction.parse(string)`,
-   `.eq()`, `.toString()`, `.toDecimalString(dp)`, `Fraction.from`.
+   `.eq()`, `.toString()`, `.toDecimalString(dp)`, `Fraction.from`,
+   `Fraction.of(num, den)` (the fixture constructor for fractional rates).
 2. `src/core/manifold.ts` — exported types + exact field names:
    `StageSolveResult`, `FeedLaneResult`, `OutputLaneResult`, `FeedBelt`
    (`index`, `capacity`, `overridden`, `entersAfterMachine`), `BreakoutBelt`
@@ -59,13 +60,16 @@ None of these files may import the store. Acceptance: tests + check green.
 
 ### Task 3 — connected shell + boot + verification log (commit 3)
 
-`src/ui/App.tsx` per spec §3.8 (sole `useAppStore` importer);
-`src/App.tsx` → re-export; `src/main.tsx` boot line + css import path per
-spec §1/§3.8. Bidirectionality: append Phase 4 evidence to
-`features/manifold-visualizer/r2-verification.log` — one representative
-revert per module family (e.g. break `formatRate`'s scan, break a layout
-boundary formula, break a component string) showing PASS → FAIL → PASS with
-real vitest FAIL lines naming the new tests. Acceptance: `npm test`,
+`src/ui/App.tsx` per spec §3.8 (sole `useAppStore` importer; **App.tsx
+imports `app.css`** per spec §4); `src/App.tsx` → re-export; `src/main.tsx`
+gets ONLY the boot line `void appStore.getState().init();` (spec §1).
+Bidirectionality: **create**
+`features/manifold-visualizer/phase-4/r2-verification.log` (the per-phase
+convention of phases 1–3; the frozen spec's §5 arc-root path is a spec typo
+this plan resolves — recorded divergence, implementer follows THIS path) —
+one representative revert per pure-module family (`decode`, `format`,
+`colors`, `layout`) plus one component string, showing PASS → FAIL → PASS
+with real vitest FAIL lines naming the new tests. Acceptance: `npm test`,
 `npm run check`, `npm run build` all green; zero diffs outside `src/ui/`,
 `src/App.tsx`, `src/main.tsx`, `features/manifold-visualizer/`.
 
@@ -83,6 +87,18 @@ real vitest FAIL lines naming the new tests. Acceptance: `npm test`,
   noting DRIFT lines if any.
 - The dev-server manual walk is the team lead's job after the boundary
   review dispatch — the implementer does not need a browser.
+
+## Revision history
+
+- **r1 (2026-08-03):** code-reviewer APPROVED_WITH_NITS (3); adversarial
+  NEEDS_REWORK (1 IMPORTANT + 2 NIT). Folded in v2: (1) bidirectionality log
+  re-pathed to `phase-4/r2-verification.log`, verb create-not-append, one
+  revert per pure-module family + a component (the spec §5 arc-root path is
+  recorded as a spec typo the plan resolves); (2) css import pinned to
+  App.tsx per spec §4, main.tsx boot-line-only; (3) `Fraction.of` added to
+  the drift-hunt surface. Refuted clean: css-in-node non-issue (Task 2 smoke
+  tests never import App), unused-export lint trap absent, tsc includes
+  tests, Task 3 diff-scope exact.
 
 ## Post-implementation (team lead, not the implementer)
 
