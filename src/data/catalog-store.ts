@@ -41,17 +41,36 @@ interface StoredCatalogData {
   recipes: Record<string, StoredRecipe>;
 }
 
+/**
+ * Provenance of the ready catalog: a user-uploaded Docs.json, or the bundled
+ * snapshot (with the Steam build + extraction date it was cut from). Persisted
+ * on the cache row so a reboot's `hit` still knows which one it is showing —
+ * that's what keeps the bundled-provenance banner from vanishing after the
+ * first reboot (ticket #9).
+ */
+export type CatalogSource =
+  | { kind: "user" }
+  | { kind: "bundled"; steamBuild: string; extractedAt: string };
+
 export interface StoredCatalog {
   catalog: StoredCatalogData;
   source_hash: string; // SHA-256 hex of the uploaded text
   cached_at: string; // ISO timestamp
   parser_version: number;
+  /** Absent on legacy rows written before this field existed; loadCatalog
+   *  backfills those as { kind: 'user' }. */
+  source?: CatalogSource;
 }
 
 export type CacheLoadResult =
-  | { status: "hit"; catalog: Catalog }
+  | { status: "hit"; catalog: Catalog; source: CatalogSource }
   | { status: "stale" }
-  | { status: "empty" };
+  | { status: "empty" }
+  // A row we could NOT read this session (IDB access failure) — as opposed to
+  // a row that is absent (empty) or genuinely unusable (stale). It may still
+  // hold a valid, possibly newer, user catalog, so the caller must NOT
+  // overwrite it: the unavailable path degrades WITHOUT saving.
+  | { status: "unavailable" };
 
 /**
  * Serialize + persist a parsed catalog under the current parser version, with a
@@ -61,22 +80,30 @@ export type CacheLoadResult =
 export async function saveCatalog(
   text: string,
   catalog: Catalog,
+  source: CatalogSource = { kind: "user" },
 ): Promise<void> {
   const stored: StoredCatalog = {
     catalog: serializeCatalog(catalog),
     source_hash: await sha256Hex(text),
     cached_at: new Date().toISOString(),
     parser_version: CATALOG_PARSER_VERSION,
+    source,
   };
   const db = await openDb();
   await db.put(CATALOG_STORE, stored, CATALOG_KEY);
 }
 
 /**
- * Load the cached catalog. Never throws to the caller: any failure — no row,
- * version mismatch, or a reviver that chokes on a corrupted payload — collapses
- * to a `{status}` the Phase 4 UI turns into a generic re-upload prompt. The
- * planner's cachedVersion/currentVersion diagnostics are deliberately dropped.
+ * Load the cached catalog. Never throws to the caller — but it distinguishes
+ * three failure causes that used to collapse together, because they demand
+ * different recovery:
+ *   - IDB ACCESS failure (openDb / get rejects) → "unavailable": the row may
+ *     be a valid, possibly newer user catalog we merely couldn't read, so the
+ *     caller must NOT overwrite it (data-preservation, boundary r1 fold).
+ *   - no row → "empty"; version mismatch or a reviver that chokes on a
+ *     corrupted payload → "stale": genuinely absent/unusable rows the caller
+ *     is free to replace with a bundled default.
+ * The planner's cachedVersion/currentVersion diagnostics are deliberately dropped.
  */
 export async function loadCatalog(): Promise<CacheLoadResult> {
   let stored: StoredCatalog | undefined;
@@ -84,14 +111,21 @@ export async function loadCatalog(): Promise<CacheLoadResult> {
     const db = await openDb();
     stored = await db.get<StoredCatalog>(CATALOG_STORE, CATALOG_KEY);
   } catch {
-    return { status: "stale" };
+    return { status: "unavailable" };
   }
   if (stored === undefined) return { status: "empty" };
   if (stored.parser_version !== CATALOG_PARSER_VERSION) {
     return { status: "stale" };
   }
   try {
-    return { status: "hit", catalog: reviveCatalog(stored.catalog) };
+    // The legacy-row default lives here, not in the reviver: the reviver only
+    // validates StoredCatalogData (items/machines/recipes) and never touches
+    // row-level fields, so `source` stays transparent to it (no version bump).
+    return {
+      status: "hit",
+      catalog: reviveCatalog(stored.catalog),
+      source: stored.source ?? { kind: "user" },
+    };
   } catch {
     // A corrupted stored shape (missing fields, un-parseable rational) fails the
     // reviver: treat as stale, not a thrown error.

@@ -53,6 +53,12 @@ body {
   color: var(--error);
 }
 
+.bundled-banner {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+}
+
 .controls-strip {
   display: flex;
   flex-wrap: wrap;

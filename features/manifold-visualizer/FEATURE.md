@@ -1,9 +1,9 @@
 # Manifold visualizer (Stage 1 arc)
 
 **Started:** 2026-08-03
-**Status:** phases complete — arc closing (final report + release PR)
-**Current phase:** Phase 4 COMPLETE (merged to develop 2026-08-03) — all four phases done
-**Final PR:** #7 (develop → main) — open for review
+**Status:** RELEASED (PR #7 merged to main 2026-08-03, merge 8875c4a)
+**Current phase:** arc complete — all four phases done
+**Final PR:** #7 (develop → main) — MERGED
 **Epic:** #2 (board #21, Stage 1 milestone)
 
 ## Phase decomposition
