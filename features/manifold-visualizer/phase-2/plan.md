@@ -39,8 +39,10 @@ regexes :13-22 and ingredient regex :185, `src/persistence/catalog-store.ts`,
   lane-addressed overrides with the distinctness assertion, the
   throw-vs-finding boundary (all listed throw cases), `parseRational`.
 - Tests (spec rows 5–6): the live-solver integration proof (fixture recipe
-  reproducing the Phase 1 20-smelter worked example — dur `"2"`, `Amount="1"`
-  → d=30; assert the solver's known belts/segments), pipe-lane capacities,
+  reproducing the Phase 1 20-smelter worked example — dur `"2"`, ingredient
+  `Amount="1"` → d=30 AND product `Amount="1"` → p=30, so the output mirror
+  (breakouts after 16, loads 480/120) reproduces too; assert the solver's
+  known belts/segments both sides), pipe-lane capacities,
   tier slicing, override landing/throw cases, `parseRational` round-trips.
 - Commit: `feat(data): catalog→StageInput mapping + rational reviver`.
 
@@ -65,8 +67,9 @@ regexes :13-22 and ingredient regex :185, `src/persistence/catalog-store.ts`,
    `fake-indexeddb` devDep only.
 3. Bidirectionality log `features/manifold-visualizer/phase-2/r2-verification.log`
    (worktree): per behaviour class (exact rate math, loud-failure boundary,
-   toStageInput mapping/overrides, cache stale/hit) — PASS → break → genuine
-   referenced vitest FAIL → restore → green.
+   ported filters, toStageInput mapping/overrides, parseRational round-trip,
+   cache stale/hit) — PASS → break → genuine referenced vitest FAIL →
+   restore → green.
 4. Three commits as named, co-author trailer, no push, no merge, `develop`
    untouched, planner repo untouched.
 
