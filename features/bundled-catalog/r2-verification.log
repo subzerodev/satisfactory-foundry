@@ -1,0 +1,73 @@
+# r2 bidirectionality verification — bundled default catalog (ticket #9)
+
+Per the R2 rule: for one representative test per behavior family, verify the
+test genuinely gates the behavior — PASS on the real code, break the code,
+confirm a REAL vitest FAIL, restore, PASS again. Three families were probed:
+the loadCatalog source default (data layer), the init bundled branch (store),
+and the banner string (UI).
+
+Baseline: `npm test` → Test Files 11 passed (11), Tests 222 passed (222).
+
+--------------------------------------------------------------------------
+Family 1 — loadCatalog legacy-row default (src/data/catalog-store.ts)
+--------------------------------------------------------------------------
+
+Break: `source: stored.source ?? { kind: "user" }`
+    →  `source: stored.source as CatalogSource`   (drop the legacy default)
+
+`npx vitest run src/data/catalog-store.test.ts`:
+
+    × revives a legacy row (no source field) as user 4ms
+    FAIL  src/data/catalog-store.test.ts > catalog cache — source provenance
+          (ticket #9) > revives a legacy row (no source field) as user
+    AssertionError: expected undefined to deeply equal { kind: 'user' }
+    Tests  1 failed | 6 passed (7)
+
+Restore → the `?? { kind: "user" }` default → PASS.
+
+--------------------------------------------------------------------------
+Family 2 — init bundled fallback branch (src/state/store.ts)
+--------------------------------------------------------------------------
+
+Break: `bundled = await bundledDocsProvider();`
+    →  `bundled = null; // bundled fallback disabled`   (never consult provider)
+
+`npx vitest run src/state/store.test.ts`:
+
+    × empty cache + bundled provider → bundled-ready, cached, source persisted
+    × version-stale cache + bundled provider → bundled-ready
+    × bundled-ready but save fails (broken IDB) → usable this session + note
+    × uploading over a bundled catalog flips the source to user
+    FAIL  … > empty cache + bundled provider → bundled-ready …
+    AssertionError: expected 'needs-upload' to be 'ready' // Object.is equality
+    FAIL  … > uploading over a bundled catalog flips the source to user
+    AssertionError: expected null to match object { kind: 'bundled' }
+    Tests  4 failed | 28 passed (32)
+
+Restore → `await bundledDocsProvider()` → PASS.
+
+--------------------------------------------------------------------------
+Family 3 — provenance banner string (src/ui/App.tsx BundledBanner)
+--------------------------------------------------------------------------
+
+Break: banner copy `bundled game data · …`
+    →  `BROKEN game data · …`
+
+`npx vitest run src/ui/smoke.test.tsx`:
+
+    × renders the banner with the exact provenance string when source is bundled
+    FAIL  src/ui/smoke.test.tsx > App provenance banner (ticket #9) >
+          renders the banner with the exact provenance string when source is
+          bundled
+    AssertionError: expected '<p class="bundled-banner">BROKEN game…' to contain
+      'bundled game data · Steam build 23855724 (2026-04-30) — upload your own
+       Docs.json if your game is newer'
+    Tests  1 failed | 15 passed (16)
+
+Restore → `bundled game data · …` → PASS.
+
+--------------------------------------------------------------------------
+Final: `npm test` → Test Files 11 passed (11), Tests 222 passed (222).
+
+All three families are bidirectional: the tests fail when their behavior is
+removed and pass when it is restored — they gate real behavior, not tautology.
