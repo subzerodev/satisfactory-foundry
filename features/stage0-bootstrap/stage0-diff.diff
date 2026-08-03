@@ -1,0 +1,1565 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 0b24755..61ff514 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -20,7 +20,5 @@ no DOM) — all solver math lives there, in exact rational arithmetic
+ 
+ ## Workflow commands
+ 
+-lint: none
+-test: none
+-
+-(both get wired by the Stage 0 scaffold — update this stanza when it lands)
++lint: npm run check
++test: npm test
+diff --git a/eslint.config.js b/eslint.config.js
+new file mode 100644
+index 0000000..ae96ade
+--- /dev/null
++++ b/eslint.config.js
+@@ -0,0 +1,67 @@
++import tseslint from 'typescript-eslint'
++
++export default tseslint.config(
++  { ignores: ['dist'] },
++  ...tseslint.configs.recommended,
++  {
++    // Purity boundary for src/core/**: core is zero-dependency pure TS with no
++    // knowledge of the other layers. This is an allowlist — every package import
++    // is banned (a future dep can never silently leak in), plus a depth-robust
++    // ban on relative escapes to the state/ui/data layers, plus dynamic imports
++    // and host globals. Type-only imports are banned too (allowTypeImports
++    // stays false): core must not even type-depend on the other layers.
++    files: ['src/core/**'],
++    rules: {
++      '@typescript-eslint/no-restricted-imports': [
++        'error',
++        {
++          patterns: [
++            {
++              // Ban every bare-specifier (package) import: anything not
++              // starting with "." is a package. Keeps core zero-dependency.
++              regex: '^[^.]',
++              message:
++                'src/core is zero-dependency: no package imports allowed.',
++            },
++            {
++              // Depth-robust ban on relative escapes into sibling layers,
++              // matching ../state, ../../state/foo, ../../../data/x, etc. at
++              // any nesting depth.
++              regex: '^\\.\\./(\\.\\./)*(state|ui|data)(/|$)',
++              message:
++                'src/core must not import from the state/ui/data layers.',
++            },
++          ],
++        },
++      ],
++      'no-restricted-syntax': [
++        'error',
++        {
++          // Close the dynamic-import hole: no-restricted-imports covers static
++          // imports only.
++          selector: 'ImportExpression',
++          message:
++            'src/core is zero-dependency: dynamic imports are not allowed.',
++        },
++      ],
++      'no-restricted-globals': [
++        'error',
++        {
++          // checkGlobalObject also catches globalThis.document-style access,
++          // not just bare identifiers. Verified supported in ESLint 10.8.0.
++          checkGlobalObject: true,
++          globals: [
++            'document',
++            'window',
++            'indexedDB',
++            'localStorage',
++            'sessionStorage',
++            'fetch',
++            'navigator',
++            'location',
++          ],
++        },
++      ],
++    },
++  },
++)
+diff --git a/features/stage0-bootstrap/r2-verification.log b/features/stage0-bootstrap/r2-verification.log
+new file mode 100644
+index 0000000..3ab3d44
+--- /dev/null
++++ b/features/stage0-bootstrap/r2-verification.log
+@@ -0,0 +1,784 @@
++===================================================================
++Stage 0 bootstrap — verification log
++Generated: 2026-08-03T15:00:20Z
++Worktree: /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
++Branch:  feature/stage0-bootstrap
++Toolchain: node v26.3.0, npm 11.16.0
++===================================================================
++
++###################################################################
++# SECTION A — baseline: check / test / build all green
++###################################################################
++
++--- $ npm run check ---
++
++> satisfactory-foundry@0.0.0 check
++> tsc -b && eslint . && prettier --check src
++
++Checking formatting...
++All matched files use Prettier code style!
++
++--- $ npm test ---
++
++> satisfactory-foundry@0.0.0 test
++> vitest run
++
++
++ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
++
++
++ Test Files  1 passed (1)
++      Tests  70 passed (70)
++   Start at  16:00:33
++   Duration  120ms (transform 23ms, setup 0ms, import 31ms, tests 7ms, environment 0ms)
++
++
++--- $ npm run build ---
++
++> satisfactory-foundry@0.0.0 build
++> vite build
++
++vite v8.2.0 building client environment for production...
++[2Ktransforming...✓ 15 modules transformed.
++rendering chunks...
++computing gzip size...
++dist/index.html                  0.33 kB │ gzip:  0.23 kB
++dist/assets/index-BGz0gXcT.js  190.37 kB │ gzip: 59.95 kB
++
++✓ built in 69ms
++
++###################################################################
++# SECTION B — DoD #4: purity boundary PROVEN
++###################################################################
++
++Injected `import React from "react";` at the top of src/core/fraction.ts.
++Expectation: npm run check FAILS, citing @typescript-eslint/no-restricted-imports.
++
++--- diff of the injected line ---
++
++--- $ npm run check  (expected: NON-ZERO exit, restricted-import error) ---
++
++> satisfactory-foundry@0.0.0 check
++> tsc -b && eslint . && prettier --check src
++
++src/core/fraction.ts(10,1): error TS6133: 'React' is declared but its value is never read.
++
++>>> check exit status: 0
++
++  [note] The first attempt injected only the import; tsc's noUnusedLocals
++  (TS6133) tripped first, masking the ESLint rule. Re-run below references
++  React via `void React;` so tsc passes and the failure isolates to the
++  ESLint purity rule — which is the rule under proof.
++
++--- current injected diff (vs a clean copy of the file) ---
++16:+import React from "react";
++20:+void React;
++
++Injected lines:
++10:import React from "react";
++14:void React;
++
++--- $ npm run check  (expected: FAIL citing no-restricted-imports) ---
++
++> satisfactory-foundry@0.0.0 check
++> tsc -b && eslint . && prettier --check src
++
++
++/home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap/src/core/fraction.ts
++  10:1  error  'react' import is restricted from being used by a pattern. src/core is zero-dependency: no package imports allowed  @typescript-eslint/no-restricted-imports
++
++✖ 1 problem (1 error, 0 warnings)
++
++
++>>> check exit status: 1  (non-zero = FAIL, as expected)
++
++--- reverted the injection; $ npm run check  (expected: GREEN) ---
++
++> satisfactory-foundry@0.0.0 check
++> tsc -b && eslint . && prettier --check src
++
++Checking formatting...
++All matched files use Prettier code style!
++
++>>> check exit status: 0  (zero = green, purity restored)
++
++CONCLUSION (DoD #4): the src/core purity boundary is mechanically enforced —
++a bare package import ('react') in src/core fails 'npm run check' via
++@typescript-eslint/no-restricted-imports, and check returns green once removed.
++
++###################################################################
++# SECTION C — DoD #5: test bidirectionality
++# For each distinct production behaviour class: (a) tests PASS with
++# correct code, (b) a genuine vitest FAIL after breaking the
++# production code (referencing the diff's test blocks), (c) restore +
++# green re-run. One representative revert per behaviour class.
++###################################################################
++
++===================================================================
++BEHAVIOUR CLASS: normalization (sign carried on numerator)
++===================================================================
++Break applied: neutered the 'if (den < ZERO)' sign-normalization branch in normalize() -> 'if (false && den < ZERO)'
++
++--- $ npm test  (expected: FAIL) ---
++
++> satisfactory-foundry@0.0.0 test
++> vitest run
++
++
++ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
++
++ ❯ src/core/fraction.test.ts (70 tests | 4 failed) 17ms
++     × of(2n, -4n) -> '-1/2' 5ms
++     × of(-2n, -4n) -> '1/2' 1ms
++     × mixed-sign arithmetic 1ms
++     × '-3/4' 0ms
++
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction normalization > of(2n, -4n) -> '-1/2'
++AssertionError: expected '1/-2' to be '-1/2' // Object.is equality
++
++Expected: "-1/2"
++Received: "1/-2"
++
++ ❯ src/core/fraction.test.ts:15:46
++     13|   ];
++     14|   it.each(cases)("of($num, $den) -> $expected", ({ num, den, expected …
++     15|     expect(Fraction.of(num, den).toString()).toBe(expected);
++       |                                              ^
++     16|   });
++     17| });
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction normalization > of(-2n, -4n) -> '1/2'
++AssertionError: expected '-1/-2' to be '1/2' // Object.is equality
++
++Expected: "1/2"
++Received: "-1/-2"
++
++ ❯ src/core/fraction.test.ts:15:46
++     13|   ];
++     14|   it.each(cases)("of($num, $den) -> $expected", ({ num, den, expected …
++     15|     expect(Fraction.of(num, den).toString()).toBe(expected);
++       |                                              ^
++     16|   });
++     17| });
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction arithmetic > mixed-sign arithmetic
++AssertionError: expected '3/-2' to be '-3/2' // Object.is equality
++
++Expected: "-3/2"
++Received: "3/-2"
++
++ ❯ src/core/fraction.test.ts:39:66
++     37|     expect(Fraction.of(-1, 2).add(Fraction.of(1, 3)).toString()).toBe(…
++     38|     expect(Fraction.of(-1, 2).mul(Fraction.of(-1, 3)).toString()).toBe…
++     39|     expect(Fraction.of(1, 2).div(Fraction.of(-1, 3)).toString()).toBe(…
++       |                                                                  ^
++     40|   });
++     41|
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction.toString exactness > '-3/4'
++AssertionError: expected '3/-4' to be '-3/4' // Object.is equality
++
++Expected: "-3/4"
++Received: "3/-4"
++
++ ❯ src/core/fraction.test.ts:197:29
++    195|   ];
++    196|   it.each(cases)("$expected", ({ frac, expected }) => {
++    197|     expect(frac.toString()).toBe(expected);
++       |                             ^
++    198|   });
++    199| });
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
++
++
++ Test Files  1 failed (1)
++      Tests  4 failed | 66 passed (70)
++   Start at  16:01:56
++   Duration  135ms (transform 28ms, setup 0ms, import 37ms, tests 17ms, environment 0ms)
++
++>>> test exit status: 1  (non-zero = FAIL, as expected)
++
++--- restored pristine; $ npm test  (expected: GREEN) ---
++
++> satisfactory-foundry@0.0.0 test
++> vitest run
++
++
++ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
++
++
++ Test Files  1 passed (1)
++      Tests  70 passed (70)
++   Start at  16:01:57
++   Duration  105ms (transform 23ms, setup 0ms, import 30ms, tests 6ms, environment 0ms)
++
++>>> test exit status: 0  (zero = green, restored)
++
++===================================================================
++BEHAVIOUR CLASS: ceilDiv / ceil boundary + negative correctness
++===================================================================
++Break applied: bigintCeilDiv now returns 'q + ONE' unconditionally (drops the exact-boundary and sign guard)
++
++--- $ npm test  (expected: FAIL) ---
++
++> satisfactory-foundry@0.0.0 test
++> vitest run
++
++
++ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
++
++ ❯ src/core/fraction.test.ts (70 tests | 4 failed) 11ms
++     × exact-multiple boundary ceils to itself, not itself+1 4ms
++     × fractional operands (belt-style D/B math) 0ms
++     × negative operands: floor toward -inf, ceil toward +inf 0ms
++     × floor() / ceil() directly, incl. negatives and boundaries 0ms
++
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction floorDiv / ceilDiv > exact-multiple boundary ceils to itself, not itself+1
++AssertionError: expected 3n to be 2n // Object.is equality
++
++- Expected
+++ Received
++
++- 2n
+++ 3n
++
++ ❯ src/core/fraction.test.ts:96:26
++     94|     const d = Fraction.from(6);
++     95|     const b = Fraction.from(3);
++     96|     expect(d.ceilDiv(b)).toBe(2n);
++       |                          ^
++     97|     expect(d.floorDiv(b)).toBe(2n);
++     98|   });
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction floorDiv / ceilDiv > fractional operands (belt-style D/B math)
++AssertionError: expected 6n to be 5n // Object.is equality
++
++- Expected
+++ Received
++
++- 5n
+++ 6n
++
++ ❯ src/core/fraction.test.ts:110:67
++    108|   it("fractional operands (belt-style D/B math)", () => {
++    109|     // (37.5) / (7.5) = 5 exactly.
++    110|     expect(Fraction.parse("37.5").ceilDiv(Fraction.parse("7.5"))).toBe…
++       |                                                                   ^
++    111|     // (37.5) / (7) = 5.357... -> ceil 6, floor 5.
++    112|     expect(Fraction.parse("37.5").ceilDiv(Fraction.from(7))).toBe(6n);
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction floorDiv / ceilDiv > negative operands: floor toward -inf, ceil toward +inf
++AssertionError: expected -1n to be -2n // Object.is equality
++
++- Expected
+++ Received
++
++- -2n
+++ -1n
++
++ ❯ src/core/fraction.test.ts:121:26
++    119|     const b = Fraction.from(3);
++    120|     expect(d.floorDiv(b)).toBe(-3n);
++    121|     expect(d.ceilDiv(b)).toBe(-2n);
++       |                          ^
++    122|     // -6 / 3 = -2 exactly (boundary, both are -2).
++    123|     expect(Fraction.from(-6).floorDiv(b)).toBe(-2n);
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction floorDiv / ceilDiv > floor() / ceil() directly, incl. negatives and boundaries
++AssertionError: expected -1n to be -2n // Object.is equality
++
++- Expected
+++ Received
++
++- -2n
+++ -1n
++
++ ❯ src/core/fraction.test.ts:131:39
++    129|     expect(Fraction.of(7, 3).ceil()).toBe(3n);
++    130|     expect(Fraction.of(-7, 3).floor()).toBe(-3n);
++    131|     expect(Fraction.of(-7, 3).ceil()).toBe(-2n);
++       |                                       ^
++    132|     expect(Fraction.from(4).floor()).toBe(4n);
++    133|     expect(Fraction.from(4).ceil()).toBe(4n);
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
++
++
++ Test Files  1 failed (1)
++      Tests  4 failed | 66 passed (70)
++   Start at  16:02:19
++   Duration  126ms (transform 27ms, setup 0ms, import 38ms, tests 11ms, environment 0ms)
++
++>>> test exit status: 1  (non-zero = FAIL, as expected)
++
++--- restored pristine; $ npm test  (expected: GREEN) ---
++
++> satisfactory-foundry@0.0.0 test
++> vitest run
++
++
++ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
++
++
++ Test Files  1 passed (1)
++      Tests  70 passed (70)
++   Start at  16:02:20
++   Duration  126ms (transform 29ms, setup 0ms, import 38ms, tests 10ms, environment 0ms)
++
++>>> test exit status: 0  (zero = green, restored)
++
++===================================================================
++BEHAVIOUR CLASS: parse decimal exactness
++===================================================================
++Break applied: Fraction.parse denominator forced to ONE (ignores decimal places)
++
++--- $ npm test  (expected: FAIL) ---
++
++> satisfactory-foundry@0.0.0 test
++> vitest run
++
++
++ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
++
++ ❯ src/core/fraction.test.ts (70 tests | 9 failed) 12ms
++     × parse('37.5') -> '75/2' 3ms
++     × parse('0.25') -> '1/4' 1ms
++     × parse('-0.25') -> '-1/4' 0ms
++     × parse('+3.5') -> '7/2' 0ms
++     × parse('.5') -> '1/2' 0ms
++     × parse('2.50') -> '5/2' 0ms
++     × parse('  12.5  ') -> '25/2' 0ms
++     × round-trips a large fractional rate exactly 0ms
++     × fractional operands (belt-style D/B math) 1ms
++
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('37.5') -> '75/2'
++AssertionError: expected '375' to be '75/2' // Object.is equality
++
++Expected: "75/2"
++Received: "375"
++
++ ❯ src/core/fraction.test.ts:66:46
++     64|   ];
++     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
++     66|     expect(Fraction.parse(input).toString()).toBe(expected);
++       |                                              ^
++     67|   });
++     68|
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('0.25') -> '1/4'
++AssertionError: expected '25' to be '1/4' // Object.is equality
++
++Expected: "1/4"
++Received: "25"
++
++ ❯ src/core/fraction.test.ts:66:46
++     64|   ];
++     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
++     66|     expect(Fraction.parse(input).toString()).toBe(expected);
++       |                                              ^
++     67|   });
++     68|
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('-0.25') -> '-1/4'
++AssertionError: expected '-25' to be '-1/4' // Object.is equality
++
++Expected: "-1/4"
++Received: "-25"
++
++ ❯ src/core/fraction.test.ts:66:46
++     64|   ];
++     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
++     66|     expect(Fraction.parse(input).toString()).toBe(expected);
++       |                                              ^
++     67|   });
++     68|
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('+3.5') -> '7/2'
++AssertionError: expected '35' to be '7/2' // Object.is equality
++
++Expected: "7/2"
++Received: "35"
++
++ ❯ src/core/fraction.test.ts:66:46
++     64|   ];
++     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
++     66|     expect(Fraction.parse(input).toString()).toBe(expected);
++       |                                              ^
++     67|   });
++     68|
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('.5') -> '1/2'
++AssertionError: expected '5' to be '1/2' // Object.is equality
++
++Expected: "1/2"
++Received: "5"
++
++ ❯ src/core/fraction.test.ts:66:46
++     64|   ];
++     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
++     66|     expect(Fraction.parse(input).toString()).toBe(expected);
++       |                                              ^
++     67|   });
++     68|
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('2.50') -> '5/2'
++AssertionError: expected '250' to be '5/2' // Object.is equality
++
++Expected: "5/2"
++Received: "250"
++
++ ❯ src/core/fraction.test.ts:66:46
++     64|   ];
++     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
++     66|     expect(Fraction.parse(input).toString()).toBe(expected);
++       |                                              ^
++     67|   });
++     68|
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/9]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction.parse > parse('  12.5  ') -> '25/2'
++AssertionError: expected '125' to be '25/2' // Object.is equality
++
++Expected: "25/2"
++Received: "125"
++
++ ❯ src/core/fraction.test.ts:66:46
++     64|   ];
++     65|   it.each(cases)("parse($input) -> $expected", ({ input, expected }) =…
++     66|     expect(Fraction.parse(input).toString()).toBe(expected);
++       |                                              ^
++     67|   });
++     68|
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/9]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction.parse > round-trips a large fractional rate exactly
++AssertionError: expected '780375' to be '6243/8' // Object.is equality
++
++Expected: "6243/8"
++Received: "780375"
++
++ ❯ src/core/fraction.test.ts:71:50
++     69|   it("round-trips a large fractional rate exactly", () => {
++     70|     // 780.375 is exact; a float round-trip would corrupt it.
++     71|     expect(Fraction.parse("780.375").toString()).toBe("6243/8");
++       |                                                  ^
++     72|   });
++     73|
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/9]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction floorDiv / ceilDiv > fractional operands (belt-style D/B math)
++AssertionError: expected 54n to be 6n // Object.is equality
++
++- Expected
+++ Received
++
++- 6n
+++ 54n
++
++ ❯ src/core/fraction.test.ts:112:62
++    110|     expect(Fraction.parse("37.5").ceilDiv(Fraction.parse("7.5"))).toBe…
++    111|     // (37.5) / (7) = 5.357... -> ceil 6, floor 5.
++    112|     expect(Fraction.parse("37.5").ceilDiv(Fraction.from(7))).toBe(6n);
++       |                                                              ^
++    113|     expect(Fraction.parse("37.5").floorDiv(Fraction.from(7))).toBe(5n);
++    114|   });
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/9]⎯
++
++
++ Test Files  1 failed (1)
++      Tests  9 failed | 61 passed (70)
++   Start at  16:02:20
++   Duration  135ms (transform 23ms, setup 0ms, import 33ms, tests 12ms, environment 0ms)
++
++>>> test exit status: 1  (non-zero = FAIL, as expected)
++
++--- restored pristine; $ npm test  (expected: GREEN) ---
++
++> satisfactory-foundry@0.0.0 test
++> vitest run
++
++
++ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
++
++
++ Test Files  1 passed (1)
++      Tests  70 passed (70)
++   Start at  16:02:21
++   Duration  126ms (transform 24ms, setup 0ms, import 35ms, tests 10ms, environment 0ms)
++
++>>> test exit status: 0  (zero = green, restored)
++
++===================================================================
++BEHAVIOUR CLASS: toDecimalString half-up rounding
++===================================================================
++Break applied: removed the '+ this.den' half-up rounding bias -> becomes truncation
++
++--- $ npm test  (expected: FAIL) ---
++
++> satisfactory-foundry@0.0.0 test
++> vitest run
++
++
++ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
++
++ ❯ src/core/fraction.test.ts (70 tests | 4 failed) 17ms
++     × '1' 4ms
++     × '0.67' 1ms
++     × '0.13' 0ms
++     × '-1' 1ms
++
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction.toDecimalString > '1'
++AssertionError: expected '0' to be '1' // Object.is equality
++
++Expected: "1"
++Received: "0"
++
++ ❯ src/core/fraction.test.ts:217:38
++    215|   ];
++    216|   it.each(cases)("$expected", ({ frac, dp, expected }) => {
++    217|     expect(frac.toDecimalString(dp)).toBe(expected);
++       |                                      ^
++    218|   });
++    219|
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction.toDecimalString > '0.67'
++AssertionError: expected '0.66' to be '0.67' // Object.is equality
++
++Expected: "0.67"
++Received: "0.66"
++
++ ❯ src/core/fraction.test.ts:217:38
++    215|   ];
++    216|   it.each(cases)("$expected", ({ frac, dp, expected }) => {
++    217|     expect(frac.toDecimalString(dp)).toBe(expected);
++       |                                      ^
++    218|   });
++    219|
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction.toDecimalString > '0.13'
++AssertionError: expected '0.12' to be '0.13' // Object.is equality
++
++Expected: "0.13"
++Received: "0.12"
++
++ ❯ src/core/fraction.test.ts:217:38
++    215|   ];
++    216|   it.each(cases)("$expected", ({ frac, dp, expected }) => {
++    217|     expect(frac.toDecimalString(dp)).toBe(expected);
++       |                                      ^
++    218|   });
++    219|
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction.toDecimalString > '-1'
++AssertionError: expected '0' to be '-1' // Object.is equality
++
++Expected: "-1"
++Received: "0"
++
++ ❯ src/core/fraction.test.ts:217:38
++    215|   ];
++    216|   it.each(cases)("$expected", ({ frac, dp, expected }) => {
++    217|     expect(frac.toDecimalString(dp)).toBe(expected);
++       |                                      ^
++    218|   });
++    219|
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
++
++
++ Test Files  1 failed (1)
++      Tests  4 failed | 66 passed (70)
++   Start at  16:02:21
++   Duration  145ms (transform 24ms, setup 0ms, import 32ms, tests 17ms, environment 0ms)
++
++>>> test exit status: 1  (non-zero = FAIL, as expected)
++
++--- restored pristine; $ npm test  (expected: GREEN) ---
++
++> satisfactory-foundry@0.0.0 test
++> vitest run
++
++
++ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
++
++
++ Test Files  1 passed (1)
++      Tests  70 passed (70)
++   Start at  16:02:21
++   Duration  120ms (transform 23ms, setup 0ms, import 32ms, tests 11ms, environment 0ms)
++
++>>> test exit status: 0  (zero = green, restored)
++
++===================================================================
++BEHAVIOUR CLASS: comparison (compare/lt/gt ordering)
++===================================================================
++Break applied: compare() returns +1 instead of -1 on the less-than branch (inverts ordering)
++
++--- $ npm test  (expected: FAIL) ---
++
++> satisfactory-foundry@0.0.0 test
++> vitest run
++
++
++ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
++
++ ❯ src/core/fraction.test.ts (70 tests | 2 failed) 11ms
++     × compare returns -1 | 0 | 1 5ms
++     × eq / lt / lte / gt / gte 1ms
++
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction comparisons > compare returns -1 | 0 | 1
++AssertionError: expected 1 to be -1 // Object.is equality
++
++- Expected
+++ Received
++
++- -1
+++ 1
++
++ ❯ src/core/fraction.test.ts:157:58
++    155| describe("Fraction comparisons", () => {
++    156|   it("compare returns -1 | 0 | 1", () => {
++    157|     expect(Fraction.of(1, 3).compare(Fraction.of(1, 2))).toBe(-1);
++       |                                                          ^
++    158|     expect(Fraction.of(1, 2).compare(Fraction.of(1, 2))).toBe(0);
++    159|     expect(Fraction.of(1, 2).compare(Fraction.of(1, 3))).toBe(1);
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
++
++ FAIL  src/core/fraction.test.ts > Fraction comparisons > eq / lt / lte / gt / gte
++AssertionError: expected false to be true // Object.is equality
++
++- Expected
+++ Received
++
++- true
+++ false
++
++ ❯ src/core/fraction.test.ts:169:21
++    167|     const c = Fraction.of(3, 4);
++    168|     expect(a.eq(b)).toBe(true);
++    169|     expect(a.lt(c)).toBe(true);
++       |                     ^
++    170|     expect(a.lte(b)).toBe(true);
++    171|     expect(c.gt(a)).toBe(true);
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
++
++
++ Test Files  1 failed (1)
++      Tests  2 failed | 68 passed (70)
++   Start at  16:02:22
++   Duration  126ms (transform 26ms, setup 0ms, import 35ms, tests 11ms, environment 0ms)
++
++>>> test exit status: 1  (non-zero = FAIL, as expected)
++
++--- restored pristine; $ npm test  (expected: GREEN) ---
++
++> satisfactory-foundry@0.0.0 test
++> vitest run
++
++
++ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
++
++
++ Test Files  1 passed (1)
++      Tests  70 passed (70)
++   Start at  16:02:22
++   Duration  124ms (transform 25ms, setup 0ms, import 36ms, tests 12ms, environment 0ms)
++
++>>> test exit status: 0  (zero = green, restored)
++
++###################################################################
++# SECTION D — final gate after all reverts (working tree pristine)
++###################################################################
++
++--- $ npm run check ---
++
++> satisfactory-foundry@0.0.0 check
++> tsc -b && eslint . && prettier --check src
++
++Checking formatting...
++All matched files use Prettier code style!
++
++--- $ npm test ---
++
++> satisfactory-foundry@0.0.0 test
++> vitest run
++
++
++ RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/stage0-bootstrap
++
++
++ Test Files  1 passed (1)
++      Tests  70 passed (70)
++   Start at  16:02:48
++   Duration  127ms (transform 23ms, setup 0ms, import 33ms, tests 11ms, environment 0ms)
++
++
++--- $ npm run build ---
++
++> satisfactory-foundry@0.0.0 build
++> vite build
++
++vite v8.2.0 building client environment for production...
++[2Ktransforming...✓ 15 modules transformed.
++rendering chunks...
++computing gzip size...
++dist/index.html                  0.33 kB │ gzip:  0.23 kB
++dist/assets/index-BGz0gXcT.js  190.37 kB │ gzip: 59.95 kB
++
++✓ built in 66ms
++
++===================================================================
++SUMMARY
++  DoD #1 npm run check : GREEN
++  DoD #2 npm test      : GREEN (70 tests)
++  DoD #3 npm run build : SUCCESS
++  DoD #4 purity proof  : react import in src/core fails check via
++                         @typescript-eslint/no-restricted-imports (Section B)
++  DoD #5 bidirectional : 5 behaviour classes, each PASS->break->genuine
++                         referenced FAIL->restore->GREEN (Section C)
++===================================================================
+diff --git a/index.html b/index.html
+new file mode 100644
+index 0000000..bdaaad3
+--- /dev/null
++++ b/index.html
+@@ -0,0 +1,12 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="UTF-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <title>satisfactory-foundry</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <script type="module" src="/src/main.tsx"></script>
++  </body>
++</html>
+diff --git a/package.json b/package.json
+new file mode 100644
+index 0000000..a31ac3c
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,31 @@
++{
++  "name": "satisfactory-foundry",
++  "private": true,
++  "version": "0.0.0",
++  "type": "module",
++  "scripts": {
++    "dev": "vite",
++    "build": "vite build",
++    "test": "vitest run",
++    "test:watch": "vitest",
++    "check": "tsc -b && eslint . && prettier --check src",
++    "format": "prettier --write src"
++  },
++  "dependencies": {
++    "react": "^19.2.8",
++    "react-dom": "^19.2.8",
++    "zustand": "^5.0.2"
++  },
++  "devDependencies": {
++    "@types/node": "^24.13.3",
++    "@types/react": "^19.2.17",
++    "@types/react-dom": "^19.2.3",
++    "@vitejs/plugin-react": "^6.0.4",
++    "eslint": "^10.8.0",
++    "prettier": "^3.9.6",
++    "typescript": "~6.0.2",
++    "typescript-eslint": "^8.65.0",
++    "vite": "^8.2.0",
++    "vitest": "^4.1.10"
++  }
++}
+diff --git a/src/App.tsx b/src/App.tsx
+new file mode 100644
+index 0000000..7801ccd
+--- /dev/null
++++ b/src/App.tsx
+@@ -0,0 +1,5 @@
++function App() {
++  return <h1>satisfactory-foundry</h1>;
++}
++
++export default App;
+diff --git a/src/core/fraction.test.ts b/src/core/fraction.test.ts
+new file mode 100644
+index 0000000..5458afb
+--- /dev/null
++++ b/src/core/fraction.test.ts
+@@ -0,0 +1,251 @@
++import { Fraction } from "./fraction.ts";
++
++describe("Fraction normalization", () => {
++  const cases: Array<{ num: bigint; den: bigint; expected: string }> = [
++    { num: 2n, den: 4n, expected: "1/2" },
++    { num: 6n, den: 3n, expected: "2" },
++    { num: -2n, den: 4n, expected: "-1/2" },
++    { num: 2n, den: -4n, expected: "-1/2" }, // sign moves to numerator
++    { num: -2n, den: -4n, expected: "1/2" }, // double negative reduces
++    { num: 0n, den: 5n, expected: "0" }, // canonical zero
++    { num: 0n, den: -5n, expected: "0" },
++    { num: 75n, den: 2n, expected: "75/2" },
++  ];
++  it.each(cases)("of($num, $den) -> $expected", ({ num, den, expected }) => {
++    expect(Fraction.of(num, den).toString()).toBe(expected);
++  });
++});
++
++describe("Fraction arithmetic", () => {
++  const half = Fraction.of(1, 2);
++  const third = Fraction.of(1, 3);
++
++  it("adds", () => {
++    expect(half.add(third).toString()).toBe("5/6");
++  });
++  it("subtracts", () => {
++    expect(half.sub(third).toString()).toBe("1/6");
++  });
++  it("multiplies", () => {
++    expect(half.mul(third).toString()).toBe("1/6");
++  });
++  it("divides", () => {
++    expect(half.div(third).toString()).toBe("3/2");
++  });
++
++  it("mixed-sign arithmetic", () => {
++    expect(Fraction.of(-1, 2).add(Fraction.of(1, 3)).toString()).toBe("-1/6");
++    expect(Fraction.of(-1, 2).mul(Fraction.of(-1, 3)).toString()).toBe("1/6");
++    expect(Fraction.of(1, 2).div(Fraction.of(-1, 3)).toString()).toBe("-3/2");
++  });
++
++  it("additive and multiplicative identities", () => {
++    const f = Fraction.of(3, 7);
++    expect(f.add(Fraction.from(0)).eq(f)).toBe(true);
++    expect(f.mul(Fraction.from(1)).eq(f)).toBe(true);
++    expect(f.sub(f).isZero()).toBe(true);
++    expect(f.div(f).eq(Fraction.from(1))).toBe(true);
++  });
++});
++
++describe("Fraction.parse", () => {
++  const cases: Array<{ input: string; expected: string }> = [
++    { input: "37.5", expected: "75/2" },
++    { input: "0.25", expected: "1/4" },
++    { input: "-0.25", expected: "-1/4" },
++    { input: "42", expected: "42" },
++    { input: "-42", expected: "-42" },
++    { input: "+3.5", expected: "7/2" },
++    { input: "0.0", expected: "0" },
++    { input: ".5", expected: "1/2" },
++    { input: "5.", expected: "5" },
++    { input: "2.50", expected: "5/2" }, // trailing zeros reduce
++    { input: "  12.5  ", expected: "25/2" }, // trimmed
++  ];
++  it.each(cases)("parse($input) -> $expected", ({ input, expected }) => {
++    expect(Fraction.parse(input).toString()).toBe(expected);
++  });
++
++  it("round-trips a large fractional rate exactly", () => {
++    // 780.375 is exact; a float round-trip would corrupt it.
++    expect(Fraction.parse("780.375").toString()).toBe("6243/8");
++  });
++
++  const malformed = [
++    "",
++    "+",
++    "-",
++    ".",
++    "+.",
++    "abc",
++    "1.2.3",
++    "1,5",
++    "1e3",
++    "  ",
++  ];
++  it.each(malformed)("rejects malformed input %j", (input) => {
++    expect(() => Fraction.parse(input)).toThrow();
++  });
++});
++
++describe("Fraction floorDiv / ceilDiv", () => {
++  it("exact-multiple boundary ceils to itself, not itself+1", () => {
++    // 6 / 3 = 2 exactly.
++    const d = Fraction.from(6);
++    const b = Fraction.from(3);
++    expect(d.ceilDiv(b)).toBe(2n);
++    expect(d.floorDiv(b)).toBe(2n);
++  });
++
++  it("non-integral positive quotient", () => {
++    // 7 / 3 = 2.333...
++    const d = Fraction.from(7);
++    const b = Fraction.from(3);
++    expect(d.floorDiv(b)).toBe(2n);
++    expect(d.ceilDiv(b)).toBe(3n);
++  });
++
++  it("fractional operands (belt-style D/B math)", () => {
++    // (37.5) / (7.5) = 5 exactly.
++    expect(Fraction.parse("37.5").ceilDiv(Fraction.parse("7.5"))).toBe(5n);
++    // (37.5) / (7) = 5.357... -> ceil 6, floor 5.
++    expect(Fraction.parse("37.5").ceilDiv(Fraction.from(7))).toBe(6n);
++    expect(Fraction.parse("37.5").floorDiv(Fraction.from(7))).toBe(5n);
++  });
++
++  it("negative operands: floor toward -inf, ceil toward +inf", () => {
++    // -7 / 3 = -2.333...
++    const d = Fraction.from(-7);
++    const b = Fraction.from(3);
++    expect(d.floorDiv(b)).toBe(-3n);
++    expect(d.ceilDiv(b)).toBe(-2n);
++    // -6 / 3 = -2 exactly (boundary, both are -2).
++    expect(Fraction.from(-6).floorDiv(b)).toBe(-2n);
++    expect(Fraction.from(-6).ceilDiv(b)).toBe(-2n);
++  });
++
++  it("floor() / ceil() directly, incl. negatives and boundaries", () => {
++    expect(Fraction.of(7, 3).floor()).toBe(2n);
++    expect(Fraction.of(7, 3).ceil()).toBe(3n);
++    expect(Fraction.of(-7, 3).floor()).toBe(-3n);
++    expect(Fraction.of(-7, 3).ceil()).toBe(-2n);
++    expect(Fraction.from(4).floor()).toBe(4n);
++    expect(Fraction.from(4).ceil()).toBe(4n);
++    expect(Fraction.from(-4).floor()).toBe(-4n);
++    expect(Fraction.from(-4).ceil()).toBe(-4n);
++  });
++
++  it("div by zero throws through ceilDiv/floorDiv", () => {
++    expect(() => Fraction.from(1).ceilDiv(Fraction.from(0))).toThrow();
++    expect(() => Fraction.from(1).floorDiv(Fraction.from(0))).toThrow();
++  });
++});
++
++describe("Fraction BigInt magnitude", () => {
++  it("handles values past Number.MAX_SAFE_INTEGER", () => {
++    const big = 9007199254740993n; // MAX_SAFE_INTEGER + 2, not representable as a safe number
++    const f = Fraction.of(big, 2n);
++    // big is odd, so big/2 stays a fraction; multiply back by 2 to recover it.
++    expect(f.mul(Fraction.from(2n)).toString()).toBe(big.toString());
++    expect(f.floor()).toBe((big - 1n) / 2n);
++    expect(f.ceil()).toBe((big + 1n) / 2n);
++  });
++});
++
++describe("Fraction comparisons", () => {
++  it("compare returns -1 | 0 | 1", () => {
++    expect(Fraction.of(1, 3).compare(Fraction.of(1, 2))).toBe(-1);
++    expect(Fraction.of(1, 2).compare(Fraction.of(1, 2))).toBe(0);
++    expect(Fraction.of(1, 2).compare(Fraction.of(1, 3))).toBe(1);
++    // cross-denominator and negative ordering
++    expect(Fraction.of(-1, 2).compare(Fraction.of(-1, 3))).toBe(-1);
++  });
++
++  it("eq / lt / lte / gt / gte", () => {
++    const a = Fraction.of(2, 4);
++    const b = Fraction.of(1, 2);
++    const c = Fraction.of(3, 4);
++    expect(a.eq(b)).toBe(true);
++    expect(a.lt(c)).toBe(true);
++    expect(a.lte(b)).toBe(true);
++    expect(c.gt(a)).toBe(true);
++    expect(a.gte(b)).toBe(true);
++    expect(a.lt(a)).toBe(false);
++    expect(a.gt(a)).toBe(false);
++  });
++
++  it("isZero / isNegative", () => {
++    expect(Fraction.from(0).isZero()).toBe(true);
++    expect(Fraction.of(0, 5).isZero()).toBe(true);
++    expect(Fraction.of(1, 2).isZero()).toBe(false);
++    expect(Fraction.of(-1, 2).isNegative()).toBe(true);
++    expect(Fraction.of(1, 2).isNegative()).toBe(false);
++    expect(Fraction.from(0).isNegative()).toBe(false);
++  });
++});
++
++describe("Fraction.toString exactness", () => {
++  const cases: Array<{ frac: Fraction; expected: string }> = [
++    { frac: Fraction.from(5), expected: "5" }, // integer, no /1
++    { frac: Fraction.from(-5), expected: "-5" },
++    { frac: Fraction.from(0), expected: "0" },
++    { frac: Fraction.of(75, 2), expected: "75/2" },
++    { frac: Fraction.of(-3, 4), expected: "-3/4" },
++    { frac: Fraction.of(3, -4), expected: "-3/4" },
++  ];
++  it.each(cases)("$expected", ({ frac, expected }) => {
++    expect(frac.toString()).toBe(expected);
++  });
++});
++
++describe("Fraction.toDecimalString", () => {
++  const cases: Array<{ frac: Fraction; dp: number; expected: string }> = [
++    { frac: Fraction.of(75, 2), dp: 1, expected: "37.5" }, // exact
++    { frac: Fraction.of(1, 2), dp: 0, expected: "1" }, // 0.5 half-up -> 1
++    { frac: Fraction.of(1, 4), dp: 2, expected: "0.25" }, // exact
++    { frac: Fraction.of(1, 3), dp: 2, expected: "0.33" }, // rounds down
++    { frac: Fraction.of(2, 3), dp: 2, expected: "0.67" }, // rounds up
++    { frac: Fraction.of(1, 8), dp: 2, expected: "0.13" }, // 0.125 half-up
++    { frac: Fraction.of(5, 1), dp: 2, expected: "5.00" }, // dp padding
++    { frac: Fraction.from(0), dp: 2, expected: "0.00" },
++    { frac: Fraction.of(-1, 3), dp: 2, expected: "-0.33" }, // negative
++    { frac: Fraction.of(-1, 2), dp: 0, expected: "-1" }, // negative half-up
++    { frac: Fraction.of(-1, 100), dp: 1, expected: "0.0" }, // rounds to zero, no -0
++    { frac: Fraction.of(120, 1), dp: 0, expected: "120" }, // "120/min"-style
++  ];
++  it.each(cases)("$expected", ({ frac, dp, expected }) => {
++    expect(frac.toDecimalString(dp)).toBe(expected);
++  });
++
++  it("rejects negative or non-integer dp", () => {
++    expect(() => Fraction.of(1, 2).toDecimalString(-1)).toThrow();
++    expect(() => Fraction.of(1, 2).toDecimalString(1.5)).toThrow();
++  });
++});
++
++describe("Fraction construction guards", () => {
++  it("from/of reject non-integral numbers", () => {
++    expect(() => Fraction.from(1.5)).toThrow(RangeError);
++    expect(() => Fraction.of(1.5, 2)).toThrow(RangeError);
++    expect(() => Fraction.of(1, 2.5)).toThrow(RangeError);
++  });
++
++  it("from/of reject non-safe-integer numbers", () => {
++    expect(() => Fraction.from(Number.MAX_SAFE_INTEGER + 1)).toThrow(
++      RangeError,
++    );
++  });
++
++  it("of rejects a zero denominator", () => {
++    expect(() => Fraction.of(1, 0)).toThrow(RangeError);
++    expect(() => Fraction.of(1, 0n)).toThrow(RangeError);
++  });
++
++  it("div by zero throws", () => {
++    expect(() => Fraction.from(1).div(Fraction.from(0))).toThrow(RangeError);
++  });
++
++  it("accepts bigint magnitudes beyond safe-integer range", () => {
++    expect(() => Fraction.from(9007199254740993n)).not.toThrow();
++  });
++});
+diff --git a/src/core/fraction.ts b/src/core/fraction.ts
+new file mode 100644
+index 0000000..cd14b31
+--- /dev/null
++++ b/src/core/fraction.ts
+@@ -0,0 +1,250 @@
++/**
++ * Exact rational arithmetic for the solver.
++ *
++ * Immutable and always normalized: gcd-reduced, the sign carried on the
++ * numerator, denominator strictly positive. BigInt-backed so solver magnitudes
++ * (game-data rationals, minutes-denominated) never overflow. Floats never enter
++ * this type — accepting one is exactly the leak the type exists to prevent.
++ */
++
++const ZERO = 0n;
++const ONE = 1n;
++
++function gcd(a: bigint, b: bigint): bigint {
++  let x = a < ZERO ? -a : a;
++  let y = b < ZERO ? -b : b;
++  while (y !== ZERO) {
++    [x, y] = [y, x % y];
++  }
++  return x;
++}
++
++/**
++ * Coerce a construction argument to a bigint, rejecting any non-integral or
++ * non-safe-integer `number`. A named domain error (not a bare RangeError) makes
++ * the intent explicit and blocks Math.trunc-style silent truncation.
++ */
++function toIntegerBigInt(value: number | bigint): bigint {
++  if (typeof value === "bigint") {
++    return value;
++  }
++  if (!Number.isInteger(value)) {
++    throw new RangeError(
++      `Fraction requires an integer; got non-integral number ${value}. ` +
++        "Use Fraction.of(num, den) or Fraction.parse for fractional values.",
++    );
++  }
++  if (!Number.isSafeInteger(value)) {
++    throw new RangeError(
++      `Fraction requires a safe integer; ${value} exceeds Number.MAX_SAFE_INTEGER. ` +
++        "Pass a bigint for magnitudes beyond the safe-integer range.",
++    );
++  }
++  return BigInt(value);
++}
++
++export class Fraction {
++  /** Numerator; carries the sign of the value. */
++  readonly num: bigint;
++  /** Denominator; strictly positive by invariant. */
++  readonly den: bigint;
++
++  private constructor(num: bigint, den: bigint) {
++    this.num = num;
++    this.den = den;
++  }
++
++  /** Normalize a raw numerator/denominator into the canonical form. */
++  private static normalize(num: bigint, den: bigint): Fraction {
++    if (den === ZERO) {
++      throw new RangeError("Fraction denominator must be non-zero.");
++    }
++    // Force the sign onto the numerator so the denominator stays positive.
++    if (den < ZERO) {
++      num = -num;
++      den = -den;
++    }
++    if (num === ZERO) {
++      // Canonical zero is 0/1.
++      return new Fraction(ZERO, ONE);
++    }
++    const g = gcd(num, den);
++    return new Fraction(num / g, den / g);
++  }
++
++  /** Construct from an integer (`number`) or `bigint`. */
++  static from(int: number | bigint): Fraction {
++    return Fraction.normalize(toIntegerBigInt(int), ONE);
++  }
++
++  /** Construct from an explicit numerator and denominator. */
++  static of(num: number | bigint, den: number | bigint): Fraction {
++    return Fraction.normalize(toIntegerBigInt(num), toIntegerBigInt(den));
++  }
++
++  /**
++   * Parse an exact decimal string ("37.5", "-0.25", "42"). String-tokenized —
++   * never parseFloat/Number round-tripping, which would lose exactness. Throws
++   * on malformed input.
++   */
++  static parse(input: string): Fraction {
++    const s = input.trim();
++    // Optional sign, integer part, optional fractional part. At least one digit
++    // must appear somewhere.
++    const match = /^([+-]?)(\d*)(?:\.(\d*))?$/.exec(s);
++    if (match === null) {
++      throw new SyntaxError(
++        `Fraction.parse: malformed decimal string ${JSON.stringify(input)}.`,
++      );
++    }
++    const sign = match[1] === "-" ? -ONE : ONE;
++    const intPart = match[2] ?? "";
++    const fracPart = match[3] ?? "";
++    if (intPart === "" && fracPart === "") {
++      // Rejects "", "+", "-", ".", "+.", etc.
++      throw new SyntaxError(
++        `Fraction.parse: malformed decimal string ${JSON.stringify(input)}.`,
++      );
++    }
++    const digits = intPart + fracPart;
++    const num = sign * BigInt(digits);
++    const den = 10n ** BigInt(fracPart.length);
++    return Fraction.normalize(num, den);
++  }
++
++  add(other: Fraction): Fraction {
++    return Fraction.normalize(
++      this.num * other.den + other.num * this.den,
++      this.den * other.den,
++    );
++  }
++
++  sub(other: Fraction): Fraction {
++    return Fraction.normalize(
++      this.num * other.den - other.num * this.den,
++      this.den * other.den,
++    );
++  }
++
++  mul(other: Fraction): Fraction {
++    return Fraction.normalize(this.num * other.num, this.den * other.den);
++  }
++
++  div(other: Fraction): Fraction {
++    if (other.num === ZERO) {
++      throw new RangeError("Fraction division by zero.");
++    }
++    return Fraction.normalize(this.num * other.den, this.den * other.num);
++  }
++
++  /** Three-way comparison: -1 if this < other, 0 if equal, 1 if this > other. */
++  compare(other: Fraction): -1 | 0 | 1 {
++    // Denominators are positive, so cross-multiplication preserves order.
++    const lhs = this.num * other.den;
++    const rhs = other.num * this.den;
++    if (lhs < rhs) return -1;
++    if (lhs > rhs) return 1;
++    return 0;
++  }
++
++  eq(other: Fraction): boolean {
++    return this.compare(other) === 0;
++  }
++
++  lt(other: Fraction): boolean {
++    return this.compare(other) === -1;
++  }
++
++  lte(other: Fraction): boolean {
++    return this.compare(other) !== 1;
++  }
++
++  gt(other: Fraction): boolean {
++    return this.compare(other) === 1;
++  }
++
++  gte(other: Fraction): boolean {
++    return this.compare(other) !== -1;
++  }
++
++  isZero(): boolean {
++    return this.num === ZERO;
++  }
++
++  isNegative(): boolean {
++    return this.num < ZERO;
++  }
++
++  /** Largest integer ≤ this value (toward −∞). */
++  floor(): bigint {
++    return bigintFloorDiv(this.num, this.den);
++  }
++
++  /** Smallest integer ≥ this value (toward +∞). */
++  ceil(): bigint {
++    return bigintCeilDiv(this.num, this.den);
++  }
++
++  /** floor(this / other) as an exact bigint. Toward −∞; div by zero throws. */
++  floorDiv(other: Fraction): bigint {
++    return this.div(other).floor();
++  }
++
++  /** ceil(this / other) as an exact bigint. Toward +∞; div by zero throws. */
++  ceilDiv(other: Fraction): bigint {
++    return this.div(other).ceil();
++  }
++
++  /** Exact string form: "75/2", integers without "/1", "-3/4". */
++  toString(): string {
++    if (this.den === ONE) {
++      return this.num.toString();
++    }
++    return `${this.num.toString()}/${this.den.toString()}`;
++  }
++
++  /**
++   * Decimal string rounded half-up to `dp` places. Display-only — never used in
++   * solver math, which stays exact.
++   */
++  toDecimalString(dp: number): string {
++    if (!Number.isInteger(dp) || dp < 0) {
++      throw new RangeError(
++        `toDecimalString: dp must be a non-negative integer; got ${dp}.`,
++      );
++    }
++    const negative = this.num < ZERO;
++    const absNum = negative ? -this.num : this.num;
++    const scale = 10n ** BigInt(dp);
++    // Round half-up on the absolute value: floor((n*scale)/d + 1/2).
++    const scaled = absNum * scale;
++    const rounded = (2n * scaled + this.den) / (2n * this.den);
++    const intPart = rounded / scale;
++    const fracPart = rounded % scale;
++    let body: string;
++    if (dp === 0) {
++      body = intPart.toString();
++    } else {
++      const fracStr = fracPart.toString().padStart(dp, "0");
++      body = `${intPart.toString()}.${fracStr}`;
++    }
++    // Preserve a negative sign only when the rounded magnitude is non-zero.
++    return negative && rounded !== ZERO ? `-${body}` : body;
++  }
++}
++
++/** floor(a / b) for bigints, correct toward −∞ (b assumed positive). */
++function bigintFloorDiv(a: bigint, b: bigint): bigint {
++  const q = a / b;
++  const r = a % b;
++  // Truncated division rounds toward zero; adjust down when the remainder has
++  // the opposite sign of the (positive) divisor, i.e. when a is negative.
++  return r !== ZERO && r < ZERO ? q - ONE : q;
++}
++
++/** ceil(a / b) for bigints, correct toward +∞ (b assumed positive). */
++function bigintCeilDiv(a: bigint, b: bigint): bigint {
++  const q = a / b;
++  const r = a % b;
++  return r !== ZERO && r > ZERO ? q + ONE : q;
++}
+diff --git a/src/main.tsx b/src/main.tsx
+new file mode 100644
+index 0000000..5d4a2be
+--- /dev/null
++++ b/src/main.tsx
+@@ -0,0 +1,9 @@
++import { StrictMode } from "react";
++import { createRoot } from "react-dom/client";
++import App from "./App.tsx";
++
++createRoot(document.getElementById("root")!).render(
++  <StrictMode>
++    <App />
++  </StrictMode>,
++);
+diff --git a/tsconfig.app.json b/tsconfig.app.json
+new file mode 100644
+index 0000000..05127ca
+--- /dev/null
++++ b/tsconfig.app.json
+@@ -0,0 +1,28 @@
++{
++  "compilerOptions": {
++    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
++    "target": "es2022",
++    "lib": ["ES2022", "DOM"],
++    "module": "esnext",
++    "types": ["vite/client", "vitest/globals"],
++    "allowArbitraryExtensions": true,
++    "skipLibCheck": true,
++
++    /* Bundler mode */
++    "moduleResolution": "bundler",
++    "allowImportingTsExtensions": true,
++    "verbatimModuleSyntax": true,
++    "moduleDetection": "force",
++    "noEmit": true,
++    "jsx": "react-jsx",
++
++    /* Linting */
++    "strict": true,
++    "noUncheckedIndexedAccess": true,
++    "noUnusedLocals": true,
++    "noUnusedParameters": true,
++    "erasableSyntaxOnly": true,
++    "noFallthroughCasesInSwitch": true
++  },
++  "include": ["src"]
++}
+diff --git a/tsconfig.json b/tsconfig.json
+new file mode 100644
+index 0000000..1ffef60
+--- /dev/null
++++ b/tsconfig.json
+@@ -0,0 +1,7 @@
++{
++  "files": [],
++  "references": [
++    { "path": "./tsconfig.app.json" },
++    { "path": "./tsconfig.node.json" }
++  ]
++}
+diff --git a/tsconfig.node.json b/tsconfig.node.json
+new file mode 100644
+index 0000000..8455dcb
+--- /dev/null
++++ b/tsconfig.node.json
+@@ -0,0 +1,23 @@
++{
++  "compilerOptions": {
++    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
++    "target": "es2023",
++    "lib": ["ES2023"],
++    "types": ["node"],
++    "skipLibCheck": true,
++
++    /* Bundler mode */
++    "module": "nodenext",
++    "allowImportingTsExtensions": true,
++    "verbatimModuleSyntax": true,
++    "moduleDetection": "force",
++    "noEmit": true,
++
++    /* Linting */
++    "noUnusedLocals": true,
++    "noUnusedParameters": true,
++    "erasableSyntaxOnly": true,
++    "noFallthroughCasesInSwitch": true
++  },
++  "include": ["vite.config.ts"]
++}
+diff --git a/vite.config.ts b/vite.config.ts
+new file mode 100644
+index 0000000..de63814
+--- /dev/null
++++ b/vite.config.ts
+@@ -0,0 +1,12 @@
++/// <reference types="vitest/config" />
++import { defineConfig } from 'vite'
++import react from '@vitejs/plugin-react'
++
++// https://vite.dev/config/
++export default defineConfig({
++  plugins: [react()],
++  test: {
++    globals: true,
++    environment: 'node',
++  },
++})

@@ -6,11 +6,20 @@ the locked decisions. Each Stage maps to a Forgejo milestone (see
 
 ## Stage 0 — Bootstrap
 
+**Status: delivered** (ticket #1, merged to `develop` 2026-08-03; completion
+note at `features/stage0-bootstrap/completion.md`).
+
 - **Goal:** stand the project up — Vite + React + TypeScript scaffold, Vitest,
   lint/check tooling, `src/core/` purity boundary in place.
-- **Deliverables:** runnable dev/build/test commands (recorded in `CLAUDE.md`),
-  empty-but-typed `src/core/` with the `Fraction` exact-arithmetic foundation.
-- **Decisions:** _<locked decisions — mirror from the board's `decision:` audit comments>_
+- **Deliverables:** runnable dev/build/test/check commands (recorded in
+  `CLAUDE.md`), `src/core/` with the `Fraction` exact-arithmetic foundation
+  (70-test suite).
+- **Decisions** (mirrored from ticket #1 `decision:` audit comments):
+  - `Fraction` is hand-rolled + BigInt-backed (no fraction.js dependency).
+  - Lint tooling = ESLint flat config + `tsc -b`; core purity enforced as a
+    package-import allowlist + globals ban; Prettier scoped to `src`.
+  - Stage 0 spec frozen after 4-round dual-review + simplify pass:
+    `docs/superpowers/specs/2026-08-03-stage0-bootstrap-design.md`.
 
 ## Stage 1 — Manifold visualizer (v1)
 
