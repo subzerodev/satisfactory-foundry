@@ -3,6 +3,22 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-03 — Stage 1, Phase 4: the screen — v1 is complete
+
+> Hey Michael — it's on screen now. Open the app, upload your game's
+> Docs.json (the real UTF-16 file works as-is), pick a recipe, set your
+> machine count and overclock, and the manifold draws itself: the machine
+> row, each feed belt arriving with its entry point ("Feed 2 — Mk2 ·
+> 120/min · enters after machine 16"), the bus colored by which belt
+> feeds each stretch, and the output side mirrored below with its
+> break-out points. Hover any bus stretch to see the exact flow it
+> carries. Every number is exact — 37.5 means 37.5. If something can't
+> work (a machine overclocked past the best belt, an override that
+> starves machines), it tells you plainly instead of drawing a lie.
+> Huge builds compress the row to fit; tweak any single belt in the
+> list below the drawing. This completes v1 — the whole flow works end
+> to end.
+
 ## 2026-08-03 — Stage 1, Phase 3: the app's memory
 
 > Hey Michael — the app now has its working memory: it remembers which

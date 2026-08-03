@@ -1,9 +1,9 @@
 # Manifold visualizer (Stage 1 arc)
 
 **Started:** 2026-08-03
-**Status:** in-progress
-**Current phase:** Phase 3 COMPLETE (merged to develop 2026-08-03) — Phase 4 at USER GATE
-**Final PR:** —
+**Status:** phases complete — arc closing (final report + release PR)
+**Current phase:** Phase 4 COMPLETE (merged to develop 2026-08-03) — all four phases done
+**Final PR:** pending (develop → main)
 **Epic:** #2 (board #21, Stage 1 milestone)
 
 ## Phase decomposition
@@ -59,11 +59,14 @@ Feature spec: `docs/superpowers/specs/2026-08-03-manifold-visualizer-design.md`
 
 ### Phase 4 — src/ui React SVG schematic
 
-- **Status:** ready-to-design (trigger met: Phase 3 merged to develop
-  2026-08-03) — awaiting USER GATE greenlight
-- **Spec:** feature spec §UI (approved mockup: controls strip, summary cards, SVG schematic with entry/break-out arrows, findings panel)
-- **Plan:** N/A — written after the Phase 4 brainstorm+spec freeze
-- **Contracts to target:** `useAppStore` + the eight store actions + `solve` state (all live on develop; see phase-3/completion.md §Handed to Phase 4)
+- **Status:** complete (merged --no-ff to develop 2026-08-03 @ af0506a;
+  208/208 tests; boundary review r1 caught the peakFlow tooltip substitution
+  (5-for-5 boundary catches this arc), folded → r2 double-APPROVED; ticket #6
+  Done)
+- **Ticket:** #6 (Done, closed)
+- **Brainstorm/Spec/Plan:** all FROZEN in `features/manifold-visualizer/phase-4/`
+  (spec carries one boundary-review amendment: §2.4 peakFlow/machineTop)
+- **Phase report:** `features/manifold-visualizer/phase-4/completion.md`
 
 ## Cross-phase dependencies
 
@@ -85,6 +88,10 @@ digraph deps {
 - 2026-08-03: Arc started; epic #2 + Phase 1 child #3 opened. Phase order
   solver → data → state → ui (solver is pure + fully spec'd; recorded on the
   epic). Phases 2–4 deferred per the deferred-plans rule.
+- 2026-08-03: Phase 4 merged — all four phases complete; v1 feature-complete
+  on develop. Testing posture pinned + delivered: zero new deps (pure-module
+  units + renderToStaticMarkup smoke in node env; no jsdom / browser
+  automation).
 
 ## Final report
 
