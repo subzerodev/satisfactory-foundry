@@ -21,6 +21,7 @@ import type { Catalog } from "../data/types.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
 import { loadCatalog, saveCatalog } from "../data/catalog-store.ts";
+import type { CatalogSource } from "../data/catalog-store.ts";
 import { toStageInput } from "../data/stage-input.ts";
 import type { StageOptions } from "../data/stage-input.ts";
 
@@ -66,6 +67,13 @@ export interface AppState {
   catalog: CatalogState;
   selection: Selection;
   solve: SolveState;
+  /**
+   * Provenance of the current 'ready' catalog: null until it resolves, then
+   * { kind: 'user' } for an upload or { kind: 'bundled', … } for the bundled
+   * snapshot. A sibling field, orthogonal to the frozen CatalogState union —
+   * it drives the ticket #9 provenance banner (bundled only).
+   */
+  catalogSource: CatalogSource | null;
   /**
    * Transient last upload/persist failure while a working catalog stayed
    * 'ready'; cleared on the next upload attempt. Fresh-boot upload failure
@@ -254,6 +262,38 @@ function clampTier(kind: "belt" | "pipe", value: unknown): number {
 let storageProvider: () => StateStorage = () => localStorage;
 
 // ---------------------------------------------------------------------------
+// Bundled-catalog boot seam (frozen brainstorm Axis 2, ticket #9)
+// ---------------------------------------------------------------------------
+
+/** The bundled snapshot's provenance, carried alongside its raw Docs text. */
+export interface Provenance {
+  steamBuild: string;
+  extractedAt: string;
+}
+
+/**
+ * Injection seam for the bundled default catalog, mirroring `storageProvider`:
+ * the app wires a fetch of the static asset + provenance sidecar; tests inject
+ * fixture text or `null`. Resolves `{ text, provenance }` as a UNIT — a
+ * provenance-fetch failure collapses the whole result to null (no half-loaded
+ * banner state). A `null` result — or a REJECTED promise — is the same degrade
+ * path: init falls back to the v1 needs-upload behavior. The default returns
+ * null so a store built without wiring (all current tests) simply degrades.
+ */
+let bundledDocsProvider: () => Promise<{
+  text: string;
+  provenance: Provenance;
+} | null> = async () => null;
+
+/** Wire the bundled-docs provider (the app calls this once; tests inject
+ *  fixtures or a rejecting/null provider to exercise the degrade paths). */
+export function setBundledDocsProvider(
+  provider: () => Promise<{ text: string; provenance: Provenance } | null>,
+): void {
+  bundledDocsProvider = provider;
+}
+
+// ---------------------------------------------------------------------------
 // Store construction (frozen brainstorm Axis 1)
 // ---------------------------------------------------------------------------
 
@@ -273,16 +313,67 @@ export function createAppStore(storage?: StateStorage) {
         catalog: { status: "initializing" },
         selection: defaultSelection(),
         solve: { status: "idle" },
+        catalogSource: null,
         uploadError: null,
 
         async init() {
           const result = await loadCatalog();
           if (result.status === "hit") {
-            set({ catalog: { status: "ready", catalog: result.catalog } });
-          } else {
+            // Cache wins: a user upload or a previously-cached bundled catalog
+            // never regresses. The persisted row's source drives the banner.
             set({
-              catalog: { status: "needs-upload", reason: result.status },
+              catalog: { status: "ready", catalog: result.catalog },
+              catalogSource: result.source,
             });
+          } else {
+            // empty / stale → try the bundled default before giving up. The
+            // provider call is try/caught: a REJECTED promise degrades exactly
+            // like a resolved null (both → the v1 needs-upload behavior).
+            let bundled: { text: string; provenance: Provenance } | null;
+            try {
+              bundled = await bundledDocsProvider();
+            } catch {
+              bundled = null;
+            }
+
+            let ready = false;
+            if (bundled !== null) {
+              try {
+                const catalog = parseCatalogFromText(bundled.text);
+                const source: CatalogSource = {
+                  kind: "bundled",
+                  steamBuild: bundled.provenance.steamBuild,
+                  extractedAt: bundled.provenance.extractedAt,
+                };
+                set({
+                  catalog: { status: "ready", catalog },
+                  catalogSource: source,
+                });
+                ready = true;
+                // Cache the bundled catalog so later boots hit the fast path
+                // (and keep the banner). Never-block save: a failure leaves it
+                // usable this session, merely uncached, with an uploadError note
+                // — the same semantics as the upload path.
+                try {
+                  await saveCatalog(bundled.text, catalog, source);
+                } catch (err) {
+                  const message =
+                    err instanceof Error ? err.message : String(err);
+                  set({
+                    uploadError: `bundled catalog loaded but could not be cached: ${message}`,
+                  });
+                }
+              } catch {
+                // A corrupt bundled asset degrades to v1 needs-upload below.
+                ready = false;
+              }
+            }
+
+            if (!ready) {
+              set({
+                catalog: { status: "needs-upload", reason: result.status },
+              });
+            }
           }
           // Single first derive, after hydration + the catalog resolves.
           const { catalog, selection } = get();
@@ -330,6 +421,8 @@ export function createAppStore(storage?: StateStorage) {
               : null;
           set((s) => ({
             catalog: { status: "ready", catalog },
+            // An upload flips provenance to user, hiding the bundled banner.
+            catalogSource: { kind: "user" },
             selection: {
               ...s.selection,
               recipeId: survivingRecipeId,
@@ -341,7 +434,7 @@ export function createAppStore(storage?: StateStorage) {
           // catalog is usable this session, merely uncached — with uploadError
           // noting the cache miss (frozen Axis 4 wide catch).
           try {
-            await saveCatalog(text, catalog);
+            await saveCatalog(text, catalog, { kind: "user" });
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             set({

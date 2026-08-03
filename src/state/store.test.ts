@@ -5,7 +5,7 @@ import { resetDbCache } from "../data/db.ts";
 import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
-import { createAppStore } from "./store.ts";
+import { createAppStore, setBundledDocsProvider } from "./store.ts";
 import type { StateStorage } from "zustand/middleware";
 
 // ---------------------------------------------------------------------------
@@ -143,8 +143,17 @@ async function freshIdb(): Promise<void> {
   ).IDBFactory();
 }
 
+/** Fixed provenance for the bundled-fallback fixtures. */
+const BUNDLED_PROVENANCE = {
+  steamBuild: "23855724",
+  extractedAt: "2026-04-30",
+};
+
 beforeEach(async () => {
   await freshIdb();
+  // Reset the module-level bundled-docs seam so a test that installs a provider
+  // never leaks into the next; the default degrades (resolves null).
+  setBundledDocsProvider(async () => null);
 });
 
 // ---------------------------------------------------------------------------
@@ -592,5 +601,181 @@ describe("persistence (spec row 7)", () => {
       belt: 6,
       pipe: 1,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bundled default catalog — the boot-fallback matrix (ticket #9)
+// ---------------------------------------------------------------------------
+
+describe("bundled default catalog (ticket #9)", () => {
+  it("empty cache + bundled provider → bundled-ready, cached, source persisted", async () => {
+    setBundledDocsProvider(async () => ({
+      text: DOCS_TEXT,
+      provenance: BUNDLED_PROVENANCE,
+    }));
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    if (s.catalog.status === "ready") {
+      expect(s.catalog.catalog.recipes["ingot_iron"]).toBeDefined();
+    }
+    expect(s.catalogSource).toEqual({
+      kind: "bundled",
+      steamBuild: "23855724",
+      extractedAt: "2026-04-30",
+    });
+    // The bundled catalog is cached WITH its source, so a fresh store hits the
+    // cache and still reports bundled provenance (banner survives reboot).
+    const store2 = createAppStore(makeStorageStub().storage);
+    await store2.getState().init();
+    expect(store2.getState().catalogSource).toEqual({
+      kind: "bundled",
+      steamBuild: "23855724",
+      extractedAt: "2026-04-30",
+    });
+  });
+
+  it("version-stale cache + bundled provider → bundled-ready", async () => {
+    // Seed a user upload, then bump its version so loadCatalog returns stale.
+    await saveCatalog(DOCS_TEXT_COPPER, parseCatalogFromText(DOCS_TEXT_COPPER));
+    const { openDb } = await import("../data/db.ts");
+    const db = await openDb();
+    const stored = await db.get<Record<string, unknown>>("catalog", "current");
+    await db.put(
+      "catalog",
+      { ...stored, parser_version: CATALOG_PARSER_VERSION + 1 },
+      "current",
+    );
+
+    setBundledDocsProvider(async () => ({
+      text: DOCS_TEXT,
+      provenance: BUNDLED_PROVENANCE,
+    }));
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    if (s.catalog.status === "ready") {
+      expect(s.catalog.catalog.recipes["ingot_iron"]).toBeDefined();
+    }
+    expect(s.catalogSource).toMatchObject({ kind: "bundled" });
+  });
+
+  it("a cache hit BEATS the bundled provider (source from the row)", async () => {
+    // Seed a user catalog through the real save path → loadCatalog hits it.
+    await saveCatalog(DOCS_TEXT, parseCatalogFromText(DOCS_TEXT));
+    // Install a bundled provider that, if consulted, would win — it must NOT be.
+    setBundledDocsProvider(async () => ({
+      text: DOCS_TEXT_COPPER,
+      provenance: BUNDLED_PROVENANCE,
+    }));
+
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    if (s.catalog.status === "ready") {
+      // The user's iron catalog, not the bundled copper one.
+      expect(s.catalog.catalog.recipes["ingot_iron"]).toBeDefined();
+      expect(s.catalog.catalog.recipes["ingot_copper"]).toBeUndefined();
+    }
+    // Source comes from the persisted row (a plain 2-arg save → user).
+    expect(s.catalogSource).toEqual({ kind: "user" });
+  });
+
+  it("provider resolves null → degrade to needs-upload{empty}", async () => {
+    setBundledDocsProvider(async () => null);
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("needs-upload");
+    if (s.catalog.status === "needs-upload") {
+      expect(s.catalog.reason).toBe("empty");
+    }
+    expect(s.catalogSource).toBeNull();
+  });
+
+  it("provider REJECTS → same degrade to needs-upload{empty}", async () => {
+    setBundledDocsProvider(async () => {
+      throw new Error("boom: fetch failed");
+    });
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("needs-upload");
+    if (s.catalog.status === "needs-upload") {
+      expect(s.catalog.reason).toBe("empty");
+    }
+    expect(s.catalogSource).toBeNull();
+  });
+
+  it("bundled parse failure → degrade to needs-upload", async () => {
+    setBundledDocsProvider(async () => ({
+      text: "this is not json {",
+      provenance: BUNDLED_PROVENANCE,
+    }));
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("needs-upload");
+    expect(s.catalogSource).toBeNull();
+  });
+
+  it("bundled-ready but save fails (broken IDB) → usable this session + uploadError note", async () => {
+    setBundledDocsProvider(async () => ({
+      text: DOCS_TEXT,
+      provenance: BUNDLED_PROVENANCE,
+    }));
+    // Break the IDB layer so loadCatalog reads empty (real fake-idb) but the
+    // subsequent saveCatalog rejects. loadCatalog swallows its own read error
+    // into 'stale' — either way init consults the bundled provider; we assert
+    // the save-failure branch: swap in a factory whose open() errors AFTER the
+    // provider resolves.
+    resetDbCache();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).indexedDB = {
+      open: () => {
+        const req: Record<string, unknown> = {
+          error: new Error("boom: IDB open failed"),
+          onupgradeneeded: null,
+          onsuccess: null,
+          onerror: null,
+        };
+        queueMicrotask(() => {
+          if (typeof req.onerror === "function") (req.onerror as () => void)();
+        });
+        return req;
+      },
+    };
+
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    const s = store.getState();
+    // The bundled catalog is usable this session even though it couldn't cache.
+    expect(s.catalog.status).toBe("ready");
+    if (s.catalog.status === "ready") {
+      expect(s.catalog.catalog.recipes["ingot_iron"]).toBeDefined();
+    }
+    expect(s.catalogSource).toMatchObject({ kind: "bundled" });
+    expect(s.uploadError).not.toBeNull();
+    expect(s.uploadError).toMatch(/cache/i);
+  });
+
+  it("uploading over a bundled catalog flips the source to user", async () => {
+    setBundledDocsProvider(async () => ({
+      text: DOCS_TEXT,
+      provenance: BUNDLED_PROVENANCE,
+    }));
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    expect(store.getState().catalogSource).toMatchObject({ kind: "bundled" });
+
+    // A user upload replaces the catalog and its provenance.
+    await store.getState().uploadDocsText(DOCS_TEXT_COPPER);
+    expect(store.getState().catalogSource).toEqual({ kind: "user" });
   });
 });
