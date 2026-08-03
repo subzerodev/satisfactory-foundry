@@ -1,7 +1,8 @@
 # Phase 4 implementation plan — src/ui (ticket #6, epic #2)
 
 Date: 2026-08-03
-Status: v2 — r1 folds applied; under dual-review r2
+Status: v2 — FROZEN (correctness converged r2 double-APPROVED; simplify
+APPROVED_WITH_NITS, both nits rejected with rationale)
 Branch: `feature/phase-4.0` (worktree `.worktrees/phase-4.0/`), cut from
 develop @ 7b59c64.
 Binding contract: the FROZEN spec `features/manifold-visualizer/phase-4/spec.md`
@@ -99,6 +100,16 @@ with real vitest FAIL lines naming the new tests. Acceptance: `npm test`,
   the drift-hunt surface. Refuted clean: css-in-node non-issue (Task 2 smoke
   tests never import App), unused-export lint trap absent, tsc includes
   tests, Task 3 diff-scope exact.
+
+- **r2 (2026-08-03):** both reviewers APPROVED (0 findings) — folds verified,
+  log-repath divergence validated against all three prior phases. CONVERGED.
+- **Simplify (one-shot):** APPROVED_WITH_NITS (2 advisory). Both rejected
+  with rationale: (NIT-1) the boundary restatements are deliberate
+  redundancy for a fresh-context implementer who reads only plan+spec —
+  repetition at the point of action guards the no-deps/no-config invariant;
+  (NIT-2) the refutation ledger is the arc's house style (phase 1–3 plans
+  carry the same form) and forecloses re-litigation. No fold → no
+  correctness re-run. Plan FROZEN.
 
 ## Post-implementation (team lead, not the implementer)
 
