@@ -64,4 +64,67 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Purity boundary for src/layout/**: a sibling of the src/core block, NOT
+    // "the same rules" — the layout engine is pure geometry TS with no React/
+    // DOM/framework, but (unlike core) it legitimately imports Catalog types
+    // from src/data. The package-import ban, dynamic-import ban, and host-globals
+    // ban carry over unchanged; only the layer-escape regex is layout's own —
+    // it bans ../state and ../ui at any depth while ALLOWING ../data. UI/state
+    // may import layout; layout may never import UI/state.
+    files: ['src/layout/**'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              // Ban every bare-specifier (package) import: anything not
+              // starting with "." is a package. Keeps layout dependency-free.
+              regex: '^[^.]',
+              message:
+                'src/layout is dependency-free: no package imports allowed.',
+            },
+            {
+              // Depth-robust ban on relative escapes into the state/ui layers,
+              // matching ../state, ../../ui/foo, etc. at any nesting depth.
+              // NOTE: `data` is deliberately absent — layout imports Catalog
+              // types from src/data (unlike core, whose block also bans data).
+              regex: '^\\.\\./(\\.\\./)*(state|ui)(/|$)',
+              message:
+                'src/layout must not import from the state/ui layers.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          // Close the dynamic-import hole: no-restricted-imports covers static
+          // imports only.
+          selector: 'ImportExpression',
+          message:
+            'src/layout is dependency-free: dynamic imports are not allowed.',
+        },
+      ],
+      'no-restricted-globals': [
+        'error',
+        {
+          // checkGlobalObject also catches globalThis.document-style access,
+          // not just bare identifiers. Verified supported in ESLint 10.8.0.
+          checkGlobalObject: true,
+          globals: [
+            'document',
+            'window',
+            'indexedDB',
+            'localStorage',
+            'sessionStorage',
+            'fetch',
+            'navigator',
+            'location',
+          ],
+        },
+      ],
+    },
+  },
 )
