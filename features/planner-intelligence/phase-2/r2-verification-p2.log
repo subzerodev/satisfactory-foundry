@@ -1,0 +1,250 @@
+R2 BIDIRECTIONALITY LOG — Stage 8 / Phase 2 (ticket #38)
+========================================================
+
+Discipline: for each distinct NEW production behavior, this log records
+(a) the PASS run of the covering test(s), (b) the exact break/revert command
+applied to the PRODUCTION code, (c) the genuine framework FAIL line naming the
+new test(s), and (d) the restore + green re-run. A test that cannot be made to
+fail by reverting its behavior is not testing that behavior.
+
+Test command: npx vitest run <file> -t "<name>"
+Worktree: .worktrees/planner-p2 (branch feature/planner-p2)
+
+--------------------------------------------------------------------------------
+R2-1 — Core: trainOptions countedEnds scales stationPowerMw (src/core/transport.ts)
+--------------------------------------------------------------------------------
+Covers: src/core/transport.test.ts
+  "countedEnds scales ONLY stationPowerMw (2→both, 1→one shared, 0→both shared)"
+  "countedEnds leaves throughput / nTrains / ceiling / locos INVARIANT"
+
+PASS (green baseline):
+  $ npx vitest run src/core/transport.test.ts -t "countedEnds"
+  Tests  2 passed | 23 skipped (25)
+
+BREAK — revert the counted-ends factor to the hard-coded ×2:
+  stationPowerMw = ...).mul(countedEnds)   →   ...).mul(Fraction.from(2))
+
+FAIL (framework, names the new test):
+  × countedEnds scales ONLY stationPowerMw (2→both, 1→one shared, 0→both shared)
+  FAIL src/core/transport.test.ts > trainOptions — cars-vs-trains enumeration >
+       countedEnds scales ONLY stationPowerMw (...)
+  AssertionError: expected false to be true // Object.is equality
+    expect(one[1]?.stationPowerMw.eq(Fraction.from(150))).toBe(true);
+  Tests  1 failed | 1 passed | 23 skipped (25)
+  (The INVARIANT test stays green — the ×2 default IS the both-ends case — so the
+   break isolates exactly the counted-ends scaling, not the untouched row math.)
+
+RESTORE + re-green:
+  ...).mul(Fraction.from(2))   →   ...).mul(countedEnds)
+  $ npx vitest run src/core/transport.test.ts -t "countedEnds"
+  Tests  2 passed | 23 skipped (25)
+
+--------------------------------------------------------------------------------
+R2-2 — Derive: pipe derate scales laneRate (src/ui/transport-plan.ts continuousPlan)
+--------------------------------------------------------------------------------
+Covers: src/ui/transport-plan.test.ts
+  "a valid derate scales laneRate by pct/100 and raises the run count (exact)"
+  "a fractional derate stays exact (33.5% → laneRate 201/2)"
+
+PASS:
+  $ npx vitest run src/ui/transport-plan.test.ts -t "derate"
+  Tests  9 passed | 17 skipped (26)
+
+BREAK — parse the derate but skip applying it to laneRate:
+  laneRate = tierRate.mul(deratePercent).div(Fraction.from(100));  →  (deleted)
+
+FAIL:
+  × a valid derate scales laneRate by pct/100 and raises the run count (exact)
+  × a fractional derate stays exact (33.5% → laneRate 201/2)
+  FAIL src/ui/transport-plan.test.ts > computeLinkTransport — pipe derate (S8P2)
+    expect(plan.result.laneRate.eq(Fraction.from(150))).toBe(true);
+    expect(plan.result.laneRate.eq(Fraction.of(201, 2))).toBe(true);
+  Tests  2 failed | 7 passed | 17 skipped (26)
+
+RESTORE + re-green: laneRate scaling reinstated; derate tests green again.
+
+--------------------------------------------------------------------------------
+R2-3 — Derive: derate (0,100] range refusal → labeled TransportError (transport-plan.ts)
+--------------------------------------------------------------------------------
+Covers: src/ui/transport-plan.test.ts
+  the it.each matrix "derate <text> → a labeled TransportError (...)"
+  (0, negative, 100.1, 150, garbage, empty)
+
+PASS: (included in the 9-passed derate run above)
+
+BREAK — drop the (0,100] refusal in parseDeratePercent (accept any parseable):
+  if (!pct.gt(0) || !pct.lte(100)) return {kind:"error",...}  →  (deleted)
+
+FAIL:
+  × derate "0" → a labeled TransportError (0 is out of (0,100])
+  × derate "-5" → a labeled TransportError (negative is out of range)
+  × derate "100.1" → a labeled TransportError (>100 is a boost, refused)
+  × derate "150" → a labeled TransportError (>100 is a boost, refused)
+  FAIL src/ui/transport-plan.test.ts > computeLinkTransport — pipe derate (S8P2)
+  Tests  4 failed | 2 passed | 20 skipped (26)
+  ("abc" / "" still fail-as-error via the parse-catch, so they stay green — the
+   break isolates the RANGE refusal, not the parse refusal.)
+
+RESTORE + re-green: range refusal reinstated; matrix green again.
+
+--------------------------------------------------------------------------------
+R2-4 — Derive: sharedEnds → countedEnds collapse (transport-plan.ts trainPlan)
+--------------------------------------------------------------------------------
+Covers: src/ui/transport-plan.test.ts
+  "sharedEnds collapses to countedEnds — station MW drops, throughput holds (S8P2)"
+
+PASS: (train-suite green)
+
+BREAK — ignore the flagged ends, always count both:
+  const countedEnds = (2 - flagged) as 0|1|2;  →  const countedEnds = 2 as 0|1|2;
+
+FAIL:
+  × sharedEnds collapses to countedEnds — station MW drops, throughput holds (S8P2)
+  FAIL src/ui/transport-plan.test.ts > computeLinkTransport — train (Assumption #6
+       routing) > sharedEnds collapses to countedEnds (...)
+  Tests  1 failed | 25 skipped (26)
+
+RESTORE + re-green: collapse reinstated; test green again.
+
+--------------------------------------------------------------------------------
+R2-5 — Plan file: v4 validator field strictness (src/data/plan-store.ts isTransportShapeV4)
+--------------------------------------------------------------------------------
+Covers: src/data/plan-store.test.ts
+  "isPlanFileV4 transport accept/reject (S8P2 extensions)" describe (matrix):
+  out-of-range derate FAILS; derate on non-pipe FAILS; sharedEnds non-true
+  FAILS; sharedEnds on non-train FAILS.
+
+PASS: (plan-store suite green)
+
+BREAK — make isTransportShapeV4 delegate straight to the lenient v3 checker:
+  isTransportShapeV4 body  →  return isTransportShape(value);
+
+FAIL:
+  × rejects a pipe derate "0" / "-1" / "100.1" / "150" / "abc"
+  × rejects a deratePercentText on a NON-pipe arm (belt / train / road)
+  × rejects a sharedEnds with { from: false } / { to: 'yes' } / { from: 1 }
+  × rejects a sharedEnds on a NON-train arm (pipe / road)
+  FAIL src/data/plan-store.test.ts > plan-store — isPlanFileV4 transport
+       accept/reject (S8P2 extensions) > ...
+  Tests  10 failed | ... skipped
+  (The ACCEPT cases stay green — the lenient checker still admits valid shapes —
+   so the break isolates exactly the new-field REFUSALS.)
+
+RESTORE + re-green: strict v4 checker reinstated; matrix green again.
+
+--------------------------------------------------------------------------------
+R2-6 — Plan file: v4 header bump via migrateV3 (src/data/plan-store.ts migrateV3)
+--------------------------------------------------------------------------------
+Covers: src/data/plan-store.test.ts
+  "migrateV3 (v3 → v4, identity on links) > flips only the header; ..."
+  "migrateV3 ... > a stored v3 row still loads (migrated to v4) through loadPlan"
+
+PASS: (plan-store suite green)
+
+BREAK — emit format_version 3 from migrateV3 (fail the bump):
+  format_version: 4,  →  format_version: 3 as unknown as 4,
+
+FAIL:
+  × flips only the header; stages + links + timestamps carry verbatim
+  × a stored v3 row still loads (migrated to v4) through loadPlan
+  FAIL src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, identity on
+       links) > ...
+  Tests  2 failed | 51 skipped (53)
+
+RESTORE + re-green: format_version 4 reinstated; migration tests green again.
+
+--------------------------------------------------------------------------------
+R2-7 — Wording: pipe derate caveat line (src/ui/transport-text.ts pipeCaveat)
+--------------------------------------------------------------------------------
+Covers: src/ui/transport-text.test.ts
+  "pipeCaveat WITH a derate names the percent + its user-assumption provenance"
+  (and the unchanged-default: "pipeCaveat without a derate = today's static line")
+
+PASS:
+  $ npx vitest run src/ui/transport-text.test.ts -t "pipeCaveat"
+  Tests  2 passed | 23 skipped (25)
+
+BREAK — always return the static nominal-ceiling line (never the derate line):
+  if (deratePercent === null) {...} return `derated to ...`  →  return "nominal...";
+
+FAIL:
+  × pipeCaveat WITH a derate names the percent + its user-assumption provenance
+  AssertionError: expected 'nominal ceiling — ...' to be 'derated to 50% of ...'
+  Tests  1 failed | 1 passed | 23 skipped (25)
+  (The unchanged-default test stays green — the static line IS its expectation —
+   so the break isolates exactly the derate-active branch.)
+
+RESTORE + re-green: derate branch reinstated; both green again.
+
+--------------------------------------------------------------------------------
+R2-8 — Wording: shared-ends asymmetry footnote (src/ui/transport-text.ts trainSharedEndsFootnote)
+--------------------------------------------------------------------------------
+Covers: src/ui/transport-text.test.ts
+  "shared-ends footnote names ONE flagged end (singular 'end shared')"
+  "shared-ends footnote names BOTH flagged ends (plural 'ends shared')"
+  (and the null-when-none case)
+
+PASS: (transport-text suite green)
+
+BREAK — never render the footnote:
+  if (names.length === 0) return null;  →  if (names.length >= 0) return null;
+
+FAIL:
+  × shared-ends footnote names ONE flagged end (singular 'end shared')
+  × shared-ends footnote names BOTH flagged ends (plural 'ends shared')
+  FAIL src/ui/transport-text.test.ts > transport-text — train rows + chip > ...
+  Tests  2 failed | 1 passed | 22 skipped (25)
+  (The null-when-none test stays green — it expects null — so the break isolates
+   exactly the flagged-end rendering.)
+
+RESTORE + re-green: footnote gate reinstated; strings green again.
+
+--------------------------------------------------------------------------------
+R2-9 — UI: pipe derate field empty-strips the key (src/ui/LinkInspector.tsx setPipeDerate)
+--------------------------------------------------------------------------------
+Covers: src/ui/LinkInspector.test.ts
+  "setPipeDerate — empty strips the key, else carries the raw text" describe
+
+PASS: (LinkInspector suite green)
+
+BREAK — always store the key, even when empty (never strip):
+  return text === "" ? {mode:"pipe"} : {..., deratePercentText: text};
+    →  return {mode:"pipe", deratePercentText: text};
+
+FAIL:
+  × empty text ⇒ a bare pipe config (key stripped, never stored as '')
+  FAIL src/ui/LinkInspector.test.ts > setPipeDerate — empty strips the key, ...
+  Tests  1 failed | 1 passed | 10 skipped (12)
+  (The non-empty carry-verbatim test stays green.)
+
+RESTORE + re-green: empty-strip reinstated; both green again.
+
+--------------------------------------------------------------------------------
+R2-10 — UI: shared-end checkbox strips the field when all-off (LinkInspector.tsx setSharedEnd)
+--------------------------------------------------------------------------------
+Covers: src/ui/LinkInspector.test.ts
+  "unchecking the LAST flagged end strips the whole sharedEnds field"
+  (and the one-of-two-kept case)
+
+PASS: (LinkInspector suite green)
+
+BREAK — always carry sharedEnds, even when empty (no stripping):
+  return next.from || next.to ? {...base, sharedEnds: next} : base;
+    →  return {...base, sharedEnds: next};
+
+FAIL:
+  × unchecking the LAST flagged end strips the whole sharedEnds field
+  FAIL src/ui/LinkInspector.test.ts > setSharedEnd — absent-or-true checkbox
+       stripping > unchecking the LAST flagged end strips the whole sharedEnds field
+  Tests  1 failed | 4 passed | 7 skipped (12)
+  (The check/one-of-two-kept cases stay green — they always carry a surviving key
+   — so the break isolates exactly the all-off STRIP.)
+
+RESTORE + re-green: strip reinstated; suite green again.
+
+================================================================================
+FINAL FULL-SUITE GREEN (after all restores):
+  $ npm test    →  Test Files 24 passed (24) ; Tests 631 passed (631)
+  $ npm run check →  tsc -b + eslint + prettier all clean (exit 0)
+Baseline before this phase: 591 tests. New: +40 → 631.
+================================================================================
