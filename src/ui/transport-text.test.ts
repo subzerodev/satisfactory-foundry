@@ -72,7 +72,12 @@ describe("transport-text — fleet lines + estimated suffix", () => {
   });
 
   it("singular vs plural noun on the vehicle count", () => {
-    expect(vehicleLine(vehicle(1n, 100, "measured"))).toContain("1 truck ");
+    expect(vehicleLine(vehicle(1n, 100, "measured"))).toContain(
+      "1 truck sustains ",
+    );
+    expect(vehicleLine(vehicle(3n, 100, "measured"))).toContain(
+      "3 trucks sustain ",
+    );
   });
 });
 
@@ -153,6 +158,23 @@ describe("transport-text — train rows + chip", () => {
       beltFeed: Fraction.from(960),
     };
   }
+
+  it("non-terminating sustained rate renders the honest ≈ form, never n/d", () => {
+    // roundTrip 414.16 s with cargo 6400/car: 6400×60/(10354/25) is
+    // non-terminating → the cell must read "≈ …", not a raw fraction.
+    const plan = {
+      ...trainPlan(300, "measured"),
+      options: trainOptions(
+        Fraction.from(300),
+        Fraction.from(6400),
+        Fraction.of(10354, 25),
+        { beltFeed: Fraction.from(960) },
+      ),
+    };
+    const rows = trainRows(plan);
+    expect(rows[0]!.sustainedRate.startsWith("≈ ")).toBe(true);
+    expect(rows[0]!.sustainedRate).not.toContain("/");
+  });
 
   it("one row per consist; station-limited marker tracks ceilingBound", () => {
     const plan = trainPlan(300, "measured");

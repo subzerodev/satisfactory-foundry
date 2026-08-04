@@ -64,12 +64,25 @@ export function caveatFor(mode: string): string | null {
 // Fleet lines per result kind.
 // ---------------------------------------------------------------------------
 
+/**
+ * Exact rate when it terminates; otherwise the honest ≈ 1-dp approximation
+ * (the advice.ts labeled-float discipline — a raw "4800000/5177" cell is
+ * exact but unreadable; the ≈ prefix carries the honesty). Float math is
+ * confined to this labeled display boundary.
+ */
+function formatRateOrApprox(f: Fraction): string {
+  const exact = formatRate(f);
+  if (!exact.includes("/")) return exact;
+  const approx = Number(f.num) / Number(f.den);
+  return `≈ ${approx.toFixed(1)}`;
+}
+
 /** "N belts sustain X/min" — continuous (belt/pipe) fleet line. */
 export function continuousLine(plan: TransportContinuous): string {
   const { runs, laneRate } = plan.result;
   const lane = plan.mode === "belt" ? "belt" : "pipe";
   const noun = runs === 1n ? lane : `${lane}s`;
-  return `${runs} ${noun} sustain ${formatRate(laneRate)}/min each`;
+  return `${runs} ${noun} ${runs === 1n ? "sustains" : "sustain"} ${formatRate(laneRate)}/min each`;
 }
 
 /** "3 trucks sustain 480/min over this trip" — road fleet line, with the
@@ -78,7 +91,7 @@ export function vehicleLine(plan: TransportVehicle): string {
   const { nVehicles, ratePerVehicle, tripBasis } = plan.result;
   const noun =
     nVehicles === 1n ? vehicleNoun(plan.mode) : vehicleNounPlural(plan.mode);
-  const base = `${nVehicles} ${noun} sustain ${formatRate(ratePerVehicle)}/min each over this trip`;
+  const base = `${nVehicles} ${noun} ${nVehicles === 1n ? "sustains" : "sustain"} ${formatRate(ratePerVehicle)}/min each over this trip`;
   return tripBasis === "estimated" ? base + ESTIMATED_SUFFIX : base;
 }
 
@@ -91,7 +104,7 @@ export function vehicleStationLine(plan: TransportVehicle): string {
 export function droneLine(plan: TransportDrone): string {
   const { nDrones, ratePerDrone, tripBasis } = plan.result;
   const noun = nDrones === 1n ? "drone" : "drones";
-  const base = `${nDrones} ${noun} sustain ${formatRate(ratePerDrone)}/min each`;
+  const base = `${nDrones} ${noun} ${nDrones === 1n ? "sustains" : "sustain"} ${formatRate(ratePerDrone)}/min each`;
   return tripBasis === "estimated" ? base + ESTIMATED_SUFFIX : base;
 }
 
@@ -146,7 +159,7 @@ function trainRow(opt: TrainOption): TrainRow {
     cars: opt.carsPerTrain,
     trains: opt.nTrains,
     stationMw: formatRate(opt.stationPowerMw),
-    sustainedRate: formatRate(opt.throughput),
+    sustainedRate: formatRateOrApprox(opt.throughput),
     stationLimited: opt.ceilingBound,
   };
 }
