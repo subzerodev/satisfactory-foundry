@@ -116,3 +116,19 @@ process (all-Claude roster, opus implementers, per-phase gates).
   vehicles sustain the rate; train cars-per-train vs more-trains
   tradeoffs. Vehicle facts are wiki-grounded (research-gate flagged).
 - **Epic:** #27 (milestone 78). Blocked-by Stage 6.
+
+## Stage 8 — Planner intelligence: hygiene, quick-apply, auto-chain + alt-recipe compare
+
+- **Goal:** Michael's 2026-08-04 batch ("all of these next except the
+  vehicle parser or sharing"): the two backlog hygiene tickets; one-click
+  apply for match-demand suggestions; combined-view site focus; per-end
+  train-station overrides + a user-facing pipe derate; the AUTO-CHAIN
+  BUILDER (target item + rate → a proposed multi-stage chain with
+  recipes, machine counts and links); alternate-recipe comparison across
+  a chain (power / machines / resource cost).
+- **Epic:** #36 (milestone 79). Sequential phases: P0 hygiene (#28 +
+  #34) → P1 interaction polish (quick-apply + site focus) → P2 transport
+  refinements (per-end stations, pipe derate) → P3 auto-chain builder →
+  P4 alt-recipe compare (leverages P3's enumeration machinery).
+  Excluded by directive: vehicle catalog admission, sharing/PWA.
+- **Status:** in progress (started 2026-08-04).
