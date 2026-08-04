@@ -442,6 +442,13 @@ describe("LaneOverrides", () => {
 });
 
 describe("FindingsPanel", () => {
+  // The FULL fixed table (6 belt + 2 pipe) + the unlock count pair drive the
+  // fix hints; the app threads both from the Schematic call site.
+  const fullUnlocked = {
+    belt: TIER_TABLE.belt.length,
+    pipe: TIER_TABLE.pipe.length,
+  };
+
   it("renders the invalid bad-clock detail", () => {
     const solve: SolveState = {
       status: "invalid",
@@ -449,7 +456,13 @@ describe("FindingsPanel", () => {
       detail: "clock percent must be a positive number.",
     };
     const html = renderToStaticMarkup(
-      <FindingsPanel solve={solve} findings={[]} itemName={itemName} />,
+      <FindingsPanel
+        solve={solve}
+        findings={[]}
+        itemName={itemName}
+        tiers={TIER_TABLE}
+        unlocked={fullUnlocked}
+      />,
     );
     expect(html).toContain("Clock %");
     expect(html).toContain("clock percent must be a positive number.");
@@ -468,17 +481,133 @@ describe("FindingsPanel", () => {
       },
     ];
     const html = renderToStaticMarkup(
-      <FindingsPanel solve={solve} findings={findings} itemName={itemName} />,
+      <FindingsPanel
+        solve={solve}
+        findings={findings}
+        itemName={itemName}
+        tiers={TIER_TABLE}
+        unlocked={fullUnlocked}
+      />,
     );
     expect(html).toContain(
       "Iron Ore: bus over capacity between machines 9–16 — peak 540/min exceeds 480/min.",
     );
   });
 
+  it("appends the UNLOCK hint when the fix tier is above best-unlocked", () => {
+    // A segment-over-capacity finding placed on a lane (so laneKindOf resolves
+    // its belt kind by identity). busCapacity = Mk2 (120), peak 200 → the
+    // smallest tier ≥ 200 AND > 120 is Mk3 (270). With only Mk1+Mk2 unlocked,
+    // Mk3 is above best-unlocked → the "unlocking" wording.
+    const finding: Finding = {
+      type: "segment-over-capacity",
+      itemId: "ore_iron",
+      fromMachine: 1,
+      toMachine: 8,
+      peakFlow: Fraction.from(200),
+      busCapacity: Fraction.from(120),
+    };
+    const base = workedResult();
+    const doctored: StageSolveResult = {
+      ...base,
+      feeds: base.feeds.map((lane, i) =>
+        i === 0 ? { ...lane, findings: [finding] } : lane,
+      ),
+    };
+    const solve: SolveState = { status: "solved", result: doctored };
+    const html = renderToStaticMarkup(
+      <FindingsPanel
+        solve={solve}
+        findings={[finding]}
+        itemName={itemName}
+        tiers={TIER_TABLE}
+        unlocked={{ belt: 2, pipe: 2 }}
+      />,
+    );
+    expect(html).toContain(
+      "unlocking Mk3 (270/min) would raise the bus above this peak",
+    );
+  });
+
+  it("appends the OVERRIDE-raise hint when the fix tier is already unlocked", () => {
+    // The overridden-DOWN case: busCapacity = 90 (an override below any tier),
+    // peak 100 → smallest tier ≥ 100 AND > 90 is Mk2 (120). With Mk1..Mk4
+    // unlocked, Mk2 ≤ best-unlocked → the "raising this lane's override" wording.
+    const finding: Finding = {
+      type: "segment-over-capacity",
+      itemId: "iron_ingot",
+      fromMachine: 1,
+      toMachine: 1,
+      peakFlow: Fraction.from(100),
+      busCapacity: Fraction.from(90),
+    };
+    const base = workedResult();
+    const doctored: StageSolveResult = {
+      ...base,
+      outputs: base.outputs.map((lane, i) =>
+        i === 0 ? { ...lane, findings: [finding] } : lane,
+      ),
+    };
+    const solve: SolveState = { status: "solved", result: doctored };
+    const html = renderToStaticMarkup(
+      <FindingsPanel
+        solve={solve}
+        findings={[finding]}
+        itemName={itemName}
+        tiers={TIER_TABLE}
+        unlocked={{ belt: 4, pipe: 2 }}
+      />,
+    );
+    // renderToStaticMarkup entity-escapes the apostrophe (&#x27;); assert the
+    // copy on either side so the pinned override-raise wording still gates.
+    expect(html).toContain("raising this lane");
+    expect(html).toContain(
+      "s override to Mk2 (120/min) would put the bus above this peak",
+    );
+  });
+
+  it("appends the demand hint for an infeasible-machine-demand finding", () => {
+    // One machine needs 200/min on a Mk2 (120) top capacity → the smallest tier
+    // ≥ 200 AND > 120 is Mk3 (270): "unlocking Mk3 … would cover this machine's
+    // demand". Placed on a lane so laneKindOf resolves the belt kind.
+    const finding: Finding = {
+      type: "infeasible-machine-demand",
+      itemId: "ore_iron",
+      demand: Fraction.from(200),
+      topCapacity: Fraction.from(120),
+    };
+    const base = workedResult();
+    const doctored: StageSolveResult = {
+      ...base,
+      feeds: base.feeds.map((lane, i) =>
+        i === 0 ? { ...lane, findings: [finding] } : lane,
+      ),
+    };
+    const solve: SolveState = { status: "solved", result: doctored };
+    const html = renderToStaticMarkup(
+      <FindingsPanel
+        solve={solve}
+        findings={[finding]}
+        itemName={itemName}
+        tiers={TIER_TABLE}
+        unlocked={{ belt: 2, pipe: 2 }}
+      />,
+    );
+    // Apostrophe entity-escaped by renderToStaticMarkup; assert around it.
+    expect(html).toContain("unlocking Mk3 (270/min) would cover this machine");
+    expect(html).toContain("s demand");
+  });
+
   it("renders the clean line when solved with no findings", () => {
     const solve: SolveState = { status: "solved", result: workedResult() };
     const html = renderToStaticMarkup(
-      <FindingsPanel solve={solve} findings={[]} itemName={itemName} />,
+      <FindingsPanel
+        solve={solve}
+        findings={[]}
+        itemName={itemName}
+        tiers={TIER_TABLE}
+        unlocked={fullUnlocked}
+      />,
     );
     expect(html).toContain("No warnings — manifold is clean.");
   });

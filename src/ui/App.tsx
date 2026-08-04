@@ -295,7 +295,13 @@ export default function App() {
         <p className="empty-state">Pick a recipe to see its manifold.</p>
       )}
       {solve.status === "invalid" && (
-        <FindingsPanel solve={solve} findings={[]} itemName={itemName} />
+        <FindingsPanel
+          solve={solve}
+          findings={[]}
+          itemName={itemName}
+          tiers={catalog.tiers}
+          unlocked={selection.unlockedTiers}
+        />
       )}
       {solve.status === "solved" && (
         <>
@@ -345,6 +351,8 @@ export default function App() {
             solve={solve}
             findings={allFindings(solve.result)}
             itemName={itemName}
+            tiers={catalog.tiers}
+            unlocked={selection.unlockedTiers}
           />
         </>
       )}
