@@ -24,7 +24,7 @@ import {
 // wiki's 2-dp figure diverges it is a documented rounding artifact (see below).
 
 describe("transport-facts — cited constants", () => {
-  it("exposes the vehicle/train/drone constants the solver consumes", () => {
+  it("pins the vehicle/train/drone fact-table catalogue against fat-finger edits", () => {
     expect(TRUCK_SLOTS.eq(Fraction.from(48))).toBe(true);
     expect(FREIGHT_CAR_SLOTS.eq(Fraction.from(32))).toBe(true);
     expect(DRONE_SLOTS.eq(Fraction.from(9))).toBe(true);
