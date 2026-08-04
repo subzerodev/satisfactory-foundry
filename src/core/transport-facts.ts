@@ -12,6 +12,11 @@
  * `features/logistics/phase-1/brainstorm.md` Axis 1.
  *
  * Imports only `./fraction.ts` (the sole legal core dependency).
+ *
+ * This is the FULL P0 catalogue, landed deliberately ahead of its consumers:
+ * constants not yet read by the P1 solver (per-mode top speeds, some slot /
+ * volume / power rows) are the values P2's UI and data layer will resolve and
+ * pass in as parameters. They are frozen inventory, not dead exports.
  */
 
 import { Fraction } from "./fraction.ts";
