@@ -5,7 +5,7 @@ import { resetDbCache } from "../data/db.ts";
 import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
-import type { PlanFileV1, PlanFileV2 } from "../data/plan-store.ts";
+import type { PlanFileV1, PlanFileV2, PlanFileV3 } from "../data/plan-store.ts";
 import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
 import type { StageLink } from "./store.ts";
 import type { StateStorage } from "zustand/middleware";
@@ -1455,6 +1455,78 @@ describe("stage graph — link add refusals vs kept-and-flagged (Stage 3 P1)", (
   });
 });
 
+describe("stage graph — link transport + selection (Stage 7 P2)", () => {
+  async function linkedStore() {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT_CHAIN);
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().addStage();
+    const a = store.getState().stageOrder[0]!;
+    const b = store.getState().stageOrder[1]!;
+    store.getState().setActiveStage(b);
+    store.getState().selectRecipe("iron_plate");
+    store
+      .getState()
+      .addLink({ fromStageId: a, itemId: "iron_ingot", toStageId: b });
+    const linkId = store.getState().links[0]!.id;
+    return { store, linkId };
+  }
+
+  it("setLinkTransport writes the config; clearLinkTransport drops it", async () => {
+    const { store, linkId } = await linkedStore();
+    store.getState().setLinkTransport(linkId, {
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "1200" },
+    });
+    expect(store.getState().links[0]!.transport).toEqual({
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "1200" },
+    });
+    store.getState().clearLinkTransport(linkId);
+    // The key is fully dropped (belt default), not left as an empty object.
+    expect("transport" in store.getState().links[0]!).toBe(false);
+  });
+
+  it("selectLink opens the inspector; removeLink clears a selection on it", async () => {
+    const { store, linkId } = await linkedStore();
+    store.getState().selectLink(linkId);
+    expect(store.getState().selectedLinkId).toBe(linkId);
+    store.getState().removeLink(linkId);
+    expect(store.getState().links).toHaveLength(0);
+    expect(store.getState().selectedLinkId).toBeNull();
+  });
+
+  it("removeStage clearing a cascaded link also closes its inspector", async () => {
+    const { store, linkId } = await linkedStore();
+    const producerId = store.getState().links[0]!.fromStageId;
+    store.getState().selectLink(linkId);
+    store.getState().removeStage(producerId); // cascades the incident link
+    expect(store.getState().selectedLinkId).toBeNull();
+  });
+
+  it("transport config survives a save → load round-trip through the store", async () => {
+    const { store, linkId } = await linkedStore();
+    store.getState().setLinkTransport(linkId, {
+      mode: "drone",
+      fuel: "battery",
+      trip: { kind: "measured", roundTripSecondsText: "180" },
+    });
+    await store.getState().savePlanAs("Trip");
+    const id = store.getState().plans![0]!.id;
+    // Mutate live state, then reload — the loaded transport must match the saved.
+    store.getState().clearLinkTransport(linkId);
+    await store.getState().loadPlan(id);
+    const loaded = store
+      .getState()
+      .links.find((l) => l.transport !== undefined);
+    expect(loaded!.transport).toEqual({
+      mode: "drone",
+      fuel: "battery",
+      trip: { kind: "measured", roundTripSecondsText: "180" },
+    });
+  });
+});
+
 describe("stage graph — reconciliation math + cadence (Stage 3 P1)", () => {
   // Build a producer→consumer chain with explicit machine counts.
   async function linkedChain(nProducer: number, mConsumer: number) {
@@ -2017,7 +2089,7 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     expect(store.getState().links).toHaveLength(linksBefore);
   });
 
-  it("renaming a v1 row persists it as v2 (save-over model)", async () => {
+  it("renaming a v1 row persists it as v3 (save-over model)", async () => {
     const store = await chainStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2041,9 +2113,9 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     await db.put("plans", v1, "v1-id");
 
     await store.getState().renamePlan("v1-id", "NewName");
-    // The stored row is now v2, renamed, single "Stage 1" stage.
-    const raw = (await db.get<PlanFileV2>("plans", "v1-id"))!;
-    expect(raw.format_version).toBe(2);
+    // The stored row is now v3, renamed, single "Stage 1" stage.
+    const raw = (await db.get<PlanFileV3>("plans", "v1-id"))!;
+    expect(raw.format_version).toBe(3);
     expect(raw.name).toBe("NewName");
     expect(raw.stages[0]!.name).toBe("Stage 1");
     // createdAt carried verbatim through the migration + rename.
@@ -2062,7 +2134,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     return store;
   }
 
-  it("exportPlan returns the stored v2 JSON verbatim (re-parses to the saved file)", async () => {
+  it("exportPlan returns the stored v3 JSON verbatim (re-parses to the saved file)", async () => {
     const store = await readyStore();
     store.getState().selectRecipe("ingot_iron");
     store.getState().setClockPercentText("37.5");
@@ -2071,13 +2143,13 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
 
     const json = await store.getState().exportPlan(id);
     expect(json).not.toBeNull();
-    const parsed = JSON.parse(json!) as PlanFileV2;
-    expect(parsed.format_version).toBe(2);
+    const parsed = JSON.parse(json!) as PlanFileV3;
+    expect(parsed.format_version).toBe(3);
     expect(parsed.name).toBe("Exported");
     expect(parsed.stages[0]!.selection.recipeId).toBe("ingot_iron");
     expect(parsed.stages[0]!.selection.clockPercentText).toBe("37.5");
     // Pretty-printed (2-space indent), matching JSON.stringify(plan, null, 2).
-    expect(json).toContain('\n  "format_version": 2');
+    expect(json).toContain('\n  "format_version": 3');
   });
 
   it("exportPlan on a missing id returns null (no throw)", async () => {
@@ -2085,7 +2157,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     expect(await store.getState().exportPlan("does-not-exist")).toBeNull();
   });
 
-  it("exportPlan emits the MIGRATED v2 form for a stored v1 row", async () => {
+  it("exportPlan emits the MIGRATED v3 form for a stored v1 row", async () => {
     const store = await readyStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2109,9 +2181,9 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     await db.put("plans", v1, "legacy-id");
 
     const json = await store.getState().exportPlan("legacy-id");
-    const parsed = JSON.parse(json!) as PlanFileV2;
-    // The export is what a LOAD would see: v2, one "Stage 1" stage, createdAt kept.
-    expect(parsed.format_version).toBe(2);
+    const parsed = JSON.parse(json!) as PlanFileV3;
+    // The export is what a LOAD would see: v3, one "Stage 1" stage, createdAt kept.
+    expect(parsed.format_version).toBe(3);
     expect(parsed.name).toBe("LegacyPlan");
     expect(parsed.stages[0]!.name).toBe("Stage 1");
     expect(parsed.createdAt).toBe("2026-01-01T00:00:00.000Z");
