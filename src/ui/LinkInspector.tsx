@@ -18,7 +18,7 @@ import type {
 } from "../state/store.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
 import { formatRate } from "./format.ts";
-import { linkRequiredRate, globalUnlockedTiers } from "./graph-flow.ts";
+import { linkRequiredRate, planForLink } from "./graph-flow.ts";
 import {
   drawnDistanceDm,
   drawnMeters,
@@ -117,13 +117,12 @@ export function LinkInspector() {
   // a repeated `link.transport` property access on its own).
   const transport = link.transport;
 
-  const plan = computeLinkTransport(
-    rate,
-    transport,
-    item,
-    catalog.tiers,
-    globalUnlockedTiers(catalog, stages),
-  );
+  // #34: the resolve preamble folds to planForLink. planForLink returns null
+  // ONLY for a missing item, which the early-return at the top already excluded,
+  // so the plan is non-null here (the `!`). An unsolved rate flows through as
+  // computeLinkTransport's { kind: "unsolved" } plan, preserving the rendered
+  // "solve both stages to size the fleet" line.
+  const plan = planForLink(link, catalog, stages)!;
 
   // The combined-view drawn straight-line distance (Stage 7 / Phase 3, Axis 3):
   // null when either endpoint is unsolved (not placed in the chain). Estimated-

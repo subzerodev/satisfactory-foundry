@@ -15,6 +15,7 @@
 import { formatRate } from "./format.ts";
 import { suggestSupply, stagePowerTextFor } from "./advice.ts";
 import { computeLinkTransport } from "./transport-plan.ts";
+import type { TransportPlan } from "./transport-plan.ts";
 import {
   edgeChip,
   unsustainableTrainRow,
@@ -346,11 +347,43 @@ export function globalUnlockedTiers(
 }
 
 /**
+ * The fleet plan for one link (#34): the shared resolve preamble the five
+ * transport surfaces each hand-rolled, folded to one home beside
+ * linkRequiredRate + globalUnlockedTiers. Resolves the link's required rate,
+ * the flowing item, and the plan-global tiers, then defers to the five-arg
+ * computeLinkTransport.
+ *
+ * Returns null EXACTLY when the item is missing from the catalog — nothing
+ * else. An unsolved rate flows THROUGH as computeLinkTransport's
+ * `{ kind: "unsolved" }` plan (null-on-unsolved would erase the inspector's
+ * "solve both stages to size the fleet" line), and a belt / absent-transport
+ * link resolves via computeLinkTransport's belt default (null-on-belt would
+ * erase the inspector's belt fleet lines). The five call sites keep their OWN
+ * pre-filters (chip belt-skip, findings train-only, power belt/pipe-skip,
+ * LinkInspector's early returns) — this folds the RESOLUTION, not the
+ * per-surface filtering.
+ */
+export function planForLink(
+  link: StageLink,
+  catalog: Catalog,
+  stages: Record<string, StageNode>,
+): TransportPlan | null {
+  const item = catalog.items[link.itemId];
+  if (item === undefined) return null;
+  return computeLinkTransport(
+    linkRequiredRate(link, stages),
+    link.transport,
+    item,
+    catalog.tiers,
+    globalUnlockedTiers(catalog, stages),
+  );
+}
+
+/**
  * The transport chip suffix for one link's edge label ("· 3 trucks", "≈" when
  * estimated), or "" when the link is belt-mode / unsolved / errored — the belt
- * case renders exactly as today. Resolves the link's required rate + the
- * flowing item's stackSize + the plan tiers, then defers to the pure
- * computeLinkTransport / edgeChip helpers.
+ * case renders exactly as today. Belt-skips per-surface, then defers to the
+ * shared planForLink resolver + the pure edgeChip helper.
  */
 function transportChipFor(
   link: StageLink,
@@ -361,16 +394,8 @@ function transportChipFor(
   if (link.transport === undefined || link.transport.mode === "belt") {
     return "";
   }
-  const item = catalog.items[link.itemId];
-  if (item === undefined) return "";
-  const rate = linkRequiredRate(link, stages);
-  const plan = computeLinkTransport(
-    rate,
-    link.transport,
-    item,
-    catalog.tiers,
-    globalUnlockedTiers(catalog, stages),
-  );
+  const plan = planForLink(link, catalog, stages);
+  if (plan === null) return ""; // item missing from the catalog
   const chip = edgeChip(plan);
   return chip === null ? "" : ` ${chip}`;
 }
@@ -479,6 +504,9 @@ export function computeTransportFindings(
     if (rate === null) continue; // unsolved → no fleet math (solved-only)
     const item = catalog.items[link.itemId];
     if (item === undefined) continue;
+    // This surface threads its OWN unlockedTiers argument (not the plan-global
+    // globalUnlockedTiers planForLink derives), so it does not fold to the
+    // shared resolver — the five-arg computeLinkTransport call stays here.
     const plan = computeLinkTransport(
       rate,
       link.transport,
