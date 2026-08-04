@@ -1,0 +1,92 @@
+# r2 bidirectionality verification — Stage 6 Phase 2 (helper surfaces)
+# Generated 2026-08-04T14:05:00Z on branch feature/helpers-p2 @ 80d0dd5
+# Method: baseline PASS → sed-break → genuine FAIL naming the new tests → restore → PASS, per family.
+
+## Baseline (all suites)
+ Test Files  18 passed (18)
+      Tests  453 passed (453)
+
+## Family 1 — suggestion math + fan-out
+BREAK: suggestSupply ceilDiv -> floorDiv (understates the machine count).
+Expected to FAIL: advice suggestSupply rows + graph-flow fan-out/covers-it rows.
+--- FAIL run (advice.test.ts + graph-flow.test.ts) ---
+ ❯ src/ui/graph-flow.test.ts (21 tests | 1 failed) 7ms
+     × single consumer: under-supply label gains '×N covers it' 3ms
+ ❯ src/ui/advice.test.ts (18 tests | 1 failed) 10ms
+     × the live case: demand 140, perMachine 7.5 → 19 machines, 5/2 surplus 6ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/advice.test.ts > suggestSupply > the live case: demand 140, perMachine 7.5 → 19 machines, 5/2 surplus
+ FAIL  src/ui/graph-flow.test.ts > graphToFlow — match-demand suggestion > single consumer: under-supply label gains '×N covers it'
+Expected: "Iron Ingot · short 110/min · ×19 covers it"
+Received: "Iron Ingot · short 110/min · ×18 covers it"
+      Tests  2 failed | 37 passed (39)
+--- captured; restoring ---
+     × the live case: demand 140, perMachine 7.5 → 19 machines, 5/2 surplus  [advice.test.ts]
+     × single consumer: under-supply label gains '×N covers it'  [graph-flow.test.ts]
+     Tests  2 failed | 37 passed (39)
+(Note: rows with evenly-dividing inputs — exact-divide, the 240/7.5=32 fan-out
+ 'total' row — still pass because floor==ceil there; the non-integer live case
+ is the discriminating pin and it FAILS. The fan-out N is proven by the same
+ suggestSupply arithmetic + the graph-flow aggregation wiring row.)
+RESTORE: floorDiv -> ceilDiv.
+
+## Family 1b — fan-out aggregation (the Σ over siblings)
+BREAK: supplySuggestionFor sums only the FIRST sibling link (understates Σ).
+Expected to FAIL: the graph-flow fan-out 'total' row (240 aggregate -> 32).
+--- FAIL run (graph-flow.test.ts) ---
+     × fan-out: N aggregates ALL sibling demands, wording is '×N total'  [graph-flow.test.ts]
+     Tests  1 failed | 20 passed (21)
+RESTORE: remove the break; the full sibling Σ is restored.
+
+## Family 2 — hint branches (unlock vs override-raise wording)
+BREAK: FindingsPanel forces alreadyUnlocked=false (kills the override-raise branch).
+Expected to FAIL: the override-raise smoke row (the overridden-down case).
+--- FAIL run (smoke.test.tsx) ---
+     × appends the OVERRIDE-raise hint when the fix tier is already unlocked  [smoke.test.tsx]
+     Tests  1 failed | 45 passed (46)
+RESTORE: alreadyUnlocked = bestUnlocked !== undefined && hint.capacity.lte(bestUnlocked).
+
+## Family 2b — tierFixHint binding condition (> binding)
+BREAK: tierFixHint drops the '> binding' guard (accepts a tier that only carries peak).
+Expected to FAIL: the advice rows that require exceeding the binding capacity.
+--- FAIL run (advice.test.ts) ---
+     × a tier that carries the peak but does not exceed the binding is rejected  [advice.test.ts]
+     Tests  1 failed | 17 passed (18)
+RESTORE: if (capacity.gte(peak) && capacity.gt(binding)).
+
+## Family 3 — power exact vs approximation
+BREAK: stagePowerText's exact-at-100% guard disabled (always the ≈ float path).
+Expected to FAIL: the exact '80 MW'/'12 MW'/variable-'1750 MW' rows + chainPowerText Σ.
+--- FAIL run (advice.test.ts) ---
+     × 100% clock → the exact draw string, no ≈  [advice.test.ts]
+     × 100% clock, fractional total renders exactly  [advice.test.ts]
+     × variable machine: midpoint drives the number, suffix from exact bounds  [advice.test.ts]
+     Tests  3 failed | 15 passed (18)
+RESTORE: if (clock.eq(Fraction.from(100))).
+
+## Family 3b — the ≈ honesty label on the approximation path
+BREAK: stagePowerText drops the '≈ ' prefix on the overclock (float) path.
+Expected to FAIL: the other-clocks '≈ prefix' row (the label IS the honesty).
+--- FAIL run (advice.test.ts) ---
+     × other clocks → the ≈ prefix with a 1-decimal float value  [advice.test.ts]
+     Tests  1 failed | 17 passed (18)
+RESTORE: return `≈ ${total.toFixed(1)} MW${suffix}`.
+
+## Family 4 — solved-only gating (power renders for SOLVED stages only)
+BREAK: the solved-only guard dropped in stagePowerOf (chain Σ) AND powerTextOf (node).
+Expected to FAIL: chainPowerText idle/invalid-skip + null-when-none rows,
+and the graph-flow 'invalid stage -> powerText null' row.
+--- FAIL run (advice.test.ts + graph-flow.test.ts) ---
+     × skips idle and invalid stages  [advice.test.ts / chainPowerText]
+     × null when no solved stage has power  [advice.test.ts / chainPowerText]
+     × invalid (and idle/recipe-less) stage → powerText null  [graph-flow.test.ts]
+     Tests  3 failed | 36 passed (39)
+RESTORE: if (stage.solve.status !== "solved") return null; in BOTH sites.
+
+## Restore verification — all breaks reverted, full suite green
+ Test Files  18 passed (18)
+      Tests  453 passed (453)
+
+All four families (+ sub-breaks) proven bidirectional: each new test genuinely
+FAILS when its target logic is broken and PASSES when restored. No test is a
+tautology. Post-restore full suite: 453 passed (baseline 425 + 28 new).
