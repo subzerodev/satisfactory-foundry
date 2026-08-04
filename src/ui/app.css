@@ -151,11 +151,29 @@ body {
 
 .schematic,
 .schematic-scroll {
+  position: relative; /* anchor for the absolutely-positioned .tooltip */
   padding: 8px 0;
 }
 
 .schematic-scroll {
   overflow-x: auto;
+}
+
+/* Hover tooltip (Stage 5 item 1) — one absolutely-positioned div, cursor-
+   anchored + clamped to the schematic container. pointer-events: none so the
+   tooltip never steals the hover from the line it describes. */
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+  max-width: 280px;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--bg-panel);
+  background: var(--fg);
+  border-radius: 4px;
+  white-space: nowrap;
 }
 
 .machine rect {
@@ -180,6 +198,20 @@ body {
 
 .belt-arrow {
   stroke-width: 2;
+}
+
+/* Pipe lanes (Stage 5 item 4): a desaturated-blue dashed treatment so a fluid
+   lane reads distinctly from a belt lane. The stroke colour stays tier-driven
+   (set inline from colorForCapacity); the class adds the dashed dm rhythm +
+   a slight fade so pipes recede visually from belts. */
+.lane-pipe.bus-seg {
+  stroke-dasharray: 10 5;
+  opacity: 0.85;
+}
+
+.lane-pipe.belt-arrow {
+  stroke-dasharray: 4 3;
+  opacity: 0.85;
 }
 
 .seam {

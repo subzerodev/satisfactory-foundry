@@ -84,6 +84,22 @@ export function beltLabel(
   return `Out ${index + 1} — ${tier} · ${formatRate(out.load)}/min load · ${from}`;
 }
 
+/**
+ * A bus segment's hover-tooltip text. The exact string moved verbatim out of
+ * the Schematic `<title>` markup (Stage 5 item 1) so the styled tooltip and the
+ * unit test share one source of truth. `busCapString` is the already-formatted
+ * bus capacity (formatRate) the caller passes; `peakFlow` is the segment's exact
+ * span maximum, formatted here.
+ */
+export function segTooltip(
+  seg: { fromMachine: number; toMachine: number; peakFlow: Fraction },
+  busCapString: string,
+): string {
+  return `machines ${seg.fromMachine}–${seg.toMachine} · peak ${formatRate(
+    seg.peakFlow,
+  )}/min of ${busCapString}/min`;
+}
+
 /** One human sentence per finding variant. */
 export function findingText(
   f: Finding,

@@ -32,6 +32,7 @@ import App from "./App.tsx";
 import { LaneOverrides } from "./LaneOverrides.tsx";
 import { FindingsPanel } from "./FindingsPanel.tsx";
 import { Legend } from "./Legend.tsx";
+import { formatRate, segTooltip } from "./format.ts";
 
 const noop = () => {};
 const itemName = (id: string) =>
@@ -141,7 +142,7 @@ describe("SummaryCards", () => {
 });
 
 describe("Schematic", () => {
-  it("renders the worked example: rects, mockup label, tooltip form", () => {
+  it("renders the worked example: enough rects, no native <title> tooltips", () => {
     const html = renderToStaticMarkup(
       <Schematic
         result={workedResult()}
@@ -152,29 +153,42 @@ describe("Schematic", () => {
       />,
     );
     expect((html.match(/<rect/g) ?? []).length).toBeGreaterThanOrEqual(20);
-    expect(html).toContain("Feed 2 — Mk2 · 120/min · enters after machine 16");
-    expect(html).toContain("peak 480/min of 480/min");
+    // Stage 5 item 1: the native <title> tooltips are gone — the styled hover
+    // div carries the text now, so no <title> element remains in the markup.
+    // (The tooltip text itself is pinned at the segTooltip/beltLabel level: the
+    // beltLabel "Feed 2 …" string at format.test.ts:54-56, and the segTooltip
+    // strings in the two rows below.)
+    expect(html).not.toContain("<title>");
   });
 
-  it("titles a segment with its honest peakFlow, not the belt's capacity", () => {
-    // N=17: the last output breakout carries 30/min on a Mk1 (60/min) belt —
-    // the tooltip must say peak 30, not 60 (boundary review r1 catch).
-    const result = solveStage({ ...WORKED_INPUT, machineCount: 17 });
-    const html = renderToStaticMarkup(
-      <Schematic
-        result={result}
-        machineCount={17}
-        tiers={FIXTURE_TIERS}
-        unlocked={{ belt: 4, pipe: 2 }}
-        itemName={itemName}
-      />,
+  it("segTooltip carries the worked example's honest bus-segment string", () => {
+    // The former smoke:156 render assertion ("peak 480/min of 480/min"), now a
+    // function-level assertion FED A REAL SOLVE (Stage 5 item 1 / r2 fold): the
+    // string lived only in <title> markup, so its coverage moves to segTooltip.
+    // The feed lane's head segment carries the full 480/min peak at N=20.
+    const result = workedResult();
+    const feedSeg = result.feeds[0]!.segments[0]!;
+    const busCap = formatRate(FIXTURE_TIERS.belt[3]!); // Mk4 = 480
+    expect(segTooltip(feedSeg, busCap)).toBe(
+      "machines 1–16 · peak 480/min of 480/min",
     );
-    // The output lane's span 17–17 must show its honest 30 (the broken
-    // belt.capacity stand-in rendered 60 here). The feed lane's own 17–17
-    // span legitimately reads peak 60 — its belt delivers capacity 60 —
-    // so the pin is the positive assertion, scoped by the 30 value only
-    // the output span carries.
-    expect(html).toContain("machines 17–17 · peak 30/min of 480/min");
+  });
+
+  it("segTooltip shows a segment's honest peakFlow, not the belt's capacity", () => {
+    // The former smoke:177, now a segTooltip function assertion (Stage 5 item
+    // 1). N=17: the last output breakout carries 30/min on a Mk1 (60/min) belt
+    // — the tooltip must say peak 30, not 60 (boundary review r1 catch). The
+    // layout-level peakFlow pin (layout.test.ts:85-94) holds the data
+    // invariant; feeding a real solve keeps the render-binding half meaningful.
+    const result = solveStage({ ...WORKED_INPUT, machineCount: 17 });
+    const outSegs = result.outputs[0]!.segments;
+    const tailSeg = outSegs[outSegs.length - 1]!;
+    expect(tailSeg.fromMachine).toBe(17);
+    expect(tailSeg.toMachine).toBe(17);
+    const busCap = formatRate(FIXTURE_TIERS.belt[3]!); // 480
+    expect(segTooltip(tailSeg, busCap)).toBe(
+      "machines 17–17 · peak 30/min of 480/min",
+    );
   });
 
   it("marks a segment implicated by an over-capacity finding", () => {

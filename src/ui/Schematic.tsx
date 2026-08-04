@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import type {
   StageSolveResult,
   LaneKind,
@@ -9,7 +9,7 @@ import type {
 import type { TierTable } from "../data/types.ts";
 import { computeLayout } from "./layout.ts";
 import type { LaneTrack } from "./layout.ts";
-import { beltLabel, formatRate } from "./format.ts";
+import { beltLabel, formatRate, segTooltip } from "./format.ts";
 import { colorForCapacity, ERROR_COLOR } from "./colors.ts";
 
 interface SchematicProps {
@@ -19,6 +19,20 @@ interface SchematicProps {
   unlocked: { belt: number; pipe: number };
   itemName(id: string): string;
 }
+
+/** Live tooltip state: the hovered element's text + cursor-anchored position,
+ *  or null when nothing is hovered. Component-local (Stage 5 item 1) — a pure
+ *  presentation concern, meaningless headless, so no store field. */
+interface TooltipState {
+  text: string;
+  x: number;
+  y: number;
+}
+
+/** Tooltip offset from the cursor (px), and the clamp margin from the container
+ *  edges so a tooltip near the right/bottom edge doesn't overflow. */
+const TIP_OFFSET = 12;
+const TIP_CLAMP = 8;
 
 /**
  * A segment is in error when a finding implicates it: `segment-over-capacity`
@@ -46,7 +60,10 @@ function segmentErrored(
   });
 }
 
-/** One lane's SVG group: bus segments, seams, entry/break-out arrows. */
+/** One lane's SVG group: bus segments, seams, entry/break-out arrows.
+ *  `onTip`/`offTip` wire each hoverable line into the schematic-level tooltip;
+ *  `<title>` markup is gone (Stage 5 item 1) — the tooltip text is carried by
+ *  onMouseEnter/Move and cleared onMouseLeave. */
 function LaneG({
   track,
   kind,
@@ -57,6 +74,8 @@ function LaneG({
   tiers,
   itemName,
   machineTopY,
+  onTip,
+  offTip,
 }: {
   track: LaneTrack;
   kind: LaneKind;
@@ -67,7 +86,12 @@ function LaneG({
   tiers: TierTable;
   itemName: (id: string) => string;
   machineTopY: number;
+  onTip: (text: string, e: React.MouseEvent) => void;
+  offTip: () => void;
 }) {
+  // Pipe lanes read a distinct desaturated-blue dashed treatment (Stage 5 item
+  // 4); belt lanes keep the plain track. Schematic already knows the lane kind.
+  const pipeClass = kind === "pipe" ? " lane-pipe" : "";
   return (
     <g className={`lane lane-${side}`} data-item={track.itemId}>
       <text className="lane-name" x={4} y={track.y + 12}>
@@ -81,22 +105,20 @@ function LaneG({
           seg.fromMachine,
           seg.toMachine,
         );
+        const tip = segTooltip(seg, busCapString);
         return (
           <line
             key={`seg-${seg.beltIndex}`}
-            className={errored ? "bus-seg seg-error" : "bus-seg"}
+            className={`bus-seg${errored ? " seg-error" : ""}${pipeClass}`}
             x1={seg.x1}
             x2={seg.x2}
             y1={track.busY}
             y2={track.busY}
             stroke={errored ? ERROR_COLOR : color}
-          >
-            <title>
-              {`machines ${seg.fromMachine}–${seg.toMachine} · peak ${formatRate(
-                seg.peakFlow,
-              )}/min of ${busCapString}/min`}
-            </title>
-          </line>
+            onMouseEnter={(e) => onTip(tip, e)}
+            onMouseMove={(e) => onTip(tip, e)}
+            onMouseLeave={offTip}
+          />
         );
       })}
       {track.seams.map((x, i) => (
@@ -111,18 +133,20 @@ function LaneG({
       ))}
       {track.belts.map((arrow) => {
         const belt = belts[arrow.index]!;
+        const tip = beltLabel(side, arrow.index, belt, kind, tiers);
         return (
           <line
             key={`belt-${arrow.index}`}
-            className="belt-arrow"
+            className={`belt-arrow${pipeClass}`}
             x1={arrow.x}
             x2={arrow.x}
             y1={side === "feed" ? track.y + 16 : machineTopY}
             y2={track.busY}
             stroke={colorForCapacity(kind, belt.capacity, tiers)}
-          >
-            <title>{beltLabel(side, arrow.index, belt, kind, tiers)}</title>
-          </line>
+            onMouseEnter={(e) => onTip(tip, e)}
+            onMouseMove={(e) => onTip(tip, e)}
+            onMouseLeave={offTip}
+          />
         );
       })}
     </g>
@@ -143,8 +167,32 @@ export function Schematic({
 
   const machineTopY = layout.machineTop;
 
+  // Component-local hover tooltip (Stage 5 item 1): replaces the native SVG
+  // <title> tooltips. The div is positioned from the mouse event, clamped to
+  // the container box so an edge-hovered segment's tip stays visible.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [tip, setTip] = useState<TooltipState | null>(null);
+
+  const showTip = (text: string, e: React.MouseEvent) => {
+    const box = containerRef.current?.getBoundingClientRect();
+    if (box === undefined) return;
+    const x = Math.min(
+      e.clientX - box.left + TIP_OFFSET,
+      box.width - TIP_CLAMP,
+    );
+    const y = Math.min(
+      e.clientY - box.top + TIP_OFFSET,
+      box.height - TIP_CLAMP,
+    );
+    setTip({ text, x, y });
+  };
+  const hideTip = () => setTip(null);
+
   return (
-    <div className={layout.scrolled ? "schematic-scroll" : "schematic"}>
+    <div
+      ref={containerRef}
+      className={layout.scrolled ? "schematic-scroll" : "schematic"}
+    >
       <svg
         width={layout.width}
         height={layout.height}
@@ -164,6 +212,8 @@ export function Schematic({
               tiers={tiers}
               itemName={itemName}
               machineTopY={machineTopY}
+              onTip={showTip}
+              offTip={hideTip}
             />
           );
         })}
@@ -196,10 +246,17 @@ export function Schematic({
               tiers={tiers}
               itemName={itemName}
               machineTopY={machineTopY + 40}
+              onTip={showTip}
+              offTip={hideTip}
             />
           );
         })}
       </svg>
+      {tip !== null && (
+        <div className="tooltip" style={{ left: tip.x, top: tip.y }}>
+          {tip.text}
+        </div>
+      )}
     </div>
   );
 }
