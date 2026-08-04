@@ -17,9 +17,26 @@ const CATALOG_KEY = "current";
  * there is no re-parse-from-source): bundled-catalog users re-parse invisibly on
  * next boot; an uploaded-Docs user falls back to bundled and re-uploads once.
  * The stale honesty note in the frozen brainstorm (Axis 2) is deliberate.
+ *
+ * 2 → 3 (Stage 7 / Phase 2): items now carry a `stackSize` Fraction | null
+ * (parsed from `mStackSize`). Same discard-and-re-parse semantics as the 1→2
+ * bump — a version-2 cache is stale, bundled/uploaded users re-parse once.
  */
-export const CATALOG_PARSER_VERSION = 2;
+export const CATALOG_PARSER_VERSION = 3;
 
+/**
+ * JSON-safe CatalogItem: `stackSize` is a toString() string or null. Items
+ * carried a Fraction field (stackSize) as of Stage 7 / Phase 2, so — like
+ * recipes and machines — they can no longer round-trip RAW through storage (a
+ * structured clone would strip the Fraction prototype). id/displayName/isFluid
+ * are plain and copied verbatim.
+ */
+interface StoredCatalogItem {
+  id: string;
+  displayName: string;
+  isFluid: boolean;
+  stackSize: string | null;
+}
 /** JSON-safe RecipeIO — the Fraction is serialized via toString(). */
 interface StoredRecipeIO {
   itemId: string;
@@ -53,7 +70,7 @@ interface StoredCatalogMachine {
 /** JSON-safe catalog: every Fraction is a toString() string. Tiers are NOT
  *  stored — they are always TIER_TABLE, rebuilt on revive. */
 interface StoredCatalogData {
-  items: Record<string, CatalogItem>;
+  items: Record<string, StoredCatalogItem>;
   machines: Record<string, StoredCatalogMachine>;
   recipes: Record<string, StoredRecipe>;
 }
@@ -171,7 +188,21 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
       power: serializePower(m.power),
     };
   }
-  return { items: catalog.items, machines, recipes };
+  const items: Record<string, StoredCatalogItem> = {};
+  for (const [id, it] of Object.entries(catalog.items)) {
+    items[id] = serializeItem(it);
+  }
+  return { items, machines, recipes };
+}
+
+function serializeItem(item: CatalogItem): StoredCatalogItem {
+  return {
+    id: item.id,
+    displayName: item.displayName,
+    isFluid: item.isFluid,
+    // null stays null; a Fraction stringifies exactly (StoredRecipe precedent).
+    stackSize: item.stackSize === null ? null : item.stackSize.toString(),
+  };
 }
 
 function serializeIO(io: RecipeIO): StoredRecipeIO {
@@ -219,12 +250,28 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
       power: revivePower(m.power),
     };
   }
+  const items: Catalog["items"] = {};
+  for (const [id, it] of Object.entries(data.items)) {
+    items[id] = reviveItem(it);
+  }
   // Tiers are always the curated table, never round-tripped through storage.
   return {
-    items: data.items,
+    items,
     machines,
     recipes,
     tiers: TIER_TABLE,
+  };
+}
+
+function reviveItem(item: StoredCatalogItem): CatalogItem {
+  // parseRational throws on a malformed rational → reviveCatalog's caller maps
+  // the throw to 'stale' (the recipe-IO reviver's corruption posture). null
+  // stackSize (fluids / unknown enum) revives verbatim as null.
+  return {
+    id: item.id,
+    displayName: item.displayName,
+    isFluid: item.isFluid,
+    stackSize: item.stackSize === null ? null : parseRational(item.stackSize),
   };
 }
 

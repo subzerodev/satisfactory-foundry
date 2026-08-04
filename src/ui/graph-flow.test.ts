@@ -69,15 +69,36 @@ const recipes: Record<string, CatalogRecipe> = {
 
 const catalog: Catalog = {
   items: {
-    ore_iron: { id: "ore_iron", displayName: "Iron Ore", isFluid: false },
-    iron_ingot: { id: "iron_ingot", displayName: "Iron Ingot", isFluid: false },
-    iron_plate: { id: "iron_plate", displayName: "Iron Plate", isFluid: false },
+    ore_iron: {
+      id: "ore_iron",
+      displayName: "Iron Ore",
+      isFluid: false,
+      stackSize: Fraction.from(100),
+    },
+    iron_ingot: {
+      id: "iron_ingot",
+      displayName: "Iron Ingot",
+      isFluid: false,
+      stackSize: Fraction.from(100),
+    },
+    iron_plate: {
+      id: "iron_plate",
+      displayName: "Iron Plate",
+      isFluid: false,
+      stackSize: Fraction.from(200),
+    },
     copper_ingot: {
       id: "copper_ingot",
       displayName: "Copper Ingot",
       isFluid: false,
+      stackSize: Fraction.from(100),
     },
-    rotor: { id: "rotor", displayName: "Rotor", isFluid: false },
+    rotor: {
+      id: "rotor",
+      displayName: "Rotor",
+      isFluid: false,
+      stackSize: Fraction.from(100),
+    },
   },
   machines: {},
   recipes,

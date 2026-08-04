@@ -16,11 +16,17 @@ import type { CatalogSource } from "./catalog-store.ts";
 function sampleCatalog(): Catalog {
   return {
     items: {
-      ore_iron: { id: "ore_iron", displayName: "Iron Ore", isFluid: false },
+      ore_iron: {
+        id: "ore_iron",
+        displayName: "Iron Ore",
+        isFluid: false,
+        stackSize: Fraction.from(100),
+      },
       iron_ingot: {
         id: "iron_ingot",
         displayName: "Iron Ingot",
         isFluid: false,
+        stackSize: Fraction.from(100),
       },
     },
     machines: {
@@ -81,6 +87,12 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     // Non-Fraction fields survive too; tiers are the curated table.
     expect(result.catalog.items["ore_iron"]!.displayName).toBe("Iron Ore");
     expect(result.catalog.tiers).toBe(TIER_TABLE);
+    // Item stackSize survives the serialize/revive round-trip as a real Fraction
+    // (structured-clone would otherwise strip the prototype — the reason items
+    // no longer round-trip raw, Stage 7 / Phase 2).
+    expect(
+      result.catalog.items["ore_iron"]!.stackSize!.eq(Fraction.from(100)),
+    ).toBe(true);
 
     // The source hash is recorded (SHA-256 hex = 64 chars).
     const db = await openDb();
@@ -96,14 +108,14 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     expect((await loadCatalog()).status).toBe("empty");
   });
 
-  it("treats a version-1 cached row as stale under version 2 (the power-fields bump)", async () => {
-    // A pre-Stage-6 row (parser_version 1, machines lacking power) must be
+  it("treats a version-2 cached row as stale under version 3 (the stackSize bump)", async () => {
+    // A pre-Stage-7 row (parser_version 2, items lacking stackSize) must be
     // discarded, not revived — the frozen Axis 2 stale-and-discard behavior.
     await saveCatalog("raw", sampleCatalog());
     const db = await openDb();
     const stored = await db.get<Record<string, unknown>>("catalog", "current");
-    await db.put("catalog", { ...stored, parser_version: 1 }, "current");
-    expect(CATALOG_PARSER_VERSION).toBe(2);
+    await db.put("catalog", { ...stored, parser_version: 2 }, "current");
+    expect(CATALOG_PARSER_VERSION).toBe(3);
     expect((await loadCatalog()).status).toBe("stale");
   });
 
@@ -214,11 +226,17 @@ describe("catalog cache — source provenance (ticket #9)", () => {
 function serializedSample() {
   return {
     items: {
-      ore_iron: { id: "ore_iron", displayName: "Iron Ore", isFluid: false },
+      ore_iron: {
+        id: "ore_iron",
+        displayName: "Iron Ore",
+        isFluid: false,
+        stackSize: "100",
+      },
       iron_ingot: {
         id: "iron_ingot",
         displayName: "Iron Ingot",
         isFluid: false,
+        stackSize: "100",
       },
     },
     machines: {
