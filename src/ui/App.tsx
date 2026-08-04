@@ -20,6 +20,7 @@ import { PlansBar } from "./PlansBar.tsx";
 import { SummaryCards } from "./SummaryCards.tsx";
 import { Schematic } from "./Schematic.tsx";
 import { Blueprint } from "./Blueprint.tsx";
+import { ChainBlueprint } from "./ChainBlueprint.tsx";
 import { LaneOverrides } from "./LaneOverrides.tsx";
 import { FindingsPanel } from "./FindingsPanel.tsx";
 import { Legend } from "./Legend.tsx";
@@ -55,6 +56,24 @@ setBundledDocsProvider(async () => {
     return null;
   }
 });
+
+/** The three solve-facing views (Stage 7 / Phase 3, Axis 2). */
+type View = "schematic" | "blueprint" | "combined";
+
+/** The view the toggle advances to from the current one (schematic → blueprint
+ *  → combined → schematic). */
+const VIEW_CYCLE: Record<View, View> = {
+  schematic: "blueprint",
+  blueprint: "combined",
+  combined: "schematic",
+};
+
+/** The button label per target view. */
+const viewLabel: Record<View, string> = {
+  schematic: "Schematic",
+  blueprint: "Blueprint",
+  combined: "Combined",
+};
 
 /** Stage-global ⊕ per-lane findings, flattened for the panel. */
 function allFindings(result: StageSolveResult): Finding[] {
@@ -144,8 +163,9 @@ export default function App() {
 
   // View toggle for the schematic slot (Axis 1): component-local UI state (the
   // canvasNotice precedent — meaningless headless, so no store field). Default
-  // Schematic keeps the familiar view primary this arc.
-  const [view, setView] = useState<"schematic" | "blueprint">("schematic");
+  // Schematic keeps the familiar view primary this arc. The "combined" view
+  // (Stage 7 / Phase 3) ignores the active stage — it shows the whole chain.
+  const [view, setView] = useState<View>("schematic");
 
   // Theme preference (Stage 5 item 3): a UI preference, initialized from the
   // stored choice ⊕ the OS media query, applied as data-theme on the document
@@ -281,6 +301,10 @@ export default function App() {
     selection.unlockedTiers,
   );
 
+  // The 3-way view cycle (schematic → blueprint → combined → schematic) and its
+  // labels (Stage 7 / Phase 3, Axis 2). The button shows the NEXT target.
+  const nextView = VIEW_CYCLE[view];
+
   return (
     <div className="app">
       {dropOverlay}
@@ -353,18 +377,17 @@ export default function App() {
             itemName={itemName}
             powerText={activePowerText}
           />
-          {/* The single view toggle (Axis 1), labelled with the TARGET view.
-              It swaps only the schematic slot below; every other solve-facing
-              panel stays. A null recipe can never reach "solved", so
-              selection.recipeId is non-null here. */}
+          {/* The view toggle (Axis 1 + Stage 7 P3), labelled with the NEXT view
+              in the schematic → blueprint → combined cycle. It swaps only the
+              schematic slot below; every other solve-facing panel stays. A null
+              recipe can never reach "solved", so selection.recipeId is non-null.
+              "combined" ignores the active stage (whole-chain view). */}
           <button
             type="button"
             className="view-toggle"
-            onClick={() =>
-              setView((v) => (v === "schematic" ? "blueprint" : "schematic"))
-            }
+            onClick={() => setView(nextView)}
           >
-            {view === "schematic" ? "View: Blueprint" : "View: Schematic"}
+            View: {viewLabel[nextView]}
           </button>
           {view === "blueprint" ? (
             <Blueprint
@@ -379,6 +402,14 @@ export default function App() {
                 (lane) =>
                   `${itemName(lane.itemId)}${lane.kind === "pipe" ? " (pipe)" : ""}`,
               )}
+            />
+          ) : view === "combined" ? (
+            <ChainBlueprint
+              catalog={catalog}
+              stages={s.stages}
+              stageOrder={s.stageOrder}
+              links={s.links}
+              positions={s.positions}
             />
           ) : (
             <Schematic

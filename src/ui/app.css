@@ -411,6 +411,44 @@ body {
   fill: var(--fg);
 }
 
+/* Combined multi-stage blueprint (Stage 7 / Phase 3, Axis 2). Reuses the bp-*
+   foundation/machine styling per site; the chain-bp-* classes add the site
+   chrome + inter-site connectors + the power footer. */
+.chain-bp-name {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--fg);
+}
+
+.chain-bp-power {
+  font-size: 10px;
+  fill: var(--fg-muted);
+}
+
+/* Inter-site connectors: solid for belt/pipe, dashed for vehicle modes (a
+   mode-class visual only — no pathfinding). */
+.chain-bp-link {
+  stroke: var(--accent-strong);
+  stroke-width: 2;
+  fill: none;
+}
+
+.chain-bp-link-dashed {
+  stroke-dasharray: 8 5;
+}
+
+.chain-bp-link-label {
+  font-size: 11px;
+  fill: var(--fg);
+  text-anchor: middle;
+}
+
+.chain-bp-footer {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
 .lane-overrides {
   display: flex;
   flex-direction: column;
@@ -706,6 +744,22 @@ body {
 .link-inspector-error {
   margin: 0;
   color: var(--error);
+}
+
+/* Measure feed (Stage 7 / Phase 3, Axis 3): the combined-view drawn distance
+   readout + the estimated-mode "use drawn distance" action. */
+.link-inspector-measure {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.link-inspector-measure-readout {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-style: italic;
 }
 
 .train-table {

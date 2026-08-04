@@ -16,7 +16,14 @@
  */
 
 import { Fraction } from "../core/fraction.ts";
-import type { Point, ChainLayout, ChainSite } from "../layout/layout.ts";
+import { layoutChain, layoutStage } from "../layout/layout.ts";
+import type {
+  Point,
+  ChainLayout,
+  ChainSite,
+  ChainArrangement,
+} from "../layout/layout.ts";
+import { FOOTPRINTS } from "../layout/footprints.ts";
 import type { Catalog } from "../data/types.ts";
 import type { StageNode, StageLink, LinkTransport } from "../state/store.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
@@ -51,6 +58,87 @@ export function siteWorldBox(
 /** Foundation tile edge (8 m) — restated locally (matches layout.ts
  *  FOUNDATION_TILE, the same S4P2 restatement posture Blueprint uses). */
 const FOUNDATION_TILE = 80;
+
+// ---------------------------------------------------------------------------
+// Chain assembly — build the solved-only ChainSites + the world-dm layout from
+// the store slice (shared by ChainBlueprint and the LinkInspector measure feed).
+// ---------------------------------------------------------------------------
+
+/** The solved stage ids in stageOrder — the sites the combined view places
+ *  (unsolved/invalid stages are skipped; frozen Axis 1 solved-only). */
+export function solvedStageIds(
+  stages: Record<string, StageNode>,
+  stageOrder: string[],
+): string[] {
+  return stageOrder.filter((id) => stages[id]?.solve.status === "solved");
+}
+
+/** One ChainSite per solved stage: its per-stage layout at the recipe's machine
+ *  footprint. Order follows stageOrder for determinism. */
+export function buildChainSites(
+  catalog: Catalog,
+  stages: Record<string, StageNode>,
+  solvedIds: string[],
+): ChainSite[] {
+  return solvedIds.map((id) => {
+    const stage = stages[id]!;
+    const machineId =
+      stage.selection.recipeId !== null
+        ? (catalog.recipes[stage.selection.recipeId]?.machineId ?? "")
+        : "";
+    return {
+      stageId: id,
+      layout: layoutStage(
+        stage.solve.status === "solved"
+          ? stage.solve.result
+          : { feeds: [], outputs: [], findings: [] },
+        machineId,
+        stage.selection.machineCount,
+        FOOTPRINTS,
+      ),
+    };
+  });
+}
+
+/** The world-dm chain layout for the solved sites, from their canvas positions
+ *  (the arrangement — Assumption #1: every stage has a position). */
+export function buildChain(
+  sites: ChainSite[],
+  solvedIds: string[],
+  positions: Record<string, { x: number; y: number }>,
+): ChainLayout {
+  const arrangement: ChainArrangement[] = solvedIds.map((id) => ({
+    stageId: id,
+    x: positions[id]?.x ?? 0,
+    y: positions[id]?.y ?? 0,
+  }));
+  return layoutChain(sites, arrangement);
+}
+
+/**
+ * The drawn straight-line distance (dm) for one link on the combined view, or
+ * null when either endpoint is skipped (unsolved) — the SAME nearest-edge
+ * geometry chainConnectors uses, exposed so the LinkInspector can offer the
+ * measure feed without re-deriving the connector labels.
+ */
+export function drawnDistanceDm(
+  linkId: string,
+  catalog: Catalog,
+  stages: Record<string, StageNode>,
+  stageOrder: string[],
+  links: StageLink[],
+  positions: Record<string, { x: number; y: number }>,
+): number | null {
+  const link = links.find((l) => l.id === linkId);
+  if (link === undefined) return null;
+  const solvedIds = solvedStageIds(stages, stageOrder);
+  const sites = buildChainSites(catalog, stages, solvedIds);
+  const chain = buildChain(sites, solvedIds, positions);
+  const fromBox = siteWorldBox(chain, sites, link.fromStageId);
+  const toBox = siteWorldBox(chain, sites, link.toStageId);
+  if (fromBox === null || toBox === null) return null;
+  return nearestEdgeConnector(fromBox, toBox).distanceDm;
+}
 
 // ---------------------------------------------------------------------------
 // Connector geometry — the straight line between two sites' nearest bbox edge
