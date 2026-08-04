@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import type { StageSolveResult } from "../core/manifold.ts";
 import { layoutStage } from "../layout/layout.ts";
 import type { LaneLayout, BeltMark } from "../layout/layout.ts";
@@ -119,18 +119,10 @@ export function Blueprint({
             a lane's bus/junctions and its marks are split into two passes: these
             draw under the machine row, the marks (below) draw over it. */}
         {layout.feedLanes.map((lane, i) => (
-          <BusAndJunctions
-            key={`fb-${lane.itemId}-${i}`}
-            lane={lane}
-            side="feed"
-          />
+          <BusAndJunctions key={`fb-${lane.itemId}-${i}`} lane={lane} />
         ))}
         {layout.outputLanes.map((lane, j) => (
-          <BusAndJunctions
-            key={`ob-${lane.itemId}-${j}`}
-            lane={lane}
-            side="output"
-          />
+          <BusAndJunctions key={`ob-${lane.itemId}-${j}`} lane={lane} />
         ))}
         {/* z4 — machine rects + index labels. */}
         <g className="bp-machines">
@@ -171,16 +163,10 @@ export function Blueprint({
 }
 
 /** The bus ribbon + its label + junction rects (z2/z3 — behind the machines). */
-function BusAndJunctions({
-  lane,
-  side,
-}: {
-  lane: LaneLayout;
-  side: "feed" | "output";
-}) {
+function BusAndJunctions({ lane }: { lane: LaneLayout }) {
   const busY = lane.bus.from.y;
   return (
-    <g className={`bp-lane bp-lane-${side}`} data-item={lane.itemId}>
+    <g className="bp-lane">
       <rect
         className="bp-bus"
         x={lane.bus.from.x}
@@ -214,7 +200,7 @@ function Marks({
 }) {
   const busY = lane.bus.from.y;
   return (
-    <g className={`bp-marks bp-marks-${side}`} data-item={lane.itemId}>
+    <g className="bp-marks">
       <text
         className="bp-lane-name"
         x={lane.bus.from.x + 4}
@@ -223,14 +209,14 @@ function Marks({
         {label}
       </text>
       {lane.marks.map((mk: BeltMark) => (
-        <g key={`mk-${mk.index}`} className="bp-mark">
+        <Fragment key={`mk-${mk.index}`}>
           <circle className="bp-mark-glyph" cx={mk.at.x} cy={mk.at.y} r={8} />
           <text className="bp-mark-label" x={mk.at.x + 12} y={mk.at.y + 4}>
             {side === "output" && mk.load !== undefined
               ? `${formatRate(mk.capacity)}/min (${formatRate(mk.load)}/min load)`
               : `${formatRate(mk.capacity)}/min`}
           </text>
-        </g>
+        </Fragment>
       ))}
     </g>
   );
