@@ -193,6 +193,27 @@ describe("computeLinkTransport — train (Assumption #6 routing)", () => {
     expect(plan.options).toHaveLength(13);
     // cargoPerCar = 32 × 200 = 6400 → first row's throughput is positive.
     expect(plan.options[0]!.carsPerTrain).toBe(1);
+
+    // The estimated RtD MUST equal 2d/v(loco) + 2×lockout: v = 120 km/h =
+    // 100/3 m/s; 2×6000 / (100/3) = 360 s travel; + 2×27.08 = 414.16 s. Pin it
+    // by equivalence to a measured trip at exactly that RtD — this fails if the
+    // lockout term is dropped (the per-platform ceilings then differ).
+    const measured = computeLinkTransport(
+      Fraction.from(300),
+      {
+        mode: "train",
+        trip: { kind: "measured", roundTripSecondsText: "414.16" },
+      },
+      solid,
+      TIER_TABLE,
+      { belt: 4, pipe: 2 },
+    );
+    if (measured.kind !== "train") throw new Error("expected train");
+    expect(
+      plan.options[0]!.perPlatformCeiling.eq(
+        measured.options[0]!.perPlatformCeiling,
+      ),
+    ).toBe(true);
   });
 
   it("measured passes the round trip straight through (caller-owned lockout)", () => {
