@@ -3,6 +3,20 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-04 — Stage 3 complete: plans save the whole factory
+
+> Hey Michael — saving a plan now keeps everything. Your stages, their
+> recipes and tweaks, the wires between them, even where you dragged
+> each card on the canvas — one Save captures the whole factory, and
+> Load brings it back exactly, fractions and all. Plans you saved
+> before this update still open fine (they come back as a single
+> stage, and the next save quietly upgrades them). Your unlocked
+> belt/pipe tiers stay YOUR tiers — loading someone's plan never
+> rewinds your progression. And if the game data changed since a plan
+> was saved, anything that no longer exists is shown honestly as
+> missing instead of pretending. This closes out the chained-stages
+> arc — the whole-factory editor is done.
+
 ## 2026-08-04 — Stage 3, Phase 2: the factory canvas
 
 > Hey Michael — your factory is a map now. Above the usual controls

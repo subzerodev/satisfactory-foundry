@@ -1,8 +1,8 @@
 # Chained stages — the factory graph editor (Stage 3 arc)
 
 **Started:** 2026-08-03
-**Status:** in-progress
-**Current phase:** Phase 2 COMPLETE — Phase 3 (plans carry the graph) next
+**Status:** COMPLETE (all three phases merged)
+**Current phase:** arc closed 2026-08-04
 **Final PR:** —
 **Epic:** #12 (board #21, Stage 3 milestone 74)
 
@@ -50,10 +50,14 @@ argued at its design review.
   handle geometry.
 - **Ticket:** #17 (Done, closed)
 
-### Phase 3 — plans carry the graph + cross-stage findings (deferred design)
+### Phase 3 — plans carry the graph
 
-- PlanFileV1 stages[]/links[] populated multi-stage; load/save round-trip;
-  cross-stage findings panel.
+- **Status:** complete (merged --no-ff to develop 2026-08-04; 347/347
+  tests; 2-round design gate + simplify; boundary converged with one
+  wording nit folded; diff-simplify APPROVED clean; walk-verified
+  round-trip incl. positions + reseed; ticket #18 Done). PlanFileV2
+  whole-graph format + read-side v1 migration; no DB_VERSION bump.
+- **Ticket:** #18 (Done, closed)
 
 ## Decisions log
 
@@ -71,6 +75,14 @@ argued at its design review.
   placementSeq slots with NO collision machinery; canvas excluded from
   smoke (SSR row landed as opportunistic bonus). Cycle indicator
   DECLINED for Phase 2 (revisit only if Stage 5 surfaces a want).
+- 2026-08-04 (P3 design): PlanFileV2 honest stamp; id-free index link
+  encoding (validator pins = the SOLE load guard — the rebuild bypasses
+  addLink); positions persist per stage entry; whole-graph load with
+  per-stage NaN coercion, global-tier stamping, and overrides VERBATIM
+  (the #5 override-clear stays upload-only); renamePlan widens to v2.
+- 2026-08-04 (P3 boundary): plans persist via IDB structured clone — the
+  null-machineCount edge guards hand-authored/imported/legacy JSON files,
+  not the save path (rationale corrected in-code).
 - 2026-08-04 (P2 implementation): node-side handle GEOMETRY (x/y/size)
   is load-bearing — RF computes handleBounds from it with no DOM
   measurement; the resync merge must preserve RF's measured state.
