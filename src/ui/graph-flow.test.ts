@@ -16,9 +16,13 @@ import {
   graphToFlow,
   pickLinkItem,
   computeTransportFindings,
+  planForLink,
+  linkRequiredRate,
+  globalUnlockedTiers,
   NODE_WIDTH,
   NODE_HEIGHT,
 } from "./graph-flow.ts";
+import { computeLinkTransport } from "./transport-plan.ts";
 import type { LinkTransport } from "../state/store.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 
@@ -830,10 +834,7 @@ describe("computeTransportFindings", () => {
       mode: "train",
       trip: { kind: "measured", roundTripSecondsText: "60" },
     });
-    const findings = computeTransportFindings(transportCatalog, stages, links, {
-      belt: 4,
-      pipe: 2,
-    });
+    const findings = computeTransportFindings(transportCatalog, stages, links);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toContain("Iron Ingot:");
   });
@@ -843,12 +844,9 @@ describe("computeTransportFindings", () => {
       mode: "train",
       trip: { kind: "measured", roundTripSecondsText: "200" },
     });
-    expect(
-      computeTransportFindings(transportCatalog, stages, links, {
-        belt: 4,
-        pipe: 2,
-      }),
-    ).toEqual([]);
+    expect(computeTransportFindings(transportCatalog, stages, links)).toEqual(
+      [],
+    );
   });
 
   it("a non-train link never contributes a finding", () => {
@@ -856,21 +854,97 @@ describe("computeTransportFindings", () => {
       mode: "truck",
       trip: { kind: "measured", roundTripSecondsText: "60" },
     });
-    expect(
-      computeTransportFindings(transportCatalog, stages, links, {
-        belt: 4,
-        pipe: 2,
-      }),
-    ).toEqual([]);
+    expect(computeTransportFindings(transportCatalog, stages, links)).toEqual(
+      [],
+    );
   });
 
   it("belt (absent transport) never contributes a finding", () => {
     const { stages, links } = graphAt(1000000);
-    expect(
-      computeTransportFindings(transportCatalog, stages, links, {
-        belt: 4,
-        pipe: 2,
-      }),
-    ).toEqual([]);
+    expect(computeTransportFindings(transportCatalog, stages, links)).toEqual(
+      [],
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// planForLink — the shared resolve preamble (#34). Its ONLY null is a missing
+// item; an unsolved rate flows THROUGH as { kind: "unsolved" }, belt resolves,
+// and a configured mode resolves identically to the hand-built preamble the
+// five surfaces previously inlined.
+// ---------------------------------------------------------------------------
+
+describe("planForLink (#34)", () => {
+  const producer = stage("a", "A", "ingot", 20, solvedWith({}));
+  // A solved consumer with a feed lane so linkRequiredRate resolves.
+  const solvedConsumer = stage(
+    "b",
+    "B",
+    "plate",
+    10,
+    solvedWith({
+      feeds: [{ itemId: "iron_ingot", totalDemand: Fraction.from(600) }],
+    }),
+  );
+  // An unsolved consumer (no feed lane) → linkRequiredRate null.
+  const unsolvedConsumer = stage("b", "B", "plate", 10, solvedWith({}));
+
+  function linkFor(
+    transport?: LinkTransport,
+    itemId = "iron_ingot",
+  ): StageLink {
+    return {
+      id: "L1",
+      fromStageId: "a",
+      itemId,
+      toStageId: "b",
+      ...(transport ? { transport } : {}),
+    };
+  }
+
+  it("returns null EXACTLY when the item is missing from the catalog", () => {
+    const stages = { a: producer, b: solvedConsumer };
+    const link = linkFor(
+      { mode: "truck", trip: { kind: "estimated", distanceText: "500" } },
+      "no_such_item",
+    );
+    expect(planForLink(link, transportCatalog, stages)).toBeNull();
+  });
+
+  it("passes an unsolved rate THROUGH as { kind: 'unsolved' }, never null", () => {
+    const stages = { a: producer, b: unsolvedConsumer };
+    const link = linkFor({
+      mode: "truck",
+      trip: { kind: "estimated", distanceText: "500" },
+    });
+    const plan = planForLink(link, transportCatalog, stages);
+    expect(plan).not.toBeNull();
+    expect(plan!.kind).toBe("unsolved");
+  });
+
+  it("resolves the belt default for an absent-transport link (not null)", () => {
+    const stages = { a: producer, b: solvedConsumer };
+    const plan = planForLink(linkFor(), transportCatalog, stages);
+    expect(plan).not.toBeNull();
+    // belt default with a resolved rate → the continuous plan, not unsolved.
+    expect(plan!.kind).toBe("continuous");
+  });
+
+  it("resolves a vehicle mode identically to the hand-built preamble", () => {
+    const stages = { a: producer, b: solvedConsumer };
+    const link = linkFor({
+      mode: "truck",
+      trip: { kind: "estimated", distanceText: "500" },
+    });
+    // The exact preamble the five surfaces previously inlined.
+    const item = transportCatalog.items[link.itemId]!;
+    const expected = computeLinkTransport(
+      linkRequiredRate(link, stages),
+      link.transport,
+      item,
+      transportCatalog.tiers,
+      globalUnlockedTiers(transportCatalog, stages),
+    );
+    expect(planForLink(link, transportCatalog, stages)).toEqual(expected);
   });
 });

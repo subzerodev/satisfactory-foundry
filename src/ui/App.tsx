@@ -292,13 +292,12 @@ export default function App() {
   const activePowerText = activeStagePowerText(catalog, selection, solve);
 
   // Plan-wide transport findings (Stage 7 P2): the unsustainable-train case
-  // across all links, pre-worded. unlockedTiers is plan-global (any stage's copy
-  // is canonical); the active selection holds it.
+  // across all links, pre-worded. The plan-global unlocked tiers are resolved
+  // inside planForLink (any stage's copy is canonical) — no longer threaded.
   const transportFindings = computeTransportFindings(
     catalog,
     s.stages,
     s.links,
-    selection.unlockedTiers,
   );
 
   // The 3-way view cycle (schematic → blueprint → combined → schematic) and its
