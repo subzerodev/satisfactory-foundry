@@ -1,0 +1,279 @@
+/**
+ * Transport display wording (Stage 7 / Phase 2, frozen Axis 3) — a PURE,
+ * testable sibling of advice.ts. It owns every rendered transport string: fleet
+ * lines, the train option rows, the mode caveat sentences, and the estimated
+ * "at top speed — optimistic" suffix, so the LinkInspector / edge components
+ * stay thin. All numbers go through formatRate's EXACT boundary (no floats leak
+ * here — the labeled-approximation boundary is advice.ts's alone; transport math
+ * is exact Fractions/bigints end to end).
+ *
+ * Provable-claim wording only (the S6 precedent): each caveat is a fixed
+ * sentence made from a P1 module-level invariant doc-comment; the estimated
+ * suffix is a label, not a recomputation.
+ */
+
+import { Fraction } from "../core/fraction.ts";
+import type { TrainOption } from "../core/transport.ts";
+import { formatRate } from "./format.ts";
+import type {
+  TransportPlan,
+  TransportContinuous,
+  TransportVehicle,
+  TransportTrain,
+  TransportDrone,
+} from "./transport-plan.ts";
+
+/** The optimistic suffix appended to every estimated-basis result (the tripBasis
+ *  echo / train trip.kind drives it — a label, never a recomputation). */
+export const ESTIMATED_SUFFIX = " at top speed — optimistic";
+
+/** Human labels for each transport mode (used in the mode select + chips). */
+export const MODE_LABEL: Record<string, string> = {
+  belt: "Belt",
+  pipe: "Pipe",
+  truck: "Truck",
+  tractor: "Tractor",
+  explorer: "Explorer",
+  "fluid-truck": "Fluid Truck",
+  train: "Train",
+  drone: "Drone",
+};
+
+/** The fixed per-mode caveat sentence (a P1 invariant doc-comment made words),
+ *  or null for a mode that carries none. */
+export function caveatFor(mode: string): string | null {
+  switch (mode) {
+    case "pipe":
+      return "nominal ceiling — manifolds can sustain less";
+    case "truck":
+    case "tractor":
+    case "explorer":
+    case "fluid-truck":
+      return ">1 vehicle: station queueing not modeled";
+    case "train":
+      return "signal headway not modeled";
+    case "drone":
+      return "shared destination ports queue";
+    default:
+      return null; // belt has no caveat
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fleet lines per result kind.
+// ---------------------------------------------------------------------------
+
+/** "N belts sustain X/min" — continuous (belt/pipe) fleet line. */
+export function continuousLine(plan: TransportContinuous): string {
+  const { runs, laneRate } = plan.result;
+  const lane = plan.mode === "belt" ? "belt" : "pipe";
+  const noun = runs === 1n ? lane : `${lane}s`;
+  return `${runs} ${noun} sustain ${formatRate(laneRate)}/min each`;
+}
+
+/** "3 trucks sustain 480/min over this trip" — road fleet line, with the
+ *  optimistic suffix on an estimated trip (the tripBasis echo drives it). */
+export function vehicleLine(plan: TransportVehicle): string {
+  const { nVehicles, ratePerVehicle, tripBasis } = plan.result;
+  const noun =
+    nVehicles === 1n ? vehicleNoun(plan.mode) : vehicleNounPlural(plan.mode);
+  const base = `${nVehicles} ${noun} sustain ${formatRate(ratePerVehicle)}/min each over this trip`;
+  return tripBasis === "estimated" ? base + ESTIMATED_SUFFIX : base;
+}
+
+/** The station power line for a road mode ("station power 40 MW · both ends"). */
+export function vehicleStationLine(plan: TransportVehicle): string {
+  return `station power ${formatRate(plan.stationPowerMw)} MW · both ends`;
+}
+
+/** "N drones sustain X/min" + the battery line (or the add-distance prompt). */
+export function droneLine(plan: TransportDrone): string {
+  const { nDrones, ratePerDrone, tripBasis } = plan.result;
+  const noun = nDrones === 1n ? "drone" : "drones";
+  const base = `${nDrones} ${noun} sustain ${formatRate(ratePerDrone)}/min each`;
+  return tripBasis === "estimated" ? base + ESTIMATED_SUFFIX : base;
+}
+
+/** The drone battery line: the per-trip battery-equivalent cost, or the prompt
+ *  to add a distance when it is honestly null (measured without a distance). */
+export function droneBatteryLine(plan: TransportDrone): string {
+  const batteries = plan.result.batteriesPerTrip;
+  if (batteries === null) {
+    return "add flight distance for battery cost";
+  }
+  return `${formatRate(batteries)} batteries per round trip`;
+}
+
+/** The drone home-port power line (100 MW per drone, always-on). */
+export function dronePortLine(plan: TransportDrone): string {
+  return `port power ${formatRate(plan.result.portPowerMw)} MW per drone · always on`;
+}
+
+// ---------------------------------------------------------------------------
+// Train comparison table rows.
+// ---------------------------------------------------------------------------
+
+/** One row of the train cars-vs-trains comparison (Axis 3): cars, trains,
+ *  station MW (both ends), sustained rate, and the "station-limited" marker on
+ *  a `ceilingBound` row. platforms/end ≡ cars (a footnote, not a column). */
+export interface TrainRow {
+  cars: number;
+  trains: number;
+  stationMw: string;
+  sustainedRate: string;
+  stationLimited: boolean;
+}
+
+/** Build the comparison rows for a train plan (all rows shown — comparable
+ *  options, no "best"). The sustained rate is the per-platform ceiling × cars
+ *  (the whole-consist ceiling), formatted exactly. */
+export function trainRows(plan: TransportTrain): TrainRow[] {
+  return plan.options.map((opt) => trainRow(opt));
+}
+
+function trainRow(opt: TrainOption): TrainRow {
+  return {
+    cars: opt.carsPerTrain,
+    trains: opt.nTrains,
+    stationMw: formatRate(opt.stationPowerMw),
+    sustainedRate: formatRate(opt.throughput),
+    stationLimited: opt.ceilingBound,
+  };
+}
+
+/** The train belt-feed footnote line ("belt feed: Mk4 × 2 = 960/min per
+ *  platform"), naming the tier the dual feed came from. */
+export function trainBeltFeedFootnote(plan: TransportTrain): string {
+  return `belt feed: Mk${plan.beltTierIndex} × 2 = ${formatRate(plan.beltFeed)}/min per platform`;
+}
+
+/** The one-platform-per-car footnote (platforms/end is not a table column). */
+export const TRAIN_PLATFORM_FOOTNOTE = "1 platform per car per end";
+
+/** The train optimistic-basis note, shown when the trip is estimated. */
+export function trainEstimatedNote(plan: TransportTrain): string | null {
+  return plan.tripBasis === "estimated"
+    ? "round trip estimated" + ESTIMATED_SUFFIX
+    : null;
+}
+
+// ---------------------------------------------------------------------------
+// Edge-label chip — the compact per-link summary.
+// ---------------------------------------------------------------------------
+
+/**
+ * The compact edge-label chip for a configured NON-belt link ("· 3 trucks",
+ * "· 2×4-car trains", "· 5 drones"), with a leading "≈" when the basis is
+ * estimated. Returns null for a belt link (renders exactly as today), an
+ * unsolved link (no count yet), or an errored/parse-failed config (the chip
+ * carries only counts, never error prose — the inspector shows the error).
+ *
+ * The train chip picks the SMALLEST-consist row (cars 1) as the representative
+ * count — a stable, single summary for the many comparable options.
+ */
+export function edgeChip(plan: TransportPlan): string | null {
+  switch (plan.kind) {
+    case "continuous":
+      // Belt renders as today (no chip); a configured pipe shows its count.
+      if (plan.mode === "belt") return null;
+      return chip(`${plan.result.runs} pipes`, false);
+    case "vehicle": {
+      const n = plan.result.nVehicles;
+      const noun =
+        n === 1n ? vehicleNoun(plan.mode) : vehicleNounPlural(plan.mode);
+      return chip(`${n} ${noun}`, plan.result.tripBasis === "estimated");
+    }
+    case "train": {
+      const first = plan.options[0];
+      if (first === undefined) return null;
+      const carLabel = `${first.carsPerTrain}-car`;
+      const noun = first.nTrains === 1 ? "train" : "trains";
+      return chip(
+        `${first.nTrains}×${carLabel} ${noun}`,
+        plan.tripBasis === "estimated",
+      );
+    }
+    case "drone": {
+      const n = plan.result.nDrones;
+      const noun = n === 1n ? "drone" : "drones";
+      return chip(`${n} ${noun}`, plan.result.tripBasis === "estimated");
+    }
+    default:
+      // unsolved | error — no count to summarize.
+      return null;
+  }
+}
+
+/** Prefix a chip body with "· " (and "≈" when estimated). */
+function chip(body: string, estimated: boolean): string {
+  return estimated ? `· ≈ ${body}` : `· ${body}`;
+}
+
+// ---------------------------------------------------------------------------
+// Mode nouns.
+// ---------------------------------------------------------------------------
+
+function vehicleNoun(mode: string): string {
+  switch (mode) {
+    case "truck":
+      return "truck";
+    case "tractor":
+      return "tractor";
+    case "explorer":
+      return "explorer";
+    case "fluid-truck":
+      return "fluid truck";
+    default:
+      return "vehicle";
+  }
+}
+
+function vehicleNounPlural(mode: string): string {
+  const one = vehicleNoun(mode);
+  return one + "s";
+}
+
+// ---------------------------------------------------------------------------
+// The transport-rate-unsustainable finding predicate + hint (Axis 4).
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a train link's required rate exceeds what one station pair can sustain
+ * at ANY enumerated consist size — the sole new finding's predicate, evaluated
+ * on the max-car row in EXPOSED P1 fields only:
+ *   `rate > perPlatformCeiling × maxCars`
+ * on that row (per-platform ceiling × platform count, one platform per car).
+ * Both ceiling terms are c-independent, so the max-car row maximizes the pair
+ * ceiling (the frozen predicate arithmetic). Returns the binding row (for the
+ * hint's ceilingBound gate) or null when the rate is sustainable.
+ */
+export function unsustainableTrainRow(
+  rate: Fraction,
+  options: TrainOption[],
+): TrainOption | null {
+  if (options.length === 0) return null;
+  const maxRow = options[options.length - 1]!;
+  const pairCeiling = maxRow.perPlatformCeiling.mul(
+    Fraction.from(maxRow.carsPerTrain),
+  );
+  return rate.gt(pairCeiling) ? maxRow : null;
+}
+
+/**
+ * The unsustainable-train finding sentence + its belt-feed hint. The hint is
+ * gated DIRECTLY on the binding row's `ceilingBound` (its documented meaning IS
+ * "the belt-feed arm binds") — no UI-side recomputation of the min() arms.
+ */
+export function unsustainableTrainText(
+  itemName: string,
+  rate: Fraction,
+  row: TrainOption,
+): string {
+  const ceiling = formatRate(
+    row.perPlatformCeiling.mul(Fraction.from(row.carsPerTrain)),
+  );
+  const base = `${itemName}: ${formatRate(rate)}/min exceeds what one station pair sustains at any consist size (max ${ceiling}/min at ${row.carsPerTrain} cars).`;
+  return row.ceilingBound
+    ? base + " A faster belt feed would raise the station ceiling."
+    : base;
+}
