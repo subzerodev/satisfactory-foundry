@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-04
 **Status:** in-progress
-**Current phase:** Phase 0 (hygiene: #28 + #34) — in progress
+**Current phase:** Phase 1 (interaction polish, #37) — design next
 **Final PR:** —
 **Epic:** #36 (board #21, Stage 8 milestone 79)
 
@@ -30,8 +30,13 @@ Excluded by directive: vehicle catalog admission; sharing/PWA.
 
 ### Phase 0 — hygiene (#28 + #34)
 
-- **Status:** in progress
-- **Tickets:** #28 (In Progress), #34 (In Progress)
+- **Status:** complete (merged --no-ff to develop 2026-08-04 @ 9425de0;
+  575/575 tests; 2-round design gate — r1 caught the null-on-unsolved
+  contract defect pre-code — + simplify affirmed right-sized; boundary
+  APPROVED×2 zero findings first round; the fifth-site fold decided +
+  executed via the provably-equal tier derivation; behavior-preserving
+  throughout, existing assertions byte-unchanged)
+- **Tickets:** #28 (Done), #34 (Done)
 
 ### Phases 1–4 — deferred design
 
@@ -39,6 +44,12 @@ Excluded by directive: vehicle catalog admission; sharing/PWA.
 
 ## Decisions log
 
+- 2026-08-04 (P0 landed): catalog maps are null-prototype at both build
+  boundaries (parse + revive; the serialize DTO stays plain — write-only);
+  planForLink's null is reserved for missing-item ONLY (unsolved flows
+  through; belt resolves); all FIVE resolve sites fold through it —
+  computeTransportFindings lost its unlockedTiers param (provably equal
+  to the plan-global derivation).
 - 2026-08-04: Arc started; decomposition on epic #36.
 
 ## Final report

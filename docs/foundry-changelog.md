@@ -3,6 +3,16 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-04 — Stage 8, Phase 0: under-the-hood housekeeping
+
+> Hey Michael — nothing to see this time, and that's the point. Two
+> internal clean-ups landed: the game-data lookups are now bulletproof
+> against a weird edge case (an item literally named "constructor"
+> could have confused JavaScript's plumbing), and five copies of the
+> same transport-resolving code became one. Everything works exactly
+> as before — flag anything odd if you spot it. Next up: the one-click
+> apply button and clicking sites on the combined floor plan.
+
 ## 2026-08-04 — Stage 7 complete: the whole chain on one floor plan
 
 > Hey Michael — the last piece of the logistics arc is in. Flip the
