@@ -3,6 +3,20 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-04 — Stage 4 complete: the blueprint view
+
+> Hey Michael — flip the new "View: Blueprint" button above the
+> schematic and your solved stage becomes a floor plan: the actual
+> foundation tiles you'd need to lay, every machine drawn at its true
+> in-game size (a Constructor really is 7.9m wide on the drawing),
+> splitters and mergers in their spots along the feed and output
+> lanes, and markers showing exactly where each fresh belt drops in or
+> breaks out — labelled with the exact rates. It's drawn to scale
+> straight from real meters, so what you see is what you'd build.
+> Click any stage on the canvas and flip to its blueprint. One click
+> back and you're on the familiar schematic. This closes the physical
+> layout arc — one stage to go: the polish round.
+
 ## 2026-08-04 — Stage 4, Phase 1: the layout brain (nothing visible yet)
 
 > Hey Michael — the app just learned real-world geometry. Under the

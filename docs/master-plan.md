@@ -69,6 +69,9 @@ canvas; polish lands last on the finished surface.
 - **Goal:** geometry over the solve — footprints, splitter placement,
   foundation alignment; the schematic becomes a buildable blueprint view.
 - **Ticket:** #13 (milestone 75). Blocked-by Stage 3.
+- **Status: SHIPPED 2026-08-04** — two phases (layout engine #20,
+  blueprint view #21), both Done; 377/377 tests; released via the
+  Stage 4 PR. Record: `features/physical-layout/FEATURE.md`.
 
 ## Stage 5 — Polish round
 

@@ -1,8 +1,8 @@
 # Physical layout — geometry over the solve (Stage 4 arc)
 
 **Started:** 2026-08-04
-**Status:** in-progress
-**Current phase:** Phase 1 COMPLETE — Phase 2 (blueprint view) designing
+**Status:** COMPLETE (both phases merged)
+**Current phase:** arc closed 2026-08-04
 **Final PR:** —
 **Epic:** #13 (board #21, Stage 4 milestone 75)
 
@@ -36,9 +36,15 @@ epic's research-grounding decision.
   entry/breakout points; foundation-tile alignment; the LayoutResult
   contract Phase 2 renders; testing posture.
 
-### Phase 2 — blueprint view (deferred design)
+### Phase 2 — blueprint view
 
-- **Ticket:** #21 (blocked-by #20)
+- **Status:** complete (merged --no-ff to develop 2026-08-04; 377/377
+  tests; 2-round design gate — both r1 reviewers independently caught
+  the same hook-rules defect, folded to memo-in-the-leaf — + simplify;
+  boundary converged with nits folded; diff-simplify folds re-checked
+  APPROVED×2; walk-verified incl. hand-checked viewBoxes and the
+  Constructor sub-metre pitch; ticket #21 Done)
+- **Ticket:** #21 (Done, closed)
 
 ## Decisions log
 
@@ -49,6 +55,11 @@ epic's research-grounding decision.
   with grid origins (gap variable); junctions live IN the LayoutResult
   (simplify rejection — one tested home); provenance in the file header;
   layout has its OWN lint block (state|ui banned, data allowed).
+- 2026-08-04 (P2 design): Blueprint computes its OWN layout
+  (memo-in-the-leaf; mounting gates recompute); App composes complete
+  two-sided label strings; dm-native SVG viewBox with overflow:visible;
+  single toggle button; z-order pinned, styling at implementer
+  discretion.
 - 2026-08-04 (P1 implementation): all 11 bundled producers wiki-cited,
   zero defaults; buses span 0→N×pitch because a clamp-to-N drop mark
   genuinely lands at the row-tail boundary; host-globals lint ban
