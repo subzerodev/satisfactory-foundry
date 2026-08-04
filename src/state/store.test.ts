@@ -1678,6 +1678,81 @@ describe("stage graph — reconciliation math + cadence (Stage 3 P1)", () => {
   });
 });
 
+describe("setStageMachineCount — per-stage write (Stage 8 P1, the apply affordance)", () => {
+  // A producer→consumer chain where the CONSUMER (b) is the active stage, so
+  // writing the producer (a) exercises the non-active path. ingot_iron and
+  // iron_plate are both 30/min per machine (duration 2, amount 1).
+  async function chain(nProducer: number, mConsumer: number) {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT_CHAIN);
+    const a = store.getState().stageOrder[0]!;
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setMachineCount(nProducer);
+    store.getState().addStage();
+    const b = store.getState().stageOrder[1]!;
+    store.getState().setActiveStage(b); // consumer is the ACTIVE stage
+    store.getState().selectRecipe("iron_plate");
+    store.getState().setMachineCount(mConsumer);
+    store
+      .getState()
+      .addLink({ fromStageId: a, itemId: "iron_ingot", toStageId: b });
+    return { store, a, b };
+  }
+
+  it("writes a NON-active stage's machineCount + re-derives, active stage untouched", async () => {
+    const { store, a, b } = await chain(1, 2); // producer=30, consumer=60 → short 30
+    const beforeActive = store.getState().stages[b]!;
+    expect(store.getState().reconciliation).toHaveLength(1);
+    expect(store.getState().reconciliation[0]!.type).toBe("under-supply");
+
+    // Apply the match count to the PRODUCER (non-active). Its solve re-derives
+    // to 60/min, closing the shortfall.
+    store.getState().setStageMachineCount(a, 2);
+    const s = store.getState();
+
+    // The producer's selection took the write and re-derived.
+    expect(s.stages[a]!.selection.machineCount).toBe(2);
+    // The shortfall is gone (supply now matches demand).
+    expect(s.reconciliation).toEqual([]);
+
+    // The active stage (b) is UNTOUCHED — cursor, selection, and solve identity
+    // all preserved (the mirror never followed the non-active write).
+    expect(s.activeStageId).toBe(b);
+    expect(s.stages[b]!.selection).toBe(beforeActive.selection);
+    expect(s.stages[b]!.solve).toBe(beforeActive.solve);
+    expect(s.selection).toBe(s.stages[b]!.selection); // top-level mirror stays b
+  });
+
+  it("is a no-op for an unknown stage id", async () => {
+    const { store, a, b } = await chain(1, 2);
+    const beforeA = store.getState().stages[a]!;
+    const beforeB = store.getState().stages[b]!;
+    const keysBefore = Object.keys(store.getState().stages).sort();
+    store.getState().setStageMachineCount("no-such-stage", 99);
+    const s = store.getState();
+    // No stage touched, and no phantom stage created (the guard returns {}
+    // before any derive/mirror — never a stray stages["no-such-stage"]).
+    expect(s.stages[a]).toBe(beforeA);
+    expect(s.stages[b]).toBe(beforeB);
+    expect(Object.keys(s.stages).sort()).toEqual(keysBefore);
+    expect(s.reconciliation).toHaveLength(1);
+    expect(s.reconciliation[0]!.type).toBe("under-supply");
+  });
+
+  it("delegates for the active stage — setStageMachineCount(active) matches setMachineCount", async () => {
+    // The active-path delegation proof: writing the active stage via the new
+    // action lands the same solve the active setter does. (The existing
+    // setMachineCount tests pin the active behavior unchanged; this pins that
+    // the generalized action IS that behavior when stageId === activeStageId.)
+    const { store, b } = await chain(1, 2);
+    store.getState().setStageMachineCount(b, 3);
+    const viaStage = store.getState().stages[b]!.solve;
+    expect(store.getState().stages[b]!.selection.machineCount).toBe(3);
+    // The active mirror follows (b IS active).
+    expect(store.getState().solve).toBe(viaStage);
+  });
+});
+
 describe("stage graph — tiers-global + multi-stage re-upload (Stage 3 P1)", () => {
   it("setUnlockedTiers writes ALL stages and re-derives every one", async () => {
     const store = createAppStore(makeStorageStub().storage);
