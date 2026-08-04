@@ -182,8 +182,11 @@ droneFleet(rate, stackSize, fuel, tripInput) -> {
 ## Test plan sketch
 
 Fact-table validation targets as fixtures: the wiki's precomputed train
-ceilings (stack 50 → 1431.17 ≡ `Fraction.of(143117, 100)`… exact forms
-recomputed from the formula, cross-checked to 2 dp), drone battery cases
+ceilings recomputed from the formula with the EXACT lockout constant —
+they cross-check against the wiki's figures within the wiki's own rounding
+artifact (the wiki used its rounded 0.4513 min, so e.g. stack 50 → exact
+800000/559 ≈ 1431.13 vs the wiki's displayed 1431.17; amendment per the
+#31 boundary decision, 2026-08-04), drone battery cases
 (0 km → 4 batteries; 5 km → 9), truck example (48 × 100 stack, 60 s measured
 round trip + 16 s docking → exact fleet), estimated-vs-measured basis
 propagation, enumeration bound + ceiling-binding rows, ceil edge (exact
