@@ -208,7 +208,7 @@ function recipeNameOf(catalog: Catalog, stage: StageNode): string | null {
  * consumer (which changes the wording). Null when the producer is unsolved /
  * lacks the output lane — then the edge shows its base under-supply label.
  */
-interface SupplySuggestion {
+export interface SupplySuggestion {
   machines: number;
   fanOut: boolean;
 }
@@ -272,7 +272,7 @@ function edgeLabelFor(
  * The sibling demand is read UNIFORMLY from each consumer's totalDemand (the
  * same source mapLinkInputs reads), so all siblings agree by construction.
  */
-function supplySuggestionFor(
+export function supplySuggestionFor(
   producerId: string,
   itemId: string,
   stages: Record<string, StageNode>,

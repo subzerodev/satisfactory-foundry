@@ -762,6 +762,21 @@ body {
   font-style: italic;
 }
 
+/* Apply affordance (Stage 8 / Phase 1, Axis 1): the under-supply match-demand
+   readout + the "apply ×N to <producer>" action — the MeasureFeed idiom. */
+.link-inspector-supply {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.link-inspector-supply-readout {
+  margin: 0;
+  color: var(--error);
+  font-size: 13px;
+}
+
 .train-table {
   border-collapse: collapse;
   font-size: 13px;
