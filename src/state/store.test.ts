@@ -1845,11 +1845,11 @@ describe("plans carry the graph (Stage 3 P3)", () => {
   });
 
   it("a null machineCount in the file → NaN on load (per stage), rendered invalid", async () => {
-    // A saved-invalid NaN count serializes as null (JSON.stringify(NaN) → null,
-    // the shipped Selection round-trip edge; isSelectionShape accepts null). The
-    // per-stage build coercion must reconstitute it as NaN so the stage loads
-    // rendered-invalid. Simulate the null-in-file case directly (IDB's structured
-    // clone would preserve a live NaN — the coercion targets the null edge).
+    // Plans persist via IDB structured clone, which keeps a live NaN — the
+    // null-machineCount edge arises from hand-authored/imported/legacy JSON
+    // files (isSelectionShape accepts null). The per-stage build coercion must
+    // reconstitute null as NaN so the stage loads rendered-invalid. Simulate
+    // the null-in-file case directly, as such a file would present it.
     const store = await chainStore();
     store.getState().selectRecipe("ingot_iron");
     await store.getState().savePlanAs("Broken");

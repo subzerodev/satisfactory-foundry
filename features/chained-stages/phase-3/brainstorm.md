@@ -118,7 +118,9 @@ brainstorm decisions on the ticket #11 trail.
    `{id, name, selection, solve: idle}` (solve seeded idle, overwritten by
    step 5's derive — r1 nit); **per stage, the frozen machineCount
    null→NaN coercion applies** (r1 fold, both reviewers:
-   `JSON.stringify(NaN)` emits null, so a saved-invalid stage must load
+   a null machineCount is accepted by the validator (it arises from
+   hand-authored/imported/legacy JSON files — IDB structured clone itself
+   keeps NaN; boundary-r1 wording fix), and such a stage must load
    rendered-invalid — exactly store.ts's current single-stage coercion,
    now per entry); `stageOrder` = array order; `links` rebuilt from
    indices → fresh link uuids; `positions` from file entries (missing →
@@ -181,9 +183,11 @@ change.)
 2. IDB `plans` store rows are opaque JSON keyed by uuid — payload growth
    needs no schema/version change — grounded: plan-store.ts row shape +
    db.ts v2 stores.
-3. Selection round-trips through JSON with ONE known lossy edge (r1 fold):
-   `machineCount: NaN` serializes as null and MUST be coerced back per
-   stage (Axis 4 step 2). Fraction-bearing fields serialize via their
+3. Selection round-trips intact through the actual persistence path (IDB
+   structured clone — NaN survives); the ONE guarded edge (r1 fold, wording
+   corrected at boundary r1): `machineCount: null` from hand-authored/
+   imported/legacy JSON files MUST be coerced to NaN per stage (Axis 4
+   step 2). Fraction-bearing fields serialize via their
    string forms (Stage-2 shipped behavior, grounded in its round-trip
    tests); position x/y are plain IEEE floats, exact through JSON.
 4. Array-index link references are unambiguous because stages array order is

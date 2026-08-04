@@ -448,8 +448,10 @@ function deriveAllStages(
  * Axis 4). Builds a fresh graph — new stage/link uuids — and applies the frozen
  * load treatments per stage:
  *
- * - machineCount `null → NaN` (JSON emits null for a saved-invalid NaN; it must
- *   load rendered-invalid, matching the single-stage coercion this replaces);
+ * - machineCount `null → NaN` (plans persist via IDB structured clone, which
+ *   keeps a live NaN — the null edge arises from hand-authored/imported/legacy
+ *   JSON files, and isSelectionShape accepts it; such a stage must load
+ *   rendered-invalid, matching the single-stage coercion this replaces);
  * - the CURRENT global unlockedTiers are stamped over every stage (tiers are
  *   progression, not plan content — the file's stored tiers are dead-on-read);
  * - recipeId re-validated against the current catalog (absent → null); overrides
