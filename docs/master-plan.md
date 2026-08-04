@@ -60,6 +60,9 @@ canvas; polish lands last on the finished surface.
   Flow node editor); one stage's outputs feed the next; supersedes the
   third-party Modeler. Tier-3 multi-phase arc; decomposition at pickup.
 - **Epic:** #12 (milestone 74). Blocked-by Stage 2.
+- **Status: SHIPPED 2026-08-04** — three phases (graph model #16, canvas
+  #17, plans-carry-graph #18), all Done; 347/347 tests; released via the
+  Stage 3 PR. Record: `features/chained-stages/FEATURE.md`.
 
 ## Stage 4 — Physical layout layer
 

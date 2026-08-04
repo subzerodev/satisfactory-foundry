@@ -3,6 +3,36 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-04 — Stage 3 complete: plans save the whole factory
+
+> Hey Michael — saving a plan now keeps everything. Your stages, their
+> recipes and tweaks, the wires between them, even where you dragged
+> each card on the canvas — one Save captures the whole factory, and
+> Load brings it back exactly, fractions and all. Plans you saved
+> before this update still open fine (they come back as a single
+> stage, and the next save quietly upgrades them). Your unlocked
+> belt/pipe tiers stay YOUR tiers — loading someone's plan never
+> rewinds your progression. And if the game data changed since a plan
+> was saved, anything that no longer exists is shown honestly as
+> missing instead of pretending. This closes out the chained-stages
+> arc — the whole-factory editor is done.
+
+## 2026-08-04 — Stage 3, Phase 2: the factory canvas
+
+> Hey Michael — your factory is a map now. Above the usual controls
+> there's a canvas: each stage is a card (its name, recipe, machine
+> count, and a badge if something's off), and you drag a wire from one
+> card's right edge to the next card's left edge to feed one stage into
+> another. The wire labels itself with what flows and how healthy it is —
+> "Iron Ingot · ok" when supply covers demand, "short 30/min" the moment
+> you add a machine downstream and outrun the smelters, exact numbers
+> always. Drag cards wherever you like, double-click a name to rename,
+> ✕ removes a stage (and its wires), ＋ adds one. Click any card and the
+> whole lower screen becomes that stage's manifold drill-in. If a
+> connection can't work, a small note in the corner says why in plain
+> words — a stage with no recipe yet, two stages that share no item, or
+> a feed lane that's already taken. Nothing is silently dropped.
+
 ## 2026-08-03 — Stage 2: save your factory plans
 
 > Hey Michael — you can name and keep your setups now. Dial in a stage

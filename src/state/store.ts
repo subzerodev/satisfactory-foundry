@@ -17,6 +17,8 @@ import type { StateStorage } from "zustand/middleware";
 import { Fraction } from "../core/fraction.ts";
 import { solveStage } from "../core/manifold.ts";
 import type { StageSolveResult } from "../core/manifold.ts";
+import { reconcileLinks } from "../core/reconcile.ts";
+import type { LinkInput, LinkFinding } from "../core/reconcile.ts";
 import type { Catalog } from "../data/types.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
@@ -30,7 +32,7 @@ import {
   loadPlan as loadPlanFile,
   deletePlan as deletePlanFile,
 } from "../data/plan-store.ts";
-import type { PlanFileV1, PlanListEntry } from "../data/plan-store.ts";
+import type { PlanFileV2, PlanListEntry } from "../data/plan-store.ts";
 
 // ---------------------------------------------------------------------------
 // State shape (frozen brainstorm Axis 2)
@@ -70,8 +72,63 @@ export type SolveState =
       detail: string;
     };
 
+/**
+ * One node in the stage graph. The v1 single-stage case IS a one-node graph.
+ * `id` is a stable uuid (survives renames); `selection`/`solve` carry the
+ * frozen v1 per-stage shapes, each stage solved eagerly with v1 semantics.
+ */
+export interface StageNode {
+  id: string;
+  name: string;
+  selection: Selection;
+  solve: SolveState;
+}
+
+/**
+ * A directed item feed: `from`'s output belts of `itemId` feed `to`'s input
+ * lane of `itemId`. Item-level, not belt-level (physical routing is Stage 4).
+ */
+export interface StageLink {
+  id: string;
+  fromStageId: string;
+  itemId: string;
+  toStageId: string;
+}
+
 export interface AppState {
   catalog: CatalogState;
+  /**
+   * The stage graph (Stage 3 / Phase 1). `stages` is keyed by node id;
+   * `stageOrder` is insertion order (canvas + list stability); `activeStageId`
+   * is the stage the v1 UI edits — it ALWAYS resolves (removeStage moves the
+   * cursor; the last stage can't be removed).
+   */
+  stages: Record<string, StageNode>;
+  stageOrder: string[];
+  activeStageId: string;
+  links: StageLink[];
+  /** Derived per-link reconciliation findings (see src/core/reconcile.ts). */
+  reconciliation: LinkFinding[];
+  /**
+   * Canvas node positions, keyed by stage id (Stage 3 / Phase 2). Session state
+   * this phase — persisting them is Phase 3's plan-format decision (deferred,
+   * mirroring the P1 links posture). `removeStage` prunes the removed id so no
+   * orphan entries accumulate.
+   */
+  positions: Record<string, { x: number; y: number }>;
+  /**
+   * Monotonic auto-placement counter (never reused, immune to stageOrder
+   * compaction). `addStage` maps the current value to a column-flow slot, then
+   * increments. Never-reused means two auto-placed nodes cannot share a slot by
+   * construction, so no collision handling is needed (frozen Axis 2 simplify).
+   */
+  placementSeq: number;
+  /**
+   * The active stage's selection/solve, MIRRORED at top level so the frozen v1
+   * UI + the existing store suite read `selection`/`solve` unchanged. Kept
+   * byte-identical to `stages[activeStageId]` after every mutation; the
+   * `activeSelection`/`activeSolve` selectors are the canonical read path.
+   */
   selection: Selection;
   solve: SolveState;
   /**
@@ -117,6 +174,15 @@ export interface Actions {
     capacityText: string | null,
   ): void;
   clearOverrides(): void;
+  // Graph actions (Stage 3 / Phase 1) — all synchronous (no IDB this phase):
+  // mutate-then-recompute, no plan-op chain.
+  addStage(): void;
+  removeStage(id: string): void;
+  renameStage(id: string, name: string): void;
+  setActiveStage(id: string): void;
+  addLink(link: Omit<StageLink, "id">): void;
+  removeLink(id: string): void;
+  setStagePosition(id: string, pos: { x: number; y: number }): void;
   refreshPlans(): Promise<void>;
   savePlanAs(name: string): Promise<void>;
   loadPlan(id: string): Promise<void>;
@@ -125,6 +191,20 @@ export interface Actions {
 }
 
 export type Store = AppState & Actions;
+
+// ---------------------------------------------------------------------------
+// Active-stage selectors — the canonical v1 read path (Stage 3 / Phase 1)
+// ---------------------------------------------------------------------------
+
+/** The active stage's selection (== the top-level mirror, kept identical). */
+export function activeSelection(s: AppState): Selection {
+  return s.selection;
+}
+
+/** The active stage's solve (== the top-level mirror, kept identical). */
+export function activeSolve(s: AppState): SolveState {
+  return s.solve;
+}
 
 // ---------------------------------------------------------------------------
 // Defaults (frozen spec §Defaults)
@@ -140,6 +220,16 @@ function defaultSelection(): Selection {
       pipe: TIER_TABLE.pipe.length,
     },
     overrides: { feeds: {}, outputs: {} },
+  };
+}
+
+/** A fresh default stage node ("Stage N"), solve idle until derived. */
+function defaultStage(name: string): StageNode {
+  return {
+    id: crypto.randomUUID(),
+    name,
+    selection: defaultSelection(),
+    solve: { status: "idle" },
   };
 }
 
@@ -252,6 +342,223 @@ function derive(catalog: CatalogState, selection: Selection): SolveState {
       detail: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Graph recompute helpers (Stage 3 / Phase 1) — pure over the state slice.
+// Actions mutate stages/links, then compose these to re-derive solves + the
+// top-level active mirror + reconciliation, so no action observes a half-state.
+// ---------------------------------------------------------------------------
+
+/** The subset of AppState these helpers read/rewrite. */
+type GraphSlice = Pick<
+  AppState,
+  | "catalog"
+  | "stages"
+  | "stageOrder"
+  | "activeStageId"
+  | "links"
+  | "reconciliation"
+  | "positions"
+  | "selection"
+  | "solve"
+>;
+
+/** Re-derive one stage's solve against the current catalog (v1 semantics). */
+function deriveStage(catalog: CatalogState, stage: StageNode): StageNode {
+  return { ...stage, solve: derive(catalog, stage.selection) };
+}
+
+/**
+ * Mirror the active stage's selection/solve up to the top-level fields the v1
+ * UI + the store suite read. Called after any mutation that could change which
+ * stage is active or the active stage's contents.
+ */
+function mirrorActive(slice: GraphSlice): GraphSlice {
+  const active = slice.stages[slice.activeStageId]!;
+  return { ...slice, selection: active.selection, solve: active.solve };
+}
+
+/**
+ * Map the current graph to reconcile inputs: for each link, look up the
+ * producer's totalOutput and the consumer's totalDemand for the flowing item
+ * (a lookup, never math). A missing stage / non-solved stage / absent lane →
+ * null (surfaces as dangling-link). Order follows `links` for determinism.
+ */
+function mapLinkInputs(slice: GraphSlice): LinkInput[] {
+  return slice.links.map((link) => {
+    const from = slice.stages[link.fromStageId];
+    const to = slice.stages[link.toStageId];
+    const supply =
+      from !== undefined && from.solve.status === "solved"
+        ? (from.solve.result.outputs.find((o) => o.itemId === link.itemId)
+            ?.totalOutput ?? null)
+        : null;
+    const demand =
+      to !== undefined && to.solve.status === "solved"
+        ? (to.solve.result.feeds.find((f) => f.itemId === link.itemId)
+            ?.totalDemand ?? null)
+        : null;
+    return { linkId: link.id, supply, demand };
+  });
+}
+
+/** Recompute reconciliation from the current stage solves + links. */
+function recomputeReconciliation(slice: GraphSlice): GraphSlice {
+  return { ...slice, reconciliation: reconcileLinks(mapLinkInputs(slice)) };
+}
+
+/**
+ * Write a new selection into the ACTIVE stage, re-derive that stage, mirror it
+ * up, and recompute reconciliation. The single-stage-mutation path used by the
+ * six v1 setters + loadPlan.
+ */
+function applyActiveSelection(slice: GraphSlice, next: Selection): GraphSlice {
+  const active = slice.stages[slice.activeStageId]!;
+  const stage = deriveStage(slice.catalog, { ...active, selection: next });
+  const stages = { ...slice.stages, [stage.id]: stage };
+  return recomputeReconciliation(mirrorActive({ ...slice, stages }));
+}
+
+/**
+ * Re-derive EVERY stage against the current catalog, mirror the active stage
+ * up, and recompute reconciliation. The multi-stage-derive path (cadence
+ * table): setUnlockedTiers (tiers-global), uploadDocsText parse-success, init.
+ * `mapSelection` optionally rewrites each stage's selection first — the #5
+ * treatment (recipeId re-validation + override clear) on upload passes it;
+ * setUnlockedTiers passes the all-stages tier write; init passes identity.
+ */
+function deriveAllStages(
+  slice: GraphSlice,
+  mapSelection: (sel: Selection) => Selection,
+): GraphSlice {
+  const stages: Record<string, StageNode> = {};
+  for (const id of Object.keys(slice.stages)) {
+    const node = slice.stages[id]!;
+    stages[id] = deriveStage(slice.catalog, {
+      ...node,
+      selection: mapSelection(node.selection),
+    });
+  }
+  return recomputeReconciliation(mirrorActive({ ...slice, stages }));
+}
+
+/**
+ * Whole-graph replacement from a loaded `PlanFileV2` (Stage 3 / Phase 3, frozen
+ * Axis 4). Builds a fresh graph — new stage/link uuids — and applies the frozen
+ * load treatments per stage:
+ *
+ * - machineCount `null → NaN` (plans persist via IDB structured clone, which
+ *   keeps a live NaN — the null edge arises from hand-authored/imported/legacy
+ *   JSON files, and isSelectionShape accepts it; such a stage must load
+ *   rendered-invalid, matching the single-stage coercion this replaces);
+ * - the CURRENT global unlockedTiers are stamped over every stage (tiers are
+ *   progression, not plan content — the file's stored tiers are dead-on-read);
+ * - recipeId re-validated against the current catalog (absent → null); overrides
+ *   apply VERBATIM (the load posture — the #5 override-CLEAR is upload-only);
+ * - positions from the file entry, else the auto-slot for the entry's index;
+ * - stageOrder = array order; links rebuilt from indices; placementSeq =
+ *   stages.length; activeStageId = first (matches removeStage's cursor-to-first).
+ *
+ * Links are NOT pruned by recipe re-validation: a link whose endpoint went
+ * recipe-less flags as dangling (frozen P1), never silently dropped. The final
+ * deriveAllStages overwrites the seeded-idle solves + recomputes reconciliation;
+ * mirrorActive re-points the top-level v1 mirror.
+ */
+function rebuildFromPlan(
+  slice: GraphSlice,
+  plan: PlanFileV2,
+): GraphSlice & { placementSeq: number } {
+  const { catalog } = slice;
+  // Current global tiers (the active mirror holds the canonical global value).
+  const globalTiers = slice.selection.unlockedTiers;
+  const ids = plan.stages.map(() => crypto.randomUUID());
+  const stages: Record<string, StageNode> = {};
+  const stageOrder: string[] = [];
+  const positions: Record<string, { x: number; y: number }> = {};
+  plan.stages.forEach((entry, i) => {
+    const id = ids[i]!;
+    const saved = entry.selection;
+    const recipeId =
+      saved.recipeId !== null &&
+      catalog.status === "ready" &&
+      catalog.catalog.recipes[saved.recipeId] !== undefined
+        ? saved.recipeId
+        : null;
+    const machineCount = saved.machineCount === null ? NaN : saved.machineCount;
+    const selection: Selection = {
+      recipeId,
+      machineCount,
+      clockPercentText: saved.clockPercentText,
+      unlockedTiers: { ...globalTiers },
+      overrides: saved.overrides,
+    };
+    stages[id] = { id, name: entry.name, selection, solve: { status: "idle" } };
+    stageOrder.push(id);
+    positions[id] = entry.position ?? placementSlot(i);
+  });
+  const links: StageLink[] = plan.links.map((l) => ({
+    id: crypto.randomUUID(),
+    fromStageId: ids[l.from]!,
+    toStageId: ids[l.to]!,
+    itemId: l.itemId,
+  }));
+  const rebuilt: GraphSlice = {
+    ...slice,
+    stages,
+    stageOrder,
+    links,
+    positions,
+    activeStageId: ids[0]!,
+  };
+  // deriveAllStages overwrites the seeded-idle solves, mirrors the active stage,
+  // and recomputes reconciliation — the full-recompute cadence for a
+  // state-replacing mutation. placementSeq re-seeds to the next fresh slot.
+  return {
+    ...deriveAllStages(rebuilt, (sel) => sel),
+    placementSeq: plan.stages.length,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Canvas helpers (Stage 3 / Phase 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * The column-flow slot a monotonic placement sequence maps to: four columns
+ * 260px apart, rows 140px apart (frozen Axis 2). Never-reused seq → no two
+ * auto-placed nodes share a slot, so no collision handling.
+ */
+function placementSlot(seq: number): { x: number; y: number } {
+  return {
+    x: 40 + (seq % 4) * 260,
+    y: 40 + Math.floor(seq / 4) * 140,
+  };
+}
+
+/**
+ * Pure READ mirror of `addLink`'s hard refusals (Stage 3 / Phase 2): "ok" when
+ * the link would be accepted, "self" for a self-link, "duplicate" for an
+ * existing (toStageId, itemId) feed lane. The canvas consults this to surface a
+ * notice BEFORE calling addLink; the enforcement itself stays in addLink.
+ *
+ * canLink and addLink MUST stay in lockstep — a drift degrades only to a stale
+ * notice (never a bad write), since addLink remains the sole enforcer, but the
+ * two refusal sets are meant to be identical. Any change to addLink's refusals
+ * must be mirrored here (and vice versa).
+ */
+export function canLink(
+  links: StageLink[],
+  from: string,
+  to: string,
+  itemId: string,
+): "ok" | "self" | "duplicate" {
+  if (from === to) return "self";
+  const duplicate = links.some(
+    (l) => l.toStageId === to && l.itemId === itemId,
+  );
+  if (duplicate) return "duplicate";
+  return "ok";
 }
 
 // ---------------------------------------------------------------------------
@@ -369,10 +676,26 @@ export function createAppStore(storage?: StateStorage) {
           return planOpChain;
         };
 
+        // The default stage lives in the INITIAL-STATE LITERAL (not init()):
+        // persist's `merge` runs synchronously during createAppStore, before
+        // init(), and must find stages[activeStageId].selection to hydrate the
+        // tiers into. The v1 single-stage case IS this one-node graph. Its
+        // selection/solve are mirrored to the top-level fields below.
+        const firstStage = defaultStage("Stage 1");
+
         return {
           catalog: { status: "initializing" },
-          selection: defaultSelection(),
-          solve: { status: "idle" },
+          stages: { [firstStage.id]: firstStage },
+          stageOrder: [firstStage.id],
+          activeStageId: firstStage.id,
+          links: [],
+          reconciliation: [],
+          // The default stage auto-places at seq 0's slot; placementSeq then
+          // points at the next free slot (Stage 3 / Phase 2).
+          positions: { [firstStage.id]: placementSlot(0) },
+          placementSeq: 1,
+          selection: firstStage.selection,
+          solve: firstStage.solve,
           catalogSource: null,
           uploadError: null,
           plans: null,
@@ -462,9 +785,10 @@ export function createAppStore(storage?: StateStorage) {
                 });
               }
             }
-            // Single first derive, after hydration + the catalog resolves.
-            const { catalog, selection } = get();
-            set({ solve: derive(catalog, selection) });
+            // First derive, after hydration + the catalog resolves. Re-derive
+            // ALL stages (cadence table): hydration is tiers-only and every
+            // stage boots default, so no #5 override-clear is needed — identity.
+            set((s) => deriveAllStages(s, (sel) => sel));
           },
 
           async uploadDocsText(text: string) {
@@ -493,29 +817,37 @@ export function createAppStore(storage?: StateStorage) {
                   },
                 });
               }
-              const state = get();
-              set({ solve: derive(state.catalog, state.selection) });
+              // Parse FAILURE (cadence table): solves none, reconciliation
+              // none. Re-derive the active stage only, to reflect any catalog
+              // change (needs-upload on a fresh-boot failure).
+              set((s) => applyActiveSelection(s, s.selection));
               return;
             }
 
             // Parse SUCCESS: the in-memory catalog IS replaced this session,
-            // regardless of the save outcome — so overrides clear and the
-            // recipeId is re-validated against the new catalog.
-            const survivingRecipeId =
-              get().selection.recipeId !== null &&
-              catalog.recipes[get().selection.recipeId!] !== undefined
-                ? get().selection.recipeId
-                : null;
-            set((s) => ({
-              catalog: { status: "ready", catalog },
-              // An upload flips provenance to user, hiding the bundled banner.
-              catalogSource: { kind: "user" },
-              selection: {
-                ...s.selection,
-                recipeId: survivingRecipeId,
-                overrides: { feeds: {}, outputs: {} },
-              },
-            }));
+            // regardless of the save outcome. The catalog replacement affects
+            // EVERY stage, so each gets the #5 treatment (recipeId re-validated
+            // against the new catalog + overrides cleared) and ALL stages
+            // re-derive; reconciliation recomputes (cadence table).
+            set((s) => {
+              const withCatalog: GraphSlice = {
+                ...s,
+                catalog: { status: "ready", catalog },
+              };
+              return {
+                ...deriveAllStages(withCatalog, (sel) => ({
+                  ...sel,
+                  recipeId:
+                    sel.recipeId !== null &&
+                    catalog.recipes[sel.recipeId] !== undefined
+                      ? sel.recipeId
+                      : null,
+                  overrides: { feeds: {}, outputs: {} },
+                })),
+                // An upload flips provenance to user, hiding the bundled banner.
+                catalogSource: { kind: "user" },
+              };
+            });
 
             // Persist to the cache. A save failure does NOT block 'ready' — the
             // catalog is usable this session, merely uncached — with uploadError
@@ -528,53 +860,50 @@ export function createAppStore(storage?: StateStorage) {
                 uploadError: `catalog loaded but could not be cached: ${message}`,
               });
             }
-
-            const state = get();
-            set({ solve: derive(state.catalog, state.selection) });
           },
 
           selectRecipe(recipeId: string | null) {
             // Overrides are lane-addressed per recipe; carrying them across
             // recipes would misaddress lanes, so a recipe change clears them.
-            set((s) => ({
-              selection: {
+            set((s) =>
+              applyActiveSelection(s, {
                 ...s.selection,
                 recipeId,
                 overrides: { feeds: {}, outputs: {} },
-              },
-            }));
-            const { catalog, selection } = get();
-            set({ solve: derive(catalog, selection) });
+              }),
+            );
           },
 
           setMachineCount(n: number) {
-            set((s) => ({ selection: { ...s.selection, machineCount: n } }));
-            const { catalog, selection } = get();
-            set({ solve: derive(catalog, selection) });
+            set((s) =>
+              applyActiveSelection(s, { ...s.selection, machineCount: n }),
+            );
           },
 
           setClockPercentText(text: string) {
-            set((s) => ({
-              selection: { ...s.selection, clockPercentText: text },
-            }));
-            const { catalog, selection } = get();
-            set({ solve: derive(catalog, selection) });
+            set((s) =>
+              applyActiveSelection(s, {
+                ...s.selection,
+                clockPercentText: text,
+              }),
+            );
           },
 
           setUnlockedTiers(t: { belt: number; pipe: number }) {
+            // Tiers are GLOBAL (game progression, not per-stage config): a tier
+            // change writes ALL stages and re-derives every one (cadence table).
             // Clamp at the action boundary so toStageInput's tier-range throw is
             // unreachable from store-driven flows (derive still catches).
-            set((s) => ({
-              selection: {
-                ...s.selection,
-                unlockedTiers: {
-                  belt: clampTier("belt", t.belt),
-                  pipe: clampTier("pipe", t.pipe),
-                },
-              },
-            }));
-            const { catalog, selection } = get();
-            set({ solve: derive(catalog, selection) });
+            const clamped = {
+              belt: clampTier("belt", t.belt),
+              pipe: clampTier("pipe", t.pipe),
+            };
+            set((s) =>
+              deriveAllStages(s, (sel) => ({
+                ...sel,
+                unlockedTiers: clamped,
+              })),
+            );
           },
 
           setOverride(
@@ -594,29 +923,142 @@ export function createAppStore(storage?: StateStorage) {
                 next.push(null);
               }
               next[beltIndex] = capacityText;
-              return {
-                selection: {
-                  ...s.selection,
-                  overrides: {
-                    ...s.selection.overrides,
-                    [side]: { ...sideMap, [itemId]: next },
-                  },
+              return applyActiveSelection(s, {
+                ...s.selection,
+                overrides: {
+                  ...s.selection.overrides,
+                  [side]: { ...sideMap, [itemId]: next },
                 },
-              };
+              });
             });
-            const { catalog, selection } = get();
-            set({ solve: derive(catalog, selection) });
           },
 
           clearOverrides() {
-            set((s) => ({
-              selection: {
+            set((s) =>
+              applyActiveSelection(s, {
                 ...s.selection,
                 overrides: { feeds: {}, outputs: {} },
-              },
-            }));
-            const { catalog, selection } = get();
-            set({ solve: derive(catalog, selection) });
+              }),
+            );
+          },
+
+          // --- Graph actions (Stage 3 / Phase 1) -----------------------------
+          // Synchronous, mutate-then-recompute (no IDB this phase). Reconcile
+          // recompute follows the cadence table: rename/cursor/addStage don't
+          // affect flows; add/remove link + removeStage do.
+
+          addStage() {
+            set((s) => {
+              // Seed the new stage's tiers from the ACTIVE stage so the
+              // tiers-global invariant holds on the create path too; everything
+              // else is default. No links yet, so reconciliation is unaffected.
+              const active = s.stages[s.activeStageId]!;
+              const n = s.stageOrder.length + 1;
+              const stage = defaultStage(`Stage ${n}`);
+              stage.selection = {
+                ...stage.selection,
+                unlockedTiers: { ...active.selection.unlockedTiers },
+              };
+              const derived = deriveStage(s.catalog, stage);
+              // Auto-place at the current monotonic seq slot; bump the counter
+              // (never reused, so no collision handling — frozen Axis 2).
+              return {
+                stages: { ...s.stages, [derived.id]: derived },
+                stageOrder: [...s.stageOrder, derived.id],
+                positions: {
+                  ...s.positions,
+                  [derived.id]: placementSlot(s.placementSeq),
+                },
+                placementSeq: s.placementSeq + 1,
+              };
+            });
+          },
+
+          removeStage(id: string) {
+            set((s) => {
+              // The ≥1-stage invariant: removing the last stage is a no-op (the
+              // cursor read stages[activeStageId] must always resolve).
+              if (s.stageOrder.length <= 1) return {};
+              if (s.stages[id] === undefined) return {};
+              const stages = { ...s.stages };
+              delete stages[id];
+              const stageOrder = s.stageOrder.filter((x) => x !== id);
+              // Prune the removed stage's canvas position (Stage 3 / Phase 2) —
+              // a P2 extension of this action body; the frozen P1 cascade/
+              // cursor/last-stage rules below are unchanged. No orphan entries.
+              const positions = { ...s.positions };
+              delete positions[id];
+              // Cascade: links touching the removed stage go with it (structure
+              // the user explicitly deleted), unlike a recipe-change dangling.
+              const links = s.links.filter(
+                (l) => l.fromStageId !== id && l.toStageId !== id,
+              );
+              // Cursor moves to the first remaining stage if the active one went.
+              const activeStageId =
+                s.activeStageId === id ? stageOrder[0]! : s.activeStageId;
+              return recomputeReconciliation(
+                mirrorActive({
+                  ...s,
+                  stages,
+                  stageOrder,
+                  positions,
+                  links,
+                  activeStageId,
+                }),
+              );
+            });
+          },
+
+          renameStage(id: string, name: string) {
+            set((s) => {
+              const stage = s.stages[id];
+              if (stage === undefined) return {};
+              // Rename doesn't affect flows → no reconciliation recompute.
+              return { stages: { ...s.stages, [id]: { ...stage, name } } };
+            });
+          },
+
+          setActiveStage(id: string) {
+            set((s) => {
+              if (s.stages[id] === undefined) return {};
+              // Cursor move → re-mirror the newly-active stage; flows unchanged.
+              return mirrorActive({ ...s, activeStageId: id });
+            });
+          },
+
+          addLink(link: Omit<StageLink, "id">) {
+            set((s) => {
+              // Hard refusals: self-link, and duplicate (toStageId,itemId) — a
+              // feed lane has exactly one upstream source in v1 chaining.
+              if (link.fromStageId === link.toStageId) return {};
+              const duplicate = s.links.some(
+                (l) =>
+                  l.toStageId === link.toStageId && l.itemId === link.itemId,
+              );
+              if (duplicate) return {};
+              const links = [...s.links, { ...link, id: crypto.randomUUID() }];
+              // Dangling ends (a stage not producing/consuming itemId) are KEPT
+              // and surface as findings, not refused.
+              return recomputeReconciliation({ ...s, links });
+            });
+          },
+
+          removeLink(id: string) {
+            set((s) =>
+              recomputeReconciliation({
+                ...s,
+                links: s.links.filter((l) => l.id !== id),
+              }),
+            );
+          },
+
+          setStagePosition(id: string, pos: { x: number; y: number }) {
+            // Pure position write — no derive, no reconciliation (cadence row:
+            // none/none). The canvas commits this once on drag-end.
+            set((s) => {
+              if (s.stages[id] === undefined) return {};
+              return { positions: { ...s.positions, [id]: pos } };
+            });
           },
 
           // --- Plan lifecycle (frozen Axis 3) --------------------------------
@@ -651,26 +1093,43 @@ export function createAppStore(storage?: StateStorage) {
                 const existing = await listPlanFiles();
                 const match = existing.find((p) => p.name === trimmed);
                 const now = new Date().toISOString();
-                const selection = get().selection;
+                // Capture the WHOLE graph (Stage 3 / Phase 3): stages in
+                // stageOrder (array order IS stageOrder), each carrying name +
+                // selection + position; links index-encoded (stage id → index).
+                const s = get();
+                const indexOf = new Map(s.stageOrder.map((id, i) => [id, i]));
+                const stages = s.stageOrder.map((id) => {
+                  const node = s.stages[id]!;
+                  return {
+                    name: node.name,
+                    selection: node.selection,
+                    position: s.positions[id],
+                  };
+                });
+                const links = s.links.map((l) => ({
+                  from: indexOf.get(l.fromStageId)!,
+                  to: indexOf.get(l.toStageId)!,
+                  itemId: l.itemId,
+                }));
                 if (match) {
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV1 = {
-                    format_version: 1,
+                  const plan: PlanFileV2 = {
+                    format_version: 2,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
-                    stages: [{ selection }],
-                    links: [],
+                    stages,
+                    links,
                   };
                   await savePlanFile(plan, match.id);
                 } else {
-                  const plan: PlanFileV1 = {
-                    format_version: 1,
+                  const plan: PlanFileV2 = {
+                    format_version: 2,
                     name: trimmed,
                     createdAt: now,
                     updatedAt: now,
-                    stages: [{ selection }],
-                    links: [],
+                    stages,
+                    links,
                   };
                   await savePlanFile(plan, crypto.randomUUID());
                 }
@@ -691,35 +1150,8 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                const saved = plan.stages[0]!.selection;
-                const { catalog } = get();
-                // Apply with the same guards as every store entry point:
-                // recipeId re-validated against the live catalog (#5 rule),
-                // unlockedTiers clamped (must not bypass the setter invariant),
-                // machineCount null → NaN (saved-invalid loads rendered-invalid).
-                const recipeId =
-                  saved.recipeId !== null &&
-                  catalog.status === "ready" &&
-                  catalog.catalog.recipes[saved.recipeId] !== undefined
-                    ? saved.recipeId
-                    : null;
-                const machineCount =
-                  saved.machineCount === null ? NaN : saved.machineCount;
-                const nextSelection: Selection = {
-                  recipeId,
-                  machineCount,
-                  clockPercentText: saved.clockPercentText,
-                  unlockedTiers: {
-                    belt: clampTier("belt", saved.unlockedTiers.belt),
-                    pipe: clampTier("pipe", saved.unlockedTiers.pipe),
-                  },
-                  // Overrides apply verbatim; malformed strings / count excess
-                  // surface through the existing derive/findings paths.
-                  overrides: saved.overrides,
-                };
-                set({ selection: nextSelection });
-                const { catalog: cat, selection } = get();
-                set({ solve: derive(cat, selection) });
+                // Whole-graph replacement (Stage 3 / Phase 3, frozen Axis 4).
+                set((s) => rebuildFromPlan(s, plan));
                 // Loading a plan never touches the catalog or catalogSource.
               } catch (err) {
                 set({ planError: planErrorMessage(err) });
@@ -754,7 +1186,10 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                const renamed: PlanFileV1 = {
+                // loadPlanFile returns v2 (migrating a v1 row), so this spread
+                // widens to v2 — renaming a v1 row rewrites it as v2, consistent
+                // with the save-over model (any write persists v2).
+                const renamed: PlanFileV2 = {
                   ...plan,
                   name: trimmed,
                   updatedAt: new Date().toISOString(),
@@ -783,23 +1218,36 @@ export function createAppStore(storage?: StateStorage) {
       {
         name: PERSIST_KEY,
         storage: createJSONStorage<PersistedShape>(() => storageProvider()),
+        // Persist the ACTIVE stage's tiers (all stages hold identical tiers by
+        // the tiers-global invariant, so the active stage's copy is canonical).
         partialize: (s): PersistedShape => ({
-          unlockedTiers: s.selection.unlockedTiers,
+          unlockedTiers: s.stages[s.activeStageId]!.selection.unlockedTiers,
         }),
-        // Validating merge: write the persisted tiers back into
-        // selection.unlockedTiers, clamped, defaulting on corrupt/missing.
+        // Validating merge (runs synchronously during createAppStore, before
+        // init): write the persisted tiers, clamped/defaulted, into EVERY stage
+        // (tiers-global) + the top-level mirror. At merge time only the default
+        // stage exists, but writing all stages keeps the invariant honest.
         merge: (persisted, current): Store => {
           const p = persisted as Partial<PersistedShape> | undefined;
           const tiers = p?.unlockedTiers;
+          const unlockedTiers = {
+            belt: clampTier("belt", tiers?.belt),
+            pipe: clampTier("pipe", tiers?.pipe),
+          };
+          const stages: Record<string, StageNode> = {};
+          for (const id of Object.keys(current.stages)) {
+            const node = current.stages[id]!;
+            stages[id] = {
+              ...node,
+              selection: { ...node.selection, unlockedTiers },
+            };
+          }
+          const active = stages[current.activeStageId]!;
           return {
             ...current,
-            selection: {
-              ...current.selection,
-              unlockedTiers: {
-                belt: clampTier("belt", tiers?.belt),
-                pipe: clampTier("pipe", tiers?.pipe),
-              },
-            },
+            stages,
+            selection: active.selection,
+            solve: active.solve,
           };
         },
       },
