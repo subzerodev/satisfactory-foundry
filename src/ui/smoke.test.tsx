@@ -81,7 +81,15 @@ describe("UploadScreen", () => {
 
 describe("ControlsStrip", () => {
   const machines: Record<string, CatalogMachine> = {
-    smelter: { id: "smelter", displayName: "Smelter" },
+    smelter: {
+      id: "smelter",
+      displayName: "Smelter",
+      power: {
+        mw: Fraction.from(4),
+        variable: false,
+        exponent: Fraction.of(1321929, 1000000),
+      },
+    },
   };
   const recipes: CatalogRecipe[] = [
     {
