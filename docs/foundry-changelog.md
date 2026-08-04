@@ -3,6 +3,20 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-04 — Stage 8, Phase 2: transport fine-tuning knobs
+
+> Hey Michael — two honesty knobs for transport links. Pipes: the game's
+> pipe ratings are best-case numbers (manifolds slosh), so a pipe link now
+> has a "derate %" field — type 50 and the planner sizes the run for half
+> the nominal flow, showing "2 pipes sustain 300/min each" with a label
+> that says it's YOUR assumption, not a game constant. Leave it empty and
+> nothing changes. Trains: if one end of a route shares an existing
+> station (say, an unload-only stop at your main hub), tick "station at
+> <name> is shared" and that end's power drops out of the station MW
+> column — the tonnage math doesn't move, only whose ledger the power sits
+> on. Your saved plans upgraded silently and load exactly as before.
+> Next: the big one — the auto-chain builder.
+
 ## 2026-08-04 — Stage 8, Phase 1: one click instead of retyping
 
 > Hey Michael — two small quality-of-life wins. When a wire says

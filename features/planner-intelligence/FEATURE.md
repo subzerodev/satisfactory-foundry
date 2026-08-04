@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-04
 **Status:** in-progress
-**Current phase:** Phase 2 (transport refinements, #38) — design next
+**Current phase:** Phase 3 (auto-chain builder, #39) — design next
 **Final PR:** —
 **Epic:** #36 (board #21, Stage 8 milestone 79)
 
@@ -48,12 +48,36 @@ Excluded by directive: vehicle catalog admission; sharing/PWA.
   with zero defects; ticket #37 Done)
 - **Ticket:** #37 (Done, closed)
 
-### Phases 2–4 — deferred design
+### Phase 2 — transport refinements (#38)
 
-- **Tickets:** #38 → #39 → #40 (blocked-by chain)
+- **Status:** complete (merged --no-ff to develop 2026-08-04 @ af03786;
+  636/636 tests; 2-round design gate — r1's shared IMPORTANT caught the
+  serialize-site undercount (seven PlanFileV3 annotations, not two
+  literals) — + simplify affirming every axis minimal; boundary
+  APPROVED_WITH_NITS×2 with the real catch folded (trip edits were
+  wiping sharedEnds — trainWithTrip carries it, pinned + R2-11);
+  diff-simplify's one finding folded (setSharedEnd delegates to
+  trainWithTrip); browser walk zero defects incl. a live v3→v4 import
+  migration, the derate error path, and the fold verified in-browser;
+  ticket #38 Done)
+- **Ticket:** #38 (Done, closed)
+
+### Phases 3–4 — deferred design
+
+- **Tickets:** #39 → #40 (blocked-by chain)
 
 ## Decisions log
 
+- 2026-08-04 (P2 landed): plan files are v4 (identity migrateV3; save
+  always writes 4 — the v3-additive alternative was rejected because
+  the validator ignores unknown fields, so a rollback build would
+  silently drop the new config); the LinkTransport union split — bare
+  belt, pipe + deratePercentText, train out of the road bundle +
+  sharedEnds absent-or-true; countedEnds 0|1|2 in core trainOptions
+  touches stationPowerMw ONLY; the derate applies at derive
+  ((0,100], laneRate × pct/100 into unchanged continuousRuns) and is
+  worded as the user's own assumption; trainWithTrip is the single
+  train-arm assembly point (trip edits must never wipe sharedEnds).
 - 2026-08-04 (P1 landed): applyStageSelection(stageId) is the one
   re-derive path (the active setters delegate; mirrorActive stays
   active-keyed — a non-active write leaves the mirror
