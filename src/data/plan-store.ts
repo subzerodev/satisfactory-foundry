@@ -9,9 +9,18 @@
  * `stages` is an array from day one and `links` a reserved empty array in v1, so
  * Stage 3 added nodes/edges WITH a format bump: `PlanFileV2` carries the whole
  * graph (per-stage name + position, index-encoded links). Stage 7 / Phase 2 adds
- * `PlanFileV3` — the same graph plus optional per-link `transport`. Save always
- * writes the LATEST version (v3); read accepts all three, migrating v1/v2 in
- * memory (`migrateV1`/`migrateV2`).
+ * `PlanFileV3` — the same graph plus optional per-link `transport`. Stage 8 /
+ * Phase 2 adds `PlanFileV4` — the same graph, now with the transport union's two
+ * S8P2 extensions (pipe `deratePercentText`, train `sharedEnds`) legal in the
+ * per-link config. Save always writes the LATEST version (v4); read accepts all
+ * four, migrating v1/v2/v3 in memory (`migrateV1`/`migrateV2`/`migrateV3`).
+ *
+ * WHY a v4 bump and not v3-in-place (both new fields are optional): a pre-P2
+ * build's v3 validator IGNORES the new fields (`isTransportShape`'s pipe arm
+ * returned `true` bare), so a file carrying a derate would validate under the
+ * old build and SILENTLY DROP the user's derate — the plan would render with a
+ * different meaning than saved. A v4 header makes the old build reject the file
+ * loudly (load → null) instead. Same argument recorded when v3 was affirmed.
  */
 
 import type {
@@ -92,6 +101,32 @@ export interface PlanFileV3 {
   links: PlanLinkV3[];
 }
 
+/**
+ * Stage 8 / Phase 2: one graph edge in a v4 file — a `PlanLinkV3` whose
+ * `transport` may now carry the S8P2 extensions (pipe `deratePercentText`, train
+ * `sharedEnds`). The shape is identical to V3 at the type level (both reference
+ * the one `LinkTransport` union, whose extensions ARE the v4 change), so this is
+ * a documentation-carrying alias — the validator (`isPlanFileV4`) is where v4
+ * actually admits the new fields.
+ */
+export type PlanLinkV4 = PlanLinkV3;
+
+/**
+ * Stage 8 / Phase 2: the whole-graph file with the extended transport union.
+ * Same header + stages as v3; `links` are `PlanLinkV4`. Save always writes this;
+ * `loadPlanFile` returns it directly (v4) or via `migrateV3`/`migrateV2`/
+ * `migrateV1` (older files). State and file keep sharing the ONE `LinkTransport`
+ * union (the S7P2 verbatim-boundary invariant) — nothing to map at the edge.
+ */
+export interface PlanFileV4 {
+  format_version: 4;
+  name: string;
+  createdAt: string; // ISO
+  updatedAt: string; // ISO
+  stages: PlanStageV2[];
+  links: PlanLinkV4[];
+}
+
 /** The 7-key `DroneFuel` union as a validator lookup set (the file validator
  *  pins the drone arm's `fuel` ∈ these). */
 const DRONE_FUELS: ReadonlySet<string> = new Set<DroneFuel>([
@@ -120,8 +155,8 @@ export interface PlanListEntry {
   updatedAt: string;
 }
 
-/** Persist a plan file under `id` (create or overwrite). Always v3. */
-export async function savePlan(plan: PlanFileV3, id: string): Promise<void> {
+/** Persist a plan file under `id` (create or overwrite). Always v4. */
+export async function savePlan(plan: PlanFileV4, id: string): Promise<void> {
   const db = await openDb();
   await db.put(PLANS_STORE, plan, id);
 }
@@ -136,9 +171,14 @@ export async function listPlans(): Promise<PlanListEntry[]> {
   const rows = await db.getAllWithKeys<unknown>(PLANS_STORE);
   const entries: PlanListEntry[] = [];
   for (const { key, value } of rows) {
-    // Any loadable format renders a row: v1/v2 migrate, v3 is the current shape.
-    // Header fields co-locate across all three.
-    if (isPlanFileV3(value) || isPlanFileV2(value) || isPlanFileV1(value)) {
+    // Any loadable format renders a row: v1/v2/v3 migrate, v4 is the current
+    // shape. Header fields co-locate across all four.
+    if (
+      isPlanFileV4(value) ||
+      isPlanFileV3(value) ||
+      isPlanFileV2(value) ||
+      isPlanFileV1(value)
+    ) {
       entries.push({ id: key, name: value.name, updatedAt: value.updatedAt });
     }
   }
@@ -148,25 +188,26 @@ export async function listPlans(): Promise<PlanListEntry[]> {
 
 /**
  * Validate an arbitrary value as a plan file THIS build can use, returning a
- * `PlanFileV3` (migrating a valid v2/v1 in memory) or null on corrupt/foreign.
+ * `PlanFileV4` (migrating a valid v3/v2/v1 in memory) or null on corrupt/foreign.
  * The single acceptance rule shared by `loadPlan` (IDB rows) and `importPlan`
- * (uploaded exports): v3 first, else v2 via `migrateV2`, else v1 via
- * `migrateV1` (chained through v2).
+ * (uploaded exports): v4 first, else v3 via `migrateV3`, else v2 via
+ * `migrateV2` (chained through v3), else v1 via `migrateV1` (chained up).
  */
-export function validatePlanFile(value: unknown): PlanFileV3 | null {
-  if (isPlanFileV3(value)) return value;
-  if (isPlanFileV2(value)) return migrateV2(value);
-  if (isPlanFileV1(value)) return migrateV2(migrateV1(value));
+export function validatePlanFile(value: unknown): PlanFileV4 | null {
+  if (isPlanFileV4(value)) return value;
+  if (isPlanFileV3(value)) return migrateV3(value);
+  if (isPlanFileV2(value)) return migrateV3(migrateV2(value));
+  if (isPlanFileV1(value)) return migrateV3(migrateV2(migrateV1(value)));
   return null;
 }
 
 /**
- * Load + validate one plan, returning a `PlanFileV3` (migrating v2/v1 files in
- * memory). Returns null on missing OR corrupt-for-this-build. V3 is tried first;
- * older files fall back to `migrateV2`/`migrateV1`. Migration is read-side only —
- * the stored row is untouched until the next save-over (which writes v3).
+ * Load + validate one plan, returning a `PlanFileV4` (migrating v3/v2/v1 files in
+ * memory). Returns null on missing OR corrupt-for-this-build. V4 is tried first;
+ * older files fall back to `migrateV3`/`migrateV2`/`migrateV1`. Migration is
+ * read-side only — the stored row is untouched until the next save-over (v4).
  */
-export async function loadPlan(id: string): Promise<PlanFileV3 | null> {
+export async function loadPlan(id: string): Promise<PlanFileV4 | null> {
   const db = await openDb();
   const value = await db.get<unknown>(PLANS_STORE, id);
   return validatePlanFile(value);
@@ -208,6 +249,24 @@ export function migrateV2(plan: PlanFileV2): PlanFileV3 {
       to: l.to,
       itemId: l.itemId,
     })),
+  };
+}
+
+/**
+ * Migrate a validated v3 file to v4 in memory (Stage 8 / Phase 2): IDENTITY on
+ * the graph — the v4 transport extensions are additive and OPTIONAL, so a v3
+ * link (which never carried them) maps to itself with the new fields absent.
+ * Only the version header flips. Timestamps carry VERBATIM (the save-over path
+ * reads the prior file's createdAt, so a migrated row must not reset it).
+ */
+export function migrateV3(plan: PlanFileV3): PlanFileV4 {
+  return {
+    format_version: 4,
+    name: plan.name,
+    createdAt: plan.createdAt,
+    updatedAt: plan.updatedAt,
+    stages: plan.stages,
+    links: plan.links,
   };
 }
 
@@ -317,6 +376,36 @@ function isPlanFileV3(value: unknown): value is PlanFileV3 {
   if (value === null || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
   if (v.format_version !== 3) return false;
+  return isGraphFileBody(v, isTransportShape);
+}
+
+/**
+ * Reviver-style shape check for a PlanFileV4 (Stage 8 / Phase 2). Identical to
+ * the v3 header/stages/link-index invariants; the ONLY difference is the
+ * transport checker — v4 admits (and strictly validates) the two S8P2
+ * extensions via {@link isTransportShapeV4}: pipe `deratePercentText` must parse
+ * to (0,100]; train `sharedEnds` keys must be literally `true`; both are legal
+ * ONLY on their own arm (a derate on belt/train, a `sharedEnds` on pipe/road →
+ * validation FAILS, the strictness posture). A v3 file (which never carried the
+ * fields) still loads — via `migrateV3`, not this check.
+ */
+function isPlanFileV4(value: unknown): value is PlanFileV4 {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (v.format_version !== 4) return false;
+  return isGraphFileBody(v, isTransportShapeV4);
+}
+
+/**
+ * The shared header/stages/link-index validation for the whole-graph files (v3
+ * and v4 — identical but for the version literal, checked by the caller, and the
+ * per-link transport checker passed in). Pins the frozen P1 refusals at the file
+ * boundary: self-link, in-range indices, no duplicate `(to, itemId)` feed lane.
+ */
+function isGraphFileBody(
+  v: Record<string, unknown>,
+  transportShape: (t: unknown) => boolean,
+): boolean {
   if (typeof v.name !== "string") return false;
   if (typeof v.createdAt !== "string" || typeof v.updatedAt !== "string") {
     return false;
@@ -340,8 +429,8 @@ function isPlanFileV3(value: unknown): value is PlanFileV3 {
     const key = `${to} ${l.itemId}`; // duplicate (to, itemId) feed lane
     if (seen.has(key)) return false;
     seen.add(key);
-    // transport is OPTIONAL; present ⇒ must be a valid LinkTransport shape.
-    if (l.transport !== undefined && !isTransportShape(l.transport)) {
+    // transport is OPTIONAL; present ⇒ must pass the version's transport shape.
+    if (l.transport !== undefined && !transportShape(l.transport)) {
       return false;
     }
   }
@@ -408,6 +497,65 @@ function isTransportShape(value: unknown): value is LinkTransport {
   }
 
   return false; // unknown mode
+}
+
+/** A derate-percent string: present, a string, `Fraction.parse`s, and in (0,100]
+ *  — > 0 AND ≤ 100 (100 = "no derate"; > 100 is a boost, refused; ≤ 0 refused). */
+function isDeratePercentText(raw: unknown): boolean {
+  if (typeof raw !== "string") return false;
+  let pct: Fraction;
+  try {
+    pct = Fraction.parse(raw);
+  } catch {
+    return false;
+  }
+  return pct.gt(Fraction.from(0)) && pct.lte(Fraction.from(100));
+}
+
+/** A `sharedEnds` value: an object whose `from`/`to`, when present, are literally
+ *  `true` (the absent-or-true idiom — a `false` or any other value FAILS). No
+ *  keys is legal at the shape level (the store strips an all-absent sharedEnds,
+ *  but a persisted `{}` is not itself corrupt). */
+function isSharedEndsShape(raw: unknown): boolean {
+  if (raw === null || typeof raw !== "object") return false;
+  const s = raw as Record<string, unknown>;
+  if (s.from !== undefined && s.from !== true) return false;
+  if (s.to !== undefined && s.to !== true) return false;
+  return true;
+}
+
+/**
+ * The v4 transport shape check (Stage 8 / Phase 2). Everything {@link
+ * isTransportShape} enforces, PLUS the two S8P2 extensions validated per-arm and
+ * REFUSED on any other arm (the strictness posture — misplaced fields FAIL):
+ *
+ * - `deratePercentText` is legal ONLY on pipe, and when present must parse to
+ *   (0,100]; on ANY other mode its presence fails.
+ * - `sharedEnds` is legal ONLY on train, and when present must be the absent-or-
+ *   true shape; on ANY other mode its presence fails.
+ *
+ * Belt/pipe no longer share one arm here: belt carries neither field; pipe may
+ * carry `deratePercentText` (not `sharedEnds`). The base check (which accepts
+ * belt/pipe bare and ignores extras) is the v3 leniency — v4 tightens it.
+ */
+function isTransportShapeV4(value: unknown): value is LinkTransport {
+  if (!isTransportShape(value)) return false;
+  const t = value as Record<string, unknown>;
+  const mode = t.mode as string;
+
+  // deratePercentText: pipe-only; elsewhere its presence is a shape violation.
+  if (t.deratePercentText !== undefined) {
+    if (mode !== "pipe") return false;
+    if (!isDeratePercentText(t.deratePercentText)) return false;
+  }
+
+  // sharedEnds: train-only; elsewhere its presence is a shape violation.
+  if (t.sharedEnds !== undefined) {
+    if (mode !== "train") return false;
+    if (!isSharedEndsShape(t.sharedEnds)) return false;
+  }
+
+  return true;
 }
 
 /** A v2 stage entry: `{ name, selection, position? }` (position optional). */

@@ -34,7 +34,7 @@ import {
   deletePlan as deletePlanFile,
   validatePlanFile,
 } from "../data/plan-store.ts";
-import type { PlanFileV3, PlanListEntry } from "../data/plan-store.ts";
+import type { PlanFileV4, PlanListEntry } from "../data/plan-store.ts";
 
 // ---------------------------------------------------------------------------
 // State shape (frozen brainstorm Axis 2)
@@ -93,25 +93,43 @@ export interface StageNode {
  * surfaced). MODE-DISCRIMINATED (the P1 Cargo/DroneTripInput discipline: illegal
  * states are unrepresentable, not runtime-guarded):
  *
- * - belt/pipe: trip-less continuous;
- * - the four road modes + train: `trip` is one-way meters (estimated) or a
- *   measured round-trip in seconds. The road four hand a TripInput to
- *   vehicleFleet (which doubles + docks internally); TRAIN routes to
- *   trainOptions with a derive-built roundTripSeconds (Assumption #6);
+ * - belt: trip-less continuous;
+ * - pipe: trip-less continuous + an optional `deratePercentText` (S8P2 — a
+ *   user-supplied sloshing derate, raw text, (0,100] at derive time; belt has
+ *   none — sloshing is a pipeline phenomenon);
+ * - the four road modes: `trip` is one-way meters (estimated) or a measured
+ *   round-trip in seconds, handed to vehicleFleet (which doubles + docks);
+ * - train: the same `trip` shape as the road four (routed to trainOptions with a
+ *   derive-built roundTripSeconds, Assumption #6) + an optional `sharedEnds`
+ *   (S8P2 — a per-end station-power override; a flagged end is billed elsewhere,
+ *   so its `50 + 50c` is excluded from THIS link's station MW). The absent-or-
+ *   true idiom: a key present is literally `true`, absent means "not shared";
  * - drone: `fuel` + a trip whose distance is ROUND-TRIP flight meters (the P1
  *   DroneTripInput arm names). The measured arm's optional flightMetersText is
  *   the battery-cost add-on; the estimated arm's flightMetersText IS the input.
  *
  * The units trap (one-way vs round-trip) is enforced by field NAMES per arm, not
- * a prose warning; `fuel` cannot exist on a road link, etc.
+ * a prose warning; `fuel` cannot exist on a road link, `sharedEnds` only on
+ * train, `deratePercentText` only on pipe — illegal pairings are unrepresentable.
  */
 export type LinkTransport =
-  | { mode: "belt" | "pipe" }
+  | { mode: "belt" }
+  | { mode: "pipe"; deratePercentText?: string }
   | {
-      mode: "truck" | "tractor" | "explorer" | "fluid-truck" | "train";
+      mode: "truck" | "tractor" | "explorer" | "fluid-truck";
       trip:
         | { kind: "measured"; roundTripSecondsText: string }
         | { kind: "estimated"; distanceText: string };
+    }
+  | {
+      mode: "train";
+      trip:
+        | { kind: "measured"; roundTripSecondsText: string }
+        | { kind: "estimated"; distanceText: string };
+      /** Ends whose station set is billed elsewhere (excluded from station MW).
+       *  Absent-or-true: a present key is literally `true`; `from` is the
+       *  producer end, `to` the consumer end (the StageLink's own direction). */
+      sharedEnds?: { from?: true; to?: true };
     }
   | {
       mode: "drone";
@@ -535,7 +553,7 @@ function deriveAllStages(
 }
 
 /**
- * Whole-graph replacement from a loaded `PlanFileV3` (Stage 3 / Phase 3, frozen
+ * Whole-graph replacement from a loaded `PlanFileV4` (Stage 3 / Phase 3, frozen
  * Axis 4). Builds a fresh graph — new stage/link uuids — and applies the frozen
  * load treatments per stage:
  *
@@ -558,7 +576,7 @@ function deriveAllStages(
  */
 function rebuildFromPlan(
   slice: GraphSlice,
-  plan: PlanFileV3,
+  plan: PlanFileV4,
 ): GraphSlice & { placementSeq: number } {
   const { catalog } = slice;
   // Current global tiers (the active mirror holds the canonical global value).
@@ -1290,8 +1308,8 @@ export function createAppStore(storage?: StateStorage) {
                 }));
                 if (match) {
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV3 = {
-                    format_version: 3,
+                  const plan: PlanFileV4 = {
+                    format_version: 4,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
@@ -1300,8 +1318,8 @@ export function createAppStore(storage?: StateStorage) {
                   };
                   await savePlanFile(plan, match.id);
                 } else {
-                  const plan: PlanFileV3 = {
-                    format_version: 3,
+                  const plan: PlanFileV4 = {
+                    format_version: 4,
                     name: trimmed,
                     createdAt: now,
                     updatedAt: now,
@@ -1363,10 +1381,10 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                // loadPlanFile returns v3 (migrating older rows), so this spread
-                // widens to v3 — renaming an older row rewrites it as v3,
-                // consistent with the save-over model (any write persists v3).
-                const renamed: PlanFileV3 = {
+                // loadPlanFile returns v4 (migrating older rows), so this spread
+                // widens to v4 — renaming an older row rewrites it as v4,
+                // consistent with the save-over model (any write persists v4).
+                const renamed: PlanFileV4 = {
                   ...plan,
                   name: trimmed,
                   updatedAt: new Date().toISOString(),
@@ -1436,7 +1454,7 @@ export function createAppStore(storage?: StateStorage) {
                   // Overwrite the existing row: keep ITS createdAt (a foreign
                   // payload's timestamp is untrusted), stamp updatedAt now.
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV3 = {
+                  const plan: PlanFileV4 = {
                     ...file,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
@@ -1446,7 +1464,7 @@ export function createAppStore(storage?: StateStorage) {
                 } else {
                   // New row: createdAt now (savePlanAs precedent — new names get
                   // now, never the untrusted foreign timestamp).
-                  const plan: PlanFileV3 = {
+                  const plan: PlanFileV4 = {
                     ...file,
                     name: trimmed,
                     createdAt: now,

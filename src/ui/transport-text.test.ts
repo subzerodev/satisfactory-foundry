@@ -21,8 +21,10 @@ import {
   droneLine,
   droneBatteryLine,
   caveatFor,
+  pipeCaveat,
   trainRows,
   trainBeltFeedFootnote,
+  trainSharedEndsFootnote,
   edgeChip,
   unsustainableTrainRow,
   unsustainableTrainText,
@@ -56,6 +58,7 @@ describe("transport-text — fleet lines + estimated suffix", () => {
       mode: "belt",
       result: continuousRuns("belt", Fraction.from(600), Fraction.from(480)),
       tierIndex: 4,
+      deratePercent: null,
     };
     expect(continuousLine(plan)).toBe("2 belts sustain 480/min each");
     const one: TransportContinuous = {
@@ -63,6 +66,7 @@ describe("transport-text — fleet lines + estimated suffix", () => {
       mode: "belt",
       result: continuousRuns("belt", Fraction.from(400), Fraction.from(480)),
       tierIndex: 4,
+      deratePercent: null,
     };
     expect(continuousLine(one)).toBe("1 belt sustains 480/min each");
   });
@@ -147,6 +151,36 @@ describe("transport-text — caveats", () => {
     expect(caveatFor("drone")).toBe("shared destination ports queue");
     expect(caveatFor("belt")).toBeNull();
   });
+
+  it("pipeCaveat without a derate = today's static nominal-ceiling line", () => {
+    const plan: TransportContinuous = {
+      kind: "continuous",
+      mode: "pipe",
+      result: continuousRuns("pipe", Fraction.from(600), Fraction.from(300)),
+      tierIndex: 1,
+      deratePercent: null,
+    };
+    expect(pipeCaveat(plan)).toBe(
+      "nominal ceiling — manifolds can sustain less",
+    );
+  });
+
+  it("pipeCaveat WITH a derate names the percent + its user-assumption provenance", () => {
+    const plan: TransportContinuous = {
+      kind: "continuous",
+      mode: "pipe",
+      result: continuousRuns("pipe", Fraction.from(600), Fraction.from(150)),
+      tierIndex: 1,
+      deratePercent: Fraction.from(50),
+    };
+    expect(pipeCaveat(plan)).toBe(
+      "derated to 50% of nominal — your assumption, not a game constant",
+    );
+    // Exact fractional percentage renders exactly (no float).
+    expect(
+      pipeCaveat({ ...plan, deratePercent: Fraction.of(67, 2) }),
+    ).toContain("derated to 33.5% of nominal");
+  });
 });
 
 describe("transport-text — train rows + chip", () => {
@@ -167,6 +201,7 @@ describe("transport-text — train rows + chip", () => {
       tripBasis: basis,
       beltTierIndex: 4,
       beltFeed: Fraction.from(960),
+      sharedEnds: undefined,
     };
   }
 
@@ -211,6 +246,38 @@ describe("transport-text — train rows + chip", () => {
     );
   });
 
+  it("shared-ends footnote: null when no end is flagged (default station set)", () => {
+    const plan = trainPlan(300, "measured"); // sharedEnds undefined
+    expect(trainSharedEndsFootnote(plan, "Smelter", "Assembler")).toBeNull();
+  });
+
+  it("shared-ends footnote names ONE flagged end (singular 'end shared')", () => {
+    const from = {
+      ...trainPlan(300, "measured"),
+      sharedEnds: { from: true as const },
+    };
+    expect(trainSharedEndsFootnote(from, "Smelter", "Assembler")).toBe(
+      "Smelter end shared — excluded from station MW",
+    );
+    const to = {
+      ...trainPlan(300, "measured"),
+      sharedEnds: { to: true as const },
+    };
+    expect(trainSharedEndsFootnote(to, "Smelter", "Assembler")).toBe(
+      "Assembler end shared — excluded from station MW",
+    );
+  });
+
+  it("shared-ends footnote names BOTH flagged ends (plural 'ends shared')", () => {
+    const both = {
+      ...trainPlan(300, "measured"),
+      sharedEnds: { from: true as const, to: true as const },
+    };
+    expect(trainSharedEndsFootnote(both, "Smelter", "Assembler")).toBe(
+      "Smelter and Assembler ends shared — excluded from station MW",
+    );
+  });
+
   it("edge chip: estimated basis prefixes ≈", () => {
     const est = edgeChip(trainPlan(300, "estimated"));
     expect(est).not.toBeNull();
@@ -226,6 +293,7 @@ describe("transport-text — train rows + chip", () => {
       mode: "belt",
       result: continuousRuns("belt", Fraction.from(600), Fraction.from(480)),
       tierIndex: 4,
+      deratePercent: null,
     };
     expect(edgeChip(plan)).toBeNull();
   });
