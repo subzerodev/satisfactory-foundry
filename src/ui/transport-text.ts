@@ -295,7 +295,7 @@ export function unsustainableTrainText(
   rate: Fraction,
   row: TrainOption,
 ): string {
-  const ceiling = formatRate(
+  const ceiling = formatRateOrApprox(
     row.perPlatformCeiling.mul(Fraction.from(row.carsPerTrain)),
   );
   const base = `${itemName}: ${formatRate(rate)}/min exceeds what one station pair sustains at any consist size (max ${ceiling}/min at ${row.carsPerTrain} cars).`;

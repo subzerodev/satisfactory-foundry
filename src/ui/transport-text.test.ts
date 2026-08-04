@@ -242,6 +242,25 @@ describe("transport-text — unsustainable-train finding", () => {
     expect(row!.carsPerTrain).toBe(3); // the max-car row
   });
 
+  it("finding wording renders a non-terminating ceiling as ≈, never n/d", () => {
+    // Per-platform ceiling 2323/30 (non-terminating); at 4 cars the pair
+    // ceiling 4646/15 stays non-terminating (unlike ×3, which cancels the 3).
+    const options = trainOptions(
+      Fraction.from(100000),
+      Fraction.from(6400),
+      Fraction.from(120),
+      { beltFeed: Fraction.from(100), maxCars: 4 },
+    );
+    const row = unsustainableTrainRow(Fraction.from(100000), options);
+    const text = unsustainableTrainText(
+      "Iron Ingot",
+      Fraction.from(100000),
+      row!,
+    );
+    expect(text).toContain("max ≈ 309.7/min");
+    expect(text).not.toMatch(/max \d+\/\d+/);
+  });
+
   it("a sustainable rate returns null (no finding)", () => {
     const options = trainOptions(
       Fraction.from(10),
