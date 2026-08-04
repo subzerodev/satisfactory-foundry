@@ -10,7 +10,8 @@ import { toStageInput, parseRational } from "./stage-input.ts";
 function catalogWith(items: Record<string, { isFluid: boolean }>): Catalog {
   const full: Catalog["items"] = {};
   for (const [id, { isFluid }] of Object.entries(items)) {
-    full[id] = { id, displayName: id, isFluid };
+    // stackSize is irrelevant to toStageInput (it reads only isFluid); null.
+    full[id] = { id, displayName: id, isFluid, stackSize: null };
   }
   return { items: full, machines: {}, recipes: {}, tiers: TIER_TABLE };
 }

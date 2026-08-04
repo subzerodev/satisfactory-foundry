@@ -15,9 +15,12 @@ import type { LinkFinding } from "../core/reconcile.ts";
 import {
   graphToFlow,
   pickLinkItem,
+  computeTransportFindings,
   NODE_WIDTH,
   NODE_HEIGHT,
 } from "./graph-flow.ts";
+import type { LinkTransport } from "../state/store.ts";
+import { TIER_TABLE } from "../data/tiers.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures — a minimal catalog + recipe/stage builders.
@@ -69,15 +72,36 @@ const recipes: Record<string, CatalogRecipe> = {
 
 const catalog: Catalog = {
   items: {
-    ore_iron: { id: "ore_iron", displayName: "Iron Ore", isFluid: false },
-    iron_ingot: { id: "iron_ingot", displayName: "Iron Ingot", isFluid: false },
-    iron_plate: { id: "iron_plate", displayName: "Iron Plate", isFluid: false },
+    ore_iron: {
+      id: "ore_iron",
+      displayName: "Iron Ore",
+      isFluid: false,
+      stackSize: Fraction.from(100),
+    },
+    iron_ingot: {
+      id: "iron_ingot",
+      displayName: "Iron Ingot",
+      isFluid: false,
+      stackSize: Fraction.from(100),
+    },
+    iron_plate: {
+      id: "iron_plate",
+      displayName: "Iron Plate",
+      isFluid: false,
+      stackSize: Fraction.from(200),
+    },
     copper_ingot: {
       id: "copper_ingot",
       displayName: "Copper Ingot",
       isFluid: false,
+      stackSize: Fraction.from(100),
     },
-    rotor: { id: "rotor", displayName: "Rotor", isFluid: false },
+    rotor: {
+      id: "rotor",
+      displayName: "Rotor",
+      isFluid: false,
+      stackSize: Fraction.from(100),
+    },
   },
   machines: {},
   recipes,
@@ -665,5 +689,188 @@ describe("graphToFlow — node powerText", () => {
     );
     expect(nodes.find((n) => n.id === "bad")!.data.powerText).toBeNull();
     expect(nodes.find((n) => n.id === "idle")!.data.powerText).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// graphToFlow — the transport chip on configured non-belt edges (Stage 7 P2).
+// ---------------------------------------------------------------------------
+
+// The edge catalog with REAL tiers (the base fixture uses empty tiers; the
+// transport math needs an unlocked belt/pipe tier to size against).
+const transportCatalog: Catalog = { ...catalog, tiers: TIER_TABLE };
+
+describe("graphToFlow — transport edge chip", () => {
+  // A solved consumer with a feed lane so linkRequiredRate resolves (600/min).
+  const producer = stage("a", "A", "ingot", 20, solvedWith({}));
+  const consumer = stage(
+    "b",
+    "B",
+    "plate",
+    10,
+    solvedWith({
+      feeds: [{ itemId: "iron_ingot", totalDemand: Fraction.from(600) }],
+    }),
+  );
+  const base = { a: producer, b: consumer };
+  const order = ["a", "b"];
+  const pos = { a: { x: 0, y: 0 }, b: { x: 0, y: 0 } };
+
+  function linkWith(transport?: LinkTransport): StageLink[] {
+    return [
+      {
+        id: "L1",
+        fromStageId: "a",
+        itemId: "iron_ingot",
+        toStageId: "b",
+        ...(transport ? { transport } : {}),
+      },
+    ];
+  }
+
+  it("belt (absent transport) appends NO chip — renders as today", () => {
+    const { edges } = graphToFlow(
+      transportCatalog,
+      base,
+      order,
+      linkWith(),
+      [],
+      pos,
+      "a",
+    );
+    expect(edges[0]!.label).toBe("Iron Ingot · ok");
+  });
+
+  it("a measured truck link appends a count chip (no ≈)", () => {
+    const { edges } = graphToFlow(
+      transportCatalog,
+      base,
+      order,
+      linkWith({
+        mode: "truck",
+        trip: { kind: "measured", roundTripSecondsText: "120" },
+      }),
+      [],
+      pos,
+      "a",
+    );
+    // 600/min, cargo 48×100=4800, T=136 → 1 truck.
+    expect(edges[0]!.label).toContain("· 1 truck");
+    expect(edges[0]!.label).not.toContain("≈");
+  });
+
+  it("an estimated link prefixes the chip with ≈", () => {
+    const { edges } = graphToFlow(
+      transportCatalog,
+      base,
+      order,
+      linkWith({
+        mode: "truck",
+        trip: { kind: "estimated", distanceText: "500" },
+      }),
+      [],
+      pos,
+      "a",
+    );
+    expect(edges[0]!.label).toContain("≈");
+  });
+
+  it("an unsolved consumer → no chip (solved-only)", () => {
+    const unsolvedConsumer = stage("b", "B", "plate", 10, solvedWith({}));
+    const { edges } = graphToFlow(
+      transportCatalog,
+      { a: producer, b: unsolvedConsumer },
+      order,
+      linkWith({
+        mode: "truck",
+        trip: { kind: "estimated", distanceText: "500" },
+      }),
+      [],
+      pos,
+      "a",
+    );
+    // No feed lane → rate null → unsolved plan → edgeChip null → no chip.
+    expect(edges[0]!.label).toBe("Iron Ingot · ok");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeTransportFindings — the unsustainable-train case (Stage 7 P2, Axis 4).
+// ---------------------------------------------------------------------------
+
+describe("computeTransportFindings", () => {
+  const producer = stage("a", "A", "ingot", 20, solvedWith({}));
+
+  // A helper to build a one-link graph with a train config at a given demand.
+  function graphAt(demand: number, transport?: LinkTransport) {
+    const consumerAt = stage(
+      "b",
+      "B",
+      "plate",
+      10,
+      solvedWith({
+        feeds: [{ itemId: "iron_ingot", totalDemand: Fraction.from(demand) }],
+      }),
+    );
+    const links: StageLink[] = [
+      {
+        id: "L1",
+        fromStageId: "a",
+        itemId: "iron_ingot",
+        toStageId: "b",
+        ...(transport ? { transport } : {}),
+      },
+    ];
+    return { stages: { a: producer, b: consumerAt }, links };
+  }
+
+  it("flags a train link whose rate exceeds every consist's pair ceiling", () => {
+    // Absurd demand for a short measured trip → no consist sustains it.
+    const { stages, links } = graphAt(1000000, {
+      mode: "train",
+      trip: { kind: "measured", roundTripSecondsText: "60" },
+    });
+    const findings = computeTransportFindings(transportCatalog, stages, links, {
+      belt: 4,
+      pipe: 2,
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain("Iron Ingot:");
+  });
+
+  it("a sustainable train link yields no finding", () => {
+    const { stages, links } = graphAt(100, {
+      mode: "train",
+      trip: { kind: "measured", roundTripSecondsText: "200" },
+    });
+    expect(
+      computeTransportFindings(transportCatalog, stages, links, {
+        belt: 4,
+        pipe: 2,
+      }),
+    ).toEqual([]);
+  });
+
+  it("a non-train link never contributes a finding", () => {
+    const { stages, links } = graphAt(1000000, {
+      mode: "truck",
+      trip: { kind: "measured", roundTripSecondsText: "60" },
+    });
+    expect(
+      computeTransportFindings(transportCatalog, stages, links, {
+        belt: 4,
+        pipe: 2,
+      }),
+    ).toEqual([]);
+  });
+
+  it("belt (absent transport) never contributes a finding", () => {
+    const { stages, links } = graphAt(1000000);
+    expect(
+      computeTransportFindings(transportCatalog, stages, links, {
+        belt: 4,
+        pipe: 2,
+      }),
+    ).toEqual([]);
   });
 });

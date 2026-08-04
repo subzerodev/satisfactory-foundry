@@ -19,6 +19,7 @@ import { solveStage } from "../core/manifold.ts";
 import type { StageSolveResult } from "../core/manifold.ts";
 import { reconcileLinks } from "../core/reconcile.ts";
 import type { LinkInput, LinkFinding } from "../core/reconcile.ts";
+import type { DroneFuel } from "../core/transport-facts.ts";
 import type { Catalog } from "../data/types.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
@@ -33,7 +34,7 @@ import {
   deletePlan as deletePlanFile,
   validatePlanFile,
 } from "../data/plan-store.ts";
-import type { PlanFileV2, PlanListEntry } from "../data/plan-store.ts";
+import type { PlanFileV3, PlanListEntry } from "../data/plan-store.ts";
 
 // ---------------------------------------------------------------------------
 // State shape (frozen brainstorm Axis 2)
@@ -86,14 +87,59 @@ export interface StageNode {
 }
 
 /**
+ * Per-link transport configuration (Stage 7 / Phase 2, frozen Axis 1). RAW USER
+ * TEXT, parsed at derive time — the established Selection idiom (clock / capacity
+ * overrides are stored as strings and Fraction.parse'd in the derive, errors
+ * surfaced). MODE-DISCRIMINATED (the P1 Cargo/DroneTripInput discipline: illegal
+ * states are unrepresentable, not runtime-guarded):
+ *
+ * - belt/pipe: trip-less continuous;
+ * - the four road modes + train: `trip` is one-way meters (estimated) or a
+ *   measured round-trip in seconds. The road four hand a TripInput to
+ *   vehicleFleet (which doubles + docks internally); TRAIN routes to
+ *   trainOptions with a derive-built roundTripSeconds (Assumption #6);
+ * - drone: `fuel` + a trip whose distance is ROUND-TRIP flight meters (the P1
+ *   DroneTripInput arm names). The measured arm's optional flightMetersText is
+ *   the battery-cost add-on; the estimated arm's flightMetersText IS the input.
+ *
+ * The units trap (one-way vs round-trip) is enforced by field NAMES per arm, not
+ * a prose warning; `fuel` cannot exist on a road link, etc.
+ */
+export type LinkTransport =
+  | { mode: "belt" | "pipe" }
+  | {
+      mode: "truck" | "tractor" | "explorer" | "fluid-truck" | "train";
+      trip:
+        | { kind: "measured"; roundTripSecondsText: string }
+        | { kind: "estimated"; distanceText: string };
+    }
+  | {
+      mode: "drone";
+      fuel: DroneFuel;
+      trip:
+        | {
+            kind: "measured";
+            roundTripSecondsText: string;
+            flightMetersText?: string;
+          }
+        | { kind: "estimated"; flightMetersText: string };
+    };
+
+/** The transport mode discriminant across the whole `LinkTransport` union. */
+export type TransportMode = LinkTransport["mode"];
+
+/**
  * A directed item feed: `from`'s output belts of `itemId` feed `to`'s input
  * lane of `itemId`. Item-level, not belt-level (physical routing is Stage 4).
+ * `transport` is OPTIONAL; absent ⇒ `mode: "belt"` (today's implicit default —
+ * every existing link keeps its exact current meaning and rendering).
  */
 export interface StageLink {
   id: string;
   fromStageId: string;
   itemId: string;
   toStageId: string;
+  transport?: LinkTransport;
 }
 
 export interface AppState {
@@ -110,6 +156,12 @@ export interface AppState {
   links: StageLink[];
   /** Derived per-link reconciliation findings (see src/core/reconcile.ts). */
   reconciliation: LinkFinding[];
+  /**
+   * The link whose LinkInspector is open (Stage 7 / Phase 2), or null when none
+   * is selected. Set by the canvas edge-select arm; cleared on deselect and when
+   * the selected link is removed (a dangling id would open an empty inspector).
+   */
+  selectedLinkId: string | null;
   /**
    * Canvas node positions, keyed by stage id (Stage 3 / Phase 2). Session state
    * this phase — persisting them is Phase 3's plan-format decision (deferred,
@@ -183,6 +235,14 @@ export interface Actions {
   setActiveStage(id: string): void;
   addLink(link: Omit<StageLink, "id">): void;
   removeLink(id: string): void;
+  /** Set a link's transport config (mode + trip). Absent-`transport` ⇒ belt
+   *  default, so passing `{ mode: "belt" }` and clearLinkTransport are
+   *  equivalent; both restore the default rendering. */
+  setLinkTransport(linkId: string, transport: LinkTransport): void;
+  /** Clear a link's transport config back to the belt default (drops the key). */
+  clearLinkTransport(linkId: string): void;
+  /** Open the LinkInspector for a link (null closes it). */
+  selectLink(linkId: string | null): void;
   setStagePosition(id: string, pos: { x: number; y: number }): void;
   refreshPlans(): Promise<void>;
   savePlanAs(name: string): Promise<void>;
@@ -369,6 +429,7 @@ type GraphSlice = Pick<
   | "positions"
   | "selection"
   | "solve"
+  | "selectedLinkId"
 >;
 
 /** Re-derive one stage's solve against the current catalog (v1 semantics). */
@@ -451,7 +512,7 @@ function deriveAllStages(
 }
 
 /**
- * Whole-graph replacement from a loaded `PlanFileV2` (Stage 3 / Phase 3, frozen
+ * Whole-graph replacement from a loaded `PlanFileV3` (Stage 3 / Phase 3, frozen
  * Axis 4). Builds a fresh graph — new stage/link uuids — and applies the frozen
  * load treatments per stage:
  *
@@ -474,7 +535,7 @@ function deriveAllStages(
  */
 function rebuildFromPlan(
   slice: GraphSlice,
-  plan: PlanFileV2,
+  plan: PlanFileV3,
 ): GraphSlice & { placementSeq: number } {
   const { catalog } = slice;
   // Current global tiers (the active mirror holds the canonical global value).
@@ -509,6 +570,10 @@ function rebuildFromPlan(
     fromStageId: ids[l.from]!,
     toStageId: ids[l.to]!,
     itemId: l.itemId,
+    // Transport payload carries verbatim from the file (raw user text — the
+    // Selection precedent); absent ⇒ belt default. Fresh link ids, so the prior
+    // inspector selection is stale — reset below.
+    ...(l.transport !== undefined ? { transport: l.transport } : {}),
   }));
   const rebuilt: GraphSlice = {
     ...slice,
@@ -517,6 +582,7 @@ function rebuildFromPlan(
     links,
     positions,
     activeStageId: ids[0]!,
+    selectedLinkId: null,
   };
   // deriveAllStages overwrites the seeded-idle solves, mirrors the active stage,
   // and recomputes reconciliation — the full-recompute cadence for a
@@ -697,6 +763,7 @@ export function createAppStore(storage?: StateStorage) {
           activeStageId: firstStage.id,
           links: [],
           reconciliation: [],
+          selectedLinkId: null,
           // The default stage auto-places at seq 0's slot; placementSeq then
           // points at the next free slot (Stage 3 / Phase 2).
           positions: { [firstStage.id]: placementSlot(0) },
@@ -1000,19 +1067,28 @@ export function createAppStore(storage?: StateStorage) {
               const links = s.links.filter(
                 (l) => l.fromStageId !== id && l.toStageId !== id,
               );
+              // If the open inspector's link was cascaded away, close it.
+              const selectedLinkId = links.some(
+                (l) => l.id === s.selectedLinkId,
+              )
+                ? s.selectedLinkId
+                : null;
               // Cursor moves to the first remaining stage if the active one went.
               const activeStageId =
                 s.activeStageId === id ? stageOrder[0]! : s.activeStageId;
-              return recomputeReconciliation(
-                mirrorActive({
-                  ...s,
-                  stages,
-                  stageOrder,
-                  positions,
-                  links,
-                  activeStageId,
-                }),
-              );
+              return {
+                ...recomputeReconciliation(
+                  mirrorActive({
+                    ...s,
+                    stages,
+                    stageOrder,
+                    positions,
+                    links,
+                    activeStageId,
+                  }),
+                ),
+                selectedLinkId,
+              };
             });
           },
 
@@ -1051,12 +1127,63 @@ export function createAppStore(storage?: StateStorage) {
           },
 
           removeLink(id: string) {
-            set((s) =>
-              recomputeReconciliation({
+            set((s) => ({
+              // Transport config is link-attached and does not change supply/
+              // demand, so removal only re-runs reconciliation (a link went) and
+              // clears selection if the removed link was the open inspector.
+              ...recomputeReconciliation({
                 ...s,
                 links: s.links.filter((l) => l.id !== id),
               }),
-            );
+              selectedLinkId: s.selectedLinkId === id ? null : s.selectedLinkId,
+            }));
+          },
+
+          setLinkTransport(linkId: string, transport: LinkTransport) {
+            // Pure link write: transport config never affects a stage solve or
+            // reconciliation (supply/demand are unchanged), so no re-derive is
+            // needed — Zustand re-renders the transport surfaces on `links`
+            // change. Parsing of the raw trip text happens at render time, where
+            // errors surface on the inspector (the clock-error precedent).
+            set((s) => {
+              if (!s.links.some((l) => l.id === linkId)) return {};
+              return {
+                links: s.links.map((l) =>
+                  l.id === linkId ? { ...l, transport } : l,
+                ),
+              };
+            });
+          },
+
+          clearLinkTransport(linkId: string) {
+            // Drop the transport key entirely → the belt default (absent means
+            // belt), restoring today's rendering with zero new UI noise.
+            set((s) => {
+              if (!s.links.some((l) => l.id === linkId)) return {};
+              return {
+                links: s.links.map((l) => {
+                  if (l.id !== linkId) return l;
+                  // Rebuild without the transport key (absent ⇒ belt default).
+                  return {
+                    id: l.id,
+                    fromStageId: l.fromStageId,
+                    itemId: l.itemId,
+                    toStageId: l.toStageId,
+                  };
+                }),
+              };
+            });
+          },
+
+          selectLink(linkId: string | null) {
+            // A select on a vanished link is ignored (belt-and-braces: the canvas
+            // only selects live edges). null always closes the inspector.
+            set((s) => {
+              if (linkId !== null && !s.links.some((l) => l.id === linkId)) {
+                return {};
+              }
+              return { selectedLinkId: linkId };
+            });
           },
 
           setStagePosition(id: string, pos: { x: number; y: number }) {
@@ -1113,15 +1240,21 @@ export function createAppStore(storage?: StateStorage) {
                     position: s.positions[id],
                   };
                 });
+                // Links index-encoded; the transport payload carries verbatim
+                // (raw user text — the Selection precedent), absent for belt
+                // links so the file stays clean.
                 const links = s.links.map((l) => ({
                   from: indexOf.get(l.fromStageId)!,
                   to: indexOf.get(l.toStageId)!,
                   itemId: l.itemId,
+                  ...(l.transport !== undefined
+                    ? { transport: l.transport }
+                    : {}),
                 }));
                 if (match) {
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV2 = {
-                    format_version: 2,
+                  const plan: PlanFileV3 = {
+                    format_version: 3,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
@@ -1130,8 +1263,8 @@ export function createAppStore(storage?: StateStorage) {
                   };
                   await savePlanFile(plan, match.id);
                 } else {
-                  const plan: PlanFileV2 = {
-                    format_version: 2,
+                  const plan: PlanFileV3 = {
+                    format_version: 3,
                     name: trimmed,
                     createdAt: now,
                     updatedAt: now,
@@ -1193,10 +1326,10 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                // loadPlanFile returns v2 (migrating a v1 row), so this spread
-                // widens to v2 — renaming a v1 row rewrites it as v2, consistent
-                // with the save-over model (any write persists v2).
-                const renamed: PlanFileV2 = {
+                // loadPlanFile returns v3 (migrating older rows), so this spread
+                // widens to v3 — renaming an older row rewrites it as v3,
+                // consistent with the save-over model (any write persists v3).
+                const renamed: PlanFileV3 = {
                   ...plan,
                   name: trimmed,
                   updatedAt: new Date().toISOString(),
@@ -1266,7 +1399,7 @@ export function createAppStore(storage?: StateStorage) {
                   // Overwrite the existing row: keep ITS createdAt (a foreign
                   // payload's timestamp is untrusted), stamp updatedAt now.
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV2 = {
+                  const plan: PlanFileV3 = {
                     ...file,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
@@ -1276,7 +1409,7 @@ export function createAppStore(storage?: StateStorage) {
                 } else {
                   // New row: createdAt now (savePlanAs precedent — new names get
                   // now, never the untrusted foreign timestamp).
-                  const plan: PlanFileV2 = {
+                  const plan: PlanFileV3 = {
                     ...file,
                     name: trimmed,
                     createdAt: now,

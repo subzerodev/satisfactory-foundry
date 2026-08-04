@@ -7,14 +7,20 @@
  * by id against whatever catalog is live at load time.
  *
  * `stages` is an array from day one and `links` a reserved empty array in v1, so
- * Stage 3 adds nodes/edges WITH a format bump: `PlanFileV2` carries the whole
- * graph (per-stage name + position, index-encoded links). Save always writes v2;
- * read accepts both, migrating v1 in memory (`migrateV1`). The v1-era validator
- * structurally rejects populated links, so a multi-stage file honestly stamps
- * `format_version: 2`.
+ * Stage 3 added nodes/edges WITH a format bump: `PlanFileV2` carries the whole
+ * graph (per-stage name + position, index-encoded links). Stage 7 / Phase 2 adds
+ * `PlanFileV3` — the same graph plus optional per-link `transport`. Save always
+ * writes the LATEST version (v3); read accepts all three, migrating v1/v2 in
+ * memory (`migrateV1`/`migrateV2`).
  */
 
-import type { Selection } from "../state/store.ts";
+import type {
+  Selection,
+  LinkTransport,
+  TransportMode,
+} from "../state/store.ts";
+import type { DroneFuel } from "../core/transport-facts.ts";
+import { Fraction } from "../core/fraction.ts";
 import { openDb } from "./db.ts";
 
 const PLANS_STORE = "plans";
@@ -62,6 +68,51 @@ export interface PlanFileV2 {
   links: PlanLinkV2[];
 }
 
+/**
+ * Stage 7 / Phase 2: one graph edge in a v3 file — a `PlanLinkV2` plus optional
+ * per-link `transport`. The stage-reference identity (index-based `{from, to,
+ * itemId}`) is UNTOUCHED; only the transport PAYLOAD is added, carried verbatim
+ * as the same raw user text the state link holds (the Selection precedent).
+ */
+export interface PlanLinkV3 extends PlanLinkV2 {
+  transport?: LinkTransport;
+}
+
+/**
+ * Stage 7 / Phase 2: the whole-graph file with per-link transport. Same header +
+ * stages as v2; `links` are `PlanLinkV3`. Save always writes this; `loadPlanFile`
+ * returns it directly (v3) or via `migrateV2`/`migrateV1` (older files).
+ */
+export interface PlanFileV3 {
+  format_version: 3;
+  name: string;
+  createdAt: string; // ISO
+  updatedAt: string; // ISO
+  stages: PlanStageV2[];
+  links: PlanLinkV3[];
+}
+
+/** The 7-key `DroneFuel` union as a validator lookup set (the file validator
+ *  pins the drone arm's `fuel` ∈ these). */
+const DRONE_FUELS: ReadonlySet<string> = new Set<DroneFuel>([
+  "packaged-fuel",
+  "packaged-turbofuel",
+  "battery",
+  "packaged-rocket-fuel",
+  "uranium-fuel-rod",
+  "packaged-ionized-fuel",
+  "plutonium-fuel-rod",
+]);
+
+/** The road+train modes whose arm carries a `trip` (not belt/pipe, not drone). */
+const VEHICLE_MODES: ReadonlySet<string> = new Set<TransportMode>([
+  "truck",
+  "tractor",
+  "explorer",
+  "fluid-truck",
+  "train",
+]);
+
 /** A list-row projection — enough to render + address a plan without loading it. */
 export interface PlanListEntry {
   id: string;
@@ -69,8 +120,8 @@ export interface PlanListEntry {
   updatedAt: string;
 }
 
-/** Persist a plan file under `id` (create or overwrite). Always v2. */
-export async function savePlan(plan: PlanFileV2, id: string): Promise<void> {
+/** Persist a plan file under `id` (create or overwrite). Always v3. */
+export async function savePlan(plan: PlanFileV3, id: string): Promise<void> {
   const db = await openDb();
   await db.put(PLANS_STORE, plan, id);
 }
@@ -85,9 +136,9 @@ export async function listPlans(): Promise<PlanListEntry[]> {
   const rows = await db.getAllWithKeys<unknown>(PLANS_STORE);
   const entries: PlanListEntry[] = [];
   for (const { key, value } of rows) {
-    // Either format renders a row: a v1 file is still loadable (via migration),
-    // and a v2 file is the current shape. Header fields co-locate in both.
-    if (isPlanFileV2(value) || isPlanFileV1(value)) {
+    // Any loadable format renders a row: v1/v2 migrate, v3 is the current shape.
+    // Header fields co-locate across all three.
+    if (isPlanFileV3(value) || isPlanFileV2(value) || isPlanFileV1(value)) {
       entries.push({ id: key, name: value.name, updatedAt: value.updatedAt });
     }
   }
@@ -97,23 +148,25 @@ export async function listPlans(): Promise<PlanListEntry[]> {
 
 /**
  * Validate an arbitrary value as a plan file THIS build can use, returning a
- * `PlanFileV2` (migrating a valid v1 in memory) or null on corrupt/foreign.
+ * `PlanFileV3` (migrating a valid v2/v1 in memory) or null on corrupt/foreign.
  * The single acceptance rule shared by `loadPlan` (IDB rows) and `importPlan`
- * (uploaded exports): v2 first, else a valid v1 via `migrateV1`.
+ * (uploaded exports): v3 first, else v2 via `migrateV2`, else v1 via
+ * `migrateV1` (chained through v2).
  */
-export function validatePlanFile(value: unknown): PlanFileV2 | null {
-  if (isPlanFileV2(value)) return value;
-  if (isPlanFileV1(value)) return migrateV1(value);
+export function validatePlanFile(value: unknown): PlanFileV3 | null {
+  if (isPlanFileV3(value)) return value;
+  if (isPlanFileV2(value)) return migrateV2(value);
+  if (isPlanFileV1(value)) return migrateV2(migrateV1(value));
   return null;
 }
 
 /**
- * Load + validate one plan, returning a `PlanFileV2` (migrating a v1 file in
- * memory). Returns null on missing OR corrupt-for-this-build. V2 is tried first;
- * a valid v1 file falls back to `migrateV1`. Migration is read-side only — the
- * stored row is untouched until the next save-over (which writes v2).
+ * Load + validate one plan, returning a `PlanFileV3` (migrating v2/v1 files in
+ * memory). Returns null on missing OR corrupt-for-this-build. V3 is tried first;
+ * older files fall back to `migrateV2`/`migrateV1`. Migration is read-side only —
+ * the stored row is untouched until the next save-over (which writes v3).
  */
-export async function loadPlan(id: string): Promise<PlanFileV2 | null> {
+export async function loadPlan(id: string): Promise<PlanFileV3 | null> {
   const db = await openDb();
   const value = await db.get<unknown>(PLANS_STORE, id);
   return validatePlanFile(value);
@@ -134,6 +187,27 @@ export function migrateV1(plan: PlanFileV1): PlanFileV2 {
     updatedAt: plan.updatedAt,
     stages: [{ name: "Stage 1", selection: plan.stages[0]!.selection }],
     links: [],
+  };
+}
+
+/**
+ * Migrate a validated v2 file to v3 in memory (Stage 7 / Phase 2): mechanical —
+ * stages carry over unchanged; each link maps to itself with `transport` absent
+ * (⇒ the belt default). Timestamps carry VERBATIM (the save-over path reads the
+ * prior file's createdAt, so a migrated row must not reset its creation time).
+ */
+export function migrateV2(plan: PlanFileV2): PlanFileV3 {
+  return {
+    format_version: 3,
+    name: plan.name,
+    createdAt: plan.createdAt,
+    updatedAt: plan.updatedAt,
+    stages: plan.stages,
+    links: plan.links.map((l) => ({
+      from: l.from,
+      to: l.to,
+      itemId: l.itemId,
+    })),
   };
 }
 
@@ -220,6 +294,120 @@ function isPlanFileV2(value: unknown): value is PlanFileV2 {
     seen.add(key);
   }
   return true;
+}
+
+/**
+ * Reviver-style shape check for a PlanFileV3 (Stage 7 / Phase 2). Identical to
+ * the v2 check on header/stages/link-index invariants (self-link, in-range,
+ * duplicate `(to, itemId)` — the frozen P1 refusals at the file boundary), PLUS
+ * an optional per-link `transport` validated by {@link isTransportShape}:
+ *
+ * - `mode` ∈ the 8-mode enum;
+ * - belt/pipe carry no `trip`;
+ * - road+train modes carry a measured (roundTripSecondsText) or estimated
+ *   (distanceText) trip, whose string must `Fraction.parse` to a POSITIVE value;
+ * - drone carries `fuel` ∈ the 7-key `DroneFuel` union + its own measured/
+ *   estimated trip (positive-Fraction strings; the measured arm's optional
+ *   flightMetersText, when present, positive too).
+ *
+ * Invalid transport on an otherwise-valid link FAILS validation (the file
+ * validator's strictness elsewhere — no silent dropping).
+ */
+function isPlanFileV3(value: unknown): value is PlanFileV3 {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (v.format_version !== 3) return false;
+  if (typeof v.name !== "string") return false;
+  if (typeof v.createdAt !== "string" || typeof v.updatedAt !== "string") {
+    return false;
+  }
+  if (!Array.isArray(v.stages) || v.stages.length < 1) return false;
+  if (!v.stages.every(isStageV2Shape)) return false;
+  if (!Array.isArray(v.links)) return false;
+  const stageCount = v.stages.length;
+  const seen = new Set<string>();
+  for (const link of v.links) {
+    if (link === null || typeof link !== "object") return false;
+    const l = link as Record<string, unknown>;
+    if (typeof l.itemId !== "string") return false;
+    if (!Number.isInteger(l.from) || !Number.isInteger(l.to)) return false;
+    const from = l.from as number;
+    const to = l.to as number;
+    if (from < 0 || from >= stageCount || to < 0 || to >= stageCount) {
+      return false;
+    }
+    if (from === to) return false; // self-link (frozen P1 refusal)
+    const key = `${to} ${l.itemId}`; // duplicate (to, itemId) feed lane
+    if (seen.has(key)) return false;
+    seen.add(key);
+    // transport is OPTIONAL; present ⇒ must be a valid LinkTransport shape.
+    if (l.transport !== undefined && !isTransportShape(l.transport)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** A trip-string field: present, a string, and `Fraction.parse`-positive. */
+function isPositiveFractionText(raw: unknown): boolean {
+  if (typeof raw !== "string") return false;
+  try {
+    return Fraction.parse(raw).gt(Fraction.from(0));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validate a file link's `transport` against the frozen `LinkTransport` union.
+ * The mode discriminant selects the arm; each arm's trip/flight strings must be
+ * positive Fractions, and the drone arm's `fuel` must be a known `DroneFuel`.
+ */
+function isTransportShape(value: unknown): value is LinkTransport {
+  if (value === null || typeof value !== "object") return false;
+  const t = value as Record<string, unknown>;
+  const mode = t.mode;
+  if (typeof mode !== "string") return false;
+
+  if (mode === "belt" || mode === "pipe") {
+    // Trip-less continuous modes carry no other transport fields.
+    return true;
+  }
+
+  if (VEHICLE_MODES.has(mode)) {
+    const trip = t.trip as Record<string, unknown> | null;
+    if (trip === null || typeof trip !== "object") return false;
+    if (trip.kind === "measured") {
+      return isPositiveFractionText(trip.roundTripSecondsText);
+    }
+    if (trip.kind === "estimated") {
+      return isPositiveFractionText(trip.distanceText);
+    }
+    return false;
+  }
+
+  if (mode === "drone") {
+    if (typeof t.fuel !== "string" || !DRONE_FUELS.has(t.fuel)) return false;
+    const trip = t.trip as Record<string, unknown> | null;
+    if (trip === null || typeof trip !== "object") return false;
+    if (trip.kind === "measured") {
+      if (!isPositiveFractionText(trip.roundTripSecondsText)) return false;
+      // The measured arm's flight distance is OPTIONAL; when present, positive.
+      if (
+        trip.flightMetersText !== undefined &&
+        !isPositiveFractionText(trip.flightMetersText)
+      ) {
+        return false;
+      }
+      return true;
+    }
+    if (trip.kind === "estimated") {
+      return isPositiveFractionText(trip.flightMetersText);
+    }
+    return false;
+  }
+
+  return false; // unknown mode
 }
 
 /** A v2 stage entry: `{ name, selection, position? }` (position optional). */

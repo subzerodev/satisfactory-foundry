@@ -1,0 +1,198 @@
+Stage 7 / Phase 2 — transport UI — bidirectionality verification log
+Generated: 2026-08-04T17:36:02Z
+Worktree: .worktrees/logistics-p2 (branch feature/logistics-p2)
+Baseline: 477 tests. Post-P2: 533 tests (532 at initial land; +1 honest-units test in the boundary fold) (all green on HEAD).
+
+Method: per distinct production behavior, PASS on HEAD → break production (sed)
+→ genuine vitest FAIL naming the new test → git checkout restore → PASS. The
+per-family PASS/BREAK/FAIL/restore excerpts below are captured verbatim from the
+run script (scratchpad/biverify.sh). Each mutation flips exactly one production
+fact; the FAIL names the test that pins it.
+
+===================================================================
+FAMILY: docs-loader: SS_MEDIUM → 100
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 23 skipped (24)
+--- BREAK: s/SS_MEDIUM: Fraction.from(100)/SS_MEDIUM: Fraction.from(999)/ ---
+mutation applied to src/data/docs-loader.ts
+--- FAIL (production broken) ---
+ ❯ src/data/docs-loader.test.ts (24 tests | 1 failed | 23 skipped) 5ms
+     × maps each recognized enum value to its items-per-slot Fraction 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected false to be true // Object.is equality
+ Test Files  1 failed (1)
+      Tests  1 failed | 23 skipped (24)
+--- restored ---
+
+===================================================================
+FAMILY: catalog-store: stackSize serialize/revive
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 8 skipped (9)
+--- BREAK: s/stackSize: item.stackSize === null ? null : item.stackSize.toString()/stackSize: null/ ---
+mutation applied to src/data/catalog-store.ts
+--- FAIL (production broken) ---
+ ❯ src/data/catalog-store.test.ts (9 tests | 1 failed | 8 skipped) 8ms
+     × save → load returns a hit with Fraction-equal catalog + records a hash 7ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+TypeError: Cannot read properties of null (reading 'eq')
+ Test Files  1 failed (1)
+      Tests  1 failed | 8 skipped (9)
+--- restored ---
+
+===================================================================
+FAMILY: plan-store: migrateV2 stamps v3
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 36 skipped (37)
+--- BREAK: s/format_version: 3,/format_version: 2 as unknown as 3,/ ---
+mutation applied to src/data/plan-store.ts
+--- FAIL (production broken) ---
+ ❯ src/data/plan-store.test.ts (37 tests | 1 failed | 36 skipped) 6ms
+     × maps every link to itself with transport absent; stages + timestamps verbatim 5ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected 2 to be 3 // Object.is equality
+ Test Files  1 failed (1)
+      Tests  1 failed | 36 skipped (37)
+--- restored ---
+
+===================================================================
+FAMILY: plan-store: validator rejects unknown mode
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 36 skipped (37)
+--- BREAK: s/return false; \/\/ unknown mode/return true; \/\/ unknown mode/ ---
+mutation applied to src/data/plan-store.ts
+--- FAIL (production broken) ---
+ ❯ src/data/plan-store.test.ts (37 tests | 1 failed | 36 skipped) 7ms
+     × rejects an unknown mode 7ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected { format_version: 3, …(5) } to be null
+ Test Files  1 failed (1)
+      Tests  1 failed | 36 skipped (37)
+--- restored ---
+
+===================================================================
+FAMILY: plan-store: validator rejects zero trip
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 36 skipped (37)
+--- BREAK: s/return Fraction.parse(raw).gt(Fraction.from(0));/return true;/ ---
+mutation applied to src/data/plan-store.ts
+--- FAIL (production broken) ---
+ ❯ src/data/plan-store.test.ts (37 tests | 1 failed | 36 skipped) 7ms
+     × rejects a zero (non-positive) trip value 6ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected { format_version: 3, …(5) } to be null
+ Test Files  1 failed (1)
+      Tests  1 failed | 36 skipped (37)
+--- restored ---
+
+===================================================================
+FAMILY: transport-plan: train estimated round trip
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 15 skipped (16)
+--- BREAK: s/TRAIN_LOCKOUT_SECONDS.mul(Fraction.from(2))/TRAIN_LOCKOUT_SECONDS.mul(Fraction.from(0))/ ---
+mutation applied to src/ui/transport-plan.ts
+--- FAIL (production broken) ---
+ ❯ src/ui/transport-plan.test.ts (16 tests | 1 failed | 15 skipped) 5ms
+     × estimated builds 2d/v + 2×lockout; beltFeed = unlocked belt × 2 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/transport-plan.test.ts > computeLinkTransport — train (Assumption #6 routing) > estimated builds 2d/v + 2×lockout; beltFeed = unlocked belt × 2
+AssertionError: expected false to be true // Object.is equality
+ Test Files  1 failed (1)
+--- restored ---
+
+===================================================================
+FAMILY: transport-plan: drone measured null-distance
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 15 skipped (16)
+--- BREAK: s/droneTrip = { kind: "measured", roundTripSeconds: seconds.value };/droneTrip = { kind: "measured", roundTripSeconds: seconds.value, roundTripFlightMeters: seconds.value };/ ---
+mutation applied to src/ui/transport-plan.ts
+--- FAIL (production broken) ---
+ ❯ src/ui/transport-plan.test.ts (16 tests | 1 failed | 15 skipped) 4ms
+     × measured without distance → batteriesPerTrip null (never inferred) 3ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected Fraction{ num: 209n, den: 50n } to be null
+ Test Files  1 failed (1)
+      Tests  1 failed | 15 skipped (16)
+--- restored ---
+
+===================================================================
+FAMILY: graph-flow: edge chip ≈ on estimated
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 28 skipped (29)
+--- BREAK: s/estimated ? `· ≈ \${body}`/estimated ? `· \${body}`/ ---
+mutation applied to src/ui/transport-text.ts
+--- FAIL (production broken) ---
+ ❯ src/ui/graph-flow.test.ts (29 tests | 1 failed | 28 skipped) 4ms
+     × an estimated link prefixes the chip with ≈ 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected 'Iron Ingot · ok · 1 truck' to contain '≈'
+ Test Files  1 failed (1)
+      Tests  1 failed | 28 skipped (29)
+--- restored ---
+
+===================================================================
+FAMILY: graph-flow: unsustainable-train finding
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 28 skipped (29)
+--- BREAK: s/return rate.gt(pairCeiling) ? maxRow : null;/return null;/ ---
+mutation applied to src/ui/transport-text.ts
+--- FAIL (production broken) ---
+ ❯ src/ui/graph-flow.test.ts (29 tests | 1 failed | 28 skipped) 5ms
+     × flags a train link whose rate exceeds every consist's pair ceiling 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected [] to have a length of 1 but got +0
+ Test Files  1 failed (1)
+      Tests  1 failed | 28 skipped (29)
+--- restored ---
+
+===================================================================
+FAMILY: store: setLinkTransport writes config
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 107 skipped (108)
+--- BREAK: s/l.id === linkId ? { ...l, transport } : l/l/ ---
+mutation applied to src/state/store.ts
+--- FAIL (production broken) ---
+ ❯ src/state/store.test.ts (108 tests | 1 failed | 107 skipped) 10ms
+     × setLinkTransport writes the config; clearLinkTransport drops it 10ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected undefined to deeply equal { mode: 'train', trip: { …(2) } }
+ Test Files  1 failed (1)
+      Tests  1 failed | 107 skipped (108)
+--- restored ---
+
+===================================================================
+RESTORE CHECK — full suite green again
+===================================================================
+ Test Files  21 passed (21)
+      Tests  532 passed (532)
+=== Behavior 11: non-battery drone fuel renders exact MJ (not a battery count)
+--- BREAK: sed -i 's/const mj = batteries.mul(BATTERY_ENERGY_MJ);/const mj = batteries;/' src/ui/transport-text.ts
+ ❯ src/ui/transport-text.test.ts (16 tests | 1 failed) 7ms
+     × non-battery fuel → exact MJ, never a battery count (honest units) 3ms
+ FAIL  src/ui/transport-text.test.ts > transport-text — drone lines > non-battery fuel → exact MJ, never a battery count (honest units)
+AssertionError: expected 'round-trip energy 6 MJ' to be 'round-trip energy 36000 MJ' // Object.is equality
+Expected: "round-trip energy 36000 MJ"
+Received: "round-trip energy 6 MJ"
+    116|     expect(droneBatteryLine(plan)).toBe("round-trip energy 36000 MJ");
+ Test Files  1 failed (1)
+--- RESTORE: cp backup; re-run:
+      Tests  16 passed (16)

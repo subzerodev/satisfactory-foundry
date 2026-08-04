@@ -225,8 +225,12 @@ export interface TrainOption {
   perPlatformCeiling: Fraction;
   /**
    * True when the belt-feed term of `perPlatformCeiling` binds (i.e. the belt
-   * feed, not the per-trip capacity, is the limit). A genuine per-row
-   * discriminator — it varies across the enumeration.
+   * feed, not the per-trip capacity, is the limit). Both ceiling terms are
+   * c-INDEPENDENT (neither the capacity term `cargoPerCar × 60 / T_round` nor
+   * the belt term `(T_round − 27.08 s) / T_round × beltFeed` reference `c`), so
+   * for fixed inputs this flag is CONSTANT across the enumeration — a per-CONFIG
+   * discriminator (which of the two terms wins for the given cargo/trip/belt
+   * feed), not a per-row one.
    */
   ceilingBound: boolean;
 }

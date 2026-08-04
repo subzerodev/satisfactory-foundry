@@ -8,8 +8,9 @@ import {
   loadPlan,
   deletePlan,
   migrateV1,
+  migrateV2,
 } from "./plan-store.ts";
-import type { PlanFileV1, PlanFileV2 } from "./plan-store.ts";
+import type { PlanFileV1, PlanFileV2, PlanFileV3 } from "./plan-store.ts";
 
 // A canonical selection with a fractional clock text + override strings, to
 // prove the exact user-input text round-trips (no float coercion anywhere).
@@ -30,6 +31,25 @@ function sampleSelection(): Selection {
 function samplePlan(overrides?: Partial<PlanFileV2>): PlanFileV2 {
   return {
     format_version: 2,
+    name: "My Plan",
+    createdAt: "2026-08-03T00:00:00.000Z",
+    updatedAt: "2026-08-03T00:00:00.000Z",
+    stages: [
+      {
+        name: "Stage 1",
+        selection: sampleSelection(),
+        position: { x: 40, y: 40 },
+      },
+    ],
+    links: [],
+    ...overrides,
+  };
+}
+
+/** A well-formed v3 file (the current save shape): v2 + optional link transport. */
+function samplePlanV3(overrides?: Partial<PlanFileV3>): PlanFileV3 {
+  return {
+    format_version: 3,
     name: "My Plan",
     createdAt: "2026-08-03T00:00:00.000Z",
     updatedAt: "2026-08-03T00:00:00.000Z",
@@ -77,13 +97,13 @@ describe("plan-store — environment", () => {
   });
 });
 
-describe("plan-store — save/load/delete round-trip (v2)", () => {
+describe("plan-store — save/load/delete round-trip (v3)", () => {
   it("save → load returns the exact plan, fractional clock + override strings intact", async () => {
     const id = crypto.randomUUID();
-    await savePlan(samplePlan(), id);
+    await savePlan(samplePlanV3(), id);
     const loaded = await loadPlan(id);
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(2);
+    expect(loaded!.format_version).toBe(3);
     expect(loaded!.stages[0]!.selection.clockPercentText).toBe("37.5");
     expect(loaded!.stages[0]!.selection.overrides.feeds.ore_iron).toEqual([
       "480",
@@ -99,7 +119,7 @@ describe("plan-store — save/load/delete round-trip (v2)", () => {
 
   it("round-trips a multi-stage graph with index-encoded links", async () => {
     const id = crypto.randomUUID();
-    const plan = samplePlan({
+    const plan = samplePlanV3({
       stages: [
         { name: "A", selection: sampleSelection(), position: { x: 0, y: 0 } },
         { name: "B", selection: sampleSelection(), position: { x: 260, y: 0 } },
@@ -120,13 +140,68 @@ describe("plan-store — save/load/delete round-trip (v2)", () => {
     ]);
   });
 
+  it("round-trips per-link transport verbatim (raw user text intact)", async () => {
+    const id = crypto.randomUUID();
+    const plan = samplePlanV3({
+      stages: [
+        { name: "A", selection: sampleSelection() },
+        { name: "B", selection: sampleSelection() },
+        { name: "C", selection: sampleSelection() },
+        { name: "D", selection: sampleSelection() },
+      ],
+      links: [
+        {
+          from: 0,
+          to: 1,
+          itemId: "iron_ingot",
+          transport: {
+            mode: "train",
+            trip: { kind: "estimated", distanceText: "1200" },
+          },
+        },
+        {
+          from: 0,
+          to: 2,
+          itemId: "iron_ore",
+          transport: {
+            mode: "drone",
+            fuel: "battery",
+            trip: {
+              kind: "measured",
+              roundTripSecondsText: "180",
+              flightMetersText: "2000",
+            },
+          },
+        },
+        // A belt link carries no transport key — the default.
+        { from: 0, to: 3, itemId: "copper_ingot" },
+      ],
+    });
+    await savePlan(plan, id);
+    const loaded = await loadPlan(id);
+    expect(loaded!.links[0]!.transport).toEqual({
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "1200" },
+    });
+    expect(loaded!.links[1]!.transport).toEqual({
+      mode: "drone",
+      fuel: "battery",
+      trip: {
+        kind: "measured",
+        roundTripSecondsText: "180",
+        flightMetersText: "2000",
+      },
+    });
+    expect(loaded!.links[2]!.transport).toBeUndefined();
+  });
+
   it("loadPlan on a missing id → null", async () => {
     expect(await loadPlan(crypto.randomUUID())).toBeNull();
   });
 
   it("deletePlan removes the row; a later load → null", async () => {
     const id = crypto.randomUUID();
-    await savePlan(samplePlan(), id);
+    await savePlan(samplePlanV3(), id);
     await deletePlan(id);
     expect(await loadPlan(id)).toBeNull();
   });
@@ -135,15 +210,15 @@ describe("plan-store — save/load/delete round-trip (v2)", () => {
 describe("plan-store — listPlans", () => {
   it("sorts by updatedAt descending", async () => {
     await savePlan(
-      samplePlan({ name: "old", updatedAt: "2026-01-01T00:00:00.000Z" }),
+      samplePlanV3({ name: "old", updatedAt: "2026-01-01T00:00:00.000Z" }),
       "id-old",
     );
     await savePlan(
-      samplePlan({ name: "new", updatedAt: "2026-12-31T00:00:00.000Z" }),
+      samplePlanV3({ name: "new", updatedAt: "2026-12-31T00:00:00.000Z" }),
       "id-new",
     );
     await savePlan(
-      samplePlan({ name: "mid", updatedAt: "2026-06-15T00:00:00.000Z" }),
+      samplePlanV3({ name: "mid", updatedAt: "2026-06-15T00:00:00.000Z" }),
       "id-mid",
     );
     const list = await listPlans();
@@ -151,10 +226,10 @@ describe("plan-store — listPlans", () => {
     expect(list[0]).toMatchObject({ id: "id-new", name: "new" });
   });
 
-  it("lists a legacy v1 row alongside v2 rows (both loadable)", async () => {
+  it("lists a legacy v1 row alongside v3 rows (both loadable)", async () => {
     await savePlan(
-      samplePlan({ name: "v2", updatedAt: "2026-06-15T00:00:00.000Z" }),
-      "id-v2",
+      samplePlanV3({ name: "v3", updatedAt: "2026-06-15T00:00:00.000Z" }),
+      "id-v3",
     );
     const db = await (await import("./db.ts")).openDb();
     await db.put(
@@ -163,11 +238,11 @@ describe("plan-store — listPlans", () => {
       "id-v1",
     );
     const list = await listPlans();
-    expect(list.map((e) => e.name)).toEqual(["v1", "v2"]);
+    expect(list.map((e) => e.name)).toEqual(["v1", "v3"]);
   });
 
   it("skips a corrupt row (never crashes) but keeps valid ones", async () => {
-    await savePlan(samplePlan({ name: "good" }), "id-good");
+    await savePlan(samplePlanV3({ name: "good" }), "id-good");
     // A foreign / corrupt row written directly under the plans store.
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", { garbage: true }, "id-bad");
@@ -207,8 +282,8 @@ describe("plan-store — isPlanFileV2 accept/reject", () => {
     expect(loaded!.stages[0]!.selection.machineCount).toBeNull();
   });
 
-  it("rejects a wrong format_version (neither 1 nor 2 → corrupt)", async () => {
-    await putRaw({ ...samplePlan(), format_version: 3 });
+  it("rejects an unknown format_version (neither 1/2/3 → corrupt)", async () => {
+    await putRaw({ ...samplePlanV3(), format_version: 4 });
     expect(await loadPlan("id")).toBeNull();
   });
 
@@ -357,12 +432,12 @@ describe("plan-store — migrateV1", () => {
     expect(v2.name).toBe("Legacy Plan");
   });
 
-  it("loadPlan migrates a stored v1 row transparently (returns v2)", async () => {
+  it("loadPlan migrates a stored v1 row transparently (returns v3)", async () => {
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", samplePlanV1(), "id");
     const loaded = await loadPlan("id");
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(2);
+    expect(loaded!.format_version).toBe(3);
     expect(loaded!.stages[0]!.name).toBe("Stage 1");
     expect(loaded!.stages[0]!.selection.clockPercentText).toBe("37.5");
   });
@@ -389,6 +464,110 @@ describe("plan-store — migrateV1", () => {
       "plans",
       { ...samplePlanV1(), stages: [{ selection: { recipeId: "x" } }] },
       "id",
+    );
+    expect(await loadPlan("id")).toBeNull();
+  });
+});
+
+describe("plan-store — migrateV2 (v2 → v3)", () => {
+  it("maps every link to itself with transport absent; stages + timestamps verbatim", () => {
+    const v2 = samplePlan({
+      createdAt: "2020-01-01T00:00:00.000Z",
+      updatedAt: "2021-02-03T04:05:06.000Z",
+      stages: [
+        { name: "A", selection: sampleSelection() },
+        { name: "B", selection: sampleSelection() },
+      ],
+      links: [{ from: 0, to: 1, itemId: "iron_ingot" }],
+    });
+    const v3 = migrateV2(v2);
+    expect(v3.format_version).toBe(3);
+    expect(v3.createdAt).toBe("2020-01-01T00:00:00.000Z");
+    expect(v3.updatedAt).toBe("2021-02-03T04:05:06.000Z");
+    expect(v3.stages).toBe(v2.stages);
+    expect(v3.links).toEqual([{ from: 0, to: 1, itemId: "iron_ingot" }]);
+    expect(v3.links[0]!.transport).toBeUndefined();
+  });
+});
+
+describe("plan-store — isPlanFileV3 transport accept/reject", () => {
+  async function putRaw(value: unknown): Promise<void> {
+    const db = await (await import("./db.ts")).openDb();
+    await db.put("plans", value, "id");
+  }
+
+  function planWithTransport(transport: unknown): unknown {
+    return samplePlanV3({
+      stages: [
+        { name: "A", selection: sampleSelection() },
+        { name: "B", selection: sampleSelection() },
+      ],
+      links: [{ from: 0, to: 1, itemId: "iron_ingot", transport } as never],
+    });
+  }
+
+  it("accepts a belt-arm transport (no trip)", async () => {
+    await putRaw(planWithTransport({ mode: "belt" }));
+    expect(await loadPlan("id")).not.toBeNull();
+  });
+
+  it("accepts a vehicle estimated trip with a positive distance", async () => {
+    await putRaw(
+      planWithTransport({
+        mode: "truck",
+        trip: { kind: "estimated", distanceText: "500" },
+      }),
+    );
+    expect(await loadPlan("id")).not.toBeNull();
+  });
+
+  it("accepts a drone measured trip with an optional flight distance", async () => {
+    await putRaw(
+      planWithTransport({
+        mode: "drone",
+        fuel: "battery",
+        trip: {
+          kind: "measured",
+          roundTripSecondsText: "120",
+          flightMetersText: "3000",
+        },
+      }),
+    );
+    expect(await loadPlan("id")).not.toBeNull();
+  });
+
+  it("rejects an unknown mode", async () => {
+    await putRaw(planWithTransport({ mode: "teleporter" }));
+    expect(await loadPlan("id")).toBeNull();
+  });
+
+  it("rejects an unparseable trip Fraction string", async () => {
+    await putRaw(
+      planWithTransport({
+        mode: "truck",
+        trip: { kind: "estimated", distanceText: "not-a-number" },
+      }),
+    );
+    expect(await loadPlan("id")).toBeNull();
+  });
+
+  it("rejects a zero (non-positive) trip value", async () => {
+    await putRaw(
+      planWithTransport({
+        mode: "train",
+        trip: { kind: "measured", roundTripSecondsText: "0" },
+      }),
+    );
+    expect(await loadPlan("id")).toBeNull();
+  });
+
+  it("rejects a drone arm with an unknown fuel", async () => {
+    await putRaw(
+      planWithTransport({
+        mode: "drone",
+        fuel: "coal",
+        trip: { kind: "estimated", flightMetersText: "1000" },
+      }),
     );
     expect(await loadPlan("id")).toBeNull();
   });

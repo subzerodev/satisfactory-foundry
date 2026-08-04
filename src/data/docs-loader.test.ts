@@ -100,11 +100,12 @@ describe("parseDocsJson — items + machines + shape (spec row 1)", () => {
     }
     expect(cat.items["water"]!.isFluid).toBe(true);
     expect(cat.items["stone"]!.isFluid).toBe(false);
-    // Items carry id + displayName + isFluid only — no power, no stack size.
+    // Items carry id + displayName + isFluid + stackSize (no power).
     expect(Object.keys(cat.items["water"]!).sort()).toEqual([
       "displayName",
       "id",
       "isFluid",
+      "stackSize",
     ]);
   });
 
@@ -125,6 +126,12 @@ describe("parseDocsJson — items + machines + shape (spec row 1)", () => {
   it("attaches the shared TIER_TABLE to the catalog", () => {
     const cat = parseDocsJson(DOCS_FRAGMENT);
     expect(cat.tiers).toBe(TIER_TABLE);
+  });
+
+  it("items lacking mStackSize (DOCS_FRAGMENT) parse stackSize null", () => {
+    // The DOCS_FRAGMENT items carry no mStackSize → honest null.
+    const cat = parseDocsJson(DOCS_FRAGMENT);
+    expect(cat.items["iron_ingot"]!.stackSize).toBeNull();
   });
 
   it("sets primaryOutputId = outputs[0].itemId and Alternate strip + flag", () => {
@@ -462,5 +469,61 @@ describe("parseDocsJson — machine power (spec Axis 5)", () => {
     const p = cat.machines["no_exp"]!.power;
     expect(p.mw.eq(Fraction.from(10))).toBe(true);
     expect(p.exponent.eq(Fraction.of(1321929, 1000000))).toBe(true);
+  });
+});
+
+describe("parseDocsJson — mStackSize enum → stackSize (Stage 7 / Phase 2)", () => {
+  // One item per enum value + a fluid + an unrecognized value, in a single
+  // FGItemDescriptor group. Each item's expected stackSize is asserted below.
+  const STACK_FRAGMENT = [
+    {
+      NativeClass:
+        "/Script/CoreUObject.Class'/Script/FactoryGame.FGItemDescriptor'",
+      Classes: [
+        { ClassName: "Desc_One_C", mDisplayName: "One", mStackSize: "SS_ONE" },
+        {
+          ClassName: "Desc_Small_C",
+          mDisplayName: "Small",
+          mStackSize: "SS_SMALL",
+        },
+        {
+          ClassName: "Desc_Medium_C",
+          mDisplayName: "Medium",
+          mStackSize: "SS_MEDIUM",
+        },
+        { ClassName: "Desc_Big_C", mDisplayName: "Big", mStackSize: "SS_BIG" },
+        {
+          ClassName: "Desc_Huge_C",
+          mDisplayName: "Huge",
+          mStackSize: "SS_HUGE",
+        },
+        {
+          ClassName: "Desc_Fluidy_C",
+          mDisplayName: "Fluidy",
+          mForm: "RF_LIQUID",
+          mStackSize: "SS_FLUID",
+        },
+        {
+          ClassName: "Desc_Weird_C",
+          mDisplayName: "Weird",
+          mStackSize: "SS_MYSTERY",
+        },
+      ],
+    },
+  ];
+
+  it("maps each recognized enum value to its items-per-slot Fraction", () => {
+    const cat = parseDocsJson(STACK_FRAGMENT);
+    expect(cat.items["one"]!.stackSize!.eq(Fraction.from(1))).toBe(true);
+    expect(cat.items["small"]!.stackSize!.eq(Fraction.from(50))).toBe(true);
+    expect(cat.items["medium"]!.stackSize!.eq(Fraction.from(100))).toBe(true);
+    expect(cat.items["big"]!.stackSize!.eq(Fraction.from(200))).toBe(true);
+    expect(cat.items["huge"]!.stackSize!.eq(Fraction.from(500))).toBe(true);
+  });
+
+  it("SS_FLUID and an unrecognized enum value both parse null", () => {
+    const cat = parseDocsJson(STACK_FRAGMENT);
+    expect(cat.items["fluidy"]!.stackSize).toBeNull();
+    expect(cat.items["weird"]!.stackSize).toBeNull();
   });
 });

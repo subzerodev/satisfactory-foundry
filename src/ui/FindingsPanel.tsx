@@ -14,6 +14,10 @@ interface FindingsPanelProps {
    *  (App threads both from the same call site). best-unlocked derives as
    *  tiers[kind][unlocked[kind] − 1]. */
   unlocked: { belt: number; pipe: number };
+  /** Plan-wide transport findings (Stage 7 P2) — pre-worded sentences from
+   *  computeTransportFindings. Rendered alongside the stage findings; these are
+   *  route-level, not tied to the active stage's solve. Default empty. */
+  transportFindings?: string[];
 }
 
 const INVALID_HEADING: Record<
@@ -114,7 +118,21 @@ export function FindingsPanel({
   itemName,
   tiers,
   unlocked,
+  transportFindings = [],
 }: FindingsPanelProps) {
+  // Route-level transport findings render alongside every stage-solve state (they
+  // are plan-wide, not tied to the active stage). Built once, appended below.
+  const transportSection =
+    transportFindings.length > 0 ? (
+      <ul className="findings-list findings-transport">
+        {transportFindings.map((text, i) => (
+          <li className="finding-warning" key={`transport-${i}`}>
+            {text}
+          </li>
+        ))}
+      </ul>
+    ) : null;
+
   if (solve.status === "invalid") {
     return (
       <div className="findings-panel">
@@ -124,6 +142,7 @@ export function FindingsPanel({
           </span>
           <span className="finding-detail">{solve.detail}</span>
         </div>
+        {transportSection}
       </div>
     );
   }
@@ -131,7 +150,11 @@ export function FindingsPanel({
   if (solve.status === "solved" && findings.length === 0) {
     return (
       <div className="findings-panel">
-        <p className="findings-clean">No warnings — manifold is clean.</p>
+        {transportSection === null ? (
+          <p className="findings-clean">No warnings — manifold is clean.</p>
+        ) : (
+          transportSection
+        )}
       </div>
     );
   }
@@ -146,6 +169,7 @@ export function FindingsPanel({
           </li>
         ))}
       </ul>
+      {transportSection}
     </div>
   );
 }
