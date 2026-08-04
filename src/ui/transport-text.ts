@@ -41,7 +41,10 @@ export const MODE_LABEL: Record<string, string> = {
 };
 
 /** The fixed per-mode caveat sentence (a P1 invariant doc-comment made words),
- *  or null for a mode that carries none. */
+ *  or null for a mode that carries none. Pipe's caveat is PLAN-DEPENDENT (S8P2 —
+ *  a derate replaces the static line), so the LinkInspector routes pipe through
+ *  {@link pipeCaveat} instead; this keeps the static wording for the pipe test
+ *  precedent and the other modes. */
 export function caveatFor(mode: string): string | null {
   switch (mode) {
     case "pipe":
@@ -58,6 +61,21 @@ export function caveatFor(mode: string): string | null {
     default:
       return null; // belt has no caveat
   }
+}
+
+/**
+ * The pipe-mode caveat, plan-aware (S8P2). With a derate active, the static
+ * nominal-ceiling sentence is REPLACED by a line naming the derate's provenance
+ * — it is the USER's own assumption, not a wiki-grounded game constant, so the
+ * wording says so plainly. Without a derate, today's static caveat renders
+ * unchanged. The percentage is formatted exactly off the parsed derive Fraction
+ * (no re-parse — the single-parse invariant).
+ */
+export function pipeCaveat(plan: TransportContinuous): string {
+  if (plan.deratePercent === null) {
+    return "nominal ceiling — manifolds can sustain less";
+  }
+  return `derated to ${formatRate(plan.deratePercent)}% of nominal — your assumption, not a game constant`;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,8 +155,10 @@ export function dronePortLine(plan: TransportDrone): string {
 // ---------------------------------------------------------------------------
 
 /** One row of the train cars-vs-trains comparison (Axis 3): cars, trains,
- *  station MW (both ends), sustained rate, and the "station-limited" marker on
- *  a `ceilingBound` row. platforms/end ≡ cars (a footnote, not a column). */
+ *  station MW (for the counted ends — both by default; a shared-end override
+ *  drops an end, named in the asymmetry footnote), sustained rate, and the
+ *  "station-limited" marker on a `ceilingBound` row. platforms/end ≡ cars (a
+ *  footnote, not a column). */
 export interface TrainRow {
   cars: number;
   trains: number;
@@ -178,6 +198,30 @@ export function trainEstimatedNote(plan: TransportTrain): string | null {
   return plan.tripBasis === "estimated"
     ? "round trip estimated" + ESTIMATED_SUFFIX
     : null;
+}
+
+/**
+ * The per-end asymmetry footnote (S8P2), shown ONLY when a shared-end override is
+ * active — it names the flagged end(s) and states they are excluded from the
+ * station MW column. `fromName`/`toName` are the producer/consumer stage names
+ * (the `sharedEnds` from/to keys ARE those ends, the StageLink's own direction);
+ * cheap to pass since the inspector already renders both on the identity line.
+ * ONE parameterized string, not three hand-written variants (the simplify fold).
+ * Returns null when no end is flagged (the default symmetric station set).
+ */
+export function trainSharedEndsFootnote(
+  plan: TransportTrain,
+  fromName: string,
+  toName: string,
+): string | null {
+  const shared = plan.sharedEnds;
+  const names: string[] = [];
+  if (shared?.from) names.push(fromName);
+  if (shared?.to) names.push(toName);
+  if (names.length === 0) return null;
+  const ends = names.join(" and ");
+  const verb = names.length === 1 ? "end shared" : "ends shared";
+  return `${ends} ${verb} — excluded from station MW`;
 }
 
 // ---------------------------------------------------------------------------
