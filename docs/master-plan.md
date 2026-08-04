@@ -78,3 +78,10 @@ canvas; polish lands last on the finished surface.
 - **Goal:** UX batch on the finished surface (styled tooltips, drag-drop
   upload, dark mode, large-N labels + accumulated small items).
 - **Ticket:** #14 (milestone 76). Blocked-by Stage 4.
+- **Status: SHIPPED 2026-08-04** — the pinned batch (tooltips, drag-drop
+  with correct UTF-16 decode, dark mode, pipe-lane distinction) all
+  landed; large-N decluttering was found already-implemented at design
+  review (labelStep, Stage 1 P4) and verified in the walk. 395/395
+  tests; released via the Stage 5 PR. Record: `features/polish/`.
+  **All growth-path stages (2–5) are now shipped — the 2026-08-03
+  sequential directive is fully discharged.**
