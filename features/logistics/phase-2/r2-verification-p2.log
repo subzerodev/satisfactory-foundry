@@ -1,7 +1,7 @@
 Stage 7 / Phase 2 — transport UI — bidirectionality verification log
 Generated: 2026-08-04T17:36:02Z
 Worktree: .worktrees/logistics-p2 (branch feature/logistics-p2)
-Baseline: 477 tests. Post-P2: 532 tests (all green on HEAD).
+Baseline: 477 tests. Post-P2: 533 tests (532 at initial land; +1 honest-units test in the boundary fold) (all green on HEAD).
 
 Method: per distinct production behavior, PASS on HEAD → break production (sed)
 → genuine vitest FAIL naming the new test → git checkout restore → PASS. The
