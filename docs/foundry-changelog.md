@@ -3,6 +3,20 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-04 — Stage 7, Phase 1: the transport math brain
+
+> Hey Michael — no new buttons yet, but the engine for the logistics
+> planner you asked for is in. It knows every vehicle cold — truck 48
+> slots, freight car 32, drone 9, the tanker volumes — straight from
+> your installed game's own data, and it can answer "how many do I
+> need?" exactly: give it a rate and a trip time and it computes the
+> fleet, with zero rounding anywhere. Trains get the full treatment:
+> it lays out every cars-per-train choice side by side — how many
+> trains, how many platforms, the power bill, and whether the station
+> itself becomes the bottleneck — so the "one long train vs several
+> short ones" question you raised gets real numbers, not a guess.
+> Next phase wires this into the links on your canvas.
+
 ## 2026-08-04 — Stage 6 complete: the chain explains itself
 
 > Hey Michael — the math you were doing in your head is on screen now.

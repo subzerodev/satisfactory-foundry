@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-04
 **Status:** in-progress
-**Current phase:** Phase 1 (transport core math) — design next
+**Current phase:** Phase 2 (transport UI) — design next
 **Final PR:** —
 **Epic:** #27 (board #21, Stage 7 milestone 78)
 
@@ -37,9 +37,18 @@ train vs more individual trains."
   "never parse capacities from mDescription prose" rule; honest Unknowns
   (user-supplied trip time is the planner's primary input)
 
-### Phase 1 — transport core math (deferred design)
+### Phase 1 — transport core math
 
-- **Ticket:** #31 (blocked-by #30)
+- **Status:** complete (merged --no-ff to develop 2026-08-04; 477/477
+  tests; 3-round design gate — the core→data layering BLOCKER caught
+  pre-code by both reviewers — + simplify (the nonexistent-precedent
+  caveat flags removed); boundary APPROVED×2 zero findings first round;
+  the wiki-ceiling rounding artifact resolved by decision (exact
+  800000/559 kept over the wiki's rounded 1431.17); ticket #31 Done)
+- **Ticket:** #31 (Done, closed)
+- **Artifacts:** src/core/transport.ts (continuousRuns / vehicleFleet /
+  trainOptions / droneFleet, all exact), src/core/transport-facts.ts
+  (the cited P0 catalogue), 23 tests + R2 bidirectionality log
 
 ### Phase 2 — transport UI (deferred design)
 
@@ -51,6 +60,12 @@ train vs more individual trains."
 
 ## Decisions log
 
+- 2026-08-04 (P1 landed): tier rates reach core as caller-supplied
+  params (core→data lint-banned; the manifold capacities idiom);
+  module invariants live in type doc-comments, not always-true flags;
+  tripBasis echoes the honest-input discriminant onto results; wiki
+  train-ceiling figures are rounding artifacts — the exact lockout
+  constant governs (decision on #31).
 - 2026-08-04 (pickup): four-phase decomposition + blocked-by chain
   (#30→#31→#32→#33); research pre-authorized by Michael's directive (the
   Stage 4 footprint-table precedent covers wiki grounding with
