@@ -1,0 +1,92 @@
+Stage 4 / Phase 2 — the blueprint view — r2 bidirectionality verification
+Worktree: .worktrees/layout-p2  branch feature/layout-p2 (cut from develop @ 39091ad)
+Date: 2026-08-04
+
+Posture: the smoke rows are static-markup (renderToStaticMarkup, node env — no
+jsdom), the established leaf-component pattern. Bidirectionality = for each test
+family, break production, confirm the NEW test genuinely FAILS naming its own
+assertion, then restore to green. Baseline before this arc: 373 tests. After:
+377 (4 new rows: 3 Blueprint + 1 App default). Full `npm test` + `npm run check`
+green at start and after every restore.
+
+Fixture (all Blueprint rows): a REAL solve — Smelter ×2, one belt feed + one
+belt output at 30/min per machine, 100% clock — through solveStage, then
+layoutStage(solve, "smelter_mk1", 2, FOOTPRINTS). Exact geometry (computed via a
+throwaway probe, then the probe deleted):
+  machines : [{0,0,50,100},{60,0,50,100}]        (pitch 60 = ceilTo10(50)+10)
+  feed lane: bus (0,-20)->(120,-20); 2 junctions; 1 drop mark @ (0,-20) cap 60
+  out  lane: bus (0,120)->(120,120); 2 junctions; 1 breakout @ (0,120) cap 60 load 60
+  foundations: origin {0,-80}, cols 2, rows 3
+  => viewBox "-20 -100 200 280"  (origin.x-20 origin.y-20 cols*80+40 rows*80+40)
+  => 6 foundation squares, 2 machine rects, 4 junctions
+  => drop-mark label "60/min"; breakout label "60/min (60/min load)"
+
+--------------------------------------------------------------------------------
+FAMILY 1 — viewBox / extents
+  Break : src/ui/Blueprint.tsx  `const PAD = 20;` -> `const PAD = 0;`
+  Result: FAIL — "renders the Smelter ×2 floor plan …"
+          expected to contain 'viewBox="-20 -100 200 280"'
+          received 'viewBox="0 -80 160 240"'   (line 259)
+  Restore: PASS. The pad enters both origin (-20) and extent (+40) exactly once.
+
+FAMILY 2 — element counts (junctions)
+  Break : lane.junctions.map(...) -> [].map(...)  (junction pass emits nothing)
+  Result: FAIL — same row, junction-count assertion
+          expect(match(/bp-junction"/g).length).toBe(4)  (line 268)
+  Restore: PASS. All 4 junctions (2 feed splitters + 2 output mergers) render.
+  (Foundation-square count 6, machine-rect count 2, mark labels, and lane
+   labels are asserted in the SAME row and all held through this mutation —
+   the received markup in FAMILY 1/3/4 dumps shows exactly 6 bp-foundation,
+   2 bp-machine, "Iron Ore"/"Iron Ingot" present.)
+
+FAMILY 3 — labels (belt drop-mark rate string)
+  Break : feed-side mark label `${formatRate(mk.capacity)}/min`
+          -> `${formatRate(mk.capacity)} per minute`
+  Result: FAIL — same row
+          expected to contain '>60/min</text>'
+          received '>60 per minute</text>' on the feed mark  (line 270)
+          (the output breakout '>60/min (60/min load)</text>' still held,
+           proving the assertion is scoped to the feed drop label.)
+  Restore: PASS.
+
+FAMILY 4 — notice (unknown-footprint)
+  Break : "footprint unknown for " -> "footprint MISSING for "
+  Result: FAIL — "renders the unknown-footprint notice for an off-table machineId"
+          expected 'footprint unknown for mystery_mk9 — drawn as 10×10 m'
+          received 'footprint MISSING for mystery_mk9 — …'  (line 293)
+  Restore: PASS. (Received markup also confirms the off-table id draws the
+          honest 100×100 DEFAULT_FOOTPRINT — machine rects 100×100, viewBox
+          widened to "-20 -100 280 280" — i.e. it never refuses to draw.)
+
+FAMILY 5 — empty-state gate (zero-machine branch / the toggle's sibling shape)
+  Break : `if (layout.machines.length === 0) {` -> `if (false) {`
+  Result: FAIL — "renders the empty-state line (no SVG) for a zero-machine stage"
+          expected to contain 'empty-state'  (line 313)
+          received an <svg> (0-width buses, empty machine/foundation groups) —
+          exactly the wrong output the guard exists to prevent.
+  Restore: PASS. Zero machines => empty-state line, never an <svg>.
+
+--------------------------------------------------------------------------------
+TOGGLE / App-default — honest coverage note (NOT a broken bidirectional gate)
+  Row : "App view toggle (Axis 1 default) — boots to the schematic-default
+        surface — no blueprint mounted eagerly."
+  It asserts renderToStaticMarkup(<App/>) contains neither 'bp-svg' nor
+  'View: Schematic'. LIMITATION, stated plainly: in the node env the store's
+  async bundled-docs provider never resolves, so App SSR returns the
+  `catalog.status === "initializing"` boot line ("<p class=boot>Loading…</p>",
+  28 chars) — the solved block, the toggle button, and both view leaves are
+  UNREACHABLE headless. This row therefore gates only that (a) App with the new
+  wiring mounts without crashing and (b) the default view never eagerly mounts
+  Blueprint into the boot path. It is NOT a strong bidirectional gate on the
+  toggle's label/swap logic — flipping the App default to "blueprint" leaves SSR
+  output unchanged (still the boot line), so no mutation of the default can fail
+  this row. The toggle swap + label logic is inline JSX in App's solved block;
+  its true gate is the team-lead browser walk (Axis 4, the pinned visual gate),
+  same posture the GraphCanvas smoke exclusion already documents. The zero-
+  machine empty-state gate (FAMILY 5) IS a real bidirectional check on
+  Blueprint's own branch selection.
+
+RESULT: all five production families are genuinely covered — each mutation
+produced a FAIL naming the intended new assertion, and every restore returned
+the suite to 377 green + check clean. Toggle-default coverage is smoke-only by
+the SSR posture, documented above rather than faked.
