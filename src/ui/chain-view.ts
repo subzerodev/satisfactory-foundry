@@ -38,7 +38,7 @@ import { edgeChip } from "./transport-text.ts";
 
 /** A placed site's world-dm foundation bbox (origin + tile grid), or null when
  *  the site is not in the chain (skipped/unsolved). */
-export function siteWorldBox(
+function siteWorldBox(
   chain: ChainLayout,
   sites: ChainSite[],
   stageId: string,
