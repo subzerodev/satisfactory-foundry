@@ -169,8 +169,12 @@ function stagePowerOf(
   if (stage.solve.status !== "solved") return null;
   const recipeId = stage.selection.recipeId;
   if (recipeId === null) return null;
+  if (!Object.hasOwn(catalog.recipes, recipeId)) return null;
   const recipe = catalog.recipes[recipeId];
   if (recipe === undefined) return null;
+  // Object.hasOwn, not `=== undefined`: a machineId like "constructor" would
+  // otherwise resolve to Object.prototype's method under bracket access.
+  if (!Object.hasOwn(catalog.machines, recipe.machineId)) return null;
   const machine = catalog.machines[recipe.machineId];
   if (machine === undefined) return null;
   return machine.power;
