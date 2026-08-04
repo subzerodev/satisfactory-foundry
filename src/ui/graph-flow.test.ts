@@ -12,12 +12,14 @@ import { Fraction } from "../core/fraction.ts";
 import type { Catalog, CatalogRecipe } from "../data/types.ts";
 import type { StageNode, StageLink, SolveState } from "../state/store.ts";
 import type { LinkFinding } from "../core/reconcile.ts";
+import { reconcileLinks } from "../core/reconcile.ts";
 import {
   graphToFlow,
   pickLinkItem,
   computeTransportFindings,
   planForLink,
   linkRequiredRate,
+  supplySuggestionFor,
   globalUnlockedTiers,
   NODE_WIDTH,
   NODE_HEIGHT,
@@ -634,6 +636,135 @@ describe("graphToFlow — match-demand suggestion", () => {
       "p",
     );
     expect(edges[0]!.label).toBe("Iron Ingot · short 140/min");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// supplySuggestionFor — the apply affordance's payload (Stage 8 P1, Axis 1).
+// The LinkInspector calls this directly for the "apply ×N to <producer>" button;
+// these pin the payload the button dispatches (producer id is the caller's, N +
+// fanOut come from here) for single-consumer, fan-out, unsolved, and idempotence.
+// ---------------------------------------------------------------------------
+
+describe("supplySuggestionFor — apply payload", () => {
+  // A producer at 7.5/machine, one consumer demanding 140 → ceilDiv(140,7.5)=19.
+  function singleConsumer(producerMachines: number, demand: number) {
+    const p = stage(
+      "p",
+      "P",
+      "ingot",
+      producerMachines,
+      solvedWith({
+        outputs: [
+          {
+            itemId: "iron_ingot",
+            totalOutput: Fraction.from(30),
+            perMachineOutput: Fraction.of(15, 2),
+          },
+        ],
+      }),
+    );
+    const c = stage(
+      "c",
+      "C",
+      "plate",
+      1,
+      solvedWith({
+        feeds: [{ itemId: "iron_ingot", totalDemand: Fraction.from(demand) }],
+      }),
+    );
+    const links: StageLink[] = [
+      { id: "L1", fromStageId: "p", itemId: "iron_ingot", toStageId: "c" },
+    ];
+    return { stages: { p, c }, links };
+  }
+
+  it("single consumer: N = ceilDiv(demand, perMachine), fanOut false", () => {
+    const { stages, links } = singleConsumer(1, 140);
+    expect(supplySuggestionFor("p", "iron_ingot", stages, links)).toEqual({
+      machines: 19, // ceilDiv(140, 7.5)
+      fanOut: false,
+    });
+  });
+
+  it("fan-out: N aggregates ALL sibling demands, fanOut true", () => {
+    // 100 + 140 = 240 total demand → ceilDiv(240, 7.5) = 32.
+    const p = stage(
+      "p",
+      "P",
+      "ingot",
+      1,
+      solvedWith({
+        outputs: [
+          {
+            itemId: "iron_ingot",
+            totalOutput: Fraction.from(30),
+            perMachineOutput: Fraction.of(15, 2),
+          },
+        ],
+      }),
+    );
+    const c = stage(
+      "c",
+      "C",
+      "plate",
+      1,
+      solvedWith({
+        feeds: [{ itemId: "iron_ingot", totalDemand: Fraction.from(100) }],
+      }),
+    );
+    const c2 = stage(
+      "c2",
+      "C2",
+      "plate",
+      1,
+      solvedWith({
+        feeds: [{ itemId: "iron_ingot", totalDemand: Fraction.from(140) }],
+      }),
+    );
+    const links: StageLink[] = [
+      { id: "L1", fromStageId: "p", itemId: "iron_ingot", toStageId: "c" },
+      { id: "L2", fromStageId: "p", itemId: "iron_ingot", toStageId: "c2" },
+    ];
+    expect(supplySuggestionFor("p", "iron_ingot", { p, c, c2 }, links)).toEqual(
+      { machines: 32, fanOut: true },
+    );
+  });
+
+  it("unsolved producer → null (no output lane to size against)", () => {
+    const p = stage("p", "P", null, 1, { status: "idle" });
+    const c = stage(
+      "c",
+      "C",
+      "plate",
+      1,
+      solvedWith({
+        feeds: [{ itemId: "iron_ingot", totalDemand: Fraction.from(140) }],
+      }),
+    );
+    const links: StageLink[] = [
+      { id: "L1", fromStageId: "p", itemId: "iron_ingot", toStageId: "c" },
+    ];
+    expect(supplySuggestionFor("p", "iron_ingot", { p, c }, links)).toBeNull();
+  });
+
+  it("idempotent via the finding gate: once supply covers demand, NO under-supply finding fires", () => {
+    // The block gates on BOTH an under-supply finding AND a non-null suggestion.
+    // supplySuggestionFor sizes from TOTAL demand (not the shortfall), so it
+    // still returns 19 at the covering count — the idempotence guarantee is the
+    // FINDING gate, not the payload. Post-apply the producer's totalOutput
+    // (19 × 7.5 = 142.5) ≥ demand (140), so reconcileLinks emits nothing for the
+    // link → shortfall === undefined in the inspector → the block disappears.
+    const supply = Fraction.of(285, 2); // 142.5, the ×19 covering output
+    const demand = Fraction.from(140);
+    const findings = reconcileLinks([{ linkId: "L1", supply, demand }]);
+    expect(findings.some((f) => f.type === "under-supply")).toBe(false);
+    // And the finding that WOULD fire below the covering count is under-supply,
+    // proving the gate is real (supply one machine short: 18 × 7.5 = 135 < 140).
+    const short = reconcileLinks([
+      { linkId: "L1", supply: Fraction.from(135), demand },
+    ]);
+    expect(short[0]!.type).toBe("under-supply");
   });
 });
 

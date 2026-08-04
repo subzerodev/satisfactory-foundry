@@ -425,6 +425,14 @@ body {
   fill: var(--fg-muted);
 }
 
+/* Site focus (Stage 8 / Phase 1, Axis 3): the active site's foundation bbox
+   gets the accent outline — the stage-node `.selected` idiom, applied to the
+   site's foundation tiles (the SVG surface the click targets). */
+.chain-bp-site.selected .bp-foundation {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
 /* Inter-site connectors: solid for belt/pipe, dashed for vehicle modes (a
    mode-class visual only — no pathfinding). */
 .chain-bp-link {
@@ -760,6 +768,21 @@ body {
   color: var(--fg-muted);
   font-size: 13px;
   font-style: italic;
+}
+
+/* Apply affordance (Stage 8 / Phase 1, Axis 1): the under-supply match-demand
+   readout + the "apply ×N to <producer>" action — the MeasureFeed idiom. */
+.link-inspector-supply {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.link-inspector-supply-readout {
+  margin: 0;
+  color: var(--error);
+  font-size: 13px;
 }
 
 .train-table {

@@ -218,6 +218,10 @@ export interface Actions {
   uploadDocsText(text: string): Promise<void>;
   selectRecipe(recipeId: string | null): void;
   setMachineCount(n: number): void;
+  /** Set a NAMED stage's machine count + re-derive (the active mirror is
+   *  preserved unless that stage is active). The apply affordance's writer —
+   *  targets the under-supplied link's PRODUCER, which is often not active. */
+  setStageMachineCount(stageId: string, n: number): void;
   setClockPercentText(text: string): void;
   setUnlockedTiers(t: { belt: number; pipe: number }): void;
   setOverride(
@@ -477,15 +481,34 @@ function recomputeReconciliation(slice: GraphSlice): GraphSlice {
 }
 
 /**
- * Write a new selection into the ACTIVE stage, re-derive that stage, mirror it
- * up, and recompute reconciliation. The single-stage-mutation path used by the
- * six v1 setters + loadPlan.
+ * Write a new selection into a NAMED stage, re-derive that stage, mirror the
+ * ACTIVE stage up, and recompute reconciliation. The single-stage-mutation path
+ * used by the six v1 setters + loadPlan (active-keyed, via applyActiveSelection)
+ * and by setStageMachineCount (any stage — the apply affordance's producer).
+ *
+ * mirrorActive stays ACTIVE-keyed by design: the top-level mirror always tracks
+ * the active stage, never the mutated one — writing a non-active producer must
+ * not steal the active mirror (frozen S8P1 proof). When stageId === activeStageId
+ * the two coincide, which is exactly the active-setter case.
  */
-function applyActiveSelection(slice: GraphSlice, next: Selection): GraphSlice {
-  const active = slice.stages[slice.activeStageId]!;
-  const stage = deriveStage(slice.catalog, { ...active, selection: next });
+function applyStageSelection(
+  slice: GraphSlice,
+  stageId: string,
+  next: Selection,
+): GraphSlice {
+  const target = slice.stages[stageId]!;
+  const stage = deriveStage(slice.catalog, { ...target, selection: next });
   const stages = { ...slice.stages, [stage.id]: stage };
   return recomputeReconciliation(mirrorActive({ ...slice, stages }));
+}
+
+/**
+ * Write a new selection into the ACTIVE stage, re-derive that stage, mirror it
+ * up, and recompute reconciliation. The single-stage-mutation path used by the
+ * six v1 setters + loadPlan — the activeStageId case of applyStageSelection.
+ */
+function applyActiveSelection(slice: GraphSlice, next: Selection): GraphSlice {
+  return applyStageSelection(slice, slice.activeStageId, next);
 }
 
 /**
@@ -952,6 +975,20 @@ export function createAppStore(storage?: StateStorage) {
             set((s) =>
               applyActiveSelection(s, { ...s.selection, machineCount: n }),
             );
+          },
+
+          setStageMachineCount(stageId: string, n: number) {
+            set((s) => {
+              const stage = s.stages[stageId];
+              if (stage === undefined) return {};
+              // Write the NAMED stage's machineCount (not the active mirror) so
+              // an edge-driven apply mutates the producer without stealing the
+              // cursor. applyStageSelection re-mirrors the ACTIVE stage.
+              return applyStageSelection(s, stageId, {
+                ...stage.selection,
+                machineCount: n,
+              });
+            });
           },
 
           setClockPercentText(text: string) {

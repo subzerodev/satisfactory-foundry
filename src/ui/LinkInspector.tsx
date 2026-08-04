@@ -15,10 +15,16 @@ import type {
   LinkTransport,
   TransportMode,
   StageLink,
+  StageNode,
 } from "../state/store.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
+import type { LinkFinding } from "../core/reconcile.ts";
 import { formatRate } from "./format.ts";
-import { linkRequiredRate, planForLink } from "./graph-flow.ts";
+import {
+  linkRequiredRate,
+  planForLink,
+  supplySuggestionFor,
+} from "./graph-flow.ts";
 import {
   drawnDistanceDm,
   drawnMeters,
@@ -97,7 +103,9 @@ export function LinkInspector() {
   const catalog = useAppStore((s) =>
     s.catalog.status === "ready" ? s.catalog.catalog : null,
   );
+  const reconciliation = useAppStore((s) => s.reconciliation);
   const setLinkTransport = useAppStore((s) => s.setLinkTransport);
+  const setStageMachineCount = useAppStore((s) => s.setStageMachineCount);
   const selectLink = useAppStore((s) => s.selectLink);
 
   if (selectedLinkId === null || catalog === null) return null;
@@ -140,6 +148,11 @@ export function LinkInspector() {
     links,
     positions,
   );
+
+  // Apply affordance (Stage 8 / Phase 1): the one-click match for an
+  // under-supplied link. The presence rule + payload live in the pure
+  // applyBlockFor helper (tested directly); null for matched/over/unsolved.
+  const applyBlock = applyBlockFor(link, reconciliation, stages, links);
 
   return (
     <div className="link-inspector">
@@ -206,9 +219,67 @@ export function LinkInspector() {
         />
       )}
 
+      {/* Apply affordance (Stage 8 / Phase 1, Axis 1): the match-demand button
+          for an under-supplied link with a solved producer. Renders ONLY when a
+          suggestion exists (matched/over/unsolved links: no block). Applying
+          sets the producer to ×N and re-derives; the block then disappears (the
+          finding clears) — idempotent by construction. The MeasureFeed idiom. */}
+      {applyBlock !== null && (
+        <SupplyApply
+          shortfall={applyBlock.shortfall}
+          machines={applyBlock.machines}
+          total={applyBlock.total}
+          producerName={applyBlock.producerName}
+          onApply={() =>
+            setStageMachineCount(link.fromStageId, applyBlock.machines)
+          }
+        />
+      )}
+
       {caveatFor(mode) !== null && (
         <p className="link-inspector-caveat">{caveatFor(mode)}</p>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Supply apply — the under-supply match-demand action (Stage 8 / Phase 1).
+// ---------------------------------------------------------------------------
+
+/**
+ * The under-supply readout + the "apply ×N to <producer>" action. Names the
+ * producer and states the shortfall; the ×N is the fan-out-aggregated match
+ * count (supplySuggestionFor). "×N total" when the producer fans the item out
+ * to more than one consumer (the frozen fan-out wording, mirroring the edge
+ * label). Mounted only for under-supplied links with a solved producer.
+ */
+function SupplyApply({
+  shortfall,
+  machines,
+  total,
+  producerName,
+  onApply,
+}: {
+  shortfall: string;
+  machines: number;
+  total: boolean;
+  producerName: string;
+  onApply: () => void;
+}) {
+  return (
+    <div className="link-inspector-supply">
+      <p className="link-inspector-supply-readout">
+        supply short {shortfall}/min
+      </p>
+      <button
+        type="button"
+        className="link-inspector-supply-apply"
+        onClick={onApply}
+      >
+        apply ×{machines}
+        {total ? " total" : ""} to {producerName}
+      </button>
     </div>
   );
 }
@@ -511,6 +582,56 @@ function setDroneMeasuredMeters(t: TripTransport, text: string): LinkTransport {
       roundTripSecondsText: t.trip.roundTripSecondsText,
       ...(text !== "" ? { flightMetersText: text } : {}),
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Apply affordance — the pure presence-rule + payload for the supply block.
+// ---------------------------------------------------------------------------
+
+/** The rendered fields of the under-supply apply block: the shortfall readout,
+ *  the match-demand count, whether the producer fans out (the "total" wording),
+ *  and the producer's display name. */
+export interface ApplyBlock {
+  shortfall: string;
+  machines: number;
+  total: boolean;
+  producerName: string;
+}
+
+/**
+ * The apply block for a link, or null when it must not render (Stage 8 / Phase
+ * 1, Axis 1). Gated on BOTH the SAME linkId-keyed under-supply finding the edge
+ * label reads (no new detection math) AND a non-null supplySuggestionFor (solved
+ * producer with an output lane). The ×N + fan-out wording come from the SAME
+ * supplySuggestionFor data the edge label renders — one source, no drift. Null
+ * for matched/over-supplied/unsolved links; idempotent by construction (once the
+ * apply covers demand the finding clears, so this returns null on the next
+ * render). Pure over the passed slice — no store, no DOM (tested directly).
+ */
+export function applyBlockFor(
+  link: StageLink,
+  reconciliation: LinkFinding[],
+  stages: Record<string, StageNode>,
+  links: StageLink[],
+): ApplyBlock | null {
+  const finding = reconciliation.find(
+    (f): f is Extract<LinkFinding, { type: "under-supply" }> =>
+      f.linkId === link.id && f.type === "under-supply",
+  );
+  if (finding === undefined) return null;
+  const suggestion = supplySuggestionFor(
+    link.fromStageId,
+    link.itemId,
+    stages,
+    links,
+  );
+  if (suggestion === null) return null;
+  return {
+    shortfall: formatRate(finding.shortfall),
+    machines: suggestion.machines,
+    total: suggestion.fanOut,
+    producerName: stageName(stages[link.fromStageId]),
   };
 }
 
