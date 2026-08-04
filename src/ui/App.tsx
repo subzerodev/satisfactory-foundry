@@ -25,6 +25,7 @@ import { LaneOverrides } from "./LaneOverrides.tsx";
 import { FindingsPanel } from "./FindingsPanel.tsx";
 import { Legend } from "./Legend.tsx";
 import { GraphCanvas } from "./GraphCanvas.tsx";
+import { ChainBuilder } from "./ChainBuilder.tsx";
 import { LinkInspector } from "./LinkInspector.tsx";
 import "./app.css";
 
@@ -332,6 +333,10 @@ export default function App() {
           header and the v1 surface. Clicking a node switches the whole lower
           surface to that stage via the activeStageId mirror. */}
       <GraphCanvas colorMode={theme} />
+      {/* Build-chain panel (Stage 8 / Phase 3): target + rate → preview → apply,
+          appending proposed stages/links into the graph above. Self-gates on a
+          ready catalog (renders nothing otherwise). */}
+      <ChainBuilder />
       {/* The LinkInspector self-gates on selectedLinkId (null → renders nothing),
           so it sits unconditionally below the canvas (Stage 7 P2). */}
       <LinkInspector />
