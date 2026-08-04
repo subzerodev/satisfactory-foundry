@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { decodeBytes } from "./decode.ts";
+import { fileToDocsText } from "./decode.ts";
 
 interface UploadScreenProps {
   reason: "empty" | "stale" | "upload-error";
@@ -21,8 +21,7 @@ export function UploadScreen({ reason, message, onUpload }: UploadScreenProps) {
     if (!file) return;
     setBusy(true);
     try {
-      const text = decodeBytes(new Uint8Array(await file.arrayBuffer()));
-      onUpload(text);
+      onUpload(await fileToDocsText(file));
     } finally {
       setBusy(false);
     }

@@ -44,6 +44,25 @@ body {
   margin: 48px auto;
 }
 
+/* Drag-and-drop affordance (Stage 5 item 2) — a full-window overlay shown while
+   a file drag is over the window (enter/leave counter in App). Affordance-only:
+   pointer-events: none so it never intercepts the drop itself, which App's
+   window-level listener handles. */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--fg);
+  background: rgba(79, 157, 222, 0.12);
+  border: 3px dashed #4f9dde;
+}
+
 .upload-notice {
   color: var(--fg-muted);
 }
