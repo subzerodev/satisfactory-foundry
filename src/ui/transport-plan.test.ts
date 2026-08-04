@@ -86,6 +86,65 @@ describe("computeLinkTransport — belt / pipe", () => {
     // 600 / Pipe Mk1 300 → 2 pipes.
     expect(plan.result.runs).toBe(2n);
     expect(plan.result.laneRate.eq(Fraction.from(300))).toBe(true);
+    // Absent derate ⇒ deratePercent null (identical to today's behavior).
+    expect(plan.deratePercent).toBeNull();
+  });
+});
+
+describe("computeLinkTransport — pipe derate (S8P2)", () => {
+  // Pipe Mk1 = 300/min. A 50% derate → effective laneRate 150 → 600/150 = 4.
+  function pipe(deratePercentText?: string) {
+    return computeLinkTransport(
+      rate,
+      deratePercentText === undefined
+        ? { mode: "pipe" }
+        : { mode: "pipe", deratePercentText },
+      fluid,
+      TIER_TABLE,
+      { belt: 6, pipe: 1 },
+    );
+  }
+
+  it("a valid derate scales laneRate by pct/100 and raises the run count (exact)", () => {
+    const plan = pipe("50");
+    if (plan.kind !== "continuous") throw new Error("expected continuous");
+    // laneRate 300 × 50/100 = 150 exactly; 600/150 = 4 pipes.
+    expect(plan.result.laneRate.eq(Fraction.from(150))).toBe(true);
+    expect(plan.result.runs).toBe(4n);
+    expect(plan.deratePercent!.eq(Fraction.from(50))).toBe(true);
+  });
+
+  it("100% = no derate (×1); the run count matches the underived pipe", () => {
+    const derated = pipe("100");
+    const bare = pipe();
+    if (derated.kind !== "continuous" || bare.kind !== "continuous") {
+      throw new Error("expected continuous");
+    }
+    expect(derated.result.laneRate.eq(Fraction.from(300))).toBe(true);
+    expect(derated.result.runs).toBe(bare.result.runs);
+    // The field still records the applied 100 (so wording can label it).
+    expect(derated.deratePercent!.eq(Fraction.from(100))).toBe(true);
+  });
+
+  it("a fractional derate stays exact (33.5% → laneRate 201/2)", () => {
+    const plan = pipe("33.5");
+    if (plan.kind !== "continuous") throw new Error("expected continuous");
+    // 300 × 33.5/100 = 100.5 = 201/2, exact — no float.
+    expect(plan.result.laneRate.eq(Fraction.of(201, 2))).toBe(true);
+  });
+
+  it.each([
+    ["0", "0 is out of (0,100]"],
+    ["-5", "negative is out of range"],
+    ["100.1", ">100 is a boost, refused"],
+    ["150", ">100 is a boost, refused"],
+    ["abc", "garbage does not parse"],
+    ["", "empty string does not parse to a number"],
+  ])("derate %j → a labeled TransportError (%s)", (text) => {
+    const plan = pipe(text);
+    expect(plan.kind).toBe("error");
+    if (plan.kind !== "error") throw new Error("expected error");
+    expect(plan.message).toContain("derate");
   });
 });
 
@@ -247,6 +306,46 @@ describe("computeLinkTransport — train (Assumption #6 routing)", () => {
     if (plan.kind !== "train") throw new Error("expected train");
     // A single-car consist throughput reflects the 2400 tank (positive rate).
     expect(plan.options[0]!.throughput.gt(Fraction.from(0))).toBe(true);
+  });
+
+  it("sharedEnds collapses to countedEnds — station MW drops, throughput holds (S8P2)", () => {
+    function train(sharedEnds?: { from?: true; to?: true }) {
+      const plan = computeLinkTransport(
+        Fraction.from(300),
+        {
+          mode: "train",
+          trip: { kind: "measured", roundTripSecondsText: "200" },
+          ...(sharedEnds !== undefined ? { sharedEnds } : {}),
+        },
+        solid,
+        TIER_TABLE,
+        { belt: 4, pipe: 2 },
+      );
+      if (plan.kind !== "train") throw new Error("expected train");
+      return plan;
+    }
+
+    const base = train(); // absent ⇒ both ends (today's behavior)
+    const from = train({ from: true }); // producer end shared → 1 counted
+    const to = train({ to: true }); // consumer end shared → 1 counted
+    const both = train({ from: true, to: true }); // both shared → 0 counted
+
+    // Station MW halves for one shared end, zeroes for both — per row.
+    for (let i = 0; i < base.options.length; i++) {
+      const b = base.options[i]!;
+      const half = b.stationPowerMw.div(Fraction.from(2));
+      expect(from.options[i]!.stationPowerMw.eq(half)).toBe(true);
+      expect(to.options[i]!.stationPowerMw.eq(half)).toBe(true);
+      expect(both.options[i]!.stationPowerMw.eq(Fraction.from(0))).toBe(true);
+      // Throughput is end-count-independent — identical across all four.
+      expect(from.options[i]!.throughput.eq(b.throughput)).toBe(true);
+      expect(both.options[i]!.throughput.eq(b.throughput)).toBe(true);
+    }
+
+    // The plan echoes sharedEnds verbatim for the wording layer.
+    expect(base.sharedEnds).toBeUndefined();
+    expect(from.sharedEnds).toEqual({ from: true });
+    expect(both.sharedEnds).toEqual({ from: true, to: true });
   });
 });
 

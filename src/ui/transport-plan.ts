@@ -80,6 +80,14 @@ export interface TransportContinuous {
   result: ContinuousResult;
   /** 1-based tier index the laneRate came from (unlocked top tier). */
   tierIndex: number;
+  /**
+   * The applied pipe derate as an exact percentage Fraction (S8P2), or null when
+   * none (belt always; pipe with no derate text). Kept as a field — not re-parsed
+   * from the raw config in the wording layer — to hold the single-parse invariant
+   * (the derive owns the one `Fraction.parse`). `result.laneRate` is ALREADY the
+   * derated value; this field only lets wording LABEL that the derate is active.
+   */
+  deratePercent: Fraction | null;
 }
 
 /** A road-vehicle result (truck/tractor/explorer/fluid-truck) + station power. */
@@ -103,6 +111,13 @@ export interface TransportTrain {
   beltTierIndex: number;
   /** The per-platform dual-feed belt ceiling (per minute) used for the rows. */
   beltFeed: Fraction;
+  /**
+   * Which route ends were flagged shared (S8P2), echoed so wording can name them
+   * in the asymmetry footnote. Absent-or-true, verbatim from the config; both
+   * absent ⇒ no override (the footnote is omitted). The station MW column already
+   * reflects the exclusion via the core `countedEnds` — this field is label-only.
+   */
+  sharedEnds: { from?: true; to?: true } | undefined;
 }
 
 /** A drone fleet result. */
@@ -212,15 +227,30 @@ export function computeLinkTransport(
 
   switch (config.mode) {
     case "belt":
+      return continuousPlan("belt", rate, tiers, unlockedTiers, undefined);
     case "pipe":
-      return continuousPlan(config.mode, rate, tiers, unlockedTiers);
+      // Only pipe carries the S8P2 derate; belt is always undated.
+      return continuousPlan(
+        "pipe",
+        rate,
+        tiers,
+        unlockedTiers,
+        config.deratePercentText,
+      );
     case "truck":
     case "tractor":
     case "explorer":
     case "fluid-truck":
       return vehiclePlan(config.mode, config.trip, rate, item);
     case "train":
-      return trainPlan(config.trip, rate, item, tiers, unlockedTiers);
+      return trainPlan(
+        config.trip,
+        config.sharedEnds,
+        rate,
+        item,
+        tiers,
+        unlockedTiers,
+      );
     case "drone":
       return dronePlan(config.fuel, config.trip, rate, item);
   }
@@ -233,22 +263,62 @@ function continuousPlan(
   rate: Fraction,
   tiers: TierTable,
   unlockedTiers: { belt: number; pipe: number },
+  deratePercentText: string | undefined,
 ): TransportPlan {
   const kind = mode; // "belt" | "pipe" — the tier kind and the P1 kind coincide.
   const count = unlockedTiers[kind];
-  const laneRate = tiers[kind][count - 1];
-  if (laneRate === undefined) {
+  const tierRate = tiers[kind][count - 1];
+  if (tierRate === undefined) {
     return {
       kind: "error",
       message: `no unlocked ${kind} tier to size against`,
     };
   }
+
+  // Pipe derate (S8P2): parse the raw text to a (0,100] percentage and scale the
+  // lane rate by pct/100 — a smaller effective laneRate raises the run count via
+  // the UNCHANGED core. Absent ⇒ no derate (belt is never derated). The parsed
+  // derate rides on the result so wording can label it as the user's assumption.
+  let laneRate = tierRate;
+  let deratePercent: Fraction | null = null;
+  if (deratePercentText !== undefined) {
+    const parsed = parseDeratePercent(deratePercentText);
+    if (parsed.kind === "error") return parsed;
+    deratePercent = parsed.value;
+    laneRate = tierRate.mul(deratePercent).div(Fraction.from(100));
+  }
+
   return {
     kind: "continuous",
     mode,
     result: continuousRuns(kind, rate, laneRate),
     tierIndex: count,
+    deratePercent,
   };
+}
+
+/** Parse a pipe derate percentage: a Fraction in (0,100] (100 = no derate; > 100
+ *  a boost, refused; ≤ 0 refused). Malformed / out-of-range → a labeled
+ *  TransportError, matching the module's parse-error idiom. */
+function parseDeratePercent(
+  text: string,
+): { kind: "ok"; value: Fraction } | TransportError {
+  let pct: Fraction;
+  try {
+    pct = Fraction.parse(text);
+  } catch {
+    return {
+      kind: "error",
+      message: `derate must be a number between 0 and 100; got ${JSON.stringify(text)}`,
+    };
+  }
+  if (!pct.gt(Fraction.from(0)) || !pct.lte(Fraction.from(100))) {
+    return {
+      kind: "error",
+      message: `derate must be between 0 and 100; got ${JSON.stringify(text)}`,
+    };
+  }
+  return { kind: "ok", value: pct };
 }
 
 // ── road vehicles ────────────────────────────────────────────────────────────
@@ -334,6 +404,7 @@ function trainPlan(
         kind: "estimated";
         distanceText: string;
       },
+  sharedEnds: { from?: true; to?: true } | undefined,
   rate: Fraction,
   item: CatalogItem,
   tiers: TierTable,
@@ -387,13 +458,23 @@ function trainPlan(
   }
   const beltFeed = beltTierRate.mul(Fraction.from(2));
 
+  // sharedEnds → countedEnds (S8P2): each flagged end is billed elsewhere, so it
+  // drops from THIS link's station-power ledger. countedEnds = 2 − (flagged),
+  // clamped to the 0|1|2 the core option takes; absent ⇒ 2 (today's behavior).
+  const flagged = (sharedEnds?.from ? 1 : 0) + (sharedEnds?.to ? 1 : 0);
+  const countedEnds = (2 - flagged) as 0 | 1 | 2;
+
   return {
     kind: "train",
     mode: "train",
-    options: trainOptions(rate, cargoPerCar, roundTripSeconds, { beltFeed }),
+    options: trainOptions(rate, cargoPerCar, roundTripSeconds, {
+      beltFeed,
+      countedEnds,
+    }),
     tripBasis,
     beltTierIndex,
     beltFeed,
+    sharedEnds,
   };
 }
 
