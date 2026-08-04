@@ -623,3 +623,109 @@ body {
   stroke: var(--error);
   stroke-dasharray: 4 3;
 }
+
+/* -------------------------------------------------------------------------
+   LinkInspector (Stage 7 / Phase 2). The selected-edge transport side panel.
+   Follows the findings/summary visual idiom (bordered card, muted labels).
+   ------------------------------------------------------------------------- */
+
+.link-inspector {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px;
+  margin: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.link-inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.link-inspector-title {
+  font-weight: 600;
+}
+
+.link-inspector-close {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.link-inspector-identity {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.link-inspector-mode,
+.link-inspector-fuel,
+.link-inspector-field {
+  display: block;
+  font-size: 13px;
+}
+
+.link-inspector-trip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.link-inspector-basis {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.link-inspector-result {
+  margin: 0;
+}
+
+.link-inspector-result p {
+  margin: 2px 0;
+}
+
+.link-inspector-power {
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.link-inspector-unsolved,
+.link-inspector-caveat {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.link-inspector-error {
+  margin: 0;
+  color: var(--error);
+}
+
+.train-table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.train-table th,
+.train-table td {
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  text-align: right;
+}
+
+.train-footnote {
+  margin: 2px 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.findings-transport {
+  margin-top: 8px;
+}

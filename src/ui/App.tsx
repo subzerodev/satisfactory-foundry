@@ -10,6 +10,7 @@ import type { CatalogSource } from "../data/catalog-store.ts";
 import type { Catalog } from "../data/types.ts";
 import type { Finding, StageSolveResult } from "../core/manifold.ts";
 import { stagePowerTextFor } from "./advice.ts";
+import { computeTransportFindings } from "./graph-flow.ts";
 import { fileToDocsText, fileFromDrop } from "./decode.ts";
 import { resolveInitialTheme } from "./theme.ts";
 import type { Theme } from "./theme.ts";
@@ -23,6 +24,7 @@ import { LaneOverrides } from "./LaneOverrides.tsx";
 import { FindingsPanel } from "./FindingsPanel.tsx";
 import { Legend } from "./Legend.tsx";
 import { GraphCanvas } from "./GraphCanvas.tsx";
+import { LinkInspector } from "./LinkInspector.tsx";
 import "./app.css";
 
 // Wire the bundled default catalog once, at module load: fetch the static
@@ -269,6 +271,16 @@ export default function App() {
   // stays dumb; App owns the helper call + the null gate.
   const activePowerText = activeStagePowerText(catalog, selection, solve);
 
+  // Plan-wide transport findings (Stage 7 P2): the unsustainable-train case
+  // across all links, pre-worded. unlockedTiers is plan-global (any stage's copy
+  // is canonical); the active selection holds it.
+  const transportFindings = computeTransportFindings(
+    catalog,
+    s.stages,
+    s.links,
+    selection.unlockedTiers,
+  );
+
   return (
     <div className="app">
       {dropOverlay}
@@ -297,6 +309,9 @@ export default function App() {
           header and the v1 surface. Clicking a node switches the whole lower
           surface to that stage via the activeStageId mirror. */}
       <GraphCanvas colorMode={theme} />
+      {/* The LinkInspector self-gates on selectedLinkId (null → renders nothing),
+          so it sits unconditionally below the canvas (Stage 7 P2). */}
+      <LinkInspector />
       <ControlsStrip
         recipes={recipes}
         machines={catalog.machines}
@@ -328,6 +343,7 @@ export default function App() {
           itemName={itemName}
           tiers={catalog.tiers}
           unlocked={selection.unlockedTiers}
+          transportFindings={transportFindings}
         />
       )}
       {solve.status === "solved" && (
@@ -384,6 +400,7 @@ export default function App() {
             itemName={itemName}
             tiers={catalog.tiers}
             unlocked={selection.unlockedTiers}
+            transportFindings={transportFindings}
           />
         </>
       )}

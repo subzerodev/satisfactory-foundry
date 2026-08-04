@@ -198,6 +198,8 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
   const setActiveStage = useAppStore((s) => s.setActiveStage);
   const addLink = useAppStore((s) => s.addLink);
   const removeLink = useAppStore((s) => s.removeLink);
+  const selectLink = useAppStore((s) => s.selectLink);
+  const selectedLinkId = useAppStore((s) => s.selectedLinkId);
   const setStagePosition = useAppStore((s) => s.setStagePosition);
 
   // Component-local gesture feedback — NOT store state (meaningless headless).
@@ -279,8 +281,11 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
         target: e.target,
         label: e.label,
         className: EDGE_CLASS[e.data.state],
+        // The store's selectedLinkId is authoritative for edge selection (opens
+        // the LinkInspector). RF renders the selected style off this flag.
+        selected: e.id === selectedLinkId,
       })),
-    [derived.edges],
+    [derived.edges, selectedLinkId],
   );
 
   // The rendered node list: RF's interim drag frames are held here, merged over
@@ -349,14 +354,15 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      // Only removals are meaningful (edges are otherwise derived); route them
-      // to removeLink. Selection/other edge changes are ignored — the store is
-      // the source of truth and re-derives the edge set.
+      // Removals route to removeLink; SELECTION opens/closes the LinkInspector
+      // via the store (Stage 7 P2 — mirrors the node select arm). Other edge
+      // changes are ignored (the store re-derives the edge set).
       for (const c of changes) {
         if (c.type === "remove") removeLink(c.id);
+        if (c.type === "select") selectLink(c.selected ? c.id : null);
       }
     },
-    [removeLink],
+    [removeLink, selectLink],
   );
 
   const onConnect = useCallback(

@@ -14,6 +14,12 @@
 
 import { formatRate } from "./format.ts";
 import { suggestSupply, stagePowerTextFor } from "./advice.ts";
+import { computeLinkTransport } from "./transport-plan.ts";
+import {
+  edgeChip,
+  unsustainableTrainRow,
+  unsustainableTrainText,
+} from "./transport-text.ts";
 import { Fraction } from "../core/fraction.ts";
 import type { Catalog } from "../data/types.ts";
 import type { CatalogRecipe } from "../data/types.ts";
@@ -303,6 +309,70 @@ function supplySuggestionFor(
 }
 
 /**
+ * A link's required transport rate: the CONSUMER's totalDemand for the item
+ * (what must arrive over the route — the same solved-only demand S6 power reads),
+ * or null when the consumer is unsolved / lacks the feed lane. This is the rate
+ * the transport fleet math sizes against (frozen Axis 3, solved-only).
+ */
+export function linkRequiredRate(
+  link: StageLink,
+  stages: Record<string, StageNode>,
+): Fraction | null {
+  const consumer = stages[link.toStageId];
+  if (consumer === undefined || consumer.solve.status !== "solved") {
+    return null;
+  }
+  const feed = consumer.solve.result.feeds.find(
+    (f) => f.itemId === link.itemId,
+  );
+  return feed?.totalDemand ?? null;
+}
+
+/**
+ * The plan-global unlocked tier counts (belt/pipe). unlockedTiers is a plan-
+ * global invariant (the store stamps identical tiers over every stage), so any
+ * stage's copy is canonical; fall back to the full table when no stage exists.
+ */
+function globalUnlockedTiers(
+  catalog: Catalog,
+  stages: Record<string, StageNode>,
+): { belt: number; pipe: number } {
+  const any = Object.values(stages)[0];
+  if (any !== undefined) return any.selection.unlockedTiers;
+  return { belt: catalog.tiers.belt.length, pipe: catalog.tiers.pipe.length };
+}
+
+/**
+ * The transport chip suffix for one link's edge label ("· 3 trucks", "≈" when
+ * estimated), or "" when the link is belt-mode / unsolved / errored — the belt
+ * case renders exactly as today. Resolves the link's required rate + the
+ * flowing item's stackSize + the plan tiers, then defers to the pure
+ * computeLinkTransport / edgeChip helpers.
+ */
+function transportChipFor(
+  link: StageLink,
+  catalog: Catalog,
+  stages: Record<string, StageNode>,
+): string {
+  // Belt default (absent transport) never chips — the today-unchanged path.
+  if (link.transport === undefined || link.transport.mode === "belt") {
+    return "";
+  }
+  const item = catalog.items[link.itemId];
+  if (item === undefined) return "";
+  const rate = linkRequiredRate(link, stages);
+  const plan = computeLinkTransport(
+    rate,
+    link.transport,
+    item,
+    catalog.tiers,
+    globalUnlockedTiers(catalog, stages),
+  );
+  const chip = edgeChip(plan);
+  return chip === null ? "" : ` ${chip}`;
+}
+
+/**
  * The power-draw line for a stage's card (Stage 6 / Phase 2), or null. Non-null
  * ONLY for a SOLVED stage whose recipe resolves to a machine carrying power
  * data. The clock Fraction is parsed from the stage's clockPercentText at this
@@ -369,14 +439,54 @@ export function graphToFlow(
         ? supplySuggestionFor(link.fromStageId, link.itemId, stages, links)
         : null;
     const { label, state } = edgeLabelFor(itemName, finding, suggestion);
+    // Append the transport chip for a configured non-belt link (Stage 7 P2);
+    // belt links append nothing, so they render exactly as today.
+    const chip = transportChipFor(link, catalog, stages);
     return {
       id: link.id,
       source: link.fromStageId,
       target: link.toStageId,
-      label,
+      label: label + chip,
       data: { state },
     };
   });
 
   return { nodes, edges };
+}
+
+/**
+ * The plan-wide transport findings (Stage 7 / Phase 2, frozen Axis 4): the sole
+ * `transport-rate-unsustainable` case — a SOLVED train link whose required rate
+ * exceeds what one station pair sustains at any consist size. Each returns a
+ * pre-worded sentence (via `unsustainableTrainText`, whose belt-feed hint is
+ * gated on the binding row's `ceilingBound`). Non-train / unsolved / sustainable
+ * links contribute nothing (the single-finding discipline — no invented caps).
+ * Wording lives here so FindingsPanel stays a thin renderer of the sentences.
+ */
+export function computeTransportFindings(
+  catalog: Catalog,
+  stages: Record<string, StageNode>,
+  links: StageLink[],
+  unlockedTiers: { belt: number; pipe: number },
+): string[] {
+  const findings: string[] = [];
+  for (const link of links) {
+    if (link.transport?.mode !== "train") continue;
+    const rate = linkRequiredRate(link, stages);
+    if (rate === null) continue; // unsolved → no fleet math (solved-only)
+    const item = catalog.items[link.itemId];
+    if (item === undefined) continue;
+    const plan = computeLinkTransport(
+      rate,
+      link.transport,
+      item,
+      catalog.tiers,
+      unlockedTiers,
+    );
+    if (plan.kind !== "train") continue; // an errored config is not a finding
+    const row = unsustainableTrainRow(rate, plan.options);
+    if (row === null) continue; // sustainable at some consist size
+    findings.push(unsustainableTrainText(item.displayName, rate, row));
+  }
+  return findings;
 }
