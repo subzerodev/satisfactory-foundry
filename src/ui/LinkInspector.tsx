@@ -35,6 +35,7 @@ import { computeLinkTransport, legalModesFor } from "./transport-plan.ts";
 import {
   MODE_LABEL,
   caveatFor,
+  pipeCaveat,
   continuousLine,
   vehicleLine,
   vehicleStationLine,
@@ -44,6 +45,7 @@ import {
   trainRows,
   trainBeltFeedFootnote,
   trainEstimatedNote,
+  trainSharedEndsFootnote,
   TRAIN_PLATFORM_FOOTNOTE,
 } from "./transport-text.ts";
 
@@ -200,9 +202,37 @@ export function LinkInspector() {
         />
       )}
 
+      {/* Pipe derate (S8P2): an optional (0,100] percentage the pipe fleet math
+          applies. Empty ⇒ the key is stripped (never stored as ""), so plans
+          stay clean. Only rendered for pipe mode. */}
+      {transport?.mode === "pipe" && (
+        <PipeDerateField
+          transport={transport}
+          onChange={(t) => setLinkTransport(link.id, t)}
+        />
+      )}
+
+      {/* Train shared-end overrides (S8P2): flag an end whose station set is
+          billed elsewhere, excluding its 50+50c from this link's station MW.
+          Unchecked ⇒ the key is stripped; all-unchecked ⇒ sharedEnds itself is
+          stripped. Ends are named by the link's stage names. Train mode only. */}
+      {transport?.mode === "train" && (
+        <TrainSharedEndsFields
+          transport={transport}
+          fromName={stageName(producer)}
+          toName={stageName(consumer)}
+          onChange={(t) => setLinkTransport(link.id, t)}
+        />
+      )}
+
       {/* Results (solved-only). An unsolved link shows the mode select but no
-          fleet math; an errored config shows its message. */}
-      <Results plan={plan} />
+          fleet math; an errored config shows its message. The stage names feed
+          the train shared-end asymmetry footnote (S8P2). */}
+      <Results
+        plan={plan}
+        fromName={stageName(producer)}
+        toName={stageName(consumer)}
+      />
 
       {/* Measure feed (Stage 7 / Phase 3, Axis 3): the combined-view drawn
           straight-line distance. Estimated-mode links get a "use drawn distance"
@@ -236,11 +266,33 @@ export function LinkInspector() {
         />
       )}
 
-      {caveatFor(mode) !== null && (
-        <p className="link-inspector-caveat">{caveatFor(mode)}</p>
+      {/* Pipe's caveat is plan-dependent (S8P2 — a derate replaces the static
+          nominal-ceiling line); other modes keep the fixed caveatFor sentence.
+          The continuous plan (pipe → { kind: "continuous" }) carries the parsed
+          derate; a parse-errored pipe config renders the static caveat (the
+          error already shows above via Results). */}
+      {caveatText(mode, plan) !== null && (
+        <p className="link-inspector-caveat">{caveatText(mode, plan)}</p>
       )}
     </div>
   );
+}
+
+/**
+ * The caveat sentence for a link: pipe routes through the plan-aware
+ * {@link pipeCaveat} (a derate replaces the static line) when the plan resolved
+ * to a continuous result; every other mode keeps the static {@link caveatFor}.
+ * A pipe whose config errored (no continuous plan) falls back to the static
+ * pipe caveat — the derate error is surfaced by Results, not the caveat line.
+ */
+function caveatText(
+  mode: TransportMode,
+  plan: ReturnType<typeof computeLinkTransport>,
+): string | null {
+  if (mode === "pipe" && plan.kind === "continuous") {
+    return pipeCaveat(plan);
+  }
+  return caveatFor(mode);
 }
 
 // ---------------------------------------------------------------------------
@@ -423,7 +475,15 @@ function MeasureFeed({
 // Results — the fleet lines / train table / errors, dispatched by plan kind.
 // ---------------------------------------------------------------------------
 
-function Results({ plan }: { plan: ReturnType<typeof computeLinkTransport> }) {
+function Results({
+  plan,
+  fromName,
+  toName,
+}: {
+  plan: ReturnType<typeof computeLinkTransport>;
+  fromName: string;
+  toName: string;
+}) {
   switch (plan.kind) {
     case "unsolved":
       return (
@@ -451,17 +511,22 @@ function Results({ plan }: { plan: ReturnType<typeof computeLinkTransport> }) {
         </div>
       );
     case "train":
-      return <TrainTable plan={plan} />;
+      return <TrainTable plan={plan} fromName={fromName} toName={toName} />;
   }
 }
 
 function TrainTable({
   plan,
+  fromName,
+  toName,
 }: {
   plan: Extract<ReturnType<typeof computeLinkTransport>, { kind: "train" }>;
+  fromName: string;
+  toName: string;
 }) {
   const rows = trainRows(plan);
   const estimatedNote = trainEstimatedNote(plan);
+  const sharedNote = trainSharedEndsFootnote(plan, fromName, toName);
   return (
     <div className="link-inspector-train">
       <table className="train-table">
@@ -488,11 +553,112 @@ function TrainTable({
       </table>
       <p className="train-footnote">{TRAIN_PLATFORM_FOOTNOTE}</p>
       <p className="train-footnote">{trainBeltFeedFootnote(plan)}</p>
+      {sharedNote !== null && <p className="train-footnote">{sharedNote}</p>}
       {estimatedNote !== null && (
         <p className="train-footnote">{estimatedNote}</p>
       )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Pipe derate field (S8P2) — an optional (0,100] percentage, empty ⇒ stripped.
+// ---------------------------------------------------------------------------
+
+function PipeDerateField({
+  transport,
+  onChange,
+}: {
+  transport: Extract<LinkTransport, { mode: "pipe" }>;
+  onChange: (t: LinkTransport) => void;
+}) {
+  return (
+    <label className="link-inspector-field link-inspector-derate">
+      derate %{" "}
+      <input
+        type="text"
+        inputMode="decimal"
+        value={transport.deratePercentText ?? ""}
+        onChange={(e) => onChange(setPipeDerate(e.target.value))}
+      />
+    </label>
+  );
+}
+
+/** Build the next pipe config from a derate-field edit: empty text STRIPS the
+ *  key (the optional-field idiom — never store "" ), any other text carries it
+ *  raw (validity is a derive-time concern, the clock-text precedent). */
+export function setPipeDerate(text: string): LinkTransport {
+  return text === ""
+    ? { mode: "pipe" }
+    : { mode: "pipe", deratePercentText: text };
+}
+
+// ---------------------------------------------------------------------------
+// Train shared-end overrides (S8P2) — two checkboxes, absent-or-true stripping.
+// ---------------------------------------------------------------------------
+
+function TrainSharedEndsFields({
+  transport,
+  fromName,
+  toName,
+  onChange,
+}: {
+  transport: Extract<LinkTransport, { mode: "train" }>;
+  fromName: string;
+  toName: string;
+  onChange: (t: LinkTransport) => void;
+}) {
+  const shared = transport.sharedEnds;
+  return (
+    <div className="link-inspector-shared-ends">
+      <label>
+        <input
+          type="checkbox"
+          checked={shared?.from === true}
+          onChange={(e) =>
+            onChange(setSharedEnd(transport, "from", e.target.checked))
+          }
+        />{" "}
+        station at {fromName} is shared
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={shared?.to === true}
+          onChange={(e) =>
+            onChange(setSharedEnd(transport, "to", e.target.checked))
+          }
+        />{" "}
+        station at {toName} is shared
+      </label>
+    </div>
+  );
+}
+
+/**
+ * Build the next train config from a shared-end checkbox toggle (S8P2). The
+ * absent-or-true idiom, applied at the write: checking sets the key to `true`;
+ * UNCHECKING strips it; when the last flagged end is stripped, the whole
+ * `sharedEnds` field is dropped (never a persisted `{}`), so an all-off train
+ * config is byte-identical to today's (no override).
+ */
+export function setSharedEnd(
+  transport: Extract<LinkTransport, { mode: "train" }>,
+  end: "from" | "to",
+  shared: boolean,
+): LinkTransport {
+  const next: { from?: true; to?: true } = { ...transport.sharedEnds };
+  if (shared) {
+    next[end] = true;
+  } else {
+    delete next[end];
+  }
+  // Rebuild the train arm WITHOUT sharedEnds, re-adding it only if a flag
+  // survives — so an all-off config is byte-identical to today's (no key, no
+  // empty {}). The trip carries verbatim (a shared-end toggle never disturbs it).
+  const base: LinkTransport = { mode: "train", trip: transport.trip };
+  return next.from || next.to ? { ...base, sharedEnds: next } : base;
 }
 
 // ---------------------------------------------------------------------------

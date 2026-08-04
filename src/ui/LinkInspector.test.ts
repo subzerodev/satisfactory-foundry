@@ -12,7 +12,12 @@ import { describe, it, expect } from "vitest";
 import { Fraction } from "../core/fraction.ts";
 import type { LinkFinding } from "../core/reconcile.ts";
 import type { SolveState, StageLink, StageNode } from "../state/store.ts";
-import { applyBlockFor } from "./LinkInspector.tsx";
+import {
+  applyBlockFor,
+  setPipeDerate,
+  setSharedEnd,
+} from "./LinkInspector.tsx";
+import type { LinkTransport } from "../state/store.ts";
 
 // A solved SolveState carrying one output lane (with perMachineOutput for the
 // suggestion) and/or one feed lane — the only fields supplySuggestionFor reads.
@@ -165,6 +170,100 @@ describe("applyBlockFor — payload matches supplySuggestionFor", () => {
       machines: 32,
       total: true, // fan-out wording
       producerName: "Smelters",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S8P2 config-builders — the pure round-trip through the inspector's controls
+// (the LinkInspector COMPONENT is store-driven / Rules-of-Hooks, so the write
+// contract carries here; the browser walk is the visual gate). Both enforce the
+// optional-field stripping the design pins: empty / unchecked ⇒ the key is
+// dropped, never persisted as "" or a `{}` — so an "off" config is byte-
+// identical to today's (every existing plan unchanged).
+// ---------------------------------------------------------------------------
+
+describe("setPipeDerate — empty strips the key, else carries the raw text", () => {
+  it("empty text ⇒ a bare pipe config (key stripped, never stored as '')", () => {
+    expect(setPipeDerate("")).toEqual({ mode: "pipe" });
+  });
+
+  it("any non-empty text carries verbatim (validity is a derive-time concern)", () => {
+    expect(setPipeDerate("80")).toEqual({
+      mode: "pipe",
+      deratePercentText: "80",
+    });
+    // Even not-yet-valid text is carried raw — the derive labels the error, the
+    // clock-text precedent. The field must round-trip whatever the user typed.
+    expect(setPipeDerate("12.")).toEqual({
+      mode: "pipe",
+      deratePercentText: "12.",
+    });
+  });
+});
+
+describe("setSharedEnd — absent-or-true checkbox stripping", () => {
+  const train: Extract<LinkTransport, { mode: "train" }> = {
+    mode: "train",
+    trip: { kind: "estimated", distanceText: "1200" },
+  };
+
+  it("checking an end sets the key to `true`", () => {
+    expect(setSharedEnd(train, "from", true)).toEqual({
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "1200" },
+      sharedEnds: { from: true },
+    });
+  });
+
+  it("checking both ends carries both keys", () => {
+    const one = setSharedEnd(train, "from", true) as Extract<
+      LinkTransport,
+      { mode: "train" }
+    >;
+    expect(setSharedEnd(one, "to", true)).toEqual({
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "1200" },
+      sharedEnds: { from: true, to: true },
+    });
+  });
+
+  it("unchecking the LAST flagged end strips the whole sharedEnds field", () => {
+    const flagged = setSharedEnd(train, "from", true) as Extract<
+      LinkTransport,
+      { mode: "train" }
+    >;
+    const cleared = setSharedEnd(flagged, "from", false);
+    // Byte-identical to a train with no override (no `sharedEnds` key at all).
+    expect(cleared).toEqual({
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "1200" },
+    });
+    expect("sharedEnds" in cleared).toBe(false);
+  });
+
+  it("unchecking ONE of two flagged ends keeps the other (never a persisted {})", () => {
+    const both: Extract<LinkTransport, { mode: "train" }> = {
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "1200" },
+      sharedEnds: { from: true, to: true },
+    };
+    expect(setSharedEnd(both, "from", false)).toEqual({
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "1200" },
+      sharedEnds: { to: true },
+    });
+  });
+
+  it("preserves the trip (a shared-end toggle never disturbs trip fields)", () => {
+    const measured: Extract<LinkTransport, { mode: "train" }> = {
+      mode: "train",
+      trip: { kind: "measured", roundTripSecondsText: "200" },
+    };
+    expect(setSharedEnd(measured, "to", true)).toEqual({
+      mode: "train",
+      trip: { kind: "measured", roundTripSecondsText: "200" },
+      sharedEnds: { to: true },
     });
   });
 });
