@@ -141,11 +141,41 @@ describe("ControlsStrip", () => {
 describe("SummaryCards", () => {
   it("renders per-lane rates and counts as exact strings", () => {
     const html = renderToStaticMarkup(
-      <SummaryCards result={workedResult()} itemName={itemName} />,
+      <SummaryCards
+        result={workedResult()}
+        itemName={itemName}
+        powerText={null}
+      />,
     );
     expect(html).toContain("600/min in");
     expect(html).toContain("600/min out");
     expect(html).toContain("2 × belt");
+    // powerText null → no Power card.
+    expect(html).not.toContain("summary-card-power");
+  });
+
+  it("renders the Power card when powerText is non-null (Stage 6 P2)", () => {
+    const html = renderToStaticMarkup(
+      <SummaryCards
+        result={workedResult()}
+        itemName={itemName}
+        powerText="80 MW"
+      />,
+    );
+    expect(html).toContain("summary-card-power");
+    expect(html).toContain("Power");
+    expect(html).toContain("80 MW");
+  });
+
+  it("omits the Power card when powerText is null", () => {
+    const html = renderToStaticMarkup(
+      <SummaryCards
+        result={workedResult()}
+        itemName={itemName}
+        powerText={null}
+      />,
+    );
+    expect(html).not.toContain("summary-card-power");
   });
 });
 
@@ -765,6 +795,11 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
     expect(html).toContain("no recipe");
     // The ＋stage control is present in the canvas corner.
     expect(html).toContain("graph-add-stage");
+    // The default Stage 1 is recipe-less/idle → no power line (uniform rule);
+    // the powerText-non-null render is the browser-walk gate (StageNode's
+    // <Handle> needs the RF provider, so it can't be rendered in isolation —
+    // the data pin lives in graph-flow.test's node-powerText rows instead).
+    expect(html).not.toContain("stage-node-power");
   });
 });
 

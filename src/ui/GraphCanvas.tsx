@@ -42,6 +42,7 @@ import {
   NODE_HEIGHT,
 } from "./graph-flow.ts";
 import type { StageNodeData, EdgeState } from "./graph-flow.ts";
+import { chainPowerText } from "./advice.ts";
 
 /**
  * The card's `data`: the pure StageNodeData plus the per-node callbacks the
@@ -147,6 +148,12 @@ function StageNode({ data, selected }: NodeProps<StageFlowNode>) {
           </span>
         )}
       </footer>
+
+      {/* The power-draw line (Stage 6 P2): rendered only for a solved+powered
+          stage (powerText non-null), a small line under the count/findings. */}
+      {data.powerText !== null && (
+        <p className="stage-node-power">{data.powerText}</p>
+      )}
     </div>
   );
 }
@@ -196,6 +203,14 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
   // Component-local gesture feedback — NOT store state (meaningless headless).
   // Cleared at the next canvas gesture (success or refusal), no timers.
   const [canvasNotice, setCanvasNotice] = useState<string | null>(null);
+
+  // The chain-wide power total (Stage 6 P2): "Σ ≈ X MW" over the solved+powered
+  // stages, or null when none. Store-wired — GraphCanvas holds stages+catalog.
+  const chainPower = useMemo(
+    () =>
+      catalog === null ? null : chainPowerText(Object.values(stages), catalog),
+    [catalog, stages],
+  );
 
   // The derived structure (nodes/edges) from the store graph slice. Recomputed
   // whenever any graph-slice input changes. This is the "structure" half of the
@@ -426,6 +441,11 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
             ＋ stage
           </button>
         </Panel>
+        {chainPower !== null && (
+          <Panel position="bottom-right">
+            <p className="graph-chain-power">{chainPower}</p>
+          </Panel>
+        )}
         {canvasNotice !== null && (
           <Panel position="top-right">
             <p className="graph-canvas-notice">{canvasNotice}</p>
