@@ -1,5 +1,26 @@
 import tseslint from 'typescript-eslint'
 
+// Shared by every purity block (core, layout): the host-globals ban is one
+// game-wide fact — single-sourced so a future global can't drift between
+// layer blocks. checkGlobalObject also catches globalThis.document-style
+// access, not just bare identifiers. Verified supported in ESLint 10.8.0.
+const HOST_GLOBALS_BAN = [
+  'error',
+  {
+    checkGlobalObject: true,
+    globals: [
+      'document',
+      'window',
+      'indexedDB',
+      'localStorage',
+      'sessionStorage',
+      'fetch',
+      'navigator',
+      'location',
+    ],
+  },
+]
+
 export default tseslint.config(
   { ignores: ['dist'] },
   ...tseslint.configs.recommended,
@@ -44,24 +65,7 @@ export default tseslint.config(
             'src/core is zero-dependency: dynamic imports are not allowed.',
         },
       ],
-      'no-restricted-globals': [
-        'error',
-        {
-          // checkGlobalObject also catches globalThis.document-style access,
-          // not just bare identifiers. Verified supported in ESLint 10.8.0.
-          checkGlobalObject: true,
-          globals: [
-            'document',
-            'window',
-            'indexedDB',
-            'localStorage',
-            'sessionStorage',
-            'fetch',
-            'navigator',
-            'location',
-          ],
-        },
-      ],
+      'no-restricted-globals': HOST_GLOBALS_BAN,
     },
   },
   {
@@ -107,24 +111,7 @@ export default tseslint.config(
             'src/layout is dependency-free: dynamic imports are not allowed.',
         },
       ],
-      'no-restricted-globals': [
-        'error',
-        {
-          // checkGlobalObject also catches globalThis.document-style access,
-          // not just bare identifiers. Verified supported in ESLint 10.8.0.
-          checkGlobalObject: true,
-          globals: [
-            'document',
-            'window',
-            'indexedDB',
-            'localStorage',
-            'sessionStorage',
-            'fetch',
-            'navigator',
-            'location',
-          ],
-        },
-      ],
+      'no-restricted-globals': HOST_GLOBALS_BAN,
     },
   },
 )
