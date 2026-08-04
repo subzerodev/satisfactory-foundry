@@ -239,6 +239,11 @@ body {
   color: var(--fg-muted);
 }
 
+/* The power-draw card (Stage 6 P2) — same card chrome, muted rate line. */
+.summary-card-power .card-rate {
+  color: var(--fg-muted);
+}
+
 .schematic,
 .schematic-scroll {
   position: relative; /* anchor for the absolutely-positioned .tooltip */
@@ -585,6 +590,24 @@ body {
   border-radius: 8px;
   padding: 0 6px;
   font-weight: 600;
+}
+
+/* The per-stage power line (Stage 6 P2) — a small muted line under the foot. */
+.stage-node-power {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+/* The chain-Σ power line (Stage 6 P2) — a small muted panel, bottom-right. */
+.graph-chain-power {
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 
 /* Edge reconciliation styling. */

@@ -13,6 +13,8 @@
  */
 
 import { formatRate } from "./format.ts";
+import { suggestSupply, stagePowerTextFor } from "./advice.ts";
+import { Fraction } from "../core/fraction.ts";
 import type { Catalog } from "../data/types.ts";
 import type { CatalogRecipe } from "../data/types.ts";
 import type { StageNode, StageLink, SolveState } from "../state/store.ts";
@@ -40,6 +42,10 @@ export interface StageNodeData {
   machineCount: number;
   solveStatus: SolveState["status"];
   findingCount: number;
+  /** The stage's power-draw line (Stage 6 / Phase 2), or null. Non-null ONLY
+   *  for a SOLVED stage whose recipe's machine carries power data — recipe-less,
+   *  idle, and invalid stages are null (uniform with SummaryCards + the Σ). */
+  powerText: string | null;
 }
 
 /**
@@ -189,25 +195,51 @@ function recipeNameOf(catalog: Catalog, stage: StageNode): string | null {
 }
 
 /**
- * Build one edge's label + state from the item's display name and the link's
- * reconciliation finding. Absence of a finding for the linkId IS "ok" (there is
- * no "ok" finding variant, r1 fold). The vocabulary maps the REAL reconcile
- * union: under-supply renders the exact shortfall; over-supply the surplus
- * (styled muted downstream); dangling-link renders per its `end`.
+ * The match-demand suggestion for one under-supplied edge (Stage 6 / Phase 2):
+ * the aggregate machine count that would cover the producer's WHOLE outgoing
+ * load for the item, plus whether the producer fans out to more than one
+ * consumer (which changes the wording). Null when the producer is unsolved /
+ * lacks the output lane — then the edge shows its base under-supply label.
+ */
+interface SupplySuggestion {
+  machines: number;
+  fanOut: boolean;
+}
+
+/**
+ * Build one edge's label + state from the item's display name, the link's
+ * reconciliation finding, and (for under-supply) the fan-out-aggregated supply
+ * suggestion. Absence of a finding for the linkId IS "ok" (there is no "ok"
+ * finding variant, r1 fold). The vocabulary maps the REAL reconcile union:
+ * under-supply renders the exact shortfall + the suggestion; over-supply the
+ * surplus (styled muted downstream, no suggestion — a surplus needs none);
+ * dangling-link renders per its `end`.
+ *
+ * The under-supply suggestion suffix is "· ×N covers it" for a single consumer
+ * and "· ×N total" when the producer fans the item out to more than one
+ * consumer (the fan-out wording — "total" kills the per-edge misread). N is the
+ * aggregate over ALL the producer's outgoing same-item links (frozen Axis 2 r1
+ * BLOCKER fold). A null suggestion (unsolved producer) → the base label.
  */
 function edgeLabelFor(
   itemName: string,
   finding: LinkFinding | undefined,
+  suggestion: SupplySuggestion | null,
 ): { label: string; state: EdgeState } {
   if (finding === undefined) {
     return { label: `${itemName} · ok`, state: "ok" };
   }
   switch (finding.type) {
-    case "under-supply":
-      return {
-        label: `${itemName} · short ${formatRate(finding.shortfall)}/min`,
-        state: "under-supply",
-      };
+    case "under-supply": {
+      const base = `${itemName} · short ${formatRate(finding.shortfall)}/min`;
+      if (suggestion === null) {
+        return { label: base, state: "under-supply" };
+      }
+      const tail = suggestion.fanOut
+        ? `· ×${suggestion.machines} total`
+        : `· ×${suggestion.machines} covers it`;
+      return { label: `${base} ${tail}`, state: "under-supply" };
+    }
     case "over-supply":
       return {
         label: `${itemName} · +${formatRate(finding.surplus)}/min surplus`,
@@ -219,6 +251,69 @@ function edgeLabelFor(
         state: "dangling",
       };
   }
+}
+
+/**
+ * The fan-out-aggregated supply suggestion for a producer→item pair, or null
+ * when the producer is unsolved / has no output lane for the item (frozen Axis
+ * 2). N = ceilDiv( Σ totalDemand over ALL the producer's outgoing links for
+ * this item on SOLVED consumers, producer lane's perMachineOutput ). An
+ * unsolved/dangling sibling has no demand lane and is skipped from the Σ (the
+ * no-invented-numbers invariant). fanOut is true when the producer has more
+ * than one outgoing link for the item — the wording tell.
+ *
+ * The sibling demand is read UNIFORMLY from each consumer's totalDemand (the
+ * same source mapLinkInputs reads), so all siblings agree by construction.
+ */
+function supplySuggestionFor(
+  producerId: string,
+  itemId: string,
+  stages: Record<string, StageNode>,
+  links: StageLink[],
+): SupplySuggestion | null {
+  const producer = stages[producerId];
+  if (producer === undefined || producer.solve.status !== "solved") {
+    return null;
+  }
+  const outLane = producer.solve.result.outputs.find(
+    (o) => o.itemId === itemId,
+  );
+  if (outLane === undefined) {
+    return null;
+  }
+  // All the producer's outgoing links carrying this item — the fan-out set.
+  const siblings = links.filter(
+    (l) => l.fromStageId === producerId && l.itemId === itemId,
+  );
+  let totalDemand = Fraction.from(0);
+  for (const sib of siblings) {
+    const consumer = stages[sib.toStageId];
+    if (consumer === undefined || consumer.solve.status !== "solved") {
+      continue; // unsolved/dangling sibling has no lane → skipped from the Σ
+    }
+    const feed = consumer.solve.result.feeds.find((f) => f.itemId === itemId);
+    if (feed === undefined) continue;
+    totalDemand = totalDemand.add(feed.totalDemand);
+  }
+  const suggestion = suggestSupply(totalDemand, outLane.perMachineOutput);
+  if (suggestion === null) {
+    return null;
+  }
+  return { machines: suggestion.machines, fanOut: siblings.length > 1 };
+}
+
+/**
+ * The power-draw line for a stage's card (Stage 6 / Phase 2), or null. Non-null
+ * ONLY for a SOLVED stage whose recipe resolves to a machine carrying power
+ * data. The clock Fraction is parsed from the stage's clockPercentText at this
+ * site (a re-parse; the store already validated it to reach 'solved', so a
+ * malformed value is unreachable here — guarded to null defensively). Uniform
+ * with SummaryCards + the chain Σ: recipe-less / idle / invalid → null.
+ */
+function powerTextOf(catalog: Catalog, stage: StageNode): string | null {
+  // Delegates to the one test-pinned resolver (simplify fold): the solved
+  // gate, prototype-safe lookups, and clock parse live in advice.ts.
+  return stagePowerTextFor(catalog, stage);
 }
 
 /**
@@ -254,6 +349,7 @@ export function graphToFlow(
           machineCount: stage.selection.machineCount,
           solveStatus: stage.solve.status,
           findingCount: findingCountFor(id, links, reconciliation),
+          powerText: powerTextOf(catalog, stage),
         },
       };
     });
@@ -265,7 +361,14 @@ export function graphToFlow(
 
   const edges: FlowEdge[] = links.map((link) => {
     const itemName = catalog.items[link.itemId]?.displayName ?? link.itemId;
-    const { label, state } = edgeLabelFor(itemName, findingByLink.get(link.id));
+    const finding = findingByLink.get(link.id);
+    // The fan-out suggestion is only meaningful for an under-supplied edge;
+    // compute it lazily so a solved-clean or dangling edge costs nothing.
+    const suggestion =
+      finding?.type === "under-supply"
+        ? supplySuggestionFor(link.fromStageId, link.itemId, stages, links)
+        : null;
+    const { label, state } = edgeLabelFor(itemName, finding, suggestion);
     return {
       id: link.id,
       source: link.fromStageId,

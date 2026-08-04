@@ -1,7 +1,14 @@
 /**
  * Pure formatting helpers: exact-rate strings, tier tokens, belt labels, and
- * finding sentences. Fractions become strings here and nowhere else — never
- * converted to JS numbers. The exact strings are UI contract, pinned by tests.
+ * finding sentences. Fractions become EXACT strings here — never converted to
+ * JS numbers. The exact strings are UI contract, pinned by tests.
+ *
+ * The float boundary is deliberately split (Stage 6 / Phase 2 decision): this
+ * module stays exact-only, and `src/ui/advice.ts` is THE SECOND, approximation-
+ * labeled boundary — `stagePowerText`/`chainPowerText` there convert Fractions
+ * to numbers for irrational overclock power, every approximated value carrying
+ * the "≈" prefix. So "exact here and nowhere else" now reads: exact HERE;
+ * labeled-approximation ONLY in advice.ts; nowhere else.
  */
 
 import { Fraction } from "../core/fraction.ts";

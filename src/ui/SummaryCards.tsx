@@ -4,11 +4,25 @@ import { formatRate } from "./format.ts";
 interface SummaryCardsProps {
   result: StageSolveResult;
   itemName(id: string): string;
+  /** The active stage's power-draw line, prepared by App via stagePowerText —
+   *  null when the stage is not solved or the machine has no power data (the
+   *  card stays dumb; the "Power · …" card renders only when non-null). */
+  powerText: string | null;
 }
 
-export function SummaryCards({ result, itemName }: SummaryCardsProps) {
+export function SummaryCards({
+  result,
+  itemName,
+  powerText,
+}: SummaryCardsProps) {
   return (
     <div className="summary-cards">
+      {powerText !== null && (
+        <div className="summary-card summary-card-power" key="power">
+          <span className="card-item">Power</span>
+          <span className="card-rate">{powerText}</span>
+        </div>
+      )}
       {result.feeds.map((lane) => (
         <div className="summary-card" key={`feed-${lane.itemId}`}>
           <span className="card-item">{itemName(lane.itemId)}</span>
