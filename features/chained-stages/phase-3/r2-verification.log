@@ -1,0 +1,129 @@
+Stage 3 / Phase 3 — bidirectionality verification log
+Generated: 2026-08-04T00:08:25Z
+Worktree: .worktrees/chained-p3 (branch feature/chained-p3)
+Baseline: 323 tests. Post-P3: 347 tests (all green on HEAD).
+
+Method: per behavior family, PASS on HEAD → break production (sed) →
+genuine vitest FAIL naming the new test → git checkout restore → PASS.
+Commands + output excerpts below. Run script: scripts/biverify (scratchpad).
+
+
+===================================================================
+FAMILY 1 — VALIDATOR (isPlanFileV2): self-link refusal
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 27 skipped (28)
+--- BREAK: remove the from===to guard ---
+mutation applied
+--- FAIL (production broken) ---
+ ❯ src/data/plan-store.test.ts (28 tests | 1 failed | 27 skipped) 7ms
+     × rejects a self-link (from === to) 6ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected { format_version: 2, …(5) } to be null
+ Test Files  1 failed (1)
+      Tests  1 failed | 27 skipped (28)
+
+===================================================================
+FAMILY 2 — migrateV1: synthesized 'Stage 1' name
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 27 skipped (28)
+--- BREAK: change synthesized name ---
+mutation applied
+--- FAIL (production broken) ---
+ ❯ src/data/plan-store.test.ts (28 tests | 1 failed | 27 skipped) 6ms
+     × migrates a v1 file → one-stage v2 named 'Stage 1', no position, empty links 5ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected 'WRONG' to be 'Stage 1' // Object.is equality
+ Test Files  1 failed (1)
+      Tests  1 failed | 27 skipped (28)
+
+===================================================================
+FAMILY 3 — SAVE-GRAPH-CAPTURE: link index encoding
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 92 skipped (93)
+--- BREAK: drop links on save (capture empty) ---
+mutation applied
+--- FAIL (production broken) ---
+ ❯ src/state/store.test.ts (93 tests | 1 failed | 92 skipped) 12ms
+     × round-trips a 3-stage linked graph: names/order/selections/links/positions identical, fresh ids, exact Fractions 12ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected [] to have a length of 1 but got +0
+ Test Files  1 failed (1)
+      Tests  1 failed | 92 skipped (93)
+
+===================================================================
+FAMILY 4a — LOAD-REBUILD: current-global tier stamping
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 92 skipped (93)
+--- BREAK: stamp the FILE's saved tiers instead of global ---
+mutation applied
+--- FAIL (production broken) ---
+ ❯ src/state/store.test.ts (93 tests | 1 failed | 92 skipped) 11ms
+     × load stamps the CURRENT global tiers over every stage (file tiers dead-on-read) 10ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected { belt: 5, pipe: 2 } to deeply equal { belt: 1, pipe: 1 }
+ Test Files  1 failed (1)
+      Tests  1 failed | 92 skipped (93)
+
+===================================================================
+FAMILY 4b — LOAD-REBUILD: machineCount null->NaN coercion
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 92 skipped (93)
+--- BREAK: skip the null->NaN coercion ---
+mutation applied
+--- FAIL (production broken) ---
+ ❯ src/state/store.test.ts (93 tests | 1 failed | 92 skipped) 12ms
+     × a null machineCount in the file → NaN on load (per stage), rendered invalid 11ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected false to be true // Object.is equality
+ Test Files  1 failed (1)
+      Tests  1 failed | 92 skipped (93)
+
+===================================================================
+FAMILY 4c — LOAD-REBUILD: recipeId re-validation + overrides verbatim
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 92 skipped (93)
+--- BREAK: keep the vanished recipeId (skip re-validation) ---
+mutation applied
+--- FAIL (production broken) ---
+ ❯ src/state/store.test.ts (93 tests | 1 failed | 92 skipped) 11ms
+     × recipeId vanished on load → null, overrides KEPT verbatim, link dangles 10ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected 'ingot_iron' to be null
+ Test Files  1 failed (1)
+      Tests  1 failed | 92 skipped (93)
+
+===================================================================
+FAMILY 5 — PLACEMENTSEQ RESEED: placementSeq = stages.length
+===================================================================
+--- PASS on HEAD ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 92 skipped (93)
+--- BREAK: reseed to 0 instead of stages.length ---
+grep: warning: stray \ before /
+grep: warning: stray \ before /
+mutation applied
+--- FAIL (production broken) ---
+ ❯ src/state/store.test.ts (93 tests | 1 failed | 92 skipped) 12ms
+     × placementSeq re-seeds to stages.length: addStage after load lands on a fresh slot 11ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected +0 to be 3 // Object.is equality
+ Test Files  1 failed (1)
+      Tests  1 failed | 92 skipped (93)
+
+===================================================================
+RESTORE CHECK — full suite must be green again
+===================================================================
+ Test Files  15 passed (15)
+      Tests  347 passed (347)
