@@ -33,6 +33,7 @@ function vehicle(
   nVehicles: bigint,
   ratePerVehicle: number,
   basis: "measured" | "estimated",
+  exactRate?: Fraction,
 ): TransportVehicle {
   return {
     kind: "vehicle",
@@ -40,7 +41,7 @@ function vehicle(
     result: {
       roundTripSeconds: Fraction.from(100),
       cargoPerTrip: Fraction.from(9600),
-      ratePerVehicle: Fraction.from(ratePerVehicle),
+      ratePerVehicle: exactRate ?? Fraction.from(ratePerVehicle),
       nVehicles,
       tripBasis: basis,
     },
@@ -158,6 +159,14 @@ describe("transport-text — train rows + chip", () => {
       beltFeed: Fraction.from(960),
     };
   }
+
+  it("fleet lines use the ≈ form for non-terminating per-vehicle rates", () => {
+    // 4800/7 per truck is non-terminating → "≈ 685.7", never "4800/7".
+    const plan = vehicle(3n, 100, "measured", Fraction.of(4800, 7));
+    const line = vehicleLine(plan);
+    expect(line).toContain("≈ 685.7/min");
+    expect(line).not.toContain("/7");
+  });
 
   it("non-terminating sustained rate renders the honest ≈ form, never n/d", () => {
     // roundTrip 414.16 s with cargo 6400/car: 6400×60/(10354/25) is

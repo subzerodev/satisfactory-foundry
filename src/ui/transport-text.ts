@@ -82,7 +82,7 @@ export function continuousLine(plan: TransportContinuous): string {
   const { runs, laneRate } = plan.result;
   const lane = plan.mode === "belt" ? "belt" : "pipe";
   const noun = runs === 1n ? lane : `${lane}s`;
-  return `${runs} ${noun} ${runs === 1n ? "sustains" : "sustain"} ${formatRate(laneRate)}/min each`;
+  return `${runs} ${noun} ${runs === 1n ? "sustains" : "sustain"} ${formatRateOrApprox(laneRate)}/min each`;
 }
 
 /** "3 trucks sustain 480/min over this trip" — road fleet line, with the
@@ -91,7 +91,7 @@ export function vehicleLine(plan: TransportVehicle): string {
   const { nVehicles, ratePerVehicle, tripBasis } = plan.result;
   const noun =
     nVehicles === 1n ? vehicleNoun(plan.mode) : vehicleNounPlural(plan.mode);
-  const base = `${nVehicles} ${noun} ${nVehicles === 1n ? "sustains" : "sustain"} ${formatRate(ratePerVehicle)}/min each over this trip`;
+  const base = `${nVehicles} ${noun} ${nVehicles === 1n ? "sustains" : "sustain"} ${formatRateOrApprox(ratePerVehicle)}/min each over this trip`;
   return tripBasis === "estimated" ? base + ESTIMATED_SUFFIX : base;
 }
 
@@ -104,7 +104,7 @@ export function vehicleStationLine(plan: TransportVehicle): string {
 export function droneLine(plan: TransportDrone): string {
   const { nDrones, ratePerDrone, tripBasis } = plan.result;
   const noun = nDrones === 1n ? "drone" : "drones";
-  const base = `${nDrones} ${noun} ${nDrones === 1n ? "sustains" : "sustain"} ${formatRate(ratePerDrone)}/min each`;
+  const base = `${nDrones} ${noun} ${nDrones === 1n ? "sustains" : "sustain"} ${formatRateOrApprox(ratePerDrone)}/min each`;
   return tripBasis === "estimated" ? base + ESTIMATED_SUFFIX : base;
 }
 
