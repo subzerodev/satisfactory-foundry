@@ -224,6 +224,41 @@ describe("Schematic", () => {
     );
     expect(html).toContain("seg-error");
   });
+
+  it("classes a pipe lane's bus segments with lane-pipe (Stage 5 item 4)", () => {
+    // A fluid recipe fixture: one pipe feed at 150/min through the real solver,
+    // so the pipe kind flows to the schematic lane. The distinct treatment is a
+    // CSS class (.lane-pipe) — pin its presence in the markup.
+    const result = solveStage({
+      machineCount: 4,
+      clockPercent: Fraction.from(100),
+      capacities: FIXTURE_TIERS,
+      feeds: [
+        {
+          itemId: "water",
+          kind: "pipe" as const,
+          perMachineRate: Fraction.from(150),
+        },
+      ],
+      outputs: [
+        {
+          itemId: "iron_ingot",
+          kind: "belt" as const,
+          perMachineRate: Fraction.from(30),
+        },
+      ],
+    });
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={result}
+        machineCount={4}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    expect(html).toContain("lane-pipe");
+  });
 });
 
 describe("Blueprint", () => {
@@ -326,6 +361,44 @@ describe("Blueprint", () => {
     );
     expect(html).toContain("empty-state");
     expect(html).not.toContain("<svg");
+  });
+
+  it("classes a pipe feed's bus ribbon with bp-bus-pipe (Stage 5 item 4)", () => {
+    // A fluid recipe fixture: a pipe feed + a belt output. Blueprint re-reads
+    // solve.feeds[f].kind for the CLASS only (the narrow S4P2 exception cited in
+    // the component), so the pipe bus ribbon carries .bp-bus-pipe while the belt
+    // output ribbon does not.
+    const result = solveStage({
+      machineCount: 2,
+      clockPercent: Fraction.from(100),
+      capacities: FIXTURE_TIERS,
+      feeds: [
+        {
+          itemId: "water",
+          kind: "pipe" as const,
+          perMachineRate: Fraction.from(120),
+        },
+      ],
+      outputs: [
+        {
+          itemId: "iron_ingot",
+          kind: "belt" as const,
+          perMachineRate: Fraction.from(30),
+        },
+      ],
+    });
+    const html = renderToStaticMarkup(
+      <Blueprint
+        solve={result}
+        machineId="smelter_mk1"
+        machineCount={2}
+        feedLabels={result.feeds.map((l) => itemName(l.itemId))}
+        outputLabels={result.outputs.map((l) => itemName(l.itemId))}
+      />,
+    );
+    // Exactly the pipe feed's ribbon is classed; the belt output's is not.
+    expect(html).toContain("bp-bus-pipe");
+    expect((html.match(/bp-bus-pipe/g) ?? []).length).toBe(1);
   });
 });
 

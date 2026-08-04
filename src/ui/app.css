@@ -362,6 +362,15 @@ body {
   opacity: 0.7;
 }
 
+/* Pipe buses (Stage 5 item 4): a desaturated-blue tint + a dashed outline so a
+   fluid lane reads distinctly from a belt bus in the floor plan. */
+.bp-bus-pipe {
+  fill: color-mix(in srgb, var(--accent) 30%, var(--bus-fill));
+  stroke: var(--accent-strong);
+  stroke-width: 1;
+  stroke-dasharray: 6 4;
+}
+
 .bp-junction {
   fill: var(--junction-fill);
   stroke: var(--junction-stroke);
