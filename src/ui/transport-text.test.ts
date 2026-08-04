@@ -80,10 +80,12 @@ describe("transport-text — drone lines", () => {
   function drone(
     batteries: Fraction | null,
     basis: "measured" | "estimated",
+    fuel: TransportDrone["fuel"] = "battery",
   ): TransportDrone {
     return {
       kind: "drone",
       mode: "drone",
+      fuel,
       result: {
         nDrones: 2n,
         ratePerDrone: Fraction.from(50),
@@ -104,6 +106,17 @@ describe("transport-text — drone lines", () => {
   it("null batteries → the add-distance prompt", () => {
     expect(droneBatteryLine(drone(null, "measured"))).toBe(
       "add flight distance for battery cost",
+    );
+  });
+
+  it("non-battery fuel → exact MJ, never a battery count (honest units)", () => {
+    // 6 battery-equivalents × 6000 MJ = exactly 36000 MJ; the word
+    // "batteries" must not appear for a uranium-fuelled drone.
+    const plan = drone(Fraction.from(6), "measured", "uranium-fuel-rod");
+    expect(droneBatteryLine(plan)).toBe("round-trip energy 36000 MJ");
+    expect(droneBatteryLine(plan)).not.toContain("batteries");
+    expect(droneBatteryLine(drone(null, "measured", "uranium-fuel-rod"))).toBe(
+      "add flight distance for energy cost",
     );
   });
 });

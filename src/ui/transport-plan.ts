@@ -49,6 +49,7 @@ import {
   FLUID_TRUCK_TOP_SPEED_KMH,
   LOCOMOTIVE_TOP_SPEED_KMH,
   BATTERY_ENERGY_MJ,
+  TRUCK_STATION_POWER_MW,
 } from "../core/transport-facts.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
 import type { LinkTransport, TransportMode } from "../state/store.ts";
@@ -108,6 +109,9 @@ export interface TransportTrain {
 export interface TransportDrone {
   kind: "drone";
   mode: "drone";
+  /** The selected fuel — wording needs it: "N batteries" is only an honest
+   *  unit when battery IS the fuel; other fuels render exact MJ instead. */
+  fuel: DroneFuel;
   result: DroneFleetResult;
 }
 
@@ -147,8 +151,7 @@ const ROAD_SPEC: Record<
 // Truck Station operating power: 20 MW per station × 2 ends. Not exported from
 // transport.ts's train-only power model, so composed here from the fact-table
 // constant via the same "both ends" doubling the train option uses.
-const TRUCK_STATION_POWER_MW_IMPORT = Fraction.from(20); // fact table Truck Station
-const VEHICLE_STATION_POWER_BOTH_ENDS = TRUCK_STATION_POWER_MW_IMPORT.mul(
+const VEHICLE_STATION_POWER_BOTH_ENDS = TRUCK_STATION_POWER_MW.mul(
   Fraction.from(2),
 );
 
@@ -449,6 +452,7 @@ function dronePlan(
   return {
     kind: "drone",
     mode: "drone",
+    fuel,
     result: droneFleet(
       rate,
       item.stackSize,

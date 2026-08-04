@@ -13,6 +13,7 @@
  */
 
 import { Fraction } from "../core/fraction.ts";
+import { BATTERY_ENERGY_MJ } from "../core/transport-facts.ts";
 import type { TrainOption } from "../core/transport.ts";
 import { formatRate } from "./format.ts";
 import type {
@@ -94,14 +95,23 @@ export function droneLine(plan: TransportDrone): string {
   return tripBasis === "estimated" ? base + ESTIMATED_SUFFIX : base;
 }
 
-/** The drone battery line: the per-trip battery-equivalent cost, or the prompt
- *  to add a distance when it is honestly null (measured without a distance). */
+/** The drone energy line. "N batteries" is only an honest unit when battery IS
+ *  the selected fuel; for any other fuel the per-item count is not P1-groundable
+ *  (only BATTERY_ENERGY_MJ is a catalogue export), so the line renders the
+ *  EXACT round-trip energy in MJ instead (batteriesPerTrip × 6000 — exact by
+ *  construction). Null stays the honest prompt (measured without a distance). */
 export function droneBatteryLine(plan: TransportDrone): string {
   const batteries = plan.result.batteriesPerTrip;
   if (batteries === null) {
-    return "add flight distance for battery cost";
+    return plan.fuel === "battery"
+      ? "add flight distance for battery cost"
+      : "add flight distance for energy cost";
   }
-  return `${formatRate(batteries)} batteries per round trip`;
+  if (plan.fuel === "battery") {
+    return `${formatRate(batteries)} batteries per round trip`;
+  }
+  const mj = batteries.mul(BATTERY_ENERGY_MJ);
+  return `round-trip energy ${formatRate(mj)} MJ`;
 }
 
 /** The drone home-port power line (100 MW per drone, always-on). */
@@ -176,7 +186,10 @@ export function edgeChip(plan: TransportPlan): string | null {
     case "continuous":
       // Belt renders as today (no chip); a configured pipe shows its count.
       if (plan.mode === "belt") return null;
-      return chip(`${plan.result.runs} pipes`, false);
+      return chip(
+        `${plan.result.runs} ${plan.result.runs === 1n ? "pipe" : "pipes"}`,
+        false,
+      );
     case "vehicle": {
       const n = plan.result.nVehicles;
       const noun =

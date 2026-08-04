@@ -184,3 +184,15 @@ RESTORE CHECK — full suite green again
 ===================================================================
  Test Files  21 passed (21)
       Tests  532 passed (532)
+=== Behavior 11: non-battery drone fuel renders exact MJ (not a battery count)
+--- BREAK: sed -i 's/const mj = batteries.mul(BATTERY_ENERGY_MJ);/const mj = batteries;/' src/ui/transport-text.ts
+ ❯ src/ui/transport-text.test.ts (16 tests | 1 failed) 7ms
+     × non-battery fuel → exact MJ, never a battery count (honest units) 3ms
+ FAIL  src/ui/transport-text.test.ts > transport-text — drone lines > non-battery fuel → exact MJ, never a battery count (honest units)
+AssertionError: expected 'round-trip energy 6 MJ' to be 'round-trip energy 36000 MJ' // Object.is equality
+Expected: "round-trip energy 36000 MJ"
+Received: "round-trip energy 6 MJ"
+    116|     expect(droneBatteryLine(plan)).toBe("round-trip energy 36000 MJ");
+ Test Files  1 failed (1)
+--- RESTORE: cp backup; re-run:
+      Tests  16 passed (16)
