@@ -5,6 +5,14 @@ export interface CatalogItem {
   id: string;
   displayName: string;
   isFluid: boolean;
+  /**
+   * Solid stack size (items per inventory slot), parsed from `mStackSize` via
+   * the fact-table enum map (SS_ONE 1 / SS_SMALL 50 / SS_MEDIUM 100 / SS_BIG
+   * 200 / SS_HUGE 500). `null` for fluids (SS_FLUID — cargo math uses tank
+   * volumes, never stacks) AND for an unrecognized enum value (honest absent,
+   * not a guessed number — solid-vehicle math is then unavailable rather than
+   * wrong). The transport solver reads this as the `stackSize` input. */
+  stackSize: Fraction | null;
 }
 
 /**

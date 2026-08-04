@@ -1,0 +1,149 @@
+# R2 Bidirectionality verification log — transport core math (ticket #31)
+
+Per the R2 rule: for each distinct production behavior, show (1) PASS with the
+code present, (2) a GENUINE framework FAIL — vitest ✗ naming the test — with the
+behavior broken/reverted, (3) restore, (4) green again. All output below is real
+captured vitest output; commands are shown verbatim.
+
+Test file: src/core/transport.test.ts   Modules: src/core/transport.ts,
+src/core/transport-facts.ts
+
+Baseline (all code present):
+
+$ npx vitest run src/core/transport.test.ts
+ Test Files  1 passed (1)
+      Tests  23 passed (23)
+
+────────────────────────────────────────────────────────────────────────────
+Behavior 1 — continuousRuns rounds UP (ceil), exact divisibility no over-count
+────────────────────────────────────────────────────────────────────────────
+
+Break: replace ceilDiv with floorDiv in continuousRuns.
+
+$ npx vitest run src/core/transport.test.ts   # (ceilDiv → floorDiv)
+     × fractional remainder rounds up 3ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/transport.test.ts > continuousRuns — belt/pipe run count = ceil(rate / laneRate) > fractional remainder rounds up
+AssertionError: expected 2n to be 3n // Object.is equality
+      Tests  1 failed | 22 passed (23)
+
+Restore + re-run:
+$ npx vitest run src/core/transport.test.ts
+      Tests  23 passed (23)
+
+────────────────────────────────────────────────────────────────────────────
+Behavior 2 — vehicleFleet adds docking at BOTH ends (T_round = drive + 2×dock)
+────────────────────────────────────────────────────────────────────────────
+
+Break: drop the 2× (dock once, not per end).
+
+$ npx vitest run src/core/transport.test.ts   # (dropped the 2× docking)
+     × truck: 48×100 stack, 60 s measured round trip + 2×8 s docking → exact fleet 3ms
+     × estimated trip propagates tripBasis and computes 2×d/v_top drive time 0ms
+     × fluid cargo uses the tank volume directly (union bars solid/fluid confusion) 0ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/transport.test.ts > vehicleFleet — shared road-vehicle math > truck: 48×100 stack, 60 s measured round trip + 2×8 s docking → exact fleet
+AssertionError: expected false to be true // Object.is equality
+     80|     // T_round = 60 + 2×8 = 76 s; cargo/trip = 4800.
+     83|     // ratePerVehicle = 4800 × 60 / 76 = 72000/19 per minute (exact).
+ FAIL  src/core/transport.test.ts > vehicleFleet — shared road-vehicle math > estimated trip propagates tripBasis and computes 2×d/v_top drive time
+AssertionError: expected false to be true // Object.is equality
+    132|       r.roundTripSeconds.eq(expectedDrive.add(Fraction.from(16))),
+ FAIL  src/core/transport.test.ts > vehicleFleet — shared road-vehicle math > fluid cargo uses the tank volume directly (union bars solid/fluid confusion)
+
+Restore + re-run:
+      Tests  23 passed (23)
+
+────────────────────────────────────────────────────────────────────────────
+Behavior 3 — tripBasis echoes the input kind (measured vs estimated)
+────────────────────────────────────────────────────────────────────────────
+
+Break: force basis to always 'measured' in resolveDriveSeconds (estimated branch).
+
+$ npx vitest run src/core/transport.test.ts   # (estimated → measured basis)
+     × estimated trip propagates tripBasis and computes 2×d/v_top drive time 3ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/transport.test.ts > vehicleFleet — shared road-vehicle math > estimated trip propagates tripBasis and computes 2×d/v_top drive time
+AssertionError: expected 'measured' to be 'estimated' // Object.is equality
+    130|     const expectedDrive = Fraction.of(7200, 89);
+      Tests  1 failed | 22 passed (23)
+
+Restore + re-run:
+      Tests  23 passed (23)
+
+────────────────────────────────────────────────────────────────────────────
+Behavior 4 — trainOptions stationPowerMw = 2 × (50 + 50×c), BOTH route ends
+────────────────────────────────────────────────────────────────────────────
+
+Break: drop the 2× (count one end only).
+
+$ npx vitest run src/core/transport.test.ts   # (stationPowerMw single-ended)
+     × stationPowerMw = 2 × (50 + 50 × c) and locosSuggested = ceil(c/13) 3ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/transport.test.ts > trainOptions — cars-vs-trains enumeration > stationPowerMw = 2 × (50 + 50 × c) and locosSuggested = ceil(c/13)
+AssertionError: expected false to be true // Object.is equality
+    205|     // 2 × (50 + 100) = 300 MW.
+      Tests  1 failed | 22 passed (23)
+
+Restore + re-run:
+      Tests  23 passed (23)
+
+────────────────────────────────────────────────────────────────────────────
+Behavior 5 — per-platform ceiling uses the EXACT 27.08s lockout (Fraction.of(2708,100))
+────────────────────────────────────────────────────────────────────────────
+
+Break: use the wiki's rounded 0.4513 min (27.078 s) in transport-facts (2708/100 → 27078/1000).
+
+$ npx vitest run src/core/transport.test.ts   # (27.08 → 27.078 s wiki-rounded)
+     × ceilingBound varies per row: belt feed binds when it is the smaller term 3ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/transport.test.ts > trainOptions — cars-vs-trains enumeration > ceilingBound varies per row: belt feed binds when it is the smaller term
+AssertionError: expected false to be true // Object.is equality
+    245|     //   = (2.92/30) × 120 = 11.68/min → belt binds.
+      Tests  1 failed | 22 passed (23)
+
+Restore + re-run:
+      Tests  23 passed (23)
+
+────────────────────────────────────────────────────────────────────────────
+Behavior 6 — drone batteriesPerTrip = (24000 + 6 × d_roundtrip) / fuelMJ
+────────────────────────────────────────────────────────────────────────────
+
+Break: drop the per-meter term (24000 + 6×d → 24000 only).
+
+$ npx vitest run src/core/transport.test.ts   # (dropped the 6×d distance term)
+     × 5 km round-trip flight → 9 batteries ((24000 + 6×5000)/6000) 3ms
+     × measured trip WITH distance → battery cost computed from the given distance 0ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/transport.test.ts > droneFleet — fuel-speed round trip + exact battery cost > 5 km round-trip flight → 9 batteries ((24000 + 6×5000)/6000)
+AssertionError: expected false to be true // Object.is equality
+    297|     expect(r.batteriesPerTrip?.eq(Fraction.from(9))).toBe(true);
+ FAIL  src/core/transport.test.ts > droneFleet — fuel-speed round trip + exact battery cost > measured trip WITH distance → battery cost computed from the given distance
+AssertionError: expected false to be true // Object.is equality
+    338|     expect(r.batteriesPerTrip?.eq(Fraction.from(9))).toBe(true);
+      Tests  2 failed | 21 passed (23)
+
+Restore + re-run:
+      Tests  23 passed (23)
+
+────────────────────────────────────────────────────────────────────────────
+Behavior 7 — measured trip WITHOUT distance → batteriesPerTrip is null (never inferred)
+────────────────────────────────────────────────────────────────────────────
+
+Break: infer batteries from a zero-distance fallback instead of null.
+
+$ npx vitest run src/core/transport.test.ts   # (null → 0-distance inference)
+     × measured trip WITHOUT distance → batteriesPerTrip is null (never inferred) 3ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/transport.test.ts > droneFleet — fuel-speed round trip + exact battery cost > measured trip WITHOUT distance → batteriesPerTrip is null (never inferred)
+AssertionError: expected Fraction{ num: 4n, den: 1n } to be null
+null
+    322|     expect(r.batteriesPerTrip).toBeNull();
+      Tests  1 failed | 22 passed (23)
+
+Restore + re-run:
+      Tests  23 passed (23)
+
+All seven production behaviors: each PASSES with code present and FAILS (named
+vitest ✗) when broken/reverted. Restored to green after every case.
+

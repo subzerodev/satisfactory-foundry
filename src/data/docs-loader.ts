@@ -71,6 +71,7 @@ export function parseDocsJson(raw: unknown): Catalog {
           id,
           displayName: (c.mDisplayName as string | undefined) ?? id,
           isFluid,
+          stackSize: parseStackSize(c.mStackSize),
         };
       }
     } else if (NATIVE_BUILDING_REGEX.test(nativeClass)) {
@@ -140,6 +141,32 @@ export function parseDocsJson(raw: unknown): Catalog {
   }
 
   return { items, machines, recipes, tiers: TIER_TABLE };
+}
+
+/**
+ * `mStackSize` enum → items-per-slot, per the fact table (§Stack sizes). SS_FLUID
+ * is deliberately absent (fluid cargo uses tank volumes, never stacks) — it maps
+ * to `null` in {@link parseStackSize}, as does any UNRECOGNIZED enum value
+ * (honest absent, not a guessed number).
+ */
+const STACK_SIZE_ENUM: Readonly<Record<string, Fraction>> = {
+  SS_ONE: Fraction.from(1),
+  SS_SMALL: Fraction.from(50),
+  SS_MEDIUM: Fraction.from(100),
+  SS_BIG: Fraction.from(200),
+  SS_HUGE: Fraction.from(500),
+};
+
+/**
+ * A solid item's stack size from its raw `mStackSize` enum string, or `null`
+ * for SS_FLUID, an absent/non-string field, or any unrecognized enum value (the
+ * honest-absent posture — solid-vehicle math for such an item is unavailable,
+ * not wrong). Never throws: an unknown value degrades to null, matching the
+ * power-field leniency, not a parse rejection.
+ */
+function parseStackSize(raw: unknown): Fraction | null {
+  if (typeof raw !== "string") return null;
+  return STACK_SIZE_ENUM[raw] ?? null;
 }
 
 /**
