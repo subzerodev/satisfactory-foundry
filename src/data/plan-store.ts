@@ -6,9 +6,12 @@
  * rates are never stored, only the user's own input text. Plans reference recipes
  * by id against whatever catalog is live at load time.
  *
- * `stages` is an array from day one and `links` a reserved empty array, so
- * Stage 3 adds nodes/edges without a format break (`format_version` bumps only
- * if a field's MEANING changes).
+ * `stages` is an array from day one and `links` a reserved empty array in v1, so
+ * Stage 3 adds nodes/edges WITH a format bump: `PlanFileV2` carries the whole
+ * graph (per-stage name + position, index-encoded links). Save always writes v2;
+ * read accepts both, migrating v1 in memory (`migrateV1`). The v1-era validator
+ * structurally rejects populated links, so a multi-stage file honestly stamps
+ * `format_version: 2`.
  */
 
 import type { Selection } from "../state/store.ts";
@@ -25,6 +28,40 @@ export interface PlanFileV1 {
   links: never[]; // reserved: Stage-3 edges (empty array now)
 }
 
+/** One stage entry in a v2 file: name + selection, optional canvas position. */
+export interface PlanStageV2 {
+  name: string;
+  selection: Selection;
+  /** Canvas coordinates. Absent for v1-migrated files → auto-slotted on load. */
+  position?: { x: number; y: number };
+}
+
+/**
+ * One graph edge in a v2 file. Stage references are ARRAY INDICES into `stages`
+ * (id-free, stable across saves/devices; array order IS stageOrder). The
+ * validator pins `from`/`to` in range, `from !== to`, and no duplicate
+ * `(to, itemId)` — the file-boundary form of the frozen P1 refusal invariants.
+ */
+export interface PlanLinkV2 {
+  from: number;
+  to: number;
+  itemId: string;
+}
+
+/**
+ * Stage 3 / Phase 3: the whole-graph file. Same header fields as v1; `stages`
+ * now carry names + positions and `links` reference stages by index. Save always
+ * writes this; `loadPlanFile` returns it directly (v2) or via `migrateV1` (v1).
+ */
+export interface PlanFileV2 {
+  format_version: 2;
+  name: string;
+  createdAt: string; // ISO
+  updatedAt: string; // ISO
+  stages: PlanStageV2[];
+  links: PlanLinkV2[];
+}
+
 /** A list-row projection — enough to render + address a plan without loading it. */
 export interface PlanListEntry {
   id: string;
@@ -32,8 +69,8 @@ export interface PlanListEntry {
   updatedAt: string;
 }
 
-/** Persist a plan file under `id` (create or overwrite). */
-export async function savePlan(plan: PlanFileV1, id: string): Promise<void> {
+/** Persist a plan file under `id` (create or overwrite). Always v2. */
+export async function savePlan(plan: PlanFileV2, id: string): Promise<void> {
   const db = await openDb();
   await db.put(PLANS_STORE, plan, id);
 }
@@ -48,7 +85,9 @@ export async function listPlans(): Promise<PlanListEntry[]> {
   const rows = await db.getAllWithKeys<unknown>(PLANS_STORE);
   const entries: PlanListEntry[] = [];
   for (const { key, value } of rows) {
-    if (isPlanFileV1(value)) {
+    // Either format renders a row: a v1 file is still loadable (via migration),
+    // and a v2 file is the current shape. Header fields co-locate in both.
+    if (isPlanFileV2(value) || isPlanFileV1(value)) {
       entries.push({ id: key, name: value.name, updatedAt: value.updatedAt });
     }
   }
@@ -56,11 +95,36 @@ export async function listPlans(): Promise<PlanListEntry[]> {
   return entries;
 }
 
-/** Load + validate one plan. Returns null on missing OR corrupt-for-this-build. */
-export async function loadPlan(id: string): Promise<PlanFileV1 | null> {
+/**
+ * Load + validate one plan, returning a `PlanFileV2` (migrating a v1 file in
+ * memory). Returns null on missing OR corrupt-for-this-build. V2 is tried first;
+ * a valid v1 file falls back to `migrateV1`. Migration is read-side only — the
+ * stored row is untouched until the next save-over (which writes v2).
+ */
+export async function loadPlan(id: string): Promise<PlanFileV2 | null> {
   const db = await openDb();
   const value = await db.get<unknown>(PLANS_STORE, id);
-  return isPlanFileV1(value) ? value : null;
+  if (isPlanFileV2(value)) return value;
+  if (isPlanFileV1(value)) return migrateV1(value);
+  return null;
+}
+
+/**
+ * Migrate a validated v1 file to v2 in memory: exactly one stage named
+ * "Stage 1" (v1 entries are `{selection}` only — no persisted name to carry),
+ * no position (→ auto-slotted on load), empty links. `createdAt`/`updatedAt` are
+ * carried VERBATIM — the save-over path reads the prior file for `createdAt`, so
+ * a migrated row must not reset its creation time.
+ */
+export function migrateV1(plan: PlanFileV1): PlanFileV2 {
+  return {
+    format_version: 2,
+    name: plan.name,
+    createdAt: plan.createdAt,
+    updatedAt: plan.updatedAt,
+    stages: [{ name: "Stage 1", selection: plan.stages[0]!.selection }],
+    links: [],
+  };
 }
 
 /** Delete a plan by id (no-op if absent). */
@@ -96,6 +160,76 @@ function isStageShape(stage: unknown): boolean {
   if (stage === null || typeof stage !== "object") return false;
   const selection = (stage as Record<string, unknown>).selection;
   return isSelectionShape(selection);
+}
+
+/**
+ * Reviver-style shape check for a PlanFileV2 (Stage 3 / Phase 3). Structural
+ * invariants are corrupt-class, in the spirit of the v1 validator's strictness:
+ *
+ * - `format_version === 2`; name/createdAt/updatedAt strings;
+ * - `stages` ≥1 entry, each `{ name: string, selection: Selection-shape,
+ *   position?: {x,y} numbers }` (position optional — v2 saves always write it,
+ *   but optional keeps the validator honest about what load actually requires);
+ * - `links` (may be empty), each `{ from, to, itemId }` with `from`/`to` INTEGER
+ *   indices in range, `from !== to`, and no duplicate `(to, itemId)` pair.
+ *
+ * These pins are the SOLE guard for the frozen P1 refusal invariants at load:
+ * the store's load rebuild constructs link records DIRECTLY from these indices —
+ * it never routes through `addLink` — so a file violating them is corrupt (load
+ * refused, nothing destroyed), matching the v1 "populated links ⇒ corrupt"
+ * precedent. Do NOT "simplify" them away. A link's `itemId` not matching the
+ * current catalog is NOT corrupt — that is the catalog-relative dangling-link
+ * case, handled at load, not a file-structural condition.
+ */
+function isPlanFileV2(value: unknown): value is PlanFileV2 {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (v.format_version !== 2) return false;
+  if (typeof v.name !== "string") return false;
+  if (typeof v.createdAt !== "string" || typeof v.updatedAt !== "string") {
+    return false;
+  }
+  if (!Array.isArray(v.stages) || v.stages.length < 1) return false;
+  if (!v.stages.every(isStageV2Shape)) return false;
+  if (!Array.isArray(v.links)) return false;
+  const stageCount = v.stages.length;
+  const seen = new Set<string>();
+  for (const link of v.links) {
+    if (link === null || typeof link !== "object") return false;
+    const l = link as Record<string, unknown>;
+    if (typeof l.itemId !== "string") return false;
+    if (!Number.isInteger(l.from) || !Number.isInteger(l.to)) return false;
+    const from = l.from as number;
+    const to = l.to as number;
+    if (from < 0 || from >= stageCount || to < 0 || to >= stageCount) {
+      return false;
+    }
+    if (from === to) return false; // self-link (frozen P1 refusal)
+    const key = `${to} ${l.itemId}`; // duplicate (to, itemId) feed lane
+    if (seen.has(key)) return false;
+    seen.add(key);
+  }
+  return true;
+}
+
+/** A v2 stage entry: `{ name, selection, position? }` (position optional). */
+function isStageV2Shape(stage: unknown): boolean {
+  if (stage === null || typeof stage !== "object") return false;
+  const s = stage as Record<string, unknown>;
+  if (typeof s.name !== "string") return false;
+  if (!isSelectionShape(s.selection)) return false;
+  if (s.position !== undefined) {
+    const p = s.position as Record<string, unknown> | null;
+    if (
+      p === null ||
+      typeof p !== "object" ||
+      typeof p.x !== "number" ||
+      typeof p.y !== "number"
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function isSelectionShape(value: unknown): value is Selection {

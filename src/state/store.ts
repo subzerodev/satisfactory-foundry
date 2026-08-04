@@ -32,7 +32,7 @@ import {
   loadPlan as loadPlanFile,
   deletePlan as deletePlanFile,
 } from "../data/plan-store.ts";
-import type { PlanFileV1, PlanListEntry } from "../data/plan-store.ts";
+import type { PlanFileV2, PlanListEntry } from "../data/plan-store.ts";
 
 // ---------------------------------------------------------------------------
 // State shape (frozen brainstorm Axis 2)
@@ -441,6 +441,83 @@ function deriveAllStages(
     });
   }
   return recomputeReconciliation(mirrorActive({ ...slice, stages }));
+}
+
+/**
+ * Whole-graph replacement from a loaded `PlanFileV2` (Stage 3 / Phase 3, frozen
+ * Axis 4). Builds a fresh graph — new stage/link uuids — and applies the frozen
+ * load treatments per stage:
+ *
+ * - machineCount `null → NaN` (plans persist via IDB structured clone, which
+ *   keeps a live NaN — the null edge arises from hand-authored/imported/legacy
+ *   JSON files, and isSelectionShape accepts it; such a stage must load
+ *   rendered-invalid, matching the single-stage coercion this replaces);
+ * - the CURRENT global unlockedTiers are stamped over every stage (tiers are
+ *   progression, not plan content — the file's stored tiers are dead-on-read);
+ * - recipeId re-validated against the current catalog (absent → null); overrides
+ *   apply VERBATIM (the load posture — the #5 override-CLEAR is upload-only);
+ * - positions from the file entry, else the auto-slot for the entry's index;
+ * - stageOrder = array order; links rebuilt from indices; placementSeq =
+ *   stages.length; activeStageId = first (matches removeStage's cursor-to-first).
+ *
+ * Links are NOT pruned by recipe re-validation: a link whose endpoint went
+ * recipe-less flags as dangling (frozen P1), never silently dropped. The final
+ * deriveAllStages overwrites the seeded-idle solves + recomputes reconciliation;
+ * mirrorActive re-points the top-level v1 mirror.
+ */
+function rebuildFromPlan(
+  slice: GraphSlice,
+  plan: PlanFileV2,
+): GraphSlice & { placementSeq: number } {
+  const { catalog } = slice;
+  // Current global tiers (the active mirror holds the canonical global value).
+  const globalTiers = slice.selection.unlockedTiers;
+  const ids = plan.stages.map(() => crypto.randomUUID());
+  const stages: Record<string, StageNode> = {};
+  const stageOrder: string[] = [];
+  const positions: Record<string, { x: number; y: number }> = {};
+  plan.stages.forEach((entry, i) => {
+    const id = ids[i]!;
+    const saved = entry.selection;
+    const recipeId =
+      saved.recipeId !== null &&
+      catalog.status === "ready" &&
+      catalog.catalog.recipes[saved.recipeId] !== undefined
+        ? saved.recipeId
+        : null;
+    const machineCount = saved.machineCount === null ? NaN : saved.machineCount;
+    const selection: Selection = {
+      recipeId,
+      machineCount,
+      clockPercentText: saved.clockPercentText,
+      unlockedTiers: { ...globalTiers },
+      overrides: saved.overrides,
+    };
+    stages[id] = { id, name: entry.name, selection, solve: { status: "idle" } };
+    stageOrder.push(id);
+    positions[id] = entry.position ?? placementSlot(i);
+  });
+  const links: StageLink[] = plan.links.map((l) => ({
+    id: crypto.randomUUID(),
+    fromStageId: ids[l.from]!,
+    toStageId: ids[l.to]!,
+    itemId: l.itemId,
+  }));
+  const rebuilt: GraphSlice = {
+    ...slice,
+    stages,
+    stageOrder,
+    links,
+    positions,
+    activeStageId: ids[0]!,
+  };
+  // deriveAllStages overwrites the seeded-idle solves, mirrors the active stage,
+  // and recomputes reconciliation — the full-recompute cadence for a
+  // state-replacing mutation. placementSeq re-seeds to the next fresh slot.
+  return {
+    ...deriveAllStages(rebuilt, (sel) => sel),
+    placementSeq: plan.stages.length,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1016,26 +1093,43 @@ export function createAppStore(storage?: StateStorage) {
                 const existing = await listPlanFiles();
                 const match = existing.find((p) => p.name === trimmed);
                 const now = new Date().toISOString();
-                const selection = get().selection;
+                // Capture the WHOLE graph (Stage 3 / Phase 3): stages in
+                // stageOrder (array order IS stageOrder), each carrying name +
+                // selection + position; links index-encoded (stage id → index).
+                const s = get();
+                const indexOf = new Map(s.stageOrder.map((id, i) => [id, i]));
+                const stages = s.stageOrder.map((id) => {
+                  const node = s.stages[id]!;
+                  return {
+                    name: node.name,
+                    selection: node.selection,
+                    position: s.positions[id],
+                  };
+                });
+                const links = s.links.map((l) => ({
+                  from: indexOf.get(l.fromStageId)!,
+                  to: indexOf.get(l.toStageId)!,
+                  itemId: l.itemId,
+                }));
                 if (match) {
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV1 = {
-                    format_version: 1,
+                  const plan: PlanFileV2 = {
+                    format_version: 2,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
-                    stages: [{ selection }],
-                    links: [],
+                    stages,
+                    links,
                   };
                   await savePlanFile(plan, match.id);
                 } else {
-                  const plan: PlanFileV1 = {
-                    format_version: 1,
+                  const plan: PlanFileV2 = {
+                    format_version: 2,
                     name: trimmed,
                     createdAt: now,
                     updatedAt: now,
-                    stages: [{ selection }],
-                    links: [],
+                    stages,
+                    links,
                   };
                   await savePlanFile(plan, crypto.randomUUID());
                 }
@@ -1056,35 +1150,8 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                const saved = plan.stages[0]!.selection;
-                const { catalog } = get();
-                // Apply with the same guards as every store entry point:
-                // recipeId re-validated against the live catalog (#5 rule),
-                // machineCount null → NaN (saved-invalid loads rendered-invalid).
-                // unlockedTiers are PRESERVED at the current global value (Stage 3
-                // Phase 1): tiers model game progression, not plan content, so a
-                // months-old plan must not downgrade the factory's unlocks. This
-                // supersedes the Stage-2 tier-restore semantics — saved.unlockedTiers
-                // is now write-only / dead-on-read (kept for shape-compatibility).
-                const recipeId =
-                  saved.recipeId !== null &&
-                  catalog.status === "ready" &&
-                  catalog.catalog.recipes[saved.recipeId] !== undefined
-                    ? saved.recipeId
-                    : null;
-                const machineCount =
-                  saved.machineCount === null ? NaN : saved.machineCount;
-                set((s) =>
-                  applyActiveSelection(s, {
-                    recipeId,
-                    machineCount,
-                    clockPercentText: saved.clockPercentText,
-                    unlockedTiers: s.selection.unlockedTiers,
-                    // Overrides apply verbatim; malformed strings / count excess
-                    // surface through the existing derive/findings paths.
-                    overrides: saved.overrides,
-                  }),
-                );
+                // Whole-graph replacement (Stage 3 / Phase 3, frozen Axis 4).
+                set((s) => rebuildFromPlan(s, plan));
                 // Loading a plan never touches the catalog or catalogSource.
               } catch (err) {
                 set({ planError: planErrorMessage(err) });
@@ -1119,7 +1186,10 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                const renamed: PlanFileV1 = {
+                // loadPlanFile returns v2 (migrating a v1 row), so this spread
+                // widens to v2 — renaming a v1 row rewrites it as v2, consistent
+                // with the save-over model (any write persists v2).
+                const renamed: PlanFileV2 = {
                   ...plan,
                   name: trimmed,
                   updatedAt: new Date().toISOString(),

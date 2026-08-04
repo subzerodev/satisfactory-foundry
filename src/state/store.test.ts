@@ -5,7 +5,7 @@ import { resetDbCache } from "../data/db.ts";
 import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
-import type { PlanFileV1 } from "../data/plan-store.ts";
+import type { PlanFileV1, PlanFileV2 } from "../data/plan-store.ts";
 import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
 import type { StageLink } from "./store.ts";
 import type { StateStorage } from "zustand/middleware";
@@ -1133,7 +1133,7 @@ describe("plan lifecycle (ticket #11)", () => {
     await store.getState().savePlanAs("Base");
     const id = store.getState().plans![0]!.id;
     const db = await (await import("../data/db.ts")).openDb();
-    const plan = (await db.get<PlanFileV1>("plans", id))!;
+    const plan = (await db.get<PlanFileV2>("plans", id))!;
     // JSON.stringify(NaN) emits null; the stored file legitimately holds it.
     (
       plan.stages[0]!.selection as { machineCount: number | null }
@@ -1725,5 +1725,328 @@ describe("stage graph — canLink mirrors addLink refusals (Stage 3 P2)", () => 
   it("the same item into a DIFFERENT consumer is NOT a duplicate", () => {
     const existing = [link("a", "iron_ingot", "b")];
     expect(canLink(existing, "a", "c", "iron_ingot")).toBe("ok");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Whole-graph plans (Stage 3 / Phase 3, ticket #18) — Axis 6 rows
+// ---------------------------------------------------------------------------
+
+describe("plans carry the graph (Stage 3 P3)", () => {
+  // A chain-catalog store: Stage 1 = ingot_iron (ore_iron → iron_ingot),
+  // a second stage = iron_plate (iron_ingot → iron_plate). A link between them
+  // on iron_ingot reconciles against real supply/demand.
+  async function chainStore() {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT_CHAIN);
+    return store;
+  }
+
+  /**
+   * Build a 3-stage linked graph with dragged positions in `store`:
+   * Smelt (ingot_iron) → Plate (iron_plate) on iron_ingot, plus a third
+   * recipe-less stage. Returns the stage ids in stageOrder.
+   */
+  function buildThreeStageGraph(
+    store: ReturnType<typeof createAppStore>,
+  ): string[] {
+    const s = store.getState();
+    const smelt = s.activeStageId;
+    s.renameStage(smelt, "Smelt");
+    s.selectRecipe("ingot_iron");
+    s.setMachineCount(4);
+    s.setClockPercentText("150");
+
+    s.addStage(); // Stage 2
+    const plate = store.getState().stageOrder[1]!;
+    store.getState().setActiveStage(plate);
+    store.getState().renameStage(plate, "Plate");
+    store.getState().selectRecipe("iron_plate");
+    store.getState().setMachineCount(2);
+
+    store.getState().addStage(); // Stage 3 — left recipe-less
+    const spare = store.getState().stageOrder[2]!;
+    store.getState().renameStage(spare, "Spare");
+
+    // A real feed link Smelt → Plate on iron_ingot (supply + demand).
+    store.getState().addLink({
+      fromStageId: smelt,
+      toStageId: plate,
+      itemId: "iron_ingot",
+    });
+
+    // Dragged positions, distinct from the auto-slots.
+    store.getState().setStagePosition(smelt, { x: 111, y: 222 });
+    store.getState().setStagePosition(plate, { x: 333, y: 444 });
+    store.getState().setStagePosition(spare, { x: 555, y: 666 });
+
+    // Return to the first stage before saving so activeStageId is deterministic.
+    store.getState().setActiveStage(smelt);
+    return [smelt, plate, spare];
+  }
+
+  it("round-trips a 3-stage linked graph: names/order/selections/links/positions identical, fresh ids, exact Fractions", async () => {
+    const store = await chainStore();
+    const [smelt, plate, spare] = buildThreeStageGraph(store);
+    const beforeSolve = store.getState().stages[smelt!]!.solve;
+    expect(beforeSolve.status).toBe("solved");
+
+    await store.getState().savePlanAs("Chain");
+    const id = store.getState().plans![0]!.id;
+
+    // Tear the live graph down to a single default stage, then reload.
+    const fresh = await chainStore();
+    await fresh.getState().loadPlan(id);
+    const s = fresh.getState();
+
+    // Order + names identical.
+    expect(s.stageOrder).toHaveLength(3);
+    const names = s.stageOrder.map((sid) => s.stages[sid]!.name);
+    expect(names).toEqual(["Smelt", "Plate", "Spare"]);
+
+    // Fresh ids — none of the original ids survive (uuids regenerated).
+    expect(s.stageOrder).not.toContain(smelt);
+    expect(s.stageOrder).not.toContain(plate);
+    expect(s.stageOrder).not.toContain(spare);
+
+    // Selections identical (recipe, count, clock).
+    const [nSmelt, nPlate, nSpare] = s.stageOrder;
+    expect(s.stages[nSmelt!]!.selection.recipeId).toBe("ingot_iron");
+    expect(s.stages[nSmelt!]!.selection.machineCount).toBe(4);
+    expect(s.stages[nSmelt!]!.selection.clockPercentText).toBe("150");
+    expect(s.stages[nPlate!]!.selection.recipeId).toBe("iron_plate");
+    expect(s.stages[nPlate!]!.selection.machineCount).toBe(2);
+    expect(s.stages[nSpare!]!.selection.recipeId).toBeNull();
+
+    // Positions restored exactly (dragged, not auto-slotted).
+    expect(s.positions[nSmelt!]).toEqual({ x: 111, y: 222 });
+    expect(s.positions[nPlate!]).toEqual({ x: 333, y: 444 });
+    expect(s.positions[nSpare!]).toEqual({ x: 555, y: 666 });
+
+    // The single link rebuilt with a fresh id, pointing at the fresh stage ids.
+    expect(s.links).toHaveLength(1);
+    expect(s.links[0]!.fromStageId).toBe(nSmelt);
+    expect(s.links[0]!.toStageId).toBe(nPlate);
+    expect(s.links[0]!.itemId).toBe("iron_ingot");
+
+    // Exact Fractions preserved: the reconciled totals survive the round-trip.
+    // Smelt: 4 machines × 150% × 30/min = 180/min iron_ingot supply.
+    // Plate: 2 machines × 100% × 30/min = 60/min iron_ingot demand → over-supply.
+    const finding = s.reconciliation.find((f) => f.linkId === s.links[0]!.id)!;
+    expect(finding.type).toBe("over-supply");
+    if (finding.type === "over-supply") {
+      expect(finding.supply.eq(Fraction.parse("180"))).toBe(true);
+      expect(finding.demand.eq(Fraction.parse("60"))).toBe(true);
+      expect(finding.surplus.eq(Fraction.parse("120"))).toBe(true);
+    }
+
+    // activeStageId is the first stage after load (deterministic).
+    expect(s.activeStageId).toBe(nSmelt);
+  });
+
+  it("a null machineCount in the file → NaN on load (per stage), rendered invalid", async () => {
+    // Plans persist via IDB structured clone, which keeps a live NaN — the
+    // null-machineCount edge arises from hand-authored/imported/legacy JSON
+    // files (isSelectionShape accepts null). The per-stage build coercion must
+    // reconstitute null as NaN so the stage loads rendered-invalid. Simulate
+    // the null-in-file case directly, as such a file would present it.
+    const store = await chainStore();
+    store.getState().selectRecipe("ingot_iron");
+    await store.getState().savePlanAs("Broken");
+    const id = store.getState().plans![0]!.id;
+
+    const db = await (await import("../data/db.ts")).openDb();
+    const raw = (await db.get<PlanFileV2>("plans", id))!;
+    (raw.stages[0]!.selection as { machineCount: number | null }).machineCount =
+      null;
+    await db.put("plans", raw, id);
+
+    const fresh = await chainStore();
+    await fresh.getState().loadPlan(id);
+    const loaded = fresh.getState().stages[fresh.getState().stageOrder[0]!]!;
+    expect(Number.isNaN(loaded.selection.machineCount)).toBe(true);
+    expect(loaded.solve.status).toBe("invalid");
+  });
+
+  it("load stamps the CURRENT global tiers over every stage (file tiers dead-on-read)", async () => {
+    const store = await chainStore();
+    store.getState().setUnlockedTiers({ belt: 5, pipe: 3 });
+    store.getState().addStage();
+    await store.getState().savePlanAs("Tiered");
+    const id = store.getState().plans![0]!.id;
+
+    // A fresh store with DIFFERENT global tiers loads the plan.
+    const fresh = await chainStore();
+    fresh.getState().setUnlockedTiers({ belt: 1, pipe: 1 });
+    await fresh.getState().loadPlan(id);
+    const s = fresh.getState();
+    // Every loaded stage carries the CURRENT global tiers, not the file's.
+    for (const sid of s.stageOrder) {
+      expect(s.stages[sid]!.selection.unlockedTiers).toEqual({
+        belt: 1,
+        pipe: 1,
+      });
+    }
+  });
+
+  it("recipeId vanished on load → null, overrides KEPT verbatim, link dangles", async () => {
+    const store = await chainStore();
+    const smelt = store.getState().activeStageId;
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setOverride("feeds", "ore_iron", 0, "480");
+    store.getState().addStage();
+    const plate = store.getState().stageOrder[1]!;
+    store.getState().setActiveStage(plate);
+    store.getState().selectRecipe("iron_plate");
+    store.getState().addLink({
+      fromStageId: smelt,
+      toStageId: plate,
+      itemId: "iron_ingot",
+    });
+    await store.getState().savePlanAs("Chain");
+    const id = store.getState().plans![0]!.id;
+
+    // Reload against a catalog that DROPPED both recipes (copper only).
+    const fresh = createAppStore(makeStorageStub().storage);
+    await fresh.getState().uploadDocsText(DOCS_TEXT_COPPER);
+    await fresh.getState().loadPlan(id);
+    const s = fresh.getState();
+    const nSmelt = s.stageOrder[0]!;
+
+    // recipeId re-validated to null (absent from the current catalog)…
+    expect(s.stages[nSmelt]!.selection.recipeId).toBeNull();
+    // …but overrides are KEPT verbatim (load posture, NOT the upload #5 clear).
+    expect(s.stages[nSmelt]!.selection.overrides.feeds.ore_iron).toEqual([
+      "480",
+    ]);
+    // The link survives (not pruned) and dangles — both endpoints recipe-less.
+    expect(s.links).toHaveLength(1);
+    expect(s.reconciliation.some((f) => f.type === "dangling-link")).toBe(true);
+  });
+
+  it("placementSeq re-seeds to stages.length: addStage after load lands on a fresh slot", async () => {
+    const store = await chainStore();
+    buildThreeStageGraph(store); // 3 stages
+    await store.getState().savePlanAs("Chain");
+    const id = store.getState().plans![0]!.id;
+
+    const fresh = await chainStore();
+    await fresh.getState().loadPlan(id);
+    expect(fresh.getState().placementSeq).toBe(3);
+
+    // A new stage auto-places at seq-3's slot (row 0, col 3), not colliding.
+    fresh.getState().addStage();
+    const added = fresh.getState().stageOrder[3]!;
+    expect(fresh.getState().positions[added]).toEqual({
+      x: 40 + 3 * 260,
+      y: 40,
+    });
+    expect(fresh.getState().placementSeq).toBe(4);
+  });
+
+  it("a v1 file loads: migrated to a single auto-slotted 'Stage 1'", async () => {
+    // Write a legacy v1 row directly, then load it through the store.
+    const store = await chainStore();
+    const db = await (await import("../data/db.ts")).openDb();
+    const v1: PlanFileV1 = {
+      format_version: 1,
+      name: "Legacy",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      stages: [
+        {
+          selection: {
+            recipeId: "ingot_iron",
+            machineCount: 7,
+            clockPercentText: "100",
+            unlockedTiers: { belt: 1, pipe: 1 },
+            overrides: { feeds: {}, outputs: {} },
+          },
+        },
+      ],
+      links: [],
+    };
+    await db.put("plans", v1, "legacy-id");
+
+    await store.getState().loadPlan("legacy-id");
+    const s = store.getState();
+    expect(s.stageOrder).toHaveLength(1);
+    const only = s.stages[s.stageOrder[0]!]!;
+    expect(only.name).toBe("Stage 1");
+    expect(only.selection.recipeId).toBe("ingot_iron");
+    expect(only.selection.machineCount).toBe(7);
+    // No file position → auto-slotted at index 0.
+    expect(s.positions[only.id]).toEqual({ x: 40, y: 40 });
+    expect(s.links).toEqual([]);
+    expect(s.placementSeq).toBe(1);
+  });
+
+  it("a corrupt v2 file refuses to load, leaving the live graph untouched", async () => {
+    const store = await chainStore();
+    buildThreeStageGraph(store);
+    const orderBefore = [...store.getState().stageOrder];
+    const linksBefore = store.getState().links.length;
+
+    // A structurally-corrupt v2 row: a self-link.
+    const db = await (await import("../data/db.ts")).openDb();
+    await db.put(
+      "plans",
+      {
+        format_version: 2,
+        name: "Corrupt",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        stages: [
+          {
+            name: "A",
+            selection: store.getState().stages[orderBefore[0]!]!.selection,
+          },
+          {
+            name: "B",
+            selection: store.getState().stages[orderBefore[1]!]!.selection,
+          },
+        ],
+        links: [{ from: 1, to: 1, itemId: "iron_ingot" }],
+      },
+      "corrupt-v2",
+    );
+    await store.getState().loadPlan("corrupt-v2");
+    expect(store.getState().planError).not.toBeNull();
+    // The live graph is UNCHANGED (not clobbered).
+    expect(store.getState().stageOrder).toEqual(orderBefore);
+    expect(store.getState().links).toHaveLength(linksBefore);
+  });
+
+  it("renaming a v1 row persists it as v2 (save-over model)", async () => {
+    const store = await chainStore();
+    const db = await (await import("../data/db.ts")).openDb();
+    const v1: PlanFileV1 = {
+      format_version: 1,
+      name: "OldName",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      stages: [
+        {
+          selection: {
+            recipeId: "ingot_iron",
+            machineCount: 1,
+            clockPercentText: "100",
+            unlockedTiers: { belt: 1, pipe: 1 },
+            overrides: { feeds: {}, outputs: {} },
+          },
+        },
+      ],
+      links: [],
+    };
+    await db.put("plans", v1, "v1-id");
+
+    await store.getState().renamePlan("v1-id", "NewName");
+    // The stored row is now v2, renamed, single "Stage 1" stage.
+    const raw = (await db.get<PlanFileV2>("plans", "v1-id"))!;
+    expect(raw.format_version).toBe(2);
+    expect(raw.name).toBe("NewName");
+    expect(raw.stages[0]!.name).toBe("Stage 1");
+    // createdAt carried verbatim through the migration + rename.
+    expect(raw.createdAt).toBe("2026-01-01T00:00:00.000Z");
   });
 });
