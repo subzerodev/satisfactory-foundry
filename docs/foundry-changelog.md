@@ -3,6 +3,20 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 8, Phase 3: the auto-chain builder
+
+> Hey Michael — the big one landed. There's a "Build chain" box under the
+> graph now: pick a target item, type a rate, hit Propose — and the
+> planner designs the whole factory for you. Heavy Modular Frame at
+> 10/min? It comes back with the full 12-stage chain — Smelters ×51,
+> Constructors for rods, screws, plates, the works — plus a summary of
+> the raw ores you'll need to mine (and any byproducts). Nothing touches
+> your graph until you hit Apply; then it lands as ordinary stages and
+> wires you can edit like anything hand-built, with every wire green on
+> arrival (it sizes machines so nothing runs short, rounding up whole
+> machines). It sticks to standard recipes and stops at raw resources —
+> comparing alternate recipes is the next (and last) piece of this arc.
+
 ## 2026-08-04 — Stage 8, Phase 2: transport fine-tuning knobs
 
 > Hey Michael — two honesty knobs for transport links. Pipes: the game's

@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-04
 **Status:** in-progress
-**Current phase:** Phase 3 (auto-chain builder, #39) — design next
+**Current phase:** Phase 4 (alt-recipe compare, #40) — design next
 **Final PR:** —
 **Epic:** #36 (board #21, Stage 8 milestone 79)
 
@@ -62,12 +62,34 @@ Excluded by directive: vehicle catalog admission; sharing/PWA.
   ticket #38 Done)
 - **Ticket:** #38 (Done, closed)
 
-### Phases 3–4 — deferred design
+### Phase 3 — auto-chain builder (#39)
 
-- **Tickets:** #39 → #40 (blocked-by chain)
+- **Status:** complete (merged --no-ff to develop 2026-08-05; 673/673
+  tests; design converged r1 — the adversarial catalog scan refuted a
+  false universal AND proved the empirics (0 cycles, demand model) —
+  + simplify (two-field ProposedLink fold); boundary
+  APPROVED_WITH_NITS×2 with the self-consume-guard fold landed;
+  diff-simplify APPROVED clean; browser walk zero defects — Heavy
+  Modular Frame @ 10/min proposed a 12-stage chain, applied with zero
+  short links, target active, ordinarily editable; ticket #39 Done)
+- **Ticket:** #39 (Done, closed)
+
+### Phase 4 — deferred design
+
+- **Ticket:** #40
 
 ## Decisions log
 
+- 2026-08-05 (P3 landed): proposeChain is the pure-core builder (own
+  narrow BuilderRecipe types; excludedMachineIds as data — normalized
+  `converter`/`packager` resolved by the ui adapter); one stage per
+  item; ceil-after-aggregate demand (the CEIL'D consumption propagates
+  so applied links arrive ok-or-surplus); cycle guard covers the item
+  itself (self-consuming recipes demote to RAW — never a from===to
+  link); applyChainProposal is additive-only (fresh uuids, tiers from
+  active, toIndex-style bigint narrowing, target becomes active);
+  proposals are session-ephemeral (apply clears the preview). P4's
+  enumeration work builds on proposeChain's selection machinery.
 - 2026-08-04 (P2 landed): plan files are v4 (identity migrateV3; save
   always writes 4 — the v3-additive alternative was rejected because
   the validator ignores unknown fields, so a rollback build would
