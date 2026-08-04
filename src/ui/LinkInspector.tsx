@@ -10,6 +10,7 @@
  * transport math + trip parsing live in transport-plan/transport-text.
  */
 
+import { useMemo } from "react";
 import { useAppStore } from "../state/store.ts";
 import type {
   LinkTransport,
@@ -129,13 +130,12 @@ export function LinkInspector() {
   // null when either endpoint is unsolved (not placed in the chain). Estimated-
   // mode links get the "use drawn distance" action; measured links a readout
   // only (a measured time is better information — never downgraded).
-  const distanceDm = drawnDistanceDm(
-    link.id,
-    catalog,
-    stages,
-    stageOrder,
-    links,
-    positions,
+  // Memoized: recomputes the whole chain composition (per-stage layouts +
+  // layoutChain), so key it like ChainBlueprint's deriveChainView memo.
+  const distanceDm = useMemo(
+    () =>
+      drawnDistanceDm(link.id, catalog, stages, stageOrder, links, positions),
+    [link.id, catalog, stages, stageOrder, links, positions],
   );
 
   return (

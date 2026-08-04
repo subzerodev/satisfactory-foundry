@@ -139,8 +139,10 @@ describe("deriveChainView — solved-only skip + chrome + footer", () => {
       a: { x: 0, y: 0 },
       b: { x: 300, y: 0 },
     });
-    // Two smelters at 100% → Σ 8 MW exact; one truck → 40 MW transport.
-    expect(view.footerText).toContain("Sites");
+    // Two smelters at 100% → the chain Σ is ALWAYS the ≈ float form
+    // (chainPowerText's own contract); one truck → 40 MW exact transport.
+    // Pin the literal to lock the provenance split.
+    expect(view.footerText).toContain("Sites Σ ≈ 8 MW");
     expect(view.footerText).toContain("transport 40 MW");
   });
 

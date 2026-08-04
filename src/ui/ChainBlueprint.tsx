@@ -261,10 +261,11 @@ export function deriveChainView(
 
 /**
  * The footer line "Sites <Σ> · transport <Y> MW[ (+ trains — see per-link)]".
- * The sites term follows advice.ts's chainPowerText discipline (exact at 100%
- * clock, labeled-≈ when any stage overclocks; "—" when no stage bills power);
- * the transport term is the exact Fraction sum of determinate links, with the
- * train note appended when any train link is present.
+ * The sites term is advice.ts's chainPowerText, whose Σ is ALWAYS the labeled
+ * ≈ float — even at 100% clock ("—" when no stage bills power). That is
+ * precisely why there is no merged total: the ≈ sites float must not be
+ * summed with the transport term, which IS an exact Fraction sum of
+ * determinate links (train note appended when any train link is present).
  */
 function buildFooterText(
   catalog: Catalog,
