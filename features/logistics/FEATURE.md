@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-04
 **Status:** in-progress
-**Current phase:** Phase 2 (transport UI) — design next
+**Current phase:** Phase 3 (combined blueprint) — design next
 **Final PR:** —
 **Epic:** #27 (board #21, Stage 7 milestone 78)
 
@@ -50,9 +50,18 @@ train vs more individual trains."
   trainOptions / droneFleet, all exact), src/core/transport-facts.ts
   (the cited P0 catalogue), 23 tests + R2 bidirectionality log
 
-### Phase 2 — transport UI (deferred design)
+### Phase 2 — transport UI
 
-- **Ticket:** #32 (blocked-by #31)
+- **Status:** complete (merged --no-ff to develop 2026-08-04 @ 655969e;
+  537/537 tests; 4-round design gate + simplify (the mode-discriminated
+  LinkTransport union); boundary caught the battery-units honesty
+  defect pre-merge; browser walk verified every surface live and caught
+  the raw-fraction display leaks (four ≈ folds, each re-checked);
+  ticket #32 Done)
+- **Ticket:** #32 (Done, closed)
+- **Artifacts:** LinkInspector + edge chips + transport-plan/-text
+  (src/ui), PlanFileV3 + migration, CatalogItem.stackSize (parser v3),
+  the transport-rate-unsustainable finding
 
 ### Phase 3 — combined multi-stage blueprint (deferred design)
 
@@ -60,6 +69,12 @@ train vs more individual trains."
 
 ## Decisions log
 
+- 2026-08-04 (P2 landed): LinkTransport is a mode-discriminated union
+  (illegal states uncompilable); plan files v3 (v2/v1 migrate); drone
+  costs render "batteries" only when battery IS the fuel, exact MJ
+  otherwise; non-terminating display rates use the labeled ≈ form
+  (formatRateOrApprox); station/port power stays inspector-only (not in
+  the chain Σ — routes aren't stages; P3 may revisit).
 - 2026-08-04 (P1 landed): tier rates reach core as caller-supplied
   params (core→data lint-banned; the manifold capacities idiom);
   module invariants live in type doc-comments, not always-true flags;

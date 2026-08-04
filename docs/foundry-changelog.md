@@ -3,6 +3,22 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-04 — Stage 7, Phase 2: transport planning on your links
+
+> Hey Michael — click any link between two stages and the transport
+> planner opens. Pick the mode — belt, truck, tractor, explorer, fluid
+> truck, train, or drone — tell it the trip (a time you measured
+> in-game, or a distance for an optimistic estimate), and it answers
+> "how many": belts for your unlocked tier, trucks with docking time
+> counted, drones with their battery bill. Trains get the full
+> comparison table you asked for — every cars-per-train choice side by
+> side with train count, station power, and what each sustains — and if
+> a route can't keep up at any consist size, it shows up as a finding
+> with the fix that provably helps. Estimates always say so with a ≈,
+> drone costs only say "batteries" when batteries are the fuel, and
+> your saved plans carry all of it. One phase left in this arc: the
+> combined floor plan.
+
 ## 2026-08-04 — Stage 7, Phase 1: the transport math brain
 
 > Hey Michael — no new buttons yet, but the engine for the logistics
