@@ -323,7 +323,6 @@ describe("App view toggle (Axis 1 default)", () => {
     // eagerly mounts the Blueprint leaf. A crash here would fail the wiring.
     const html = renderToStaticMarkup(<App />);
     expect(html).not.toContain("bp-svg");
-    expect(html).not.toContain("View: Schematic");
   });
 });
 

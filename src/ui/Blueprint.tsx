@@ -63,8 +63,8 @@ export function Blueprint({
     ) : null;
 
   // Zero-machine stage (P1 pinned empty shape): no foundations, no SVG — an
-  // empty-state line instead. The notice can never fire here (still surfaced
-  // above for symmetry, though an empty stage carries no findings).
+  // empty-state line instead. The notice CAN still fire here (an unknown
+  // machineId emits its finding even at count 0), so it renders above.
   if (layout.machines.length === 0) {
     return (
       <div className="bp-view">
