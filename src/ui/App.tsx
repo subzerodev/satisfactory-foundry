@@ -8,6 +8,8 @@ import {
 import type { CatalogSource } from "../data/catalog-store.ts";
 import type { Finding, StageSolveResult } from "../core/manifold.ts";
 import { fileToDocsText, fileFromDrop } from "./decode.ts";
+import { resolveInitialTheme } from "./theme.ts";
+import type { Theme } from "./theme.ts";
 import { UploadScreen } from "./UploadScreen.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
 import { PlansBar } from "./PlansBar.tsx";
@@ -99,6 +101,25 @@ export default function App() {
   // canvasNotice precedent — meaningless headless, so no store field). Default
   // Schematic keeps the familiar view primary this arc.
   const [view, setView] = useState<"schematic" | "blueprint">("schematic");
+
+  // Theme preference (Stage 5 item 3): a UI preference, initialized from the
+  // stored choice ⊕ the OS media query, applied as data-theme on the document
+  // element and persisted to localStorage directly (not store state — theme
+  // never affects a solve). Lazy initializer so the media query is read once.
+  // The `typeof window` guard keeps App SSR-safe (the smoke suite renders it in
+  // node, where window/localStorage are absent) — headless falls back to light.
+  const [theme, setTheme] = useState<Theme>(() =>
+    typeof window === "undefined"
+      ? "light"
+      : resolveInitialTheme(
+          window.localStorage.getItem("theme"),
+          window.matchMedia("(prefers-color-scheme: dark)").matches,
+        ),
+  );
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    window.localStorage.setItem("theme", theme);
+  }, [theme]);
 
   // Refresh the saved-plan list once the catalog is ready (the ready layout's
   // first mount). `plans` starts null; this makes that null transient, so
@@ -194,6 +215,14 @@ export default function App() {
           accept="application/json,.json"
           onChange={handleReupload}
         />
+        <button
+          type="button"
+          className="theme-toggle"
+          title={theme === "dark" ? "switch to light" : "switch to dark"}
+          onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+        >
+          {theme === "dark" ? "☀" : "☾"}
+        </button>
       </header>
       {s.uploadError !== null && (
         <p className="upload-banner">{s.uploadError}</p>
@@ -201,7 +230,7 @@ export default function App() {
       {/* Stage-graph canvas (Stage 3 / Phase 2): a fixed-height panel between the
           header and the v1 surface. Clicking a node switches the whole lower
           surface to that stage via the activeStageId mirror. */}
-      <GraphCanvas />
+      <GraphCanvas colorMode={theme} />
       <ControlsStrip
         recipes={recipes}
         machines={catalog.machines}

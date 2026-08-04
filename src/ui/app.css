@@ -5,12 +5,83 @@
   --bg-panel: #ffffff;
   --border: #d8d8d8;
   --error: #d92b2b;
+
+  /* Accent + SVG-surface colours, migrated out of hardcoded hexes (Stage 5
+     item 3) so the dark block can override them. Tier fill colours (colors.ts
+     TIER_COLORS) deliberately stay data-driven — they read on both themes. */
+  --accent: #4f9dde;
+  --accent-strong: #2d6fb0;
+  --on-accent: #ffffff;
+  --surface-fill: #eef1f4; /* machine rects (schematic + blueprint) */
+  --surface-stroke: #b8c0c8;
+  --foundation-fill: #f4f6f8;
+  --foundation-stroke: #dde2e6;
+  --bus-fill: #cfd8e0; /* blueprint bus ribbon */
+  --junction-fill: #9aa2aa; /* junctions + schematic seams */
+  --junction-stroke: #7c848c;
+  --notice: #8a5a00; /* footprint / warning notices */
+  --error-bg: #fff4f4; /* finding-error panel background */
+  --on-error: #ffffff; /* text on an --error fill (badge) */
+
   font-family:
     system-ui,
     -apple-system,
     "Segoe UI",
     Roboto,
     sans-serif;
+}
+
+/* Dark theme — an explicit choice via the header ☾/☀ toggle (data-theme) OR,
+   when no explicit choice is set, the OS media preference. The two selectors
+   carry the SAME override block; the media fallback is guarded
+   :root:not([data-theme]) (the pinned cascade guard) so an explicit choice
+   always wins regardless of cascade order. */
+:root[data-theme="dark"] {
+  --fg: #e6e6e6;
+  --fg-muted: #9aa0a6;
+  --bg: #16181c;
+  --bg-panel: #22262c;
+  --border: #3a3f46;
+  --error: #ff6b6b;
+
+  --accent: #5aa9e6;
+  --accent-strong: #7cc0f5;
+  --on-accent: #10151a;
+  --surface-fill: #2c323a;
+  --surface-stroke: #454c55;
+  --foundation-fill: #262b31;
+  --foundation-stroke: #3a4048;
+  --bus-fill: #3a4650;
+  --junction-fill: #6b737c;
+  --junction-stroke: #868e97;
+  --notice: #d9a441;
+  --error-bg: #3a2323;
+  --on-error: #16181c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --fg: #e6e6e6;
+    --fg-muted: #9aa0a6;
+    --bg: #16181c;
+    --bg-panel: #22262c;
+    --border: #3a3f46;
+    --error: #ff6b6b;
+
+    --accent: #5aa9e6;
+    --accent-strong: #7cc0f5;
+    --on-accent: #10151a;
+    --surface-fill: #2c323a;
+    --surface-stroke: #454c55;
+    --foundation-fill: #262b31;
+    --foundation-stroke: #3a4048;
+    --bus-fill: #3a4650;
+    --junction-fill: #6b737c;
+    --junction-stroke: #868e97;
+    --notice: #d9a441;
+    --error-bg: #3a2323;
+    --on-error: #16181c;
+  }
 }
 
 body {
@@ -59,8 +130,8 @@ body {
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--fg);
-  background: rgba(79, 157, 222, 0.12);
-  border: 3px dashed #4f9dde;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 3px dashed var(--accent);
 }
 
 .upload-notice {
@@ -138,9 +209,9 @@ body {
 }
 
 .tier-toggles .tier-on {
-  background: #4f9dde;
-  color: #fff;
-  border-color: #4f9dde;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
 }
 
 .summary-cards {
@@ -196,8 +267,8 @@ body {
 }
 
 .machine rect {
-  fill: #eef1f4;
-  stroke: #b8c0c8;
+  fill: var(--surface-fill);
+  stroke: var(--surface-stroke);
 }
 
 .machine-label {
@@ -234,7 +305,7 @@ body {
 }
 
 .seam {
-  stroke: #9aa2aa;
+  stroke: var(--junction-fill);
   stroke-dasharray: 3 3;
 }
 
@@ -253,6 +324,18 @@ body {
   border-radius: 4px;
 }
 
+/* Theme toggle (Stage 5 item 3) — the ☾/☀ header control. */
+.theme-toggle {
+  padding: 4px 10px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  border-radius: 4px;
+}
+
 .bp-view {
   padding: 8px 0;
 }
@@ -264,30 +347,30 @@ body {
 
 .bp-notice {
   margin: 0 0 8px;
-  color: #8a5a00;
+  color: var(--notice);
   font-size: 0.85rem;
 }
 
 .bp-foundation {
-  fill: #f4f6f8;
-  stroke: #dde2e6;
+  fill: var(--foundation-fill);
+  stroke: var(--foundation-stroke);
   stroke-width: 1;
 }
 
 .bp-bus {
-  fill: #cfd8e0;
+  fill: var(--bus-fill);
   opacity: 0.7;
 }
 
 .bp-junction {
-  fill: #9aa2aa;
-  stroke: #7c848c;
+  fill: var(--junction-fill);
+  stroke: var(--junction-stroke);
   stroke-width: 1;
 }
 
 .bp-machine rect {
-  fill: #eef1f4;
-  stroke: #b8c0c8;
+  fill: var(--surface-fill);
+  stroke: var(--surface-stroke);
   stroke-width: 1;
 }
 
@@ -304,8 +387,8 @@ body {
 }
 
 .bp-mark-glyph {
-  fill: #4f9dde;
-  stroke: #2d6fb0;
+  fill: var(--accent);
+  stroke: var(--accent-strong);
   stroke-width: 1;
 }
 
@@ -341,7 +424,7 @@ body {
   gap: 2px;
   padding: 8px 12px;
   border-left: 4px solid var(--error);
-  background: #fff4f4;
+  background: var(--error-bg);
 }
 
 .finding-heading {
@@ -355,7 +438,7 @@ body {
 }
 
 .finding-warning {
-  color: #8a5a00;
+  color: var(--notice);
 }
 
 .findings-clean {
@@ -380,7 +463,7 @@ body {
   width: 12px;
   height: 12px;
   border-radius: 2px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border);
 }
 
 /* -------------------------------------------------------------------------
@@ -427,8 +510,8 @@ body {
 }
 
 .stage-node.selected {
-  border-color: #4f9dde;
-  box-shadow: 0 0 0 2px rgba(79, 157, 222, 0.35);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* Solve-status tint — the only carrier of per-stage solve health on the card. */
@@ -488,7 +571,7 @@ body {
 }
 
 .stage-node-findings {
-  color: #fff;
+  color: var(--on-error);
   background: var(--error);
   border-radius: 8px;
   padding: 0 6px;

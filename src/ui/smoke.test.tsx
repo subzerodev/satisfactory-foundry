@@ -522,7 +522,7 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
     // reads the app-wide singleton store, which boots with one recipe-less
     // "Stage 1" — so the store→graphToFlow→card path is exercised end-to-end.
     const { GraphCanvas } = await import("./GraphCanvas.tsx");
-    const html = renderToStaticMarkup(<GraphCanvas />);
+    const html = renderToStaticMarkup(<GraphCanvas colorMode="light" />);
     expect(html).toContain("stage-node");
     expect(html).toContain("Stage 1");
     // Recipe-less default → the "no recipe" placeholder renders.
