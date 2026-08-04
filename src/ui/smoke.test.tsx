@@ -27,6 +27,8 @@ import { PlansBar } from "./PlansBar.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
 import { SummaryCards } from "./SummaryCards.tsx";
 import { Schematic } from "./Schematic.tsx";
+import { Blueprint } from "./Blueprint.tsx";
+import App from "./App.tsx";
 import { LaneOverrides } from "./LaneOverrides.tsx";
 import { FindingsPanel } from "./FindingsPanel.tsx";
 import { Legend } from "./Legend.tsx";
@@ -207,6 +209,121 @@ describe("Schematic", () => {
       />,
     );
     expect(html).toContain("seg-error");
+  });
+});
+
+describe("Blueprint", () => {
+  // A small REAL solve (Smelter ×2, one belt feed + one belt output at 30/min)
+  // through the actual solver, so the geometry Blueprint renders is the geometry
+  // layoutStage emits. smelter_mk1 → 50×100 dm footprint, pitch 60. The exact
+  // extents/counts below were computed from layoutStage (Axis 4).
+  const smelterInput = {
+    machineCount: 2,
+    clockPercent: Fraction.from(100),
+    capacities: FIXTURE_TIERS,
+    feeds: [
+      {
+        itemId: "ore_iron",
+        kind: "belt" as const,
+        perMachineRate: Fraction.from(30),
+      },
+    ],
+    outputs: [
+      {
+        itemId: "iron_ingot",
+        kind: "belt" as const,
+        perMachineRate: Fraction.from(30),
+      },
+    ],
+  };
+  const smelterSolve = () => solveStage(smelterInput);
+  const smelterLabels = (result: StageSolveResult) => ({
+    feedLabels: result.feeds.map((l) => itemName(l.itemId)),
+    outputLabels: result.outputs.map((l) => itemName(l.itemId)),
+  });
+
+  it("renders the Smelter ×2 floor plan: dm-native viewBox, rects, marks", () => {
+    const result = smelterSolve();
+    const { feedLabels, outputLabels } = smelterLabels(result);
+    const html = renderToStaticMarkup(
+      <Blueprint
+        solve={result}
+        machineId="smelter_mk1"
+        machineCount={2}
+        feedLabels={feedLabels}
+        outputLabels={outputLabels}
+      />,
+    );
+    // dm-native viewBox = (origin.x−20 origin.y−20 cols×80+40 rows×80+40).
+    // Smelter ×2 layout: origin {0,−80}, cols 2, rows 3.
+    expect(html).toContain('viewBox="-20 -100 200 280"');
+    // The dm-native SVG width is fluid; preserveAspectRatio keeps it undistorted.
+    expect(html).toContain('width="100%"');
+    expect(html).toContain('preserveAspectRatio="xMidYMid meet"');
+    // 6 foundation tiles (2 cols × 3 rows).
+    expect((html.match(/bp-foundation"/g) ?? []).length).toBe(6);
+    // 2 machine rects.
+    expect((html.match(/<g class="bp-machine">/g) ?? []).length).toBe(2);
+    // 4 junctions (2 feed splitters + 2 output mergers, one per column each).
+    expect((html.match(/bp-junction"/g) ?? []).length).toBe(4);
+    // The feed drop-mark carries the exact formatRate string (60 → "60/min").
+    expect(html).toContain(">60/min</text>");
+    // The output breakout mark also carries its load.
+    expect(html).toContain(">60/min (60/min load)</text>");
+    // The composed lane labels render verbatim.
+    expect(html).toContain("Iron Ore");
+    expect(html).toContain("Iron Ingot");
+    // A known footprint emits no unknown-footprint notice.
+    expect(html).not.toContain("footprint unknown");
+  });
+
+  it("renders the unknown-footprint notice for an off-table machineId", () => {
+    const result = smelterSolve();
+    const { feedLabels, outputLabels } = smelterLabels(result);
+    const html = renderToStaticMarkup(
+      <Blueprint
+        solve={result}
+        machineId="mystery_mk9"
+        machineCount={2}
+        feedLabels={feedLabels}
+        outputLabels={outputLabels}
+      />,
+    );
+    expect(html).toContain(
+      "footprint unknown for mystery_mk9 — drawn as 10×10 m",
+    );
+    // Still draws (the honest 100×100 approximation), so an SVG is present.
+    expect(html).toContain("<svg");
+  });
+
+  it("renders the empty-state line (no SVG) for a zero-machine stage", () => {
+    // machineCount 0 is the P1 pinned empty shape: layoutStage returns no
+    // machines, so Blueprint shows the empty-state line and never an <svg>.
+    const result = solveStage({ ...smelterInput, machineCount: 0 });
+    const { feedLabels, outputLabels } = smelterLabels(result);
+    const html = renderToStaticMarkup(
+      <Blueprint
+        solve={result}
+        machineId="smelter_mk1"
+        machineCount={0}
+        feedLabels={feedLabels}
+        outputLabels={outputLabels}
+      />,
+    );
+    expect(html).toContain("empty-state");
+    expect(html).not.toContain("<svg");
+  });
+});
+
+describe("App view toggle (Axis 1 default)", () => {
+  it("boots to the schematic-default surface — no blueprint mounted eagerly", () => {
+    // App SSR renders the store's default path (catalog initializing in node),
+    // so the solved block + toggle are not reachable headless. What IS pinned:
+    // the default view is component-local useState("schematic"), so App never
+    // eagerly mounts the Blueprint leaf. A crash here would fail the wiring.
+    const html = renderToStaticMarkup(<App />);
+    expect(html).not.toContain("bp-svg");
+    expect(html).not.toContain("View: Schematic");
   });
 });
 

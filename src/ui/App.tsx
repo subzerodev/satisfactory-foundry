@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   useAppStore,
   setBundledDocsProvider,
@@ -13,6 +13,7 @@ import { ControlsStrip } from "./ControlsStrip.tsx";
 import { PlansBar } from "./PlansBar.tsx";
 import { SummaryCards } from "./SummaryCards.tsx";
 import { Schematic } from "./Schematic.tsx";
+import { Blueprint } from "./Blueprint.tsx";
 import { LaneOverrides } from "./LaneOverrides.tsx";
 import { FindingsPanel } from "./FindingsPanel.tsx";
 import { Legend } from "./Legend.tsx";
@@ -93,6 +94,11 @@ export default function App() {
   // (Stage 3 / Phase 1); every downstream component stays v1-unchanged.
   const selection = activeSelection(s);
   const solve = activeSolve(s);
+
+  // View toggle for the schematic slot (Axis 1): component-local UI state (the
+  // canvasNotice precedent — meaningless headless, so no store field). Default
+  // Schematic keeps the familiar view primary this arc.
+  const [view, setView] = useState<"schematic" | "blueprint">("schematic");
 
   // Refresh the saved-plan list once the catalog is ready (the ready layout's
   // first mount). `plans` starts null; this makes that null transient, so
@@ -177,13 +183,42 @@ export default function App() {
       {solve.status === "solved" && (
         <>
           <SummaryCards result={solve.result} itemName={itemName} />
-          <Schematic
-            result={solve.result}
-            machineCount={selection.machineCount}
-            tiers={catalog.tiers}
-            unlocked={selection.unlockedTiers}
-            itemName={itemName}
-          />
+          {/* The single view toggle (Axis 1), labelled with the TARGET view.
+              It swaps only the schematic slot below; every other solve-facing
+              panel stays. A null recipe can never reach "solved", so
+              selection.recipeId is non-null here. */}
+          <button
+            type="button"
+            className="view-toggle"
+            onClick={() =>
+              setView((v) => (v === "schematic" ? "blueprint" : "schematic"))
+            }
+          >
+            {view === "schematic" ? "View: Blueprint" : "View: Schematic"}
+          </button>
+          {view === "blueprint" ? (
+            <Blueprint
+              solve={solve.result}
+              machineId={catalog.recipes[selection.recipeId!]!.machineId}
+              machineCount={selection.machineCount}
+              feedLabels={solve.result.feeds.map(
+                (lane) =>
+                  `${itemName(lane.itemId)}${lane.kind === "pipe" ? " (pipe)" : ""}`,
+              )}
+              outputLabels={solve.result.outputs.map(
+                (lane) =>
+                  `${itemName(lane.itemId)}${lane.kind === "pipe" ? " (pipe)" : ""}`,
+              )}
+            />
+          ) : (
+            <Schematic
+              result={solve.result}
+              machineCount={selection.machineCount}
+              tiers={catalog.tiers}
+              unlocked={selection.unlockedTiers}
+              itemName={itemName}
+            />
+          )}
           <LaneOverrides
             result={solve.result}
             overrides={selection.overrides}
