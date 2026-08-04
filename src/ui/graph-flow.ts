@@ -314,11 +314,11 @@ function powerTextOf(catalog: Catalog, stage: StageNode): string | null {
   if (stage.solve.status !== "solved") return null;
   const recipeId = stage.selection.recipeId;
   if (recipeId === null) return null;
-  const recipe = catalog.recipes[recipeId];
-  if (recipe === undefined) return null;
-  // Object.hasOwn, not `=== undefined`: a machineId like "constructor" resolves
-  // to Object.prototype's method under bracket access, so a plain undefined
-  // check would let a prototype member through.
+  // Object.hasOwn on BOTH lookups (mirrors advice.ts): a prototype-member id
+  // would resolve under bracket access; unreachable with real normalized game
+  // ids, guarded uniformly anyway (boundary fold).
+  if (!Object.hasOwn(catalog.recipes, recipeId)) return null;
+  const recipe = catalog.recipes[recipeId]!;
   if (!Object.hasOwn(catalog.machines, recipe.machineId)) return null;
   const machine = catalog.machines[recipe.machineId]!;
   let clock: Fraction;

@@ -90,11 +90,11 @@ export function stagePowerText(
   clock: Fraction,
 ): string {
   const count = Fraction.from(machineCount);
-  const suffix = power.variable ? variesSuffix(power, machineCount) : "";
 
   // 100% clock ⇒ no overclock factor, so the draw is exact — render it as such.
   if (clock.eq(Fraction.from(100))) {
     const total = count.mul(power.mw);
+    const suffix = power.variable ? variesSuffix(power, machineCount, 1) : "";
     return `${formatRate(total)} MW${suffix}`;
   }
 
@@ -103,6 +103,11 @@ export function stagePowerText(
   const clockRatio = fractionToNumber(clock) / 100;
   const factor = clockRatio ** fractionToNumber(power.exponent);
   const total = machineCount * fractionToNumber(power.mw) * factor;
+  // The varies-range scales by the SAME overclock factor so the leading number
+  // always sits inside its stated envelope (boundary fold).
+  const suffix = power.variable
+    ? variesSuffix(power, machineCount, factor)
+    : "";
   return `≈ ${total.toFixed(1)} MW${suffix}`;
 }
 
@@ -185,14 +190,25 @@ function stagePowerOf(
 // ---------------------------------------------------------------------------
 
 /** The "(varies A–B MW)" suffix for a variable-power machine, from the exact
- *  min/max bounds, count-scaled. Falls back to no suffix if bounds are absent
- *  (defensive: the variable branch always parses both, per docs-loader). */
-function variesSuffix(power: MachinePower, machineCount: number): string {
+ *  min/max bounds, count-scaled AND overclock-scaled (factor 1 at 100% keeps
+ *  the bounds exact; any other factor floats them with one decimal, matching
+ *  the ≈ number they bracket — boundary fold). Falls back to no suffix if
+ *  bounds are absent (defensive: the variable branch always parses both). */
+function variesSuffix(
+  power: MachinePower,
+  machineCount: number,
+  factor: number,
+): string {
   if (power.minMw === undefined || power.maxMw === undefined) return "";
-  const count = Fraction.from(machineCount);
-  const lo = formatRate(count.mul(power.minMw));
-  const hi = formatRate(count.mul(power.maxMw));
-  return ` (varies ${lo}–${hi} MW)`;
+  if (factor === 1) {
+    const count = Fraction.from(machineCount);
+    const lo = formatRate(count.mul(power.minMw));
+    const hi = formatRate(count.mul(power.maxMw));
+    return ` (varies ${lo}–${hi} MW)`;
+  }
+  const lo = (machineCount * fractionToNumber(power.minMw) * factor).toFixed(1);
+  const hi = (machineCount * fractionToNumber(power.maxMw) * factor).toFixed(1);
+  return ` (varies ≈ ${lo}–${hi} MW)`;
 }
 
 /** Parse a clock-percent string to a positive Fraction, or null if malformed /

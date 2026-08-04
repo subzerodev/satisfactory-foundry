@@ -132,8 +132,9 @@ function activeStagePowerText(
   if (solve.status !== "solved") return null;
   const recipeId = selection.recipeId;
   if (recipeId === null) return null;
-  const recipe = catalog.recipes[recipeId];
-  if (recipe === undefined) return null;
+  // Object.hasOwn on both lookups — mirrors advice.ts (boundary fold).
+  if (!Object.hasOwn(catalog.recipes, recipeId)) return null;
+  const recipe = catalog.recipes[recipeId]!;
   if (!Object.hasOwn(catalog.machines, recipe.machineId)) return null;
   const machine = catalog.machines[recipe.machineId]!;
   let clock: Fraction;

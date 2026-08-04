@@ -154,6 +154,27 @@ describe("stagePowerText", () => {
       "1750 MW (varies 500–3000 MW)",
     );
   });
+
+  it("overclocked variable machine scales the varies-range by the same factor", () => {
+    // 200% @ exponent 1.321929: factor = 2^1.321929 ≈ 2.5 — the leading ≈
+    // number must sit INSIDE the stated (varies ≈ lo–hi) envelope.
+    const power = {
+      mw: Fraction.from(875),
+      variable: true,
+      minMw: Fraction.from(250),
+      maxMw: Fraction.from(1500),
+      exponent: Fraction.parse("1.321929"),
+    };
+    const text = stagePowerText(power, 1, Fraction.from(200));
+    expect(text).toContain("≈");
+    expect(text).toContain("(varies ≈ ");
+    const nums = [...text.matchAll(/([\d.]+)/g)].map((x) => Number(x[1]));
+    // nums: [total, lo, hi] — total within [lo, hi]
+    const [total, lo, hi] = nums;
+    expect(total).toBeDefined();
+    expect(total!).toBeGreaterThanOrEqual(lo!);
+    expect(total!).toBeLessThanOrEqual(hi!);
+  });
 });
 
 // ---------------------------------------------------------------------------
