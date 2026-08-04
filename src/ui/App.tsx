@@ -89,6 +89,27 @@ function anyOverride(overrides: {
   );
 }
 
+/** Filesystem-unsafe characters (/ \ : * ? " < > |) → "-", so a plan name is a
+ *  legal filename across OSes. Frozen Axis 3 sanitization set. */
+function sanitizeFilename(name: string): string {
+  return name.replace(/[/\\:*?"<>|]/g, "-");
+}
+
+/** Browser-only: trigger a download of `text` as `filename` via an object-URL
+ *  anchor. Guarded for headless (no document) so importing App never throws. */
+function downloadTextFile(text: string, filename: string): void {
+  if (typeof document === "undefined") return;
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 /** THE connected shell — the only file that touches the store. */
 export default function App() {
   const s = useAppStore();
@@ -201,6 +222,23 @@ export default function App() {
     await s.uploadDocsText(await fileToDocsText(file));
   }
 
+  // Export: the store hands back the plan's pretty JSON (or null if the row is
+  // gone/corrupt); App does the browser-only Blob → anchor download. The
+  // filename is the plan's list name, filesystem-sanitized.
+  async function handleExport(id: string) {
+    const json = await s.exportPlan(id);
+    if (json === null) return; // missing/corrupt: nothing to download
+    const name = (s.plans ?? []).find((p) => p.id === id)?.name ?? "plan";
+    downloadTextFile(json, `${sanitizeFilename(name)}.foundry-plan.json`);
+  }
+
+  // Import: plan files are OUR OWN UTF-8 JSON exports, so file.text() is correct
+  // here — the S5 UTF-16 decodeBytes lesson is Docs.json-specific (do NOT
+  // "fix" this into fileToDocsText). The store validates + saves.
+  async function handleImport(file: File) {
+    await s.importPlan(await file.text());
+  }
+
   const recipes = Object.values(catalog.recipes);
 
   return (
@@ -249,6 +287,8 @@ export default function App() {
         onLoad={s.loadPlan}
         onRename={s.renamePlan}
         onDelete={s.deletePlan}
+        onExport={(id) => void handleExport(id)}
+        onImport={(file) => void handleImport(file)}
       />
       {solve.status === "idle" && (
         <p className="empty-state">Pick a recipe to see its manifold.</p>

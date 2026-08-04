@@ -9,6 +9,10 @@ interface PlansBarProps {
   onLoad(id: string): void;
   onRename(id: string, name: string): void;
   onDelete(id: string): void;
+  /** Export the selected plan (App turns it into a file download). */
+  onExport(id: string): void;
+  /** Import a plan from an uploaded file (App reads its text first). */
+  onImport(file: File): void;
 }
 
 /** Render an ISO timestamp as a plain calendar date (locale-independent). */
@@ -33,6 +37,8 @@ export function PlansBar({
   onLoad,
   onRename,
   onDelete,
+  onExport,
+  onImport,
 }: PlansBarProps) {
   const [name, setName] = useState("");
   const [selectedId, setSelectedId] = useState("");
@@ -79,6 +85,9 @@ export function PlansBar({
             <button type="button" onClick={() => onRename(activeId, name)}>
               Rename
             </button>
+            <button type="button" onClick={() => onExport(activeId)}>
+              Export
+            </button>
             <button type="button" onClick={() => onDelete(activeId)}>
               Delete
             </button>
@@ -86,6 +95,21 @@ export function PlansBar({
         ) : (
           <span className="plans-empty">— no saved plans —</span>
         )}
+        {/* Import is always available (a plan can be imported into an empty
+            list). Reset value after each pick so re-importing the same file
+            re-fires onChange. */}
+        <label className="plans-import">
+          Import
+          <input
+            type="file"
+            accept="application/json,.json"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onImport(file);
+              e.target.value = "";
+            }}
+          />
+        </label>
       </div>
 
       {planError !== null && <p className="plans-error">{planError}</p>}

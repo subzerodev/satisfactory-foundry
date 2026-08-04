@@ -538,6 +538,8 @@ describe("PlansBar", () => {
         onLoad={noop}
         onRename={noop}
         onDelete={noop}
+        onExport={noop}
+        onImport={noop}
       />,
     );
     expect(html).toContain("— no saved plans —");
@@ -555,6 +557,8 @@ describe("PlansBar", () => {
         onLoad={noop}
         onRename={noop}
         onDelete={noop}
+        onExport={noop}
+        onImport={noop}
       />,
     );
     expect(html).toContain("— no saved plans —");
@@ -569,14 +573,34 @@ describe("PlansBar", () => {
         onLoad={noop}
         onRename={noop}
         onDelete={noop}
+        onExport={noop}
+        onImport={noop}
       />,
     );
     expect(html).toContain("Alpha (2026-08-03)");
     expect(html).toContain("Beta (2026-07-01)");
     expect(html).toContain("Load");
     expect(html).toContain("Rename");
+    expect(html).toContain("Export");
     expect(html).toContain("Delete");
     expect(html).not.toContain("— no saved plans —");
+  });
+
+  it("always renders the Import file input, even with no saved plans", () => {
+    const html = renderToStaticMarkup(
+      <PlansBar
+        plans={[]}
+        planError={null}
+        onSave={noop}
+        onLoad={noop}
+        onRename={noop}
+        onDelete={noop}
+        onExport={noop}
+        onImport={noop}
+      />,
+    );
+    expect(html).toContain("plans-import");
+    expect(html).toContain('type="file"');
   });
 
   it("renders the planError banner", () => {
@@ -588,6 +612,8 @@ describe("PlansBar", () => {
         onLoad={noop}
         onRename={noop}
         onDelete={noop}
+        onExport={noop}
+        onImport={noop}
       />,
     );
     expect(html).toContain("plans-error");

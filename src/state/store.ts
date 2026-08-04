@@ -31,6 +31,7 @@ import {
   listPlans as listPlanFiles,
   loadPlan as loadPlanFile,
   deletePlan as deletePlanFile,
+  validatePlanFile,
 } from "../data/plan-store.ts";
 import type { PlanFileV2, PlanListEntry } from "../data/plan-store.ts";
 
@@ -188,6 +189,12 @@ export interface Actions {
   loadPlan(id: string): Promise<void>;
   renamePlan(id: string, name: string): Promise<void>;
   deletePlan(id: string): Promise<void>;
+  /** Serialize a stored plan (migrated to v2) as pretty JSON, or null if the
+   *  row is missing/corrupt. Headless — App owns the Blob/anchor download. */
+  exportPlan(id: string): Promise<string | null>;
+  /** Validate + save an exported plan file's text under the save-over model.
+   *  Never auto-loads (the live graph is untouched). Failures → planError. */
+  importPlan(text: string): Promise<void>;
 }
 
 export type Store = AppState & Actions;
@@ -1207,6 +1214,78 @@ export function createAppStore(storage?: StateStorage) {
               set({ planError: null });
               try {
                 await deletePlanFile(id);
+                await doRefresh();
+              } catch (err) {
+                set({ planError: planErrorMessage(err) });
+              }
+            });
+          },
+
+          // Pure read: loadPlanFile already migrates a v1 row to v2 in memory,
+          // so the export is what a LOAD would see (the honest v2 form). Returns
+          // null on missing/corrupt; no enqueue (writes nothing, sets no error)
+          // and no DOM — App does the Blob/anchor download. (Frozen Axis 3.)
+          async exportPlan(id: string): Promise<string | null> {
+            const plan = await loadPlanFile(id);
+            if (plan === null) return null;
+            return JSON.stringify(plan, null, 2);
+          },
+
+          importPlan(text: string) {
+            return enqueue(async () => {
+              set({ planError: null });
+              try {
+                // Our own UTF-8 JSON exports — file.text() upstream is correct
+                // (the UTF-16 decodeBytes hazard is Docs.json-only).
+                let parsed: unknown;
+                try {
+                  parsed = JSON.parse(text);
+                } catch {
+                  set({ planError: "import failed: not valid JSON" });
+                  return;
+                }
+                // The SAME acceptance loadPlanFile uses (v2, else v1→migrateV1):
+                // a foreign/corrupt payload is refused, nothing written.
+                const file = validatePlanFile(parsed);
+                if (file === null) {
+                  set({ planError: "import failed: not a valid plan file" });
+                  return;
+                }
+                // OUR name rules (imports were never validated by them): trim,
+                // refuse-empty. The trimmed form is what saves AND what
+                // collision-matches — mirroring savePlanAs exactly.
+                const trimmed = file.name.trim();
+                if (trimmed === "") {
+                  set({ planError: "plan name required" });
+                  return;
+                }
+                const existing = await listPlanFiles();
+                const match = existing.find((p) => p.name === trimmed);
+                const now = new Date().toISOString();
+                if (match) {
+                  // Overwrite the existing row: keep ITS createdAt (a foreign
+                  // payload's timestamp is untrusted), stamp updatedAt now.
+                  const prior = await loadPlanFile(match.id);
+                  const plan: PlanFileV2 = {
+                    ...file,
+                    name: trimmed,
+                    createdAt: prior?.createdAt ?? now,
+                    updatedAt: now,
+                  };
+                  await savePlanFile(plan, match.id);
+                } else {
+                  // New row: createdAt now (savePlanAs precedent — new names get
+                  // now, never the untrusted foreign timestamp).
+                  const plan: PlanFileV2 = {
+                    ...file,
+                    name: trimmed,
+                    createdAt: now,
+                    updatedAt: now,
+                  };
+                  await savePlanFile(plan, crypto.randomUUID());
+                }
+                // Import does NOT auto-load: saving ≠ switching the working
+                // graph. The live graph is untouched; only the list refreshes.
                 await doRefresh();
               } catch (err) {
                 set({ planError: planErrorMessage(err) });
