@@ -3,6 +3,18 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-04 — Stage 8, Phase 1: one click instead of retyping
+
+> Hey Michael — two small quality-of-life wins. When a wire says
+> "short 600/min · ×30 covers it", click the link and there's now an
+> actual button: "apply ×30 to Smelters" — one click sets the machine
+> count and the wire flips to ok. It knows about fan-out too, so
+> applying never shorts a sibling. And on the Combined floor plan you
+> can now click any site to make it the active stage — the panels
+> below switch to editing it, the outline follows, and you never leave
+> the overview. Next: the transport fine-tuning knobs, then the big
+> one — the auto-chain builder.
+
 ## 2026-08-04 — Stage 8, Phase 0: under-the-hood housekeeping
 
 > Hey Michael — nothing to see this time, and that's the point. Two
