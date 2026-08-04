@@ -58,6 +58,13 @@ describe("transport-text — fleet lines + estimated suffix", () => {
       tierIndex: 4,
     };
     expect(continuousLine(plan)).toBe("2 belts sustain 480/min each");
+    const one: TransportContinuous = {
+      kind: "continuous",
+      mode: "belt",
+      result: continuousRuns("belt", Fraction.from(400), Fraction.from(480)),
+      tierIndex: 4,
+    };
+    expect(continuousLine(one)).toBe("1 belt sustains 480/min each");
   });
 
   it("measured vehicle line has NO optimistic suffix (exact)", () => {
@@ -106,6 +113,9 @@ describe("transport-text — drone lines", () => {
   it("drone line + exact battery cost", () => {
     const plan = drone(Fraction.from(6), "measured");
     expect(droneLine(plan)).toBe("2 drones sustain 50/min each");
+    expect(
+      droneLine({ ...plan, result: { ...plan.result, nDrones: 1n } }),
+    ).toBe("1 drone sustains 50/min each");
     expect(droneBatteryLine(plan)).toBe("6 batteries per round trip");
   });
 
@@ -259,6 +269,25 @@ describe("transport-text — unsustainable-train finding", () => {
     );
     expect(text).toContain("max ≈ 309.7/min");
     expect(text).not.toMatch(/max \d+\/\d+/);
+  });
+
+  it("finding wording renders a non-terminating REQUIRED RATE as ≈ too", () => {
+    // A 100/3-style clock yields a non-terminating demand (2800/3 ≈ 933.3);
+    // the rate token must not leak n/d either.
+    const options = trainOptions(
+      Fraction.of(2800, 3),
+      Fraction.from(6400),
+      Fraction.from(120),
+      { beltFeed: Fraction.from(100), maxCars: 3 },
+    );
+    const row = unsustainableTrainRow(Fraction.of(2800, 3), options);
+    const text = unsustainableTrainText(
+      "Iron Ingot",
+      Fraction.of(2800, 3),
+      row!,
+    );
+    expect(text).toContain("Iron Ingot: ≈ 933.3/min exceeds");
+    expect(text).not.toContain("2800/3");
   });
 
   it("a sustainable rate returns null (no finding)", () => {

@@ -298,7 +298,7 @@ export function unsustainableTrainText(
   const ceiling = formatRateOrApprox(
     row.perPlatformCeiling.mul(Fraction.from(row.carsPerTrain)),
   );
-  const base = `${itemName}: ${formatRate(rate)}/min exceeds what one station pair sustains at any consist size (max ${ceiling}/min at ${row.carsPerTrain} cars).`;
+  const base = `${itemName}: ${formatRateOrApprox(rate)}/min exceeds what one station pair sustains at any consist size (max ${ceiling}/min at ${row.carsPerTrain} cars).`;
   return row.ceilingBound
     ? base + " A faster belt feed would raise the station ceiling."
     : base;
