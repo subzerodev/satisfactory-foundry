@@ -2,7 +2,13 @@ import "fake-indexeddb/auto";
 import { describe, it, expect, beforeEach } from "vitest";
 import type { Selection } from "../state/store.ts";
 import { resetDbCache } from "./db.ts";
-import { savePlan, listPlans, loadPlan, deletePlan, migrateV1 } from "./plan-store.ts";
+import {
+  savePlan,
+  listPlans,
+  loadPlan,
+  deletePlan,
+  migrateV1,
+} from "./plan-store.ts";
 import type { PlanFileV1, PlanFileV2 } from "./plan-store.ts";
 
 // A canonical selection with a fractional clock text + override strings, to
@@ -28,7 +34,11 @@ function samplePlan(overrides?: Partial<PlanFileV2>): PlanFileV2 {
     createdAt: "2026-08-03T00:00:00.000Z",
     updatedAt: "2026-08-03T00:00:00.000Z",
     stages: [
-      { name: "Stage 1", selection: sampleSelection(), position: { x: 40, y: 40 } },
+      {
+        name: "Stage 1",
+        selection: sampleSelection(),
+        position: { x: 40, y: 40 },
+      },
     ],
     links: [],
     ...overrides,
@@ -142,7 +152,10 @@ describe("plan-store — listPlans", () => {
   });
 
   it("lists a legacy v1 row alongside v2 rows (both loadable)", async () => {
-    await savePlan(samplePlan({ name: "v2", updatedAt: "2026-06-15T00:00:00.000Z" }), "id-v2");
+    await savePlan(
+      samplePlan({ name: "v2", updatedAt: "2026-06-15T00:00:00.000Z" }),
+      "id-v2",
+    );
     const db = await (await import("./db.ts")).openDb();
     await db.put(
       "plans",
