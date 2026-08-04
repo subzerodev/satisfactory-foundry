@@ -1,8 +1,8 @@
 # Logistics — combined blueprint + transport planning (Stage 7 arc)
 
 **Started:** 2026-08-04
-**Status:** in-progress
-**Current phase:** Phase 3 (combined blueprint) — design next
+**Status:** COMPLETE (all four phases merged)
+**Current phase:** arc closed 2026-08-04
 **Final PR:** —
 **Epic:** #27 (board #21, Stage 7 milestone 78)
 
@@ -63,12 +63,28 @@ train vs more individual trains."
   (src/ui), PlanFileV3 + migration, CatalogItem.stackSize (parser v3),
   the transport-rate-unsustainable finding
 
-### Phase 3 — combined multi-stage blueprint (deferred design)
+### Phase 3 — combined multi-stage blueprint
 
-- **Ticket:** #33 (blocked-by #32)
+- **Status:** complete (merged --no-ff to develop 2026-08-04 @ 7135e0b;
+  567/567 tests; 4-round design gate — the coincident-K hole caught
+  pre-code, totality closed by construction — + simplify (trains
+  omit-with-note); boundary APPROVED_WITH_NITS×2 folded; the browser
+  walk caught a Rules-of-Hooks crash a boundary-nit fold had
+  introduced (reverted) and verified the measure feed end-to-end;
+  ticket #33 Done)
+- **Ticket:** #33 (Done, closed)
+- **Artifacts:** layoutChain (src/layout), ChainBlueprint + chain-view
+  (src/ui), the measure-feed apply action, the power footer
 
 ## Decisions log
 
+- 2026-08-04 (P3 landed): the canvas arrangement IS the site plan (the
+  three-step composer: coincidence tie-break → minimal-K → grid
+  rounding); the measure feed is an explicit action, never auto-sync
+  (drone 2× round-trip vs road one-way in one mapping site); the
+  footer splits provenance (≈ sites float · exact transport Fraction,
+  no merged total; trains omit-with-note); follow-up #34 (shared
+  planForLink resolver) spawned from diff-simplify.
 - 2026-08-04 (P2 landed): LinkTransport is a mode-discriminated union
   (illegal states uncompilable); plan files v3 (v2/v1 migrate); drone
   costs render "batteries" only when battery IS the fuel, exact MJ
@@ -89,4 +105,13 @@ train vs more individual trains."
 
 ## Final report
 
-—
+Stage 7 delivered Michael's logistics directive end-to-end across four
+gated phases: #30 the provenance-cited transport fact table (wiki +
+the installed game's own export, verified content-identical); #31 the
+exact transport solver (fleet-for-rate per mode; the train
+cars-vs-trains comparison as exact rows); #32 the transport UI
+(per-link mode + trip config, plan-file v3, the LinkInspector, one
+provable finding); #33 the combined multi-stage floor plan with the
+measure-feed loop closing drawn geometry back into the planner.
+Released via the Stage 7 PR (develop → main). Follow-ups in backlog:
+#28 (prototype-safe lookups), #34 (planForLink resolver).

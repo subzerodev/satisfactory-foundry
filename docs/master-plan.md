@@ -106,6 +106,10 @@ process (all-Claude roster, opus implementers, per-phase gates).
 
 ## Stage 7 — Logistics: combined blueprint + transport planning
 
+- **Status: SHIPPED 2026-08-04** — all four phases Done (#30 research,
+  #31 core math, #32 transport UI, #33 combined blueprint); 567/567
+  tests; released via the Stage 7 PR. Record: `features/logistics/`.
+
 - **Goal:** factories span locations — the combined multi-stage
   blueprint (deferred from Stage 4) plus per-link transport planning:
   mode (belt/pipe/truck/train/drone) + distance/trip time → how many

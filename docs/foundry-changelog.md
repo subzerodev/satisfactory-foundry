@@ -3,6 +3,22 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-04 — Stage 7 complete: the whole chain on one floor plan
+
+> Hey Michael — the last piece of the logistics arc is in. Flip the
+> view twice and you get "Combined": every solved stage laid out as a
+> real floor plan in one shared space, arranged the way YOU arranged
+> them on the canvas — no new controls to learn, just drag the nodes
+> and the site plan follows. The links between sites carry their
+> transport story ("≈ 2×1-car trains · 412 m") and the drawn distance
+> feeds straight back into the planner: open a link, click "use drawn
+> distance", and the fleet recomputes from your own layout. A power
+> footer totals the sites and the transport stations honestly (trains
+> point you at their comparison table rather than pretending one
+> number covers every consist). That's Stage 7 — the whole
+> mine-it-here-use-it-there workflow you asked for, from fact table to
+> floor plan.
+
 ## 2026-08-04 — Stage 7, Phase 2: transport planning on your links
 
 > Hey Michael — click any link between two stages and the transport
