@@ -333,9 +333,12 @@ export function linkRequiredRate(
  * global invariant (the store stamps identical tiers over every stage), so any
  * stage's copy is canonical; fall back to the full table when no stage exists.
  */
-function globalUnlockedTiers(
+export function globalUnlockedTiers(
   catalog: Catalog,
-  stages: Record<string, StageNode>,
+  stages: Record<
+    string,
+    { selection: { unlockedTiers: { belt: number; pipe: number } } }
+  >,
 ): { belt: number; pipe: number } {
   const any = Object.values(stages)[0];
   if (any !== undefined) return any.selection.unlockedTiers;

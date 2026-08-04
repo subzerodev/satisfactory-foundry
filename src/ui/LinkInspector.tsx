@@ -17,9 +17,8 @@ import type {
   StageLink,
 } from "../state/store.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
-import type { Catalog } from "../data/types.ts";
 import { formatRate } from "./format.ts";
-import { linkRequiredRate } from "./graph-flow.ts";
+import { linkRequiredRate, globalUnlockedTiers } from "./graph-flow.ts";
 import { computeLinkTransport, legalModesFor } from "./transport-plan.ts";
 import {
   MODE_LABEL,
@@ -115,7 +114,7 @@ export function LinkInspector() {
     transport,
     item,
     catalog.tiers,
-    globalTiers(catalog, stages),
+    globalUnlockedTiers(catalog, stages),
   );
 
   return (
@@ -444,18 +443,4 @@ function setDroneMeasuredMeters(t: TripTransport, text: string): LinkTransport {
 
 function stageName(stage: { name: string } | undefined): string {
   return stage?.name ?? "(removed)";
-}
-
-/** The plan-global unlocked tier counts (any stage's copy is canonical; the
- *  store stamps identical tiers over every stage). */
-function globalTiers(
-  catalog: Catalog,
-  stages: Record<
-    string,
-    { selection: { unlockedTiers: { belt: number; pipe: number } } }
-  >,
-): { belt: number; pipe: number } {
-  const any = Object.values(stages)[0];
-  if (any !== undefined) return any.selection.unlockedTiers;
-  return { belt: catalog.tiers.belt.length, pipe: catalog.tiers.pipe.length };
 }
