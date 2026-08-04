@@ -588,15 +588,12 @@ describe("parseDocsJson — null-prototype maps resist prototype-key collision (
     expect(emptyMachine).toBeUndefined();
     expect(emptyRecipe).toBeUndefined();
     // Belt-and-braces: none of the three prototype-member names resolve either.
-    for (const key of ["constructor", "hasOwnProperty", "toString"]) {
-      // The colliding 'constructor' key IS a real own entry (asserted above);
-      // the point is that on the OTHER two maps it is absent and must miss,
-      // and hasOwnProperty/toString are absent on all three.
-      if (key !== "constructor") {
-        expect(cat.items[key]).toBeUndefined();
-        expect(cat.machines[key]).toBeUndefined();
-        expect(cat.recipes[key]).toBeUndefined();
-      }
+    // The colliding "constructor" own-entry is asserted above; here the
+    // prototype-only names must miss cleanly on all three maps.
+    for (const key of ["hasOwnProperty", "toString"]) {
+      expect(cat.items[key]).toBeUndefined();
+      expect(cat.machines[key]).toBeUndefined();
+      expect(cat.recipes[key]).toBeUndefined();
     }
   });
 
