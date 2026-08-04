@@ -101,6 +101,8 @@ process (all-Claude roster, opus implementers, per-phase gates).
   parser + cache work).
 - **Epic:** #24 (milestone 77; children #25 data groundwork, #26 helper
   surfaces). Blocked-by Stage 5.
+- **Status: SHIPPED 2026-08-04** — both phases Done; 454/454 tests;
+  released via the Stage 6 PR. Record: `features/chain-helpers/`.
 
 ## Stage 7 — Logistics: combined blueprint + transport planning
 

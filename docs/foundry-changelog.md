@@ -3,6 +3,22 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-04 — Stage 6 complete: the chain explains itself
+
+> Hey Michael — the math you were doing in your head is on screen now.
+> When a feed runs short, the wire says exactly how many machines fix
+> it — "short 102.5/min · ×19 covers it" — and if one stage feeds the
+> same item to several others, it says "×19 total" so you know it's
+> the whole load. Capacity warnings now tell you the cheapest way out:
+> your Mk1 Plastic bus says "unlocking Mk2 (120/min) would raise the
+> bus above this peak" — and it only ever promises what the math can
+> prove. And the wattage is everywhere it should be: each stage card
+> shows its draw (exact at 100% — your 14 Manufacturers pull exactly
+> 770 MW), overclocked stages show an honest ≈, the odd machines like
+> the Particle Accelerator show their swing range, and the canvas
+> totals the whole chain. That's the helpers batch done — next up:
+> the logistics arc you asked for.
+
 ## 2026-08-04 — Stage 6, Phase 1: plans travel + the app learns wattage
 
 > Hey Michael — two quiet foundations landed. Your plans can now leave

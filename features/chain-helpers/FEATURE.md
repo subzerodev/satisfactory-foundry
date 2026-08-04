@@ -1,8 +1,8 @@
 # Chain-aware helpers (Stage 6 arc)
 
 **Started:** 2026-08-04
-**Status:** in-progress
-**Current phase:** Phase 1 COMPLETE — Phase 2 (helper surfaces) designing
+**Status:** COMPLETE (both phases merged)
+**Current phase:** arc closed 2026-08-04
 **Final PR:** —
 **Epic:** #24 (board #21, Stage 6 milestone 77)
 
@@ -28,11 +28,25 @@ except 3", then Stage 7 logistics).
   inverted exponent distribution; ticket #25 Done)
 - **Ticket:** #25 (Done, closed)
 
-### Phase 2 — helper surfaces (deferred design)
+### Phase 2 — helper surfaces
 
-- **Ticket:** #26 (blocked-by #25)
+- **Status:** complete (merged --no-ff to develop 2026-08-04; 454/454
+  tests; 4-round design gate — the fan-out BLOCKER, the provably-
+  unreachable hint branch, and the invalid-stage inconsistency all
+  caught pre-code — + simplify; boundary converged with the varies-
+  range clock-scaling and guard-mirroring folds re-checked; the twin
+  power resolvers collapsed at diff-simplify; walk-verified live
+  (×19, Mk2 hints, 770 MW exact, Σ, ≈ overclock); ticket #26 Done)
+- **Ticket:** #26 (Done, closed)
 
 ## Decisions log
+
+- 2026-08-04 (P2 landed): the fan-out rule (×N aggregates the
+  producer's outgoing same-item demands; "×N total" wording under
+  fan-out); hints bound to the finding's own busCapacity with
+  provable-claim wording only; power solved-only uniform across all
+  surfaces; advice.ts is the second (labeled) float boundary; hardening
+  follow-up #28 spawned from the boundary sweep.
 
 - 2026-08-04 (P1 landed): power struct with per-machine exponent
   (1.321929 ×15 / 1.6 ×5 — NON-uniform, no constant); three-branch
