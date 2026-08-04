@@ -82,16 +82,40 @@ export interface ChainProposal {
 }
 
 /**
- * Select the producer recipe for item X: candidates are recipes with
+ * Select the producer recipe for item X.
+ *
+ * An OVERRIDE is consulted first (Stage 8 / Phase 4, the comparison seam): if
+ * `overrides` names a recipe for X AND that recipe primary-produces X, it IS
+ * the producer — the isAlternate + machine-exclusion filters are BYPASSED (an
+ * override is the user's explicit opt-in to a specific recipe, including an
+ * alternate). An override that names an unknown recipe, or one whose primary
+ * output is NOT X, is IGNORED — the selection falls back to the default policy,
+ * so an invalid override never breaks totality. The cycle/self-consume guard at
+ * the call site applies to whatever recipe is chosen here, override or not.
+ *
+ * Default policy (no applicable override): candidates are recipes with
  * `primaryOutputId === X`, `isAlternate === false`, and machine NOT in
  * `excludedMachineIds`. Multiple → the first by ascending recipe id
- * (deterministic — P4 owns choosing better). Zero → null (X is RAW).
+ * (deterministic). Zero → null (X is RAW).
  */
 function selectProducer(
   itemId: string,
   recipes: BuilderRecipe[],
   excludedMachineIds: ReadonlySet<string>,
+  overrides: ReadonlyMap<string, string>,
 ): BuilderRecipe | null {
+  // Override consult: a validated named recipe wins over the default policy,
+  // lifting the isAlternate/exclusion filters. Invalid (unknown id / non-primary)
+  // falls through to the default scan below — validate-and-fall-back keeps the
+  // solver total.
+  const overrideId = overrides.get(itemId);
+  if (overrideId !== undefined) {
+    const named = recipes.find((r) => r.id === overrideId);
+    if (named !== undefined && named.primaryOutputId === itemId) {
+      return named;
+    }
+  }
+
   let chosen: BuilderRecipe | null = null;
   for (const r of recipes) {
     if (r.primaryOutputId !== itemId) continue;
@@ -134,13 +158,21 @@ interface Plan {
  *    only ever over-produces). Byproducts and raw leaves fall out of the finished
  *    plans.
  *
- * Determinism: same target + rate + recipes + exclusions ⇒ identical proposal.
+ * `overrides` (Stage 8 / Phase 4) is an optional itemId→recipeId map consulted
+ * BEFORE the default producer policy at each item: a valid entry forces that
+ * item's producer to the named recipe (alternate/excluded machines allowed);
+ * an invalid entry is ignored (default policy applies). Absent/empty ⇒ the
+ * proposal is byte-identical to the pre-P4 behavior.
+ *
+ * Determinism: same target + rate + recipes + exclusions + overrides ⇒
+ * identical proposal.
  */
 export function proposeChain(
   targetItemId: string,
   rate: Fraction,
   recipes: BuilderRecipe[],
   excludedMachineIds: Iterable<string>,
+  overrides: ReadonlyMap<string, string> = new Map(),
 ): ChainProposal {
   const excluded = new Set(excludedMachineIds);
   // Every item that has appeared in the closure, produced or raw.
@@ -172,7 +204,7 @@ export function proposeChain(
     // at apply) — demote to raw (silent — the item lands in rawInputs). With
     // converters/packagers excluded the bundled catalog is acyclic, so this is
     // a pinned backstop, not a common path.
-    let recipe = selectProducer(itemId, recipes, excluded);
+    let recipe = selectProducer(itemId, recipes, excluded, overrides);
     if (
       recipe !== null &&
       recipe.inputs.some((io) => io.itemId === itemId || path.has(io.itemId))
