@@ -13,7 +13,7 @@
  */
 
 import { formatRate } from "./format.ts";
-import { suggestSupply, stagePowerText } from "./advice.ts";
+import { suggestSupply, stagePowerTextFor } from "./advice.ts";
 import { Fraction } from "../core/fraction.ts";
 import type { Catalog } from "../data/types.ts";
 import type { CatalogRecipe } from "../data/types.ts";
@@ -311,23 +311,9 @@ function supplySuggestionFor(
  * with SummaryCards + the chain Σ: recipe-less / idle / invalid → null.
  */
 function powerTextOf(catalog: Catalog, stage: StageNode): string | null {
-  if (stage.solve.status !== "solved") return null;
-  const recipeId = stage.selection.recipeId;
-  if (recipeId === null) return null;
-  // Object.hasOwn on BOTH lookups (mirrors advice.ts): a prototype-member id
-  // would resolve under bracket access; unreachable with real normalized game
-  // ids, guarded uniformly anyway (boundary fold).
-  if (!Object.hasOwn(catalog.recipes, recipeId)) return null;
-  const recipe = catalog.recipes[recipeId]!;
-  if (!Object.hasOwn(catalog.machines, recipe.machineId)) return null;
-  const machine = catalog.machines[recipe.machineId]!;
-  let clock: Fraction;
-  try {
-    clock = Fraction.parse(stage.selection.clockPercentText);
-  } catch {
-    return null;
-  }
-  return stagePowerText(machine.power, stage.selection.machineCount, clock);
+  // Delegates to the one test-pinned resolver (simplify fold): the solved
+  // gate, prototype-safe lookups, and clock parse live in advice.ts.
+  return stagePowerTextFor(catalog, stage);
 }
 
 /**

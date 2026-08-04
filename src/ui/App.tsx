@@ -9,8 +9,7 @@ import type { Selection, SolveState } from "../state/store.ts";
 import type { CatalogSource } from "../data/catalog-store.ts";
 import type { Catalog } from "../data/types.ts";
 import type { Finding, StageSolveResult } from "../core/manifold.ts";
-import { Fraction } from "../core/fraction.ts";
-import { stagePowerText } from "./advice.ts";
+import { stagePowerTextFor } from "./advice.ts";
 import { fileToDocsText, fileFromDrop } from "./decode.ts";
 import { resolveInitialTheme } from "./theme.ts";
 import type { Theme } from "./theme.ts";
@@ -129,21 +128,8 @@ function activeStagePowerText(
   selection: Selection,
   solve: SolveState,
 ): string | null {
-  if (solve.status !== "solved") return null;
-  const recipeId = selection.recipeId;
-  if (recipeId === null) return null;
-  // Object.hasOwn on both lookups — mirrors advice.ts (boundary fold).
-  if (!Object.hasOwn(catalog.recipes, recipeId)) return null;
-  const recipe = catalog.recipes[recipeId]!;
-  if (!Object.hasOwn(catalog.machines, recipe.machineId)) return null;
-  const machine = catalog.machines[recipe.machineId]!;
-  let clock: Fraction;
-  try {
-    clock = Fraction.parse(selection.clockPercentText);
-  } catch {
-    return null;
-  }
-  return stagePowerText(machine.power, selection.machineCount, clock);
+  // Delegates to the one test-pinned resolver (simplify fold).
+  return stagePowerTextFor(catalog, { selection, solve });
 }
 
 /** THE connected shell — the only file that touches the store. */

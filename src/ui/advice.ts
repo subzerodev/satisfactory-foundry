@@ -185,6 +185,21 @@ function stagePowerOf(
   return machine.power;
 }
 
+/** The shared per-stage power-text resolver (simplify fold — this absorbed two
+ *  byte-identical hand-written copies in App and graph-flow): the solved gate,
+ *  the prototype-safe lookups, and the defensive clock parse live HERE, once,
+ *  test-pinned. Null when the stage does not bill power. */
+export function stagePowerTextFor(
+  catalog: ChainCatalog,
+  stage: ChainStage,
+): string | null {
+  const power = stagePowerOf(stage, catalog);
+  if (power === null) return null;
+  const clock = parseClock(stage.selection.clockPercentText);
+  if (clock === null) return null;
+  return stagePowerText(power, stage.selection.machineCount, clock);
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers.
 // ---------------------------------------------------------------------------
