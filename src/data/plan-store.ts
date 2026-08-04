@@ -96,6 +96,18 @@ export async function listPlans(): Promise<PlanListEntry[]> {
 }
 
 /**
+ * Validate an arbitrary value as a plan file THIS build can use, returning a
+ * `PlanFileV2` (migrating a valid v1 in memory) or null on corrupt/foreign.
+ * The single acceptance rule shared by `loadPlan` (IDB rows) and `importPlan`
+ * (uploaded exports): v2 first, else a valid v1 via `migrateV1`.
+ */
+export function validatePlanFile(value: unknown): PlanFileV2 | null {
+  if (isPlanFileV2(value)) return value;
+  if (isPlanFileV1(value)) return migrateV1(value);
+  return null;
+}
+
+/**
  * Load + validate one plan, returning a `PlanFileV2` (migrating a v1 file in
  * memory). Returns null on missing OR corrupt-for-this-build. V2 is tried first;
  * a valid v1 file falls back to `migrateV1`. Migration is read-side only — the
@@ -104,9 +116,7 @@ export async function listPlans(): Promise<PlanListEntry[]> {
 export async function loadPlan(id: string): Promise<PlanFileV2 | null> {
   const db = await openDb();
   const value = await db.get<unknown>(PLANS_STORE, id);
-  if (isPlanFileV2(value)) return value;
-  if (isPlanFileV1(value)) return migrateV1(value);
-  return null;
+  return validatePlanFile(value);
 }
 
 /**

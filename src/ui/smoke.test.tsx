@@ -21,7 +21,7 @@ import { solveStage } from "../core/manifold.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import { FIXTURE_TIERS, WORKED_INPUT, workedResult } from "./fixtures.ts";
 import type { PlanListEntry } from "../data/plan-store.ts";
-import { BundledBanner } from "./App.tsx";
+import { BundledBanner, sanitizeFilename } from "./App.tsx";
 import { UploadScreen } from "./UploadScreen.tsx";
 import { PlansBar } from "./PlansBar.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
@@ -81,7 +81,15 @@ describe("UploadScreen", () => {
 
 describe("ControlsStrip", () => {
   const machines: Record<string, CatalogMachine> = {
-    smelter: { id: "smelter", displayName: "Smelter" },
+    smelter: {
+      id: "smelter",
+      displayName: "Smelter",
+      power: {
+        mw: Fraction.from(4),
+        variable: false,
+        exponent: Fraction.of(1321929, 1000000),
+      },
+    },
   };
   const recipes: CatalogRecipe[] = [
     {
@@ -530,6 +538,8 @@ describe("PlansBar", () => {
         onLoad={noop}
         onRename={noop}
         onDelete={noop}
+        onExport={noop}
+        onImport={noop}
       />,
     );
     expect(html).toContain("— no saved plans —");
@@ -547,6 +557,8 @@ describe("PlansBar", () => {
         onLoad={noop}
         onRename={noop}
         onDelete={noop}
+        onExport={noop}
+        onImport={noop}
       />,
     );
     expect(html).toContain("— no saved plans —");
@@ -561,14 +573,34 @@ describe("PlansBar", () => {
         onLoad={noop}
         onRename={noop}
         onDelete={noop}
+        onExport={noop}
+        onImport={noop}
       />,
     );
     expect(html).toContain("Alpha (2026-08-03)");
     expect(html).toContain("Beta (2026-07-01)");
     expect(html).toContain("Load");
     expect(html).toContain("Rename");
+    expect(html).toContain("Export");
     expect(html).toContain("Delete");
     expect(html).not.toContain("— no saved plans —");
+  });
+
+  it("always renders the Import file input, even with no saved plans", () => {
+    const html = renderToStaticMarkup(
+      <PlansBar
+        plans={[]}
+        planError={null}
+        onSave={noop}
+        onLoad={noop}
+        onRename={noop}
+        onDelete={noop}
+        onExport={noop}
+        onImport={noop}
+      />,
+    );
+    expect(html).toContain("plans-import");
+    expect(html).toContain('type="file"');
   });
 
   it("renders the planError banner", () => {
@@ -580,6 +612,8 @@ describe("PlansBar", () => {
         onLoad={noop}
         onRename={noop}
         onDelete={noop}
+        onExport={noop}
+        onImport={noop}
       />,
     );
     expect(html).toContain("plans-error");
@@ -602,5 +636,26 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
     expect(html).toContain("no recipe");
     // The ＋stage control is present in the canvas corner.
     expect(html).toContain("graph-add-stage");
+  });
+});
+
+describe("sanitizeFilename (Stage 6 / Phase 1 — export filename table)", () => {
+  // Each filesystem-unsafe char (/ \ : * ? " < > |) maps to "-"; safe chars pass.
+  const cases: [string, string][] = [
+    ["Iron Line", "Iron Line"], // spaces + letters untouched
+    ["a/b", "a-b"],
+    ["a\\b", "a-b"],
+    ["a:b", "a-b"],
+    ["a*b", "a-b"],
+    ["a?b", "a-b"],
+    ['a"b', "a-b"],
+    ["a<b", "a-b"],
+    ["a>b", "a-b"],
+    ["a|b", "a-b"],
+    ['all/\\:*?"<>|here', "all---------here"], // every unsafe char at once
+    ["dash-and_underscore.1", "dash-and_underscore.1"], // these are all safe
+  ];
+  it.each(cases)("sanitizes %j → %j", (input, expected) => {
+    expect(sanitizeFilename(input)).toBe(expected);
   });
 });

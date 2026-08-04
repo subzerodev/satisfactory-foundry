@@ -4,6 +4,7 @@ import type {
   CatalogItem,
   CatalogMachine,
   CatalogRecipe,
+  MachinePower,
   RecipeIO,
 } from "./types.ts";
 import { TIER_TABLE } from "./tiers.ts";
@@ -80,6 +81,7 @@ export function parseDocsJson(raw: unknown): Catalog {
         machines[id] = {
           id,
           displayName: (c.mDisplayName as string | undefined) ?? id,
+          power: parseMachinePower(c),
         };
       }
     } else if (nativeClass.includes(NATIVE_RECIPE)) {
@@ -164,6 +166,54 @@ function parseDuration(raw: string, recipeId: string): Fraction {
     );
   }
   return duration;
+}
+
+// Default overclock exponent when a building omits mPowerConsumptionExponent.
+// Every one of the 20 admitted buildings in the bundled snapshot DOES carry it
+// (so this default is unexercised today), but the read stays lenient — a stray
+// building missing the key must never become a new parse rejection. 1.321929 is
+// the snapshot's majority value (15 of 20), the least-wrong fallback.
+const DEFAULT_POWER_EXPONENT = Fraction.of(1321929, 1000000);
+
+/**
+ * Parse a building's power draw from its raw class fields (three branches, frozen
+ * Axis 1). Values go through the same exact decimal→Fraction path as rates; a
+ * field that isn't a decimal string is treated as absent (safe fallback, never a
+ * new rejection reason). The verbatim game keys are used, including the game's
+ * own "Mininum" typo in mEstimatedMininumPowerConsumption.
+ */
+function parseMachinePower(c: Record<string, unknown>): MachinePower {
+  const exponent =
+    parsePowerField(c.mPowerConsumptionExponent) ?? DEFAULT_POWER_EXPONENT;
+  const consumption = parsePowerField(c.mPowerConsumption);
+  // Branch 1: a positive constant draw (manufacturers + powered extractors —
+  // miners 5/15/45 MW, Oil Extractor 40 MW).
+  if (consumption !== null && consumption.gt(Fraction.from(0))) {
+    return { mw: consumption, variable: false, exponent };
+  }
+  // Branch 2: both estimate bounds present ⇒ variable-power machine; mw is the
+  // exact min/max midpoint (a min of 0 is legal — Quantum Encoder), bounds kept.
+  const minMw = parsePowerField(c.mEstimatedMininumPowerConsumption);
+  const maxMw = parsePowerField(c.mEstimatedMaximumPowerConsumption);
+  if (minMw !== null && maxMw !== null) {
+    const mw = minMw.add(maxMw).div(Fraction.from(2));
+    return { mw, variable: true, minMw, maxMw, exponent };
+  }
+  // Branch 3: zero draw — the generators carry mPowerConsumption present-as-0
+  // (falls through branch 1's > 0 check) and produce, not draw, power.
+  // mPowerProduction is deliberately NOT parsed (no consumer this arc).
+  return { mw: Fraction.from(0), variable: false, exponent };
+}
+
+/** A power field as an exact Fraction, or null if absent/non-decimal (never
+ *  throws — a malformed power value degrades to "absent", not a parse failure). */
+function parsePowerField(raw: unknown): Fraction | null {
+  if (typeof raw !== "string") return null;
+  try {
+    return Fraction.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 /** ClassName → snake-case id (ported normalization scheme). */
