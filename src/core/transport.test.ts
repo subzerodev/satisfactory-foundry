@@ -196,6 +196,45 @@ describe("trainOptions — cars-vs-trains enumeration", () => {
     expect(c14?.locosSuggested).toBe(2);
   });
 
+  it("countedEnds scales ONLY stationPowerMw (2→both, 1→one shared, 0→both shared)", () => {
+    // S8P2: a shared end drops its (50 + 50c) from the ledger. With c = 2 the
+    // per-end cost is 50 + 100 = 150 MW; both ends = 300, one = 150, zero = 0.
+    const args = [Fraction.from(1000), cargoPerCar, optimalRtdSeconds] as const;
+    const both = trainOptions(...args, { beltFeed, countedEnds: 2 });
+    const one = trainOptions(...args, { beltFeed, countedEnds: 1 });
+    const none = trainOptions(...args, { beltFeed, countedEnds: 0 });
+
+    // The c = 2 row's station power halves then zeroes across the three.
+    expect(both[1]?.stationPowerMw.eq(Fraction.from(300))).toBe(true);
+    expect(one[1]?.stationPowerMw.eq(Fraction.from(150))).toBe(true);
+    expect(none[1]?.stationPowerMw.eq(Fraction.from(0))).toBe(true);
+
+    // Default (opts without countedEnds) is both ends — unchanged from before.
+    const dflt = trainOptions(...args, { beltFeed });
+    expect(dflt[1]?.stationPowerMw.eq(Fraction.from(300))).toBe(true);
+  });
+
+  it("countedEnds leaves throughput / nTrains / ceiling / locos INVARIANT", () => {
+    // The end count is a power-attribution knob only; every other row field is
+    // end-count-independent, so the three variants agree field-for-field.
+    const args = [Fraction.from(1000), cargoPerCar, optimalRtdSeconds] as const;
+    const both = trainOptions(...args, { beltFeed, countedEnds: 2 });
+    const one = trainOptions(...args, { beltFeed, countedEnds: 1 });
+    const none = trainOptions(...args, { beltFeed, countedEnds: 0 });
+    for (let i = 0; i < both.length; i++) {
+      const [b, o, n] = [both[i]!, one[i]!, none[i]!];
+      expect(o.nTrains).toBe(b.nTrains);
+      expect(n.nTrains).toBe(b.nTrains);
+      expect(o.locosSuggested).toBe(b.locosSuggested);
+      expect(o.throughput.eq(b.throughput)).toBe(true);
+      expect(n.throughput.eq(b.throughput)).toBe(true);
+      expect(o.perPlatformCeiling.eq(b.perPlatformCeiling)).toBe(true);
+      expect(n.perPlatformCeiling.eq(b.perPlatformCeiling)).toBe(true);
+      expect(o.ceilingBound).toBe(b.ceilingBound);
+      expect(n.ceilingBound).toBe(b.ceilingBound);
+    }
+  });
+
   it("stack-50 per-platform ceiling = EXACT 800000/559 from the 27.08 s constant", () => {
     // At the optimal RtD the belt term and capacity term coincide; the exact
     // fraction the 27.08 s constant yields is 800000/559. This rounds to 1431.13

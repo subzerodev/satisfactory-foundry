@@ -209,9 +209,11 @@ export interface TrainOption {
   /** Trains needed: `ceil(rate × T_round / (c × cargoPerCar × 60))`. */
   nTrains: number;
   /**
-   * Station power in MW for BOTH route ends: `2 × (50 + 50 × c)` — one 50 MW
-   * Train Station + c 50 MW platforms at each end (symmetric station set,
-   * Assumption #6).
+   * Station power in MW for the COUNTED ends: `countedEnds × (50 + 50 × c)` —
+   * one 50 MW Train Station + c 50 MW platforms at each counted end. Default is
+   * both ends (`countedEnds = 2`, the symmetric station set, Assumption #6); a
+   * per-end override (S8P2 `sharedEnds`) excludes a shared end whose station set
+   * is billed elsewhere, so this counts only the ends THIS link owns.
    */
   stationPowerMw: Fraction;
   /** Locomotives suggested for a flat haul: `ceil(c / 13)` guidance. */
@@ -245,6 +247,13 @@ export interface TrainOptions {
    * absent it, the belt term is treated as unbounded and never binds.
    */
   beltFeed?: Fraction;
+  /**
+   * Route ends whose station set THIS link's power ledger carries. Default 2
+   * (both ends, the symmetric station set). A shared end (billed elsewhere) is
+   * excluded by the derive layer, lowering this to 1 or 0 — scaling only
+   * `stationPowerMw` (throughput/nTrains/ceiling are end-count-independent).
+   */
+  countedEnds?: 0 | 1 | 2;
 }
 
 /**
@@ -263,6 +272,7 @@ export function trainOptions(
 ): TrainOption[] {
   const maxCars = opts.maxCars ?? FLAT_HAUL_CARS_PER_LOCO;
   const beltFeed = opts.beltFeed ?? null;
+  const countedEnds = Fraction.from(opts.countedEnds ?? 2);
   const options: TrainOption[] = [];
   for (let c = 1; c <= maxCars; c++) {
     const cFrac = Fraction.from(c);
@@ -278,10 +288,11 @@ export function trainOptions(
       .mul(consistCargo)
       .mul(SECONDS_PER_MINUTE)
       .div(roundTripSeconds);
-    // stationPowerMw = 2 × (station + c × platform), both ends.
+    // stationPowerMw = countedEnds × (station + c × platform). countedEnds
+    // defaults to 2 (both ends); a shared end lowers it (S8P2 sharedEnds).
     const stationPowerMw = TRAIN_STATION_POWER_MW.add(
       FREIGHT_PLATFORM_POWER_MW.mul(cFrac),
-    ).mul(Fraction.from(2));
+    ).mul(countedEnds);
     // locosSuggested = ceil(c / 13)
     const locosSuggested = Number(
       Fraction.from(c).ceilDiv(Fraction.from(FLAT_HAUL_CARS_PER_LOCO)),
