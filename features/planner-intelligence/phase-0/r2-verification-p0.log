@@ -1,0 +1,137 @@
+# R2 bidirectionality verification — Stage 8 / Phase 0 (hygiene: #28 + #34)
+
+Per the R2 rule: for each distinct behavior a new test pins, mutate the
+implementation to break exactly that behavior, run vitest, and record the
+GENUINE failure (proving the test discriminates real behavior, not a
+tautology). Every mutation was reverted immediately (`git checkout`); the
+working tree returned clean after each. Baseline before this work: 567 tests;
+after (additive #28 + #34 tests): 575 tests, all green.
+
+Commands run from the worktree:
+`/home/subzerodev/workspace/satisfactory-foundry/.worktrees/planner-p0`.
+
+---
+
+## #28 — null-prototype catalog maps
+
+### B1 — parse boundary seeds null-proto (docs-loader)
+
+Mutation: revert the `items` seed in `parseDocsJson` from
+`Object.create(null)` back to a plain `{}` literal.
+
+Test: `npx vitest run src/data/docs-loader.test.ts -t "null-prototype maps resist"`
+
+Genuine FAIL:
+
+```
+ ❯ src/data/docs-loader.test.ts (27 tests | 2 failed | 24 skipped)
+   × misses cleanly on an absent id — no lookup resolves an Object.prototype member
+   × builds all three maps with a null prototype
+ FAIL  src/data/docs-loader.test.ts > parseDocsJson — null-prototype maps resist prototype-key collision (#28) > misses cleanly on an absent id — no lookup resolves an Object.prototype member
+ FAIL  src/data/docs-loader.test.ts > parseDocsJson — null-prototype maps resist prototype-key collision (#28) > builds all three maps with a null prototype
+      Tests  2 failed | 1 passed | 24 skipped (27)
+```
+
+The plain-`{}` seed makes `cat.items["nonexistent"]` resolve
+`Object.prototype`'s `constructor` function (and fails the null-proto
+assertion) — exactly the collision the fix prevents.
+
+### B2 — revive boundary re-nulls after structured clone (catalog-store)
+
+Mutation: revert the `items` rebuild in `reviveCatalog` from
+`Object.create(null)` back to a plain `{}` literal.
+
+Test: `npx vitest run src/data/catalog-store.test.ts -t "null-prototype maps survive revive"`
+
+Genuine FAIL:
+
+```
+ ❯ src/data/catalog-store.test.ts (10 tests | 1 failed | 9 skipped)
+   × revived items/machines/recipes maps have a null prototype
+ FAIL  src/data/catalog-store.test.ts > catalog cache — null-prototype maps survive revive (#28) > revived items/machines/recipes maps have a null prototype
+      Tests  1 failed | 9 skipped (10)
+```
+
+IDB structured clone yields plain-proto objects; without the re-null on
+revive the loaded catalog's maps carry `Object.prototype` again. The
+save→load round-trip test pins the second build boundary independently of
+the parse boundary.
+
+---
+
+## #34 — planForLink resolver
+
+All #34 mutations target `src/ui/graph-flow.ts` (`planForLink`) and run
+`npx vitest run src/ui/graph-flow.test.ts -t "planForLink"`.
+
+### B3 — null EXACTLY when the item is missing
+
+Mutation: change the missing-item guard from `return null` to
+`return { kind: "unsolved", mode: "belt" }` (a non-null plan).
+
+Genuine FAIL:
+
+```
+   × returns null EXACTLY when the item is missing from the catalog
+ FAIL  src/ui/graph-flow.test.ts > planForLink (#34) > returns null EXACTLY when the item is missing from the catalog
+      Tests  1 failed | 3 passed | 29 skipped (33)
+```
+
+### B4 — an unsolved rate flows THROUGH as { kind: "unsolved" }, never null
+
+Mutation: add `const r = linkRequiredRate(...); if (r === null) return null;`
+before the `computeLinkTransport` call (the v1 defect the r1 reviewers
+caught — null-on-unsolved erases the inspector's "solve both stages to size
+the fleet" line).
+
+Genuine FAIL:
+
+```
+   × passes an unsolved rate THROUGH as { kind: 'unsolved' }, never null
+ FAIL  src/ui/graph-flow.test.ts > planForLink (#34) > passes an unsolved rate THROUGH as { kind: 'unsolved' }, never null
+      Tests  1 failed | 3 passed | 29 skipped (33)
+```
+
+### B5 — the belt default resolves (null-on-belt would erase the belt fleet lines)
+
+Mutation: add `if (link.transport === undefined) return null;` before the
+`computeLinkTransport` call (the belt-erasing defect the design boundary
+forbids).
+
+Genuine FAIL:
+
+```
+   × resolves the belt default for an absent-transport link (not null)
+ FAIL  src/ui/graph-flow.test.ts > planForLink (#34) > resolves the belt default for an absent-transport link (not null)
+      Tests  1 failed | 3 passed | 29 skipped (33)
+```
+
+### B6 — a configured mode resolves identically to the hand-built preamble
+
+Mutation: pass a hard-coded `{ mode: "belt" }` in place of the link's own
+`link.transport`, so the resolved plan's `kind` diverges (continuous vs the
+vehicle plan the preamble builds).
+
+Genuine FAIL:
+
+```
+   × resolves a vehicle mode identically to the hand-built preamble
+ FAIL  src/ui/graph-flow.test.ts > planForLink (#34) > resolves a vehicle mode identically to the hand-built preamble
+      Tests  1 failed | 3 passed | 29 skipped (33)
+```
+
+Note (recorded honesty): a FIRST B6 attempt — scaling the rate by 2× inside
+planForLink — did NOT fail this test, because the fixture's 600/min demand
+fits one truck at both 600 and 1200/min, so the vehicle plan is identical.
+The passing (non-)FAIL was rejected and the mutation replaced with the
+transport-mode override above, which discriminates cleanly. The equality
+assertion IS sensitive to the transport arg (the load-bearing part of the
+fold), just not to a rate scaling small enough to round to the same fleet.
+
+---
+
+## Post-verification state
+
+Tree clean after every revert (`git status --short` empty). Full suite green:
+`npx vitest run` → 575 passed (23 files); `npm run check` → clean (tsc +
+eslint + prettier).
