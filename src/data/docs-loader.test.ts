@@ -108,16 +108,18 @@ describe("parseDocsJson — items + machines + shape (spec row 1)", () => {
     ]);
   });
 
-  it("extracts machines with id + displayName only (no power)", () => {
+  it("extracts machines with id + displayName + power (no power fields → zero-draw)", () => {
     const cat = parseDocsJson(DOCS_FRAGMENT);
-    expect(cat.machines["smelter_mk1"]).toEqual({
-      id: "smelter_mk1",
-      displayName: "Smelter",
-    });
-    expect(cat.machines["oil_refinery"]).toEqual({
-      id: "oil_refinery",
-      displayName: "Refinery",
-    });
+    // The DOCS_FRAGMENT machines carry no power keys → branch 3 (mw 0, not
+    // variable), with the default exponent. Named-value assertions on the real
+    // three branches live in the "machine power" describe below.
+    expect(cat.machines["smelter_mk1"]!.id).toBe("smelter_mk1");
+    expect(cat.machines["smelter_mk1"]!.displayName).toBe("Smelter");
+    expect(cat.machines["smelter_mk1"]!.power.mw.eq(Fraction.from(0))).toBe(
+      true,
+    );
+    expect(cat.machines["smelter_mk1"]!.power.variable).toBe(false);
+    expect(cat.machines["oil_refinery"]!.displayName).toBe("Refinery");
   });
 
   it("attaches the shared TIER_TABLE to the catalog", () => {
@@ -336,5 +338,129 @@ describe("parseDocsJson — ported filters (spec row 4)", () => {
     expect(cat.items["pattern_remover"]).toBeUndefined();
     expect(cat.items["wall"]).toBeUndefined();
     expect(cat.items["truck"]).toBeUndefined();
+  });
+});
+
+// The three power-parse branches (frozen Axis 1 + Axis 5). Field names and
+// values are the VERBATIM game keys/values read from public/bundled-docs/
+// en-US.json at implementation (Steam build 23855724, extracted 2026-08-03):
+//   Build_ConstructorMk1_C  mPowerConsumption "4.000000", exp "1.321929"
+//   Build_MinerMk1_C        mPowerConsumption "5.000000", exp "1.321929"
+//   Build_HadronCollider_C  mPowerConsumption "0.000000", exp "1.321929",
+//                           min "250.000000", max "1500.000000"
+//   Build_GeneratorCoal_C   mPowerConsumption "0.000000" (present-as-0),
+//                           exp "1.600000"
+const POWER_FRAGMENT = [
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'",
+    Classes: [
+      {
+        ClassName: "Build_ConstructorMk1_C",
+        mDisplayName: "Constructor",
+        mPowerConsumption: "4.000000",
+        mPowerConsumptionExponent: "1.321929",
+      },
+    ],
+  },
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableResourceExtractor'",
+    Classes: [
+      {
+        ClassName: "Build_MinerMk1_C",
+        mDisplayName: "Miner Mk.1",
+        mPowerConsumption: "5.000000",
+        mPowerConsumptionExponent: "1.321929",
+      },
+    ],
+  },
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturerVariablePower'",
+    Classes: [
+      {
+        ClassName: "Build_HadronCollider_C",
+        mDisplayName: "Particle Accelerator",
+        mPowerConsumption: "0.000000",
+        mPowerConsumptionExponent: "1.321929",
+        mEstimatedMininumPowerConsumption: "250.000000", // game's own "Mininum" typo
+        mEstimatedMaximumPowerConsumption: "1500.000000",
+      },
+    ],
+  },
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableGeneratorFuel'",
+    Classes: [
+      {
+        ClassName: "Build_GeneratorCoal_C",
+        mDisplayName: "Coal-Powered Generator",
+        mPowerConsumption: "0.000000", // present-as-0: generators PRODUCE power
+        mPowerConsumptionExponent: "1.600000",
+      },
+    ],
+  },
+];
+
+describe("parseDocsJson — machine power (spec Axis 5)", () => {
+  it("branch 1: constant manufacturer — Constructor draws EXACTLY 4 MW, exp 1321929/1000000", () => {
+    const cat = parseDocsJson(POWER_FRAGMENT);
+    const p = cat.machines["constructor_mk1"]!.power;
+    expect(p.mw.eq(Fraction.from(4))).toBe(true);
+    expect(p.variable).toBe(false);
+    expect(p.minMw).toBeUndefined();
+    expect(p.maxMw).toBeUndefined();
+    // Exponent verbatim, per machine — 1.321929 = 1321929/1000000 exact.
+    expect(p.exponent.eq(Fraction.of(1321929, 1000000))).toBe(true);
+  });
+
+  it("branch 1: constant EXTRACTOR — Miner Mk1 draws EXACTLY 5 MW (a miner regression to 0 must fail)", () => {
+    const cat = parseDocsJson(POWER_FRAGMENT);
+    const p = cat.machines["miner_mk1"]!.power;
+    expect(p.mw.eq(Fraction.from(5))).toBe(true);
+    expect(p.variable).toBe(false);
+  });
+
+  it("branch 2: variable — Particle Accelerator mw is the EXACT midpoint 875, bounds kept", () => {
+    const cat = parseDocsJson(POWER_FRAGMENT);
+    const p = cat.machines["hadron_collider"]!.power;
+    // (250 + 1500) / 2 = 875, exact.
+    expect(p.mw.eq(Fraction.from(875))).toBe(true);
+    expect(p.variable).toBe(true);
+    expect(p.minMw!.eq(Fraction.from(250))).toBe(true);
+    expect(p.maxMw!.eq(Fraction.from(1500))).toBe(true);
+    expect(p.exponent.eq(Fraction.of(1321929, 1000000))).toBe(true);
+  });
+
+  it("branch 3: generator — present-as-0 mPowerConsumption → mw 0, not variable, exp 1.6", () => {
+    const cat = parseDocsJson(POWER_FRAGMENT);
+    const p = cat.machines["generator_coal"]!.power;
+    expect(p.mw.eq(Fraction.from(0))).toBe(true);
+    expect(p.variable).toBe(false);
+    expect(p.minMw).toBeUndefined();
+    // Exponent non-uniformity: generators carry 1.6, not the majority 1.321929.
+    expect(p.exponent.eq(Fraction.of(16, 10))).toBe(true);
+  });
+
+  it("missing exponent key → the documented 1321929/1000000 default (never a rejection)", () => {
+    const frag = [
+      {
+        NativeClass:
+          "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'",
+        Classes: [
+          {
+            ClassName: "Build_NoExp_C",
+            mDisplayName: "No Exponent",
+            mPowerConsumption: "10.000000",
+            // mPowerConsumptionExponent deliberately absent
+          },
+        ],
+      },
+    ];
+    const cat = parseDocsJson(frag);
+    const p = cat.machines["no_exp"]!.power;
+    expect(p.mw.eq(Fraction.from(10))).toBe(true);
+    expect(p.exponent.eq(Fraction.of(1321929, 1000000))).toBe(true);
   });
 });

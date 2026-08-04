@@ -24,7 +24,15 @@ function sampleCatalog(): Catalog {
       },
     },
     machines: {
-      smelter_mk1: { id: "smelter_mk1", displayName: "Smelter" },
+      smelter_mk1: {
+        id: "smelter_mk1",
+        displayName: "Smelter",
+        power: {
+          mw: Fraction.from(4),
+          variable: false,
+          exponent: Fraction.of(1321929, 1000000),
+        },
+      },
     },
     recipes: {
       ingot_iron: {
@@ -64,6 +72,12 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     expect(rate.eq(Fraction.of(75, 2))).toBe(true);
     const out = result.catalog.recipes["ingot_iron"]!.outputs[0]!.perMinute;
     expect(out.eq(Fraction.from(30))).toBe(true);
+    // Machine power Fractions survive the serialize/revive round-trip as real
+    // Fractions (structured-clone would otherwise strip the prototype).
+    const power = result.catalog.machines["smelter_mk1"]!.power;
+    expect(power.mw.eq(Fraction.from(4))).toBe(true);
+    expect(power.variable).toBe(false);
+    expect(power.exponent.eq(Fraction.of(1321929, 1000000))).toBe(true);
     // Non-Fraction fields survive too; tiers are the curated table.
     expect(result.catalog.items["ore_iron"]!.displayName).toBe("Iron Ore");
     expect(result.catalog.tiers).toBe(TIER_TABLE);
@@ -80,6 +94,17 @@ describe("catalog cache — round-trip (spec row 7)", () => {
 
   it("returns empty when nothing is stored", async () => {
     expect((await loadCatalog()).status).toBe("empty");
+  });
+
+  it("treats a version-1 cached row as stale under version 2 (the power-fields bump)", async () => {
+    // A pre-Stage-6 row (parser_version 1, machines lacking power) must be
+    // discarded, not revived — the frozen Axis 2 stale-and-discard behavior.
+    await saveCatalog("raw", sampleCatalog());
+    const db = await openDb();
+    const stored = await db.get<Record<string, unknown>>("catalog", "current");
+    await db.put("catalog", { ...stored, parser_version: 1 }, "current");
+    expect(CATALOG_PARSER_VERSION).toBe(2);
+    expect((await loadCatalog()).status).toBe("stale");
   });
 
   it("returns stale (never throws) on a parser-version mismatch", async () => {
@@ -197,7 +222,11 @@ function serializedSample() {
       },
     },
     machines: {
-      smelter_mk1: { id: "smelter_mk1", displayName: "Smelter" },
+      smelter_mk1: {
+        id: "smelter_mk1",
+        displayName: "Smelter",
+        power: { mw: "4", variable: false, exponent: "1321929/1000000" },
+      },
     },
     recipes: {
       ingot_iron: {

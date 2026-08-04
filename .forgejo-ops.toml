@@ -26,3 +26,5 @@ extra = ["epic", "blocked"]    # stage:N labels are generated from [stages]
 "3" = "Stage 3 — Chained stages (graph editor)"
 "4" = "Stage 4 — Physical layout layer"
 "5" = "Stage 5 — Polish round"
+"6" = "Stage 6 — Chain-aware helpers"
+"7" = "Stage 7 — Logistics: combined blueprint + transport planning"

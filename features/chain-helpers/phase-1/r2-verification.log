@@ -1,0 +1,72 @@
+# Stage 6 / Phase 1 — bidirectionality verification log
+
+Method (per family): apply a surgical BREAK to the source under test, run the
+targeted suite to confirm a GENUINE failure that NAMES the new test(s), then
+restore the source and confirm the suite is green again. A test that stays green
+under its own break would be vacuous; every family below fails loudly when its
+invariant is broken and passes once restored.
+
+Baseline before this phase: 395 passing. After: 425 passing (+30).
+
+Families exercised:
+  - parse branch-1 (constant draw: Constructor 4MW / Miner Mk1 5MW)
+  - parse branch-2 (variable midpoint: Particle Accelerator 875 = (250+1500)/2)
+  - parse branch-3 (generator zero-draw, present-as-0)
+  - version stale (CATALOG_PARSER_VERSION 1→2 discards v1 rows)
+  - export shape (exportPlan returns the stored/migrated v2 JSON)
+  - import name guard + collision (trim, empty-refusal, trimmed-form match)
+
+------------------------------------------------------------------------------
+
+=== FAMILY: parse branch-1 constant (BREAK: constant mw → 0) ===
+     × branch 1: constant manufacturer — Constructor draws EXACTLY 4 MW, exp 1321929/1000000 3ms
+     × branch 1: constant EXTRACTOR — Miner Mk1 draws EXACTLY 5 MW (a miner regression to 0 must fail) 0ms
+     × missing exponent key → the documented 1321929/1000000 default (never a rejection) 0ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/docs-loader.test.ts > parseDocsJson — machine power (spec Axis 5) > branch 1: constant manufacturer — Constructor draws EXACTLY 4 MW, exp 1321929/1000000
+ FAIL  src/data/docs-loader.test.ts > parseDocsJson — machine power (spec Axis 5) > branch 1: constant EXTRACTOR — Miner Mk1 draws EXACTLY 5 MW (a miner regression to 0 must fail)
+ FAIL  src/data/docs-loader.test.ts > parseDocsJson — machine power (spec Axis 5) > missing exponent key → the documented 1321929/1000000 default (never a rejection)
+      Tests  3 failed | 18 passed (21)
+--- RESTORED ---
+      Tests  21 passed (21)
+
+=== FAMILY: parse branch-2 variable midpoint (BREAK: mw = minMw, not midpoint) ===
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/docs-loader.test.ts > parseDocsJson — machine power (spec Axis 5) > branch 2: variable — Particle Accelerator mw is the EXACT midpoint 875, bounds kept
+      Tests  1 failed | 20 passed (21)
+--- RESTORED:       Tests  21 passed (21) ---
+
+=== FAMILY: parse branch-3 generator (BREAK: zero-draw variable=true) ===
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/docs-loader.test.ts > parseDocsJson — items + machines + shape (spec row 1) > extracts machines with id + displayName + power (no power fields → zero-draw)
+ FAIL  src/data/docs-loader.test.ts > parseDocsJson — machine power (spec Axis 5) > branch 3: generator — present-as-0 mPowerConsumption → mw 0, not variable, exp 1.6
+      Tests  2 failed | 19 passed (21)
+--- RESTORED:       Tests  21 passed (21) ---
+
+=== FAMILY: version stale (BREAK: CATALOG_PARSER_VERSION back to 1) ===
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/catalog-store.test.ts > catalog cache — round-trip (spec row 7) > treats a version-1 cached row as stale under version 2 (the power-fields bump)
+      Tests  1 failed | 8 passed (9)
+--- RESTORED:       Tests  9 passed (9) ---
+
+=== FAMILY: export shape (BREAK: exportPlan always returns null) ===
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > plan export/import (Stage 6 / Phase 1) > exportPlan returns the stored v2 JSON verbatim (re-parses to the saved file)
+ FAIL  src/state/store.test.ts > plan export/import (Stage 6 / Phase 1) > exportPlan emits the MIGRATED v2 form for a stored v1 row
+ FAIL  src/state/store.test.ts > plan export/import (Stage 6 / Phase 1) > import round-trip under a NEW name → identical content, fresh id, createdAt now
+      Tests  3 failed | 101 passed (104)
+--- RESTORED:       Tests  104 passed (104) ---
+
+=== FAMILY: import name guard/collision (BREAK: import name un-trimmed) ===
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > plan export/import (Stage 6 / Phase 1) > untrimmed '  Target  ' collides with existing 'Target' (trimmed-form match)
+ FAIL  src/state/store.test.ts > plan export/import (Stage 6 / Phase 1) > empty/whitespace payload name → planError, nothing written
+      Tests  2 failed | 102 passed (104)
+--- RESTORED:       Tests  104 passed (104) ---
+
+=== FAMILY: import empty-name refusal (BREAK: empty guard disabled) ===
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > plan export/import (Stage 6 / Phase 1) > empty/whitespace payload name → planError, nothing written
+      Tests  1 failed | 103 passed (104)
+--- RESTORED:       Tests  104 passed (104) ---
+

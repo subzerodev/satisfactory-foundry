@@ -1,10 +1,5 @@
 import type { Fraction } from "../core/fraction.ts";
-import type {
-  Catalog,
-  CatalogItem,
-  CatalogMachine,
-  RecipeIO,
-} from "./types.ts";
+import type { Catalog, CatalogItem, MachinePower, RecipeIO } from "./types.ts";
 import { TIER_TABLE } from "./tiers.ts";
 import { parseRational } from "./stage-input.ts";
 import { openDb } from "./db.ts";
@@ -15,9 +10,15 @@ const CATALOG_KEY = "current";
 /**
  * Bump when the parser schema changes in a way that invalidates previously
  * cached catalogs. A reader that sees a mismatch treats the cache as stale and
- * re-uploads Docs.json. Starts at 1 (Phase 2).
+ * re-uploads Docs.json. Started at 1 (Phase 2).
+ *
+ * 1 → 2 (Stage 6 / Phase 1): machines now carry a `power` struct. The bump
+ * DISCARDS every version-1 cached parse (no raw source is stored, only a hash —
+ * there is no re-parse-from-source): bundled-catalog users re-parse invisibly on
+ * next boot; an uploaded-Docs user falls back to bundled and re-uploads once.
+ * The stale honesty note in the frozen brainstorm (Axis 2) is deliberate.
  */
-export const CATALOG_PARSER_VERSION = 1;
+export const CATALOG_PARSER_VERSION = 2;
 
 /** JSON-safe RecipeIO — the Fraction is serialized via toString(). */
 interface StoredRecipeIO {
@@ -33,11 +34,27 @@ interface StoredRecipe {
   outputs: StoredRecipeIO[];
   primaryOutputId: string;
 }
+/** JSON-safe machine power: every Fraction is a toString() string; optional
+ *  bounds stay optional. */
+interface StoredMachinePower {
+  mw: string;
+  variable: boolean;
+  minMw?: string;
+  maxMw?: string;
+  exponent: string;
+}
+/** JSON-safe machine: id + name plus the stringified power struct. Machines
+ *  now carry Fractions (power), so — like recipes — they can't be stored raw. */
+interface StoredCatalogMachine {
+  id: string;
+  displayName: string;
+  power: StoredMachinePower;
+}
 /** JSON-safe catalog: every Fraction is a toString() string. Tiers are NOT
  *  stored — they are always TIER_TABLE, rebuilt on revive. */
 interface StoredCatalogData {
   items: Record<string, CatalogItem>;
-  machines: Record<string, CatalogMachine>;
+  machines: Record<string, StoredCatalogMachine>;
   recipes: Record<string, StoredRecipe>;
 }
 
@@ -146,11 +163,30 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
       primaryOutputId: r.primaryOutputId,
     };
   }
-  return { items: catalog.items, machines: catalog.machines, recipes };
+  const machines: Record<string, StoredCatalogMachine> = {};
+  for (const [id, m] of Object.entries(catalog.machines)) {
+    machines[id] = {
+      id: m.id,
+      displayName: m.displayName,
+      power: serializePower(m.power),
+    };
+  }
+  return { items: catalog.items, machines, recipes };
 }
 
 function serializeIO(io: RecipeIO): StoredRecipeIO {
   return { itemId: io.itemId, perMinute: io.perMinute.toString() };
+}
+
+function serializePower(p: MachinePower): StoredMachinePower {
+  return {
+    mw: p.mw.toString(),
+    variable: p.variable,
+    // Optional bounds omitted (not null) when absent, matching the in-memory shape.
+    ...(p.minMw !== undefined ? { minMw: p.minMw.toString() } : {}),
+    ...(p.maxMw !== undefined ? { maxMw: p.maxMw.toString() } : {}),
+    exponent: p.exponent.toString(),
+  };
 }
 
 function reviveCatalog(data: StoredCatalogData): Catalog {
@@ -175,10 +211,18 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
       primaryOutputId: r.primaryOutputId,
     };
   }
+  const machines: Catalog["machines"] = {};
+  for (const [id, m] of Object.entries(data.machines)) {
+    machines[id] = {
+      id: m.id,
+      displayName: m.displayName,
+      power: revivePower(m.power),
+    };
+  }
   // Tiers are always the curated table, never round-tripped through storage.
   return {
     items: data.items,
-    machines: data.machines,
+    machines,
     recipes,
     tiers: TIER_TABLE,
   };
@@ -187,6 +231,18 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
 function reviveIO(io: StoredRecipeIO): RecipeIO {
   const perMinute: Fraction = parseRational(io.perMinute);
   return { itemId: io.itemId, perMinute };
+}
+
+function revivePower(p: StoredMachinePower): MachinePower {
+  // parseRational throws on a malformed rational → reviveCatalog's caller maps
+  // the throw to 'stale', matching the recipe-IO reviver's corruption posture.
+  return {
+    mw: parseRational(p.mw),
+    variable: p.variable,
+    ...(p.minMw !== undefined ? { minMw: parseRational(p.minMw) } : {}),
+    ...(p.maxMw !== undefined ? { maxMw: parseRational(p.maxMw) } : {}),
+    exponent: parseRational(p.exponent),
+  };
 }
 
 async function sha256Hex(text: string): Promise<string> {

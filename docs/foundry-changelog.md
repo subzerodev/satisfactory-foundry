@@ -3,6 +3,37 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-04 — Stage 6 complete: the chain explains itself
+
+> Hey Michael — the math you were doing in your head is on screen now.
+> When a feed runs short, the wire says exactly how many machines fix
+> it — "short 102.5/min · ×19 covers it" — and if one stage feeds the
+> same item to several others, it says "×19 total" so you know it's
+> the whole load. Capacity warnings now tell you the cheapest way out:
+> your Mk1 Plastic bus says "unlocking Mk2 (120/min) would raise the
+> bus above this peak" — and it only ever promises what the math can
+> prove. And the wattage is everywhere it should be: each stage card
+> shows its draw (exact at 100% — your 14 Manufacturers pull exactly
+> 770 MW), overclocked stages show an honest ≈, the odd machines like
+> the Particle Accelerator show their swing range, and the canvas
+> totals the whole chain. That's the helpers batch done — next up:
+> the logistics arc you asked for.
+
+## 2026-08-04 — Stage 6, Phase 1: plans travel + the app learns wattage
+
+> Hey Michael — two quiet foundations landed. Your plans can now leave
+> the browser: an Export button next to each saved plan downloads it as
+> a small JSON file, and Import brings one back in — share them, back
+> them up, move machines. A broken or hand-mangled file gets refused
+> with a plain message and never touches what you have. And under the
+> hood the app now knows what every machine costs to run — real
+> megawatt numbers for all twenty buildings, pulled from the game's own
+> data, including the weird ones like the Particle Accelerator whose
+> draw swings between 250 and 1500 MW. You can't see the power numbers
+> yet: the next update puts them on the stage cards, along with the
+> "how many machines do I actually need" suggestions and fix hints on
+> capacity warnings.
+
 ## 2026-08-04 — Stage 5 complete: the polish round — and that's the whole plan
 
 > Hey Michael — the finishing touches are in, and with them every stage

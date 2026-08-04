@@ -84,9 +84,15 @@ const catalog: Catalog = {
   tiers: { belt: [], pipe: [] },
 };
 
-/** A solved SolveState carrying the given output/feed totals for one item. */
+/** A solved SolveState carrying the given output/feed totals for one item. The
+ *  optional `perMachineOutput` on an output lane feeds the fan-out suggestion
+ *  (Stage 6 P2); it defaults to 0 for callers that only need totals. */
 function solvedWith(opts: {
-  outputs?: { itemId: string; totalOutput: Fraction }[];
+  outputs?: {
+    itemId: string;
+    totalOutput: Fraction;
+    perMachineOutput?: Fraction;
+  }[];
   feeds?: { itemId: string; totalDemand: Fraction }[];
 }): SolveState {
   return {
@@ -106,7 +112,7 @@ function solvedWith(opts: {
       outputs: (opts.outputs ?? []).map((o) => ({
         itemId: o.itemId,
         kind: "belt" as const,
-        perMachineOutput: Fraction.from(0),
+        perMachineOutput: o.perMachineOutput ?? Fraction.from(0),
         totalOutput: o.totalOutput,
         breakouts: [],
         segments: [],
@@ -423,5 +429,241 @@ describe("graphToFlow — edges", () => {
     ];
     const { edges } = graphToFlow(catalog, base, order, oddLinks, [], pos, "a");
     expect(edges[0]!.label).toBe("unknown_item · ok");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// graphToFlow — the match-demand suggestion on under-supplied edges (Stage 6
+// P2). These pin the graph-flow WIRING (the fan-out aggregation + wording),
+// NOT suggestSupply's arithmetic — that is advice.test.ts's job (the layering
+// pin, simplify NIT 3: no fourth row re-asserting the ceilDiv).
+// ---------------------------------------------------------------------------
+
+describe("graphToFlow — match-demand suggestion", () => {
+  const pos2 = {
+    p: { x: 0, y: 0 },
+    c: { x: 0, y: 0 },
+    c2: { x: 0, y: 0 },
+  };
+
+  it("single consumer: under-supply label gains '×N covers it'", () => {
+    // Producer p outputs iron_ingot at 7.5/machine; the sole consumer c demands
+    // 140/min. ceilDiv(140, 7.5) = 19 → "×19 covers it" (single consumer).
+    const p = stage(
+      "p",
+      "P",
+      "ingot",
+      1,
+      solvedWith({
+        outputs: [
+          {
+            itemId: "iron_ingot",
+            totalOutput: Fraction.from(30),
+            perMachineOutput: Fraction.of(15, 2),
+          },
+        ],
+      }),
+    );
+    const c = stage(
+      "c",
+      "C",
+      "plate",
+      1,
+      solvedWith({
+        feeds: [{ itemId: "iron_ingot", totalDemand: Fraction.from(140) }],
+      }),
+    );
+    const links: StageLink[] = [
+      { id: "L1", fromStageId: "p", itemId: "iron_ingot", toStageId: "c" },
+    ];
+    const reconciliation: LinkFinding[] = [
+      {
+        type: "under-supply",
+        linkId: "L1",
+        supply: Fraction.from(30),
+        demand: Fraction.from(140),
+        shortfall: Fraction.from(110),
+      },
+    ];
+    const { edges } = graphToFlow(
+      catalog,
+      { p, c },
+      ["p", "c"],
+      links,
+      reconciliation,
+      pos2,
+      "p",
+    );
+    expect(edges[0]!.label).toBe("Iron Ingot · short 110/min · ×19 covers it");
+    expect(edges[0]!.data.state).toBe("under-supply");
+  });
+
+  it("fan-out: N aggregates ALL sibling demands, wording is '×N total'", () => {
+    // Producer p fans iron_ingot to TWO consumers (100 + 140 = 240 total). At
+    // 7.5/machine, ceilDiv(240, 7.5) = 32. BOTH under-supplied edges show the
+    // same aggregate "×32 total" — never the per-link ceil (the fan-out fold).
+    const p = stage(
+      "p",
+      "P",
+      "ingot",
+      1,
+      solvedWith({
+        outputs: [
+          {
+            itemId: "iron_ingot",
+            totalOutput: Fraction.from(30),
+            perMachineOutput: Fraction.of(15, 2),
+          },
+        ],
+      }),
+    );
+    const c = stage(
+      "c",
+      "C",
+      "plate",
+      1,
+      solvedWith({
+        feeds: [{ itemId: "iron_ingot", totalDemand: Fraction.from(100) }],
+      }),
+    );
+    const c2 = stage(
+      "c2",
+      "C2",
+      "plate",
+      1,
+      solvedWith({
+        feeds: [{ itemId: "iron_ingot", totalDemand: Fraction.from(140) }],
+      }),
+    );
+    const links: StageLink[] = [
+      { id: "L1", fromStageId: "p", itemId: "iron_ingot", toStageId: "c" },
+      { id: "L2", fromStageId: "p", itemId: "iron_ingot", toStageId: "c2" },
+    ];
+    const reconciliation: LinkFinding[] = [
+      {
+        type: "under-supply",
+        linkId: "L1",
+        supply: Fraction.from(30),
+        demand: Fraction.from(100),
+        shortfall: Fraction.from(70),
+      },
+      {
+        type: "under-supply",
+        linkId: "L2",
+        supply: Fraction.from(30),
+        demand: Fraction.from(140),
+        shortfall: Fraction.from(110),
+      },
+    ];
+    const { edges } = graphToFlow(
+      catalog,
+      { p, c, c2 },
+      ["p", "c", "c2"],
+      links,
+      reconciliation,
+      pos2,
+      "p",
+    );
+    // ceilDiv(240, 7.5) = 32 — the SAME aggregate on both fan-out edges.
+    expect(edges[0]!.label).toBe("Iron Ingot · short 70/min · ×32 total");
+    expect(edges[1]!.label).toBe("Iron Ingot · short 110/min · ×32 total");
+  });
+
+  it("unsolved producer → the base under-supply label, no suggestion", () => {
+    // Producer p is recipe-less/idle: no output lane, so the suggestion is null
+    // and the edge shows only its base shortfall (the finding still fires
+    // because the consumer alone can't be the supply source — but the
+    // suggestion needs the producer's lane, which is absent).
+    const p = stage("p", "P", null, 1, { status: "idle" });
+    const c = stage(
+      "c",
+      "C",
+      "plate",
+      1,
+      solvedWith({
+        feeds: [{ itemId: "iron_ingot", totalDemand: Fraction.from(140) }],
+      }),
+    );
+    const links: StageLink[] = [
+      { id: "L1", fromStageId: "p", itemId: "iron_ingot", toStageId: "c" },
+    ];
+    const reconciliation: LinkFinding[] = [
+      {
+        type: "under-supply",
+        linkId: "L1",
+        supply: Fraction.from(0),
+        demand: Fraction.from(140),
+        shortfall: Fraction.from(140),
+      },
+    ];
+    const { edges } = graphToFlow(
+      catalog,
+      { p, c },
+      ["p", "c"],
+      links,
+      reconciliation,
+      pos2,
+      "p",
+    );
+    expect(edges[0]!.label).toBe("Iron Ingot · short 140/min");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// graphToFlow — the node powerText line (Stage 6 P2). Solved+powered only.
+// ---------------------------------------------------------------------------
+
+describe("graphToFlow — node powerText", () => {
+  // A catalog whose smelter machine carries power data (4 MW constant).
+  const poweredCatalog: Catalog = {
+    ...catalog,
+    machines: {
+      smelter: {
+        id: "smelter",
+        displayName: "Smelter",
+        power: {
+          mw: Fraction.from(4),
+          variable: false,
+          exponent: Fraction.of(1321929, 1000000),
+        },
+      },
+    },
+  };
+
+  it("solved stage on a powered machine → the exact power line", () => {
+    // recipe ingot → machineId "smelter" → 4 MW; ×20 at 100% clock = 80 MW.
+    const a = stage("a", "Smelting", "ingot", 20, solvedWith({}));
+    const { nodes } = graphToFlow(
+      poweredCatalog,
+      { a },
+      ["a"],
+      [],
+      [],
+      { a: { x: 0, y: 0 } },
+      "a",
+    );
+    expect(nodes[0]!.data.powerText).toBe("80 MW");
+  });
+
+  it("invalid (and idle/recipe-less) stage → powerText null", () => {
+    // An invalid solve never bills power (uniform with SummaryCards + Σ). The
+    // recipe-less idle stage is null too — no recipe, no machine, no power.
+    const bad = stage("bad", "Bad", "ingot", 20, {
+      status: "invalid",
+      reason: "bad-clock",
+      detail: "x",
+    });
+    const idle = stage("idle", "Idle", null, 1, { status: "idle" });
+    const { nodes } = graphToFlow(
+      poweredCatalog,
+      { bad, idle },
+      ["bad", "idle"],
+      [],
+      [],
+      { bad: { x: 0, y: 0 }, idle: { x: 0, y: 0 } },
+      "bad",
+    );
+    expect(nodes.find((n) => n.id === "bad")!.data.powerText).toBeNull();
+    expect(nodes.find((n) => n.id === "idle")!.data.powerText).toBeNull();
   });
 });

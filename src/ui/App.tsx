@@ -5,8 +5,11 @@ import {
   activeSelection,
   activeSolve,
 } from "../state/store.ts";
+import type { Selection, SolveState } from "../state/store.ts";
 import type { CatalogSource } from "../data/catalog-store.ts";
+import type { Catalog } from "../data/types.ts";
 import type { Finding, StageSolveResult } from "../core/manifold.ts";
+import { stagePowerTextFor } from "./advice.ts";
 import { fileToDocsText, fileFromDrop } from "./decode.ts";
 import { resolveInitialTheme } from "./theme.ts";
 import type { Theme } from "./theme.ts";
@@ -87,6 +90,46 @@ function anyOverride(overrides: {
   return sides.some((side) =>
     Object.values(side).some((arr) => arr.some((c) => c !== null)),
   );
+}
+
+/** Filesystem-unsafe characters (/ \ : * ? " < > |) → "-", so a plan name is a
+ *  legal filename across OSes. Frozen Axis 3 sanitization set. Exported for the
+ *  sanitization-table test. */
+export function sanitizeFilename(name: string): string {
+  return name.replace(/[/\\:*?"<>|]/g, "-");
+}
+
+/** Browser-only: trigger a download of `text` as `filename` via an object-URL
+ *  anchor. Guarded for headless (no document) so importing App never throws. */
+function downloadTextFile(text: string, filename: string): void {
+  if (typeof document === "undefined") return;
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * The active stage's power-draw line for SummaryCards (Stage 6 P2), or null.
+ * Non-null ONLY when the stage is solved and its recipe's machine carries power
+ * data — uniform with the canvas card + the chain Σ (recipe-less / idle /
+ * invalid → null). Clock is parsed from clockPercentText; a malformed value is
+ * unreachable at 'solved', but guarded to null defensively. Object.hasOwn (not
+ * `=== undefined`) guards the machine lookup: a machineId like "constructor"
+ * would otherwise resolve to an Object.prototype member.
+ */
+function activeStagePowerText(
+  catalog: Catalog,
+  selection: Selection,
+  solve: SolveState,
+): string | null {
+  // Delegates to the one test-pinned resolver (simplify fold).
+  return stagePowerTextFor(catalog, { selection, solve });
 }
 
 /** THE connected shell — the only file that touches the store. */
@@ -201,7 +244,30 @@ export default function App() {
     await s.uploadDocsText(await fileToDocsText(file));
   }
 
+  // Export: the store hands back the plan's pretty JSON (or null if the row is
+  // gone/corrupt); App does the browser-only Blob → anchor download. The
+  // filename is the plan's list name, filesystem-sanitized.
+  async function handleExport(id: string) {
+    const json = await s.exportPlan(id);
+    if (json === null) return; // missing/corrupt: nothing to download
+    const name = (s.plans ?? []).find((p) => p.id === id)?.name ?? "plan";
+    downloadTextFile(json, `${sanitizeFilename(name)}.foundry-plan.json`);
+  }
+
+  // Import: plan files are OUR OWN UTF-8 JSON exports, so file.text() is correct
+  // here — the S5 UTF-16 decodeBytes lesson is Docs.json-specific (do NOT
+  // "fix" this into fileToDocsText). The store validates + saves.
+  async function handleImport(file: File) {
+    await s.importPlan(await file.text());
+  }
+
   const recipes = Object.values(catalog.recipes);
+
+  // The active stage's power-draw line, prepared for SummaryCards (Stage 6 P2).
+  // Non-null ONLY when the active stage is solved and its recipe's machine
+  // carries power data — uniform with the canvas card + the chain Σ. The card
+  // stays dumb; App owns the helper call + the null gate.
+  const activePowerText = activeStagePowerText(catalog, selection, solve);
 
   return (
     <div className="app">
@@ -249,16 +315,28 @@ export default function App() {
         onLoad={s.loadPlan}
         onRename={s.renamePlan}
         onDelete={s.deletePlan}
+        onExport={(id) => void handleExport(id)}
+        onImport={(file) => void handleImport(file)}
       />
       {solve.status === "idle" && (
         <p className="empty-state">Pick a recipe to see its manifold.</p>
       )}
       {solve.status === "invalid" && (
-        <FindingsPanel solve={solve} findings={[]} itemName={itemName} />
+        <FindingsPanel
+          solve={solve}
+          findings={[]}
+          itemName={itemName}
+          tiers={catalog.tiers}
+          unlocked={selection.unlockedTiers}
+        />
       )}
       {solve.status === "solved" && (
         <>
-          <SummaryCards result={solve.result} itemName={itemName} />
+          <SummaryCards
+            result={solve.result}
+            itemName={itemName}
+            powerText={activePowerText}
+          />
           {/* The single view toggle (Axis 1), labelled with the TARGET view.
               It swaps only the schematic slot below; every other solve-facing
               panel stays. A null recipe can never reach "solved", so
@@ -304,6 +382,8 @@ export default function App() {
             solve={solve}
             findings={allFindings(solve.result)}
             itemName={itemName}
+            tiers={catalog.tiers}
+            unlocked={selection.unlockedTiers}
           />
         </>
       )}

@@ -2050,3 +2050,262 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     expect(raw.createdAt).toBe("2026-01-01T00:00:00.000Z");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Plan export / import (Stage 6 / Phase 1 — frozen Axis 3 + 4 + Axis 5 matrix)
+// ---------------------------------------------------------------------------
+
+describe("plan export/import (Stage 6 / Phase 1)", () => {
+  async function readyStore() {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    return store;
+  }
+
+  it("exportPlan returns the stored v2 JSON verbatim (re-parses to the saved file)", async () => {
+    const store = await readyStore();
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setClockPercentText("37.5");
+    await store.getState().savePlanAs("Exported");
+    const id = store.getState().plans![0]!.id;
+
+    const json = await store.getState().exportPlan(id);
+    expect(json).not.toBeNull();
+    const parsed = JSON.parse(json!) as PlanFileV2;
+    expect(parsed.format_version).toBe(2);
+    expect(parsed.name).toBe("Exported");
+    expect(parsed.stages[0]!.selection.recipeId).toBe("ingot_iron");
+    expect(parsed.stages[0]!.selection.clockPercentText).toBe("37.5");
+    // Pretty-printed (2-space indent), matching JSON.stringify(plan, null, 2).
+    expect(json).toContain('\n  "format_version": 2');
+  });
+
+  it("exportPlan on a missing id returns null (no throw)", async () => {
+    const store = await readyStore();
+    expect(await store.getState().exportPlan("does-not-exist")).toBeNull();
+  });
+
+  it("exportPlan emits the MIGRATED v2 form for a stored v1 row", async () => {
+    const store = await readyStore();
+    const db = await (await import("../data/db.ts")).openDb();
+    const v1: PlanFileV1 = {
+      format_version: 1,
+      name: "LegacyPlan",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+      stages: [
+        {
+          selection: {
+            recipeId: "ingot_iron",
+            machineCount: 1,
+            clockPercentText: "100",
+            unlockedTiers: { belt: 1, pipe: 1 },
+            overrides: { feeds: {}, outputs: {} },
+          },
+        },
+      ],
+      links: [],
+    };
+    await db.put("plans", v1, "legacy-id");
+
+    const json = await store.getState().exportPlan("legacy-id");
+    const parsed = JSON.parse(json!) as PlanFileV2;
+    // The export is what a LOAD would see: v2, one "Stage 1" stage, createdAt kept.
+    expect(parsed.format_version).toBe(2);
+    expect(parsed.name).toBe("LegacyPlan");
+    expect(parsed.stages[0]!.name).toBe("Stage 1");
+    expect(parsed.createdAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("import round-trip under a NEW name → identical content, fresh id, createdAt now", async () => {
+    const store = await readyStore();
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setClockPercentText("42");
+    await store.getState().savePlanAs("Original");
+    const srcId = store.getState().plans![0]!.id;
+    const json = (await store.getState().exportPlan(srcId))!;
+
+    // Rename the payload so it lands as a new row (not an overwrite).
+    const payload = JSON.parse(json) as PlanFileV2;
+    payload.name = "Imported";
+    payload.createdAt = "1999-12-31T00:00:00.000Z"; // untrusted foreign stamp
+    const before = new Date().toISOString();
+    await store.getState().importPlan(JSON.stringify(payload));
+
+    const rows = store.getState().plans!;
+    expect(rows.map((p) => p.name).sort()).toEqual(["Imported", "Original"]);
+    const imported = rows.find((p) => p.name === "Imported")!;
+    expect(imported.id).not.toBe(srcId); // fresh id
+    // createdAt is NOW (not the foreign 1999 stamp).
+    const db = await (await import("../data/db.ts")).openDb();
+    const stored = (await db.get<PlanFileV2>("plans", imported.id))!;
+    expect(stored.createdAt >= before).toBe(true);
+    expect(stored.stages[0]!.selection.clockPercentText).toBe("42");
+    expect(stored.stages[0]!.selection.recipeId).toBe("ingot_iron");
+  });
+
+  it("import OVER an existing name overwrites in place, preserving the row's createdAt", async () => {
+    const store = await readyStore();
+    store.getState().selectRecipe("ingot_iron");
+    await store.getState().savePlanAs("Target");
+    const targetId = store.getState().plans![0]!.id;
+    const db = await (await import("../data/db.ts")).openDb();
+    const originalCreatedAt = (await db.get<PlanFileV2>("plans", targetId))!
+      .createdAt;
+
+    // A payload named "Target" (collides) with different content + a foreign stamp.
+    const payload: PlanFileV2 = {
+      format_version: 2,
+      name: "Target",
+      createdAt: "1999-12-31T00:00:00.000Z",
+      updatedAt: "1999-12-31T00:00:00.000Z",
+      stages: [
+        {
+          name: "Stage 1",
+          selection: {
+            recipeId: "ingot_iron",
+            machineCount: 7,
+            clockPercentText: "250",
+            unlockedTiers: { belt: 1, pipe: 1 },
+            overrides: { feeds: {}, outputs: {} },
+          },
+        },
+      ],
+      links: [],
+    };
+    await store.getState().importPlan(JSON.stringify(payload));
+
+    // Still exactly one "Target" row, same id, createdAt preserved, content replaced.
+    expect(
+      store.getState().plans!.filter((p) => p.name === "Target"),
+    ).toHaveLength(1);
+    const stored = (await db.get<PlanFileV2>("plans", targetId))!;
+    expect(stored.createdAt).toBe(originalCreatedAt); // NOT the foreign 1999 stamp
+    expect(stored.stages[0]!.selection.machineCount).toBe(7);
+  });
+
+  it("untrimmed '  Target  ' collides with existing 'Target' (trimmed-form match)", async () => {
+    const store = await readyStore();
+    store.getState().selectRecipe("ingot_iron");
+    await store.getState().savePlanAs("Target");
+    const targetId = store.getState().plans![0]!.id;
+
+    const payload: PlanFileV2 = {
+      format_version: 2,
+      name: "  Target  ", // untrimmed — must collision-match "Target"
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      stages: [
+        {
+          name: "Stage 1",
+          selection: {
+            recipeId: null,
+            machineCount: 1,
+            clockPercentText: "100",
+            unlockedTiers: { belt: 1, pipe: 1 },
+            overrides: { feeds: {}, outputs: {} },
+          },
+        },
+      ],
+      links: [],
+    };
+    await store.getState().importPlan(JSON.stringify(payload));
+
+    // One row, same id; the stored name is the TRIMMED form.
+    expect(store.getState().plans!).toHaveLength(1);
+    expect(store.getState().plans![0]!.id).toBe(targetId);
+    const db = await (await import("../data/db.ts")).openDb();
+    const stored = (await db.get<PlanFileV2>("plans", targetId))!;
+    expect(stored.name).toBe("Target");
+  });
+
+  it("empty/whitespace payload name → planError, nothing written", async () => {
+    const store = await readyStore();
+    await store.getState().refreshPlans(); // establish the [] baseline (App mount)
+    const payload: PlanFileV2 = {
+      format_version: 2,
+      name: "   ",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      stages: [
+        {
+          name: "Stage 1",
+          selection: {
+            recipeId: null,
+            machineCount: 1,
+            clockPercentText: "100",
+            unlockedTiers: { belt: 1, pipe: 1 },
+            overrides: { feeds: {}, outputs: {} },
+          },
+        },
+      ],
+      links: [],
+    };
+    await store.getState().importPlan(JSON.stringify(payload));
+    expect(store.getState().planError).toBe("plan name required");
+    expect(store.getState().plans).toEqual([]);
+  });
+
+  it("corrupt JSON → planError, store untouched", async () => {
+    const store = await readyStore();
+    await store.getState().refreshPlans(); // establish the [] baseline (App mount)
+    await store.getState().importPlan("{not valid json");
+    expect(store.getState().planError).not.toBeNull();
+    expect(store.getState().plans).toEqual([]);
+  });
+
+  it("valid JSON but not a plan file (failed validation) → planError, nothing written", async () => {
+    const store = await readyStore();
+    await store.getState().refreshPlans(); // establish the [] baseline (App mount)
+    await store.getState().importPlan(JSON.stringify({ hello: "world" }));
+    expect(store.getState().planError).not.toBeNull();
+    expect(store.getState().plans).toEqual([]);
+  });
+
+  it("import does NOT change the live graph — even importing over the ACTIVE plan's name", async () => {
+    const store = await readyStore();
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setMachineCount(3);
+    await store.getState().savePlanAs("Active");
+    const orderBefore = store.getState().stageOrder;
+    const selBefore = store.getState().selection;
+
+    // Import a differently-shaped payload that OVERWRITES "Active"'s stored row.
+    const payload: PlanFileV2 = {
+      format_version: 2,
+      name: "Active",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      stages: [
+        {
+          name: "Stage 1",
+          selection: {
+            recipeId: null, // different from the live graph's ingot_iron
+            machineCount: 99,
+            clockPercentText: "500",
+            unlockedTiers: { belt: 1, pipe: 1 },
+            overrides: { feeds: {}, outputs: {} },
+          },
+        },
+      ],
+      links: [],
+    };
+    await store.getState().importPlan(JSON.stringify(payload));
+
+    // The live graph is UNTOUCHED: same stage order, same live selection.
+    expect(store.getState().stageOrder).toEqual(orderBefore);
+    expect(store.getState().selection.recipeId).toBe(selBefore.recipeId);
+    expect(store.getState().selection.machineCount).toBe(3);
+  });
+
+  it("plan-op chain: an import failure sets planError but the NEXT op still runs", async () => {
+    const store = await readyStore();
+    await store.getState().importPlan("garbage");
+    expect(store.getState().planError).not.toBeNull();
+    // A subsequent valid save clears the error and lands a row.
+    store.getState().selectRecipe("ingot_iron");
+    await store.getState().savePlanAs("Recovered");
+    expect(store.getState().planError).toBeNull();
+    expect(store.getState().plans!.map((p) => p.name)).toEqual(["Recovered"]);
+  });
+});

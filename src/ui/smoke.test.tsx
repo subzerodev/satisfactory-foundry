@@ -21,7 +21,7 @@ import { solveStage } from "../core/manifold.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import { FIXTURE_TIERS, WORKED_INPUT, workedResult } from "./fixtures.ts";
 import type { PlanListEntry } from "../data/plan-store.ts";
-import { BundledBanner } from "./App.tsx";
+import { BundledBanner, sanitizeFilename } from "./App.tsx";
 import { UploadScreen } from "./UploadScreen.tsx";
 import { PlansBar } from "./PlansBar.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
@@ -81,7 +81,15 @@ describe("UploadScreen", () => {
 
 describe("ControlsStrip", () => {
   const machines: Record<string, CatalogMachine> = {
-    smelter: { id: "smelter", displayName: "Smelter" },
+    smelter: {
+      id: "smelter",
+      displayName: "Smelter",
+      power: {
+        mw: Fraction.from(4),
+        variable: false,
+        exponent: Fraction.of(1321929, 1000000),
+      },
+    },
   };
   const recipes: CatalogRecipe[] = [
     {
@@ -133,11 +141,41 @@ describe("ControlsStrip", () => {
 describe("SummaryCards", () => {
   it("renders per-lane rates and counts as exact strings", () => {
     const html = renderToStaticMarkup(
-      <SummaryCards result={workedResult()} itemName={itemName} />,
+      <SummaryCards
+        result={workedResult()}
+        itemName={itemName}
+        powerText={null}
+      />,
     );
     expect(html).toContain("600/min in");
     expect(html).toContain("600/min out");
     expect(html).toContain("2 × belt");
+    // powerText null → no Power card.
+    expect(html).not.toContain("summary-card-power");
+  });
+
+  it("renders the Power card when powerText is non-null (Stage 6 P2)", () => {
+    const html = renderToStaticMarkup(
+      <SummaryCards
+        result={workedResult()}
+        itemName={itemName}
+        powerText="80 MW"
+      />,
+    );
+    expect(html).toContain("summary-card-power");
+    expect(html).toContain("Power");
+    expect(html).toContain("80 MW");
+  });
+
+  it("omits the Power card when powerText is null", () => {
+    const html = renderToStaticMarkup(
+      <SummaryCards
+        result={workedResult()}
+        itemName={itemName}
+        powerText={null}
+      />,
+    );
+    expect(html).not.toContain("summary-card-power");
   });
 });
 
@@ -434,6 +472,13 @@ describe("LaneOverrides", () => {
 });
 
 describe("FindingsPanel", () => {
+  // The FULL fixed table (6 belt + 2 pipe) + the unlock count pair drive the
+  // fix hints; the app threads both from the Schematic call site.
+  const fullUnlocked = {
+    belt: TIER_TABLE.belt.length,
+    pipe: TIER_TABLE.pipe.length,
+  };
+
   it("renders the invalid bad-clock detail", () => {
     const solve: SolveState = {
       status: "invalid",
@@ -441,7 +486,13 @@ describe("FindingsPanel", () => {
       detail: "clock percent must be a positive number.",
     };
     const html = renderToStaticMarkup(
-      <FindingsPanel solve={solve} findings={[]} itemName={itemName} />,
+      <FindingsPanel
+        solve={solve}
+        findings={[]}
+        itemName={itemName}
+        tiers={TIER_TABLE}
+        unlocked={fullUnlocked}
+      />,
     );
     expect(html).toContain("Clock %");
     expect(html).toContain("clock percent must be a positive number.");
@@ -460,17 +511,133 @@ describe("FindingsPanel", () => {
       },
     ];
     const html = renderToStaticMarkup(
-      <FindingsPanel solve={solve} findings={findings} itemName={itemName} />,
+      <FindingsPanel
+        solve={solve}
+        findings={findings}
+        itemName={itemName}
+        tiers={TIER_TABLE}
+        unlocked={fullUnlocked}
+      />,
     );
     expect(html).toContain(
       "Iron Ore: bus over capacity between machines 9–16 — peak 540/min exceeds 480/min.",
     );
   });
 
+  it("appends the UNLOCK hint when the fix tier is above best-unlocked", () => {
+    // A segment-over-capacity finding placed on a lane (so laneKindOf resolves
+    // its belt kind by identity). busCapacity = Mk2 (120), peak 200 → the
+    // smallest tier ≥ 200 AND > 120 is Mk3 (270). With only Mk1+Mk2 unlocked,
+    // Mk3 is above best-unlocked → the "unlocking" wording.
+    const finding: Finding = {
+      type: "segment-over-capacity",
+      itemId: "ore_iron",
+      fromMachine: 1,
+      toMachine: 8,
+      peakFlow: Fraction.from(200),
+      busCapacity: Fraction.from(120),
+    };
+    const base = workedResult();
+    const doctored: StageSolveResult = {
+      ...base,
+      feeds: base.feeds.map((lane, i) =>
+        i === 0 ? { ...lane, findings: [finding] } : lane,
+      ),
+    };
+    const solve: SolveState = { status: "solved", result: doctored };
+    const html = renderToStaticMarkup(
+      <FindingsPanel
+        solve={solve}
+        findings={[finding]}
+        itemName={itemName}
+        tiers={TIER_TABLE}
+        unlocked={{ belt: 2, pipe: 2 }}
+      />,
+    );
+    expect(html).toContain(
+      "unlocking Mk3 (270/min) would raise the bus above this peak",
+    );
+  });
+
+  it("appends the OVERRIDE-raise hint when the fix tier is already unlocked", () => {
+    // The overridden-DOWN case: busCapacity = 90 (an override below any tier),
+    // peak 100 → smallest tier ≥ 100 AND > 90 is Mk2 (120). With Mk1..Mk4
+    // unlocked, Mk2 ≤ best-unlocked → the "raising this lane's override" wording.
+    const finding: Finding = {
+      type: "segment-over-capacity",
+      itemId: "iron_ingot",
+      fromMachine: 1,
+      toMachine: 1,
+      peakFlow: Fraction.from(100),
+      busCapacity: Fraction.from(90),
+    };
+    const base = workedResult();
+    const doctored: StageSolveResult = {
+      ...base,
+      outputs: base.outputs.map((lane, i) =>
+        i === 0 ? { ...lane, findings: [finding] } : lane,
+      ),
+    };
+    const solve: SolveState = { status: "solved", result: doctored };
+    const html = renderToStaticMarkup(
+      <FindingsPanel
+        solve={solve}
+        findings={[finding]}
+        itemName={itemName}
+        tiers={TIER_TABLE}
+        unlocked={{ belt: 4, pipe: 2 }}
+      />,
+    );
+    // renderToStaticMarkup entity-escapes the apostrophe (&#x27;); assert the
+    // copy on either side so the pinned override-raise wording still gates.
+    expect(html).toContain("raising this lane");
+    expect(html).toContain(
+      "s override to Mk2 (120/min) would put the bus above this peak",
+    );
+  });
+
+  it("appends the demand hint for an infeasible-machine-demand finding", () => {
+    // One machine needs 200/min on a Mk2 (120) top capacity → the smallest tier
+    // ≥ 200 AND > 120 is Mk3 (270): "unlocking Mk3 … would cover this machine's
+    // demand". Placed on a lane so laneKindOf resolves the belt kind.
+    const finding: Finding = {
+      type: "infeasible-machine-demand",
+      itemId: "ore_iron",
+      demand: Fraction.from(200),
+      topCapacity: Fraction.from(120),
+    };
+    const base = workedResult();
+    const doctored: StageSolveResult = {
+      ...base,
+      feeds: base.feeds.map((lane, i) =>
+        i === 0 ? { ...lane, findings: [finding] } : lane,
+      ),
+    };
+    const solve: SolveState = { status: "solved", result: doctored };
+    const html = renderToStaticMarkup(
+      <FindingsPanel
+        solve={solve}
+        findings={[finding]}
+        itemName={itemName}
+        tiers={TIER_TABLE}
+        unlocked={{ belt: 2, pipe: 2 }}
+      />,
+    );
+    // Apostrophe entity-escaped by renderToStaticMarkup; assert around it.
+    expect(html).toContain("unlocking Mk3 (270/min) would cover this machine");
+    expect(html).toContain("s demand");
+  });
+
   it("renders the clean line when solved with no findings", () => {
     const solve: SolveState = { status: "solved", result: workedResult() };
     const html = renderToStaticMarkup(
-      <FindingsPanel solve={solve} findings={[]} itemName={itemName} />,
+      <FindingsPanel
+        solve={solve}
+        findings={[]}
+        itemName={itemName}
+        tiers={TIER_TABLE}
+        unlocked={fullUnlocked}
+      />,
     );
     expect(html).toContain("No warnings — manifold is clean.");
   });
@@ -530,6 +697,8 @@ describe("PlansBar", () => {
         onLoad={noop}
         onRename={noop}
         onDelete={noop}
+        onExport={noop}
+        onImport={noop}
       />,
     );
     expect(html).toContain("— no saved plans —");
@@ -547,6 +716,8 @@ describe("PlansBar", () => {
         onLoad={noop}
         onRename={noop}
         onDelete={noop}
+        onExport={noop}
+        onImport={noop}
       />,
     );
     expect(html).toContain("— no saved plans —");
@@ -561,14 +732,34 @@ describe("PlansBar", () => {
         onLoad={noop}
         onRename={noop}
         onDelete={noop}
+        onExport={noop}
+        onImport={noop}
       />,
     );
     expect(html).toContain("Alpha (2026-08-03)");
     expect(html).toContain("Beta (2026-07-01)");
     expect(html).toContain("Load");
     expect(html).toContain("Rename");
+    expect(html).toContain("Export");
     expect(html).toContain("Delete");
     expect(html).not.toContain("— no saved plans —");
+  });
+
+  it("always renders the Import file input, even with no saved plans", () => {
+    const html = renderToStaticMarkup(
+      <PlansBar
+        plans={[]}
+        planError={null}
+        onSave={noop}
+        onLoad={noop}
+        onRename={noop}
+        onDelete={noop}
+        onExport={noop}
+        onImport={noop}
+      />,
+    );
+    expect(html).toContain("plans-import");
+    expect(html).toContain('type="file"');
   });
 
   it("renders the planError banner", () => {
@@ -580,6 +771,8 @@ describe("PlansBar", () => {
         onLoad={noop}
         onRename={noop}
         onDelete={noop}
+        onExport={noop}
+        onImport={noop}
       />,
     );
     expect(html).toContain("plans-error");
@@ -602,5 +795,31 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
     expect(html).toContain("no recipe");
     // The ＋stage control is present in the canvas corner.
     expect(html).toContain("graph-add-stage");
+    // The default Stage 1 is recipe-less/idle → no power line (uniform rule);
+    // the powerText-non-null render is the browser-walk gate (StageNode's
+    // <Handle> needs the RF provider, so it can't be rendered in isolation —
+    // the data pin lives in graph-flow.test's node-powerText rows instead).
+    expect(html).not.toContain("stage-node-power");
+  });
+});
+
+describe("sanitizeFilename (Stage 6 / Phase 1 — export filename table)", () => {
+  // Each filesystem-unsafe char (/ \ : * ? " < > |) maps to "-"; safe chars pass.
+  const cases: [string, string][] = [
+    ["Iron Line", "Iron Line"], // spaces + letters untouched
+    ["a/b", "a-b"],
+    ["a\\b", "a-b"],
+    ["a:b", "a-b"],
+    ["a*b", "a-b"],
+    ["a?b", "a-b"],
+    ['a"b', "a-b"],
+    ["a<b", "a-b"],
+    ["a>b", "a-b"],
+    ["a|b", "a-b"],
+    ['all/\\:*?"<>|here', "all---------here"], // every unsafe char at once
+    ["dash-and_underscore.1", "dash-and_underscore.1"], // these are all safe
+  ];
+  it.each(cases)("sanitizes %j → %j", (input, expected) => {
+    expect(sanitizeFilename(input)).toBe(expected);
   });
 });
