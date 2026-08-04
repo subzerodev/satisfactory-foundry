@@ -30,7 +30,7 @@ genuine framework FAIL naming the new test(s), restore + green re-run.
  Test Files  1 passed (1)
       Tests  1 passed | 13 skipped (14)
 -- BREAK: disable the guard (never demote on a path revisit) — line 174-176
-   perl: replace the guard predicate with if(false) (a 2-cycle would now recurse forever → framework test failure/timeout guard)
+   perl: replace the guard predicate with if(false) (the memoized visit still terminates — the FAIL is the ASSERTION: b no longer demoted to RAW; prose corrected at boundary fold)
 -- FAIL run (framework, cycle-guard test):
      × a 2-cycle silently demotes to RAW (no error, no hang) 5ms
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
@@ -121,3 +121,13 @@ genuine framework FAIL naming the new test(s), restore + green re-run.
 All 7 distinct new production behaviors verified bidirectional: each has a
 passing baseline, a genuine framework FAIL under an exact break naming the
 new test(s), and a green re-run after restore.
+
+### Behavior 8 — self-consuming recipe demotes to RAW (boundary-review fold; src/core/chain-builder.ts guard incl. io.itemId === itemId)
+-- PASS run (baseline): npx vitest run src/core/chain-builder.test.ts -> 15 passed (15)
+-- BREAK: sed the guard back to path-only (drop the io.itemId === itemId clause)
+-- FAIL run (genuine, captured with the clause removed):
+     × a SELF-consuming recipe demotes to RAW (never a from===to link) 4ms
+ FAIL  src/core/chain-builder.test.ts > proposeChain — cycle guard > a SELF-consuming recipe demotes to RAW (never a from===to link)
+      Tests  1 failed | 14 passed (15)
+-- RESTORE: cp <scratchpad>/chain-builder.ts.bak src/core/chain-builder.ts
+-- RE-RUN: 15 passed (15); full suite below at commit time.

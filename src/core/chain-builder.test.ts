@@ -330,6 +330,27 @@ describe("proposeChain — cycle guard", () => {
     expect(stageFor(p, "b")).toBeUndefined();
     expect(p.links).toEqual([]);
   });
+
+  it("a SELF-consuming recipe demotes to RAW (never a from===to link)", () => {
+    // s made from s + ore: the guard must catch the item's own presence in
+    // the candidate's inputs — a from===to link would bypass addLink's
+    // self-link refusal at apply (boundary-review fold).
+    const recipes = [
+      recipe(
+        "r_s",
+        "m",
+        [["s", 10]],
+        [
+          ["s", 5],
+          ["ore", 5],
+        ],
+      ),
+    ];
+    const p = proposeChain("s", F(10), recipes, []);
+    expect(p.stages).toEqual([]);
+    expect(p.links).toEqual([]);
+    expect(p.rawInputs).toEqual([{ itemId: "s", rate: F(10) }]);
+  });
 });
 
 // ---------------------------------------------------------------------------

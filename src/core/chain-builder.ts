@@ -167,11 +167,16 @@ export function proposeChain(
     }
 
     // Cycle guard: if selecting a producer would route back onto the current
-    // DFS path, demote to raw (silent — the item lands in rawInputs). With
+    // DFS path — INCLUDING the item itself (a self-consuming recipe would
+    // otherwise emit a from===to link, bypassing addLink's self-link refusal
+    // at apply) — demote to raw (silent — the item lands in rawInputs). With
     // converters/packagers excluded the bundled catalog is acyclic, so this is
     // a pinned backstop, not a common path.
     let recipe = selectProducer(itemId, recipes, excluded);
-    if (recipe !== null && recipe.inputs.some((io) => path.has(io.itemId))) {
+    if (
+      recipe !== null &&
+      recipe.inputs.some((io) => io.itemId === itemId || path.has(io.itemId))
+    ) {
       recipe = null;
     }
 

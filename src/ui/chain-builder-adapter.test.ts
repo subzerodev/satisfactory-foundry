@@ -62,6 +62,12 @@ describe("adapter — bundled catalog closure", () => {
     expect(p.stages.length).toBeGreaterThan(1);
     // Ores/water terminate as raw leaves.
     expect(p.rawInputs.length).toBeGreaterThan(0);
+    // The explicit acyclicity regression pin (boundary fold): one stage per
+    // item, no item repeated anywhere in the closure — a cycle in the bundled
+    // catalog under the exclusion policy would trip this before it hangs.
+    const items = p.stages.map((s) => s.itemId);
+    expect(new Set(items).size).toBe(items.length);
+    expect(p.rawInputs.every((r) => !items.includes(r.itemId))).toBe(true);
   });
 
   it("no link is short — every producer supply ≥ its item's summed demand", () => {
