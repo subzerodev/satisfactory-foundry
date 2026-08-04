@@ -654,11 +654,10 @@ export function setSharedEnd(
   } else {
     delete next[end];
   }
-  // Rebuild the train arm WITHOUT sharedEnds, re-adding it only if a flag
-  // survives — so an all-off config is byte-identical to today's (no key, no
-  // empty {}). The trip carries verbatim (a shared-end toggle never disturbs it).
-  const base: LinkTransport = { mode: "train", trip: transport.trip };
-  return next.from || next.to ? { ...base, sharedEnds: next } : base;
+  // trainWithTrip is the single train-arm assembly point: passing undefined
+  // when no flag survives keeps an all-off config byte-identical to today's
+  // (no key, no empty {}); the trip carries verbatim.
+  return trainWithTrip(transport.trip, next.from || next.to ? next : undefined);
 }
 
 // ---------------------------------------------------------------------------
