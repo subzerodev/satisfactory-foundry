@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decodeBytes } from "./decode.ts";
+import { decodeBytes, fileFromDrop, fileToDocsText } from "./decode.ts";
 
 // A small JSON payload with a non-ASCII glyph, so a wrong TextDecoder would
 // mangle the output and fail the identity assertion below.
@@ -64,5 +64,34 @@ describe("decodeBytes", () => {
     expect(le).toBe(be);
     expect(be).toBe(u8bom);
     expect(u8bom).toBe(u8);
+  });
+});
+
+describe("fileFromDrop", () => {
+  const fileA = new File(["a"], "a.json");
+  const fileB = new File(["b"], "b.json");
+
+  it("returns the first file when the drop carries files", () => {
+    // Stub the minimal DataTransfer shape fileFromDrop reads (array-like files).
+    expect(fileFromDrop({ files: [fileA, fileB] })).toBe(fileA);
+  });
+
+  it("returns null for a non-file drag (empty files)", () => {
+    expect(fileFromDrop({ files: [] })).toBeNull();
+  });
+
+  it("returns null when files is null or absent", () => {
+    expect(fileFromDrop({ files: null })).toBeNull();
+    expect(fileFromDrop({})).toBeNull();
+  });
+});
+
+describe("fileToDocsText", () => {
+  it("decodes a UTF-16LE-with-BOM File through the BOM-sniffing core", async () => {
+    // The real Docs.json encoding: a wrong (UTF-8) read would garble it, so this
+    // pins that fileToDocsText routes arrayBuffer bytes → decodeBytes, not text().
+    const buf = withPrefix([0xff, 0xfe], utf16le(JSON_TEXT));
+    const file = new File([buf.buffer as ArrayBuffer], "Docs.json");
+    expect(await fileToDocsText(file)).toBe(JSON_TEXT);
   });
 });

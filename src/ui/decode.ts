@@ -22,3 +22,32 @@ export function decodeBytes(buf: Uint8Array): string {
   }
   return new TextDecoder("utf-8").decode(buf);
 }
+
+/**
+ * Read a picked/dropped File to its decoded text through the BOM-sniffing core
+ * (Stage 5 item 2). This is the single decode-and-delegate seam consolidating
+ * the two formerly-inline copies (App re-upload, UploadScreen) plus the new drop
+ * path — each call site supplies its OWN upload sink, so UploadScreen stays
+ * store-free (onUpload prop) and App keeps its uploadDocsText. NEVER file.text():
+ * that decodes UTF-8 unconditionally and garbles real UTF-16LE Docs.json.
+ */
+export async function fileToDocsText(file: File): Promise<string> {
+  return decodeBytes(new Uint8Array(await file.arrayBuffer()));
+}
+
+/**
+ * The first File from a drop's DataTransfer, or null when the drag carried no
+ * file (Stage 5 item 2). Multiple files → the first, matching the single-file
+ * `<input>` posture. Typed against the minimal shape it reads so it is
+ * node-testable with a stub — the real DataTransfer.files is a FileList, which
+ * is array-like and length-indexable, exactly what this reads.
+ */
+export function fileFromDrop(dt: {
+  files?: ArrayLike<File> | null;
+}): File | null {
+  const files = dt.files;
+  if (files === null || files === undefined || files.length === 0) {
+    return null;
+  }
+  return files[0] ?? null;
+}

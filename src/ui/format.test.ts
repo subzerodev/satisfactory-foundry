@@ -2,7 +2,13 @@ import { describe, it, expect } from "vitest";
 import { Fraction } from "../core/fraction.ts";
 import type { Finding, FeedBelt, BreakoutBelt } from "../core/manifold.ts";
 import { FIXTURE_TIERS } from "./fixtures.ts";
-import { formatRate, tierLabel, beltLabel, findingText } from "./format.ts";
+import {
+  formatRate,
+  tierLabel,
+  beltLabel,
+  segTooltip,
+  findingText,
+} from "./format.ts";
 
 describe("formatRate", () => {
   it("prints integers bare", () => {
@@ -102,6 +108,29 @@ describe("beltLabel", () => {
     expect(beltLabel("output", 0, belt, "belt", FIXTURE_TIERS)).toBe(
       "Out 1 — Mk4 · 480/min load · from machine 1",
     );
+  });
+});
+
+describe("segTooltip", () => {
+  it("matches the bus-segment tooltip string exactly", () => {
+    expect(
+      segTooltip(
+        { fromMachine: 1, toMachine: 16, peakFlow: Fraction.from(480) },
+        "480",
+      ),
+    ).toBe("machines 1–16 · peak 480/min of 480/min");
+  });
+
+  it("formats a non-integer peakFlow and a single-machine span", () => {
+    // A single-machine span (from === to) with a terminating-decimal peak: the
+    // peak is formatted via formatRate (37.5), the bus cap is the caller's
+    // pre-formatted string.
+    expect(
+      segTooltip(
+        { fromMachine: 17, toMachine: 17, peakFlow: Fraction.of(75, 2) },
+        "60",
+      ),
+    ).toBe("machines 17–17 · peak 37.5/min of 60/min");
   });
 });
 

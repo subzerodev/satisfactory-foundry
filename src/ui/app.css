@@ -5,12 +5,83 @@
   --bg-panel: #ffffff;
   --border: #d8d8d8;
   --error: #d92b2b;
+
+  /* Accent + SVG-surface colours, migrated out of hardcoded hexes (Stage 5
+     item 3) so the dark block can override them. Tier fill colours (colors.ts
+     TIER_COLORS) deliberately stay data-driven — they read on both themes. */
+  --accent: #4f9dde;
+  --accent-strong: #2d6fb0;
+  --on-accent: #ffffff;
+  --surface-fill: #eef1f4; /* machine rects (schematic + blueprint) */
+  --surface-stroke: #b8c0c8;
+  --foundation-fill: #f4f6f8;
+  --foundation-stroke: #dde2e6;
+  --bus-fill: #cfd8e0; /* blueprint bus ribbon */
+  --junction-fill: #9aa2aa; /* junctions + schematic seams */
+  --junction-stroke: #7c848c;
+  --notice: #8a5a00; /* footprint / warning notices */
+  --error-bg: #fff4f4; /* finding-error panel background */
+  --on-error: #ffffff; /* text on an --error fill (badge) */
+
   font-family:
     system-ui,
     -apple-system,
     "Segoe UI",
     Roboto,
     sans-serif;
+}
+
+/* Dark theme — an explicit choice via the header ☾/☀ toggle (data-theme) OR,
+   when no explicit choice is set, the OS media preference. The two selectors
+   carry the SAME override block; the media fallback is guarded
+   :root:not([data-theme]) (the pinned cascade guard) so an explicit choice
+   always wins regardless of cascade order. */
+:root[data-theme="dark"] {
+  --fg: #e6e6e6;
+  --fg-muted: #9aa0a6;
+  --bg: #16181c;
+  --bg-panel: #22262c;
+  --border: #3a3f46;
+  --error: #ff6b6b;
+
+  --accent: #5aa9e6;
+  --accent-strong: #7cc0f5;
+  --on-accent: #10151a;
+  --surface-fill: #2c323a;
+  --surface-stroke: #454c55;
+  --foundation-fill: #262b31;
+  --foundation-stroke: #3a4048;
+  --bus-fill: #3a4650;
+  --junction-fill: #6b737c;
+  --junction-stroke: #868e97;
+  --notice: #d9a441;
+  --error-bg: #3a2323;
+  --on-error: #16181c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --fg: #e6e6e6;
+    --fg-muted: #9aa0a6;
+    --bg: #16181c;
+    --bg-panel: #22262c;
+    --border: #3a3f46;
+    --error: #ff6b6b;
+
+    --accent: #5aa9e6;
+    --accent-strong: #7cc0f5;
+    --on-accent: #10151a;
+    --surface-fill: #2c323a;
+    --surface-stroke: #454c55;
+    --foundation-fill: #262b31;
+    --foundation-stroke: #3a4048;
+    --bus-fill: #3a4650;
+    --junction-fill: #6b737c;
+    --junction-stroke: #868e97;
+    --notice: #d9a441;
+    --error-bg: #3a2323;
+    --on-error: #16181c;
+  }
 }
 
 body {
@@ -42,6 +113,25 @@ body {
 .upload-screen {
   max-width: 640px;
   margin: 48px auto;
+}
+
+/* Drag-and-drop affordance (Stage 5 item 2) — a full-window overlay shown while
+   a file drag is over the window (enter/leave counter in App). Affordance-only:
+   pointer-events: none so it never intercepts the drop itself, which App's
+   window-level listener handles. */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 3px dashed var(--accent);
 }
 
 .upload-notice {
@@ -119,9 +209,9 @@ body {
 }
 
 .tier-toggles .tier-on {
-  background: #4f9dde;
-  color: #fff;
-  border-color: #4f9dde;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
 }
 
 .summary-cards {
@@ -151,6 +241,7 @@ body {
 
 .schematic,
 .schematic-scroll {
+  position: relative; /* anchor for the absolutely-positioned .tooltip */
   padding: 8px 0;
 }
 
@@ -158,9 +249,26 @@ body {
   overflow-x: auto;
 }
 
+/* Hover tooltip (Stage 5 item 1) — one absolutely-positioned div, cursor-
+   anchored + clamped to the schematic container. pointer-events: none so the
+   tooltip never steals the hover from the line it describes. */
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+  max-width: 280px;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--bg-panel);
+  background: var(--fg);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
 .machine rect {
-  fill: #eef1f4;
-  stroke: #b8c0c8;
+  fill: var(--surface-fill);
+  stroke: var(--surface-stroke);
 }
 
 .machine-label {
@@ -182,8 +290,22 @@ body {
   stroke-width: 2;
 }
 
+/* Pipe lanes (Stage 5 item 4): a desaturated-blue dashed treatment so a fluid
+   lane reads distinctly from a belt lane. The stroke colour stays tier-driven
+   (set inline from colorForCapacity); the class adds the dashed dm rhythm +
+   a slight fade so pipes recede visually from belts. */
+.lane-pipe.bus-seg {
+  stroke-dasharray: 10 5;
+  opacity: 0.85;
+}
+
+.lane-pipe.belt-arrow {
+  stroke-dasharray: 4 3;
+  opacity: 0.85;
+}
+
 .seam {
-  stroke: #9aa2aa;
+  stroke: var(--junction-fill);
   stroke-dasharray: 3 3;
 }
 
@@ -202,6 +324,18 @@ body {
   border-radius: 4px;
 }
 
+/* Theme toggle (Stage 5 item 3) — the ☾/☀ header control. */
+.theme-toggle {
+  padding: 4px 10px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  border-radius: 4px;
+}
+
 .bp-view {
   padding: 8px 0;
 }
@@ -213,30 +347,39 @@ body {
 
 .bp-notice {
   margin: 0 0 8px;
-  color: #8a5a00;
+  color: var(--notice);
   font-size: 0.85rem;
 }
 
 .bp-foundation {
-  fill: #f4f6f8;
-  stroke: #dde2e6;
+  fill: var(--foundation-fill);
+  stroke: var(--foundation-stroke);
   stroke-width: 1;
 }
 
 .bp-bus {
-  fill: #cfd8e0;
+  fill: var(--bus-fill);
   opacity: 0.7;
 }
 
+/* Pipe buses (Stage 5 item 4): a desaturated-blue tint + a dashed outline so a
+   fluid lane reads distinctly from a belt bus in the floor plan. */
+.bp-bus-pipe {
+  fill: color-mix(in srgb, var(--accent) 30%, var(--bus-fill));
+  stroke: var(--accent-strong);
+  stroke-width: 1;
+  stroke-dasharray: 6 4;
+}
+
 .bp-junction {
-  fill: #9aa2aa;
-  stroke: #7c848c;
+  fill: var(--junction-fill);
+  stroke: var(--junction-stroke);
   stroke-width: 1;
 }
 
 .bp-machine rect {
-  fill: #eef1f4;
-  stroke: #b8c0c8;
+  fill: var(--surface-fill);
+  stroke: var(--surface-stroke);
   stroke-width: 1;
 }
 
@@ -253,8 +396,8 @@ body {
 }
 
 .bp-mark-glyph {
-  fill: #4f9dde;
-  stroke: #2d6fb0;
+  fill: var(--accent);
+  stroke: var(--accent-strong);
   stroke-width: 1;
 }
 
@@ -290,7 +433,7 @@ body {
   gap: 2px;
   padding: 8px 12px;
   border-left: 4px solid var(--error);
-  background: #fff4f4;
+  background: var(--error-bg);
 }
 
 .finding-heading {
@@ -304,7 +447,7 @@ body {
 }
 
 .finding-warning {
-  color: #8a5a00;
+  color: var(--notice);
 }
 
 .findings-clean {
@@ -329,7 +472,7 @@ body {
   width: 12px;
   height: 12px;
   border-radius: 2px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border);
 }
 
 /* -------------------------------------------------------------------------
@@ -376,8 +519,8 @@ body {
 }
 
 .stage-node.selected {
-  border-color: #4f9dde;
-  box-shadow: 0 0 0 2px rgba(79, 157, 222, 0.35);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* Solve-status tint — the only carrier of per-stage solve health on the card. */
@@ -437,7 +580,7 @@ body {
 }
 
 .stage-node-findings {
-  color: #fff;
+  color: var(--on-error);
   background: var(--error);
   border-radius: 8px;
   padding: 0 6px;

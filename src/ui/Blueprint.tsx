@@ -1,5 +1,5 @@
 import { Fragment, useMemo } from "react";
-import type { StageSolveResult } from "../core/manifold.ts";
+import type { StageSolveResult, LaneKind } from "../core/manifold.ts";
 import { layoutStage } from "../layout/layout.ts";
 import type { LaneLayout, BeltMark } from "../layout/layout.ts";
 import { FOOTPRINTS } from "../layout/footprints.ts";
@@ -119,10 +119,18 @@ export function Blueprint({
             a lane's bus/junctions and its marks are split into two passes: these
             draw under the machine row, the marks (below) draw over it. */}
         {layout.feedLanes.map((lane, i) => (
-          <BusAndJunctions key={`fb-${lane.itemId}-${i}`} lane={lane} />
+          <BusAndJunctions
+            key={`fb-${lane.itemId}-${i}`}
+            lane={lane}
+            kind={solve.feeds[i]!.kind}
+          />
         ))}
         {layout.outputLanes.map((lane, j) => (
-          <BusAndJunctions key={`ob-${lane.itemId}-${j}`} lane={lane} />
+          <BusAndJunctions
+            key={`ob-${lane.itemId}-${j}`}
+            lane={lane}
+            kind={solve.outputs[j]!.kind}
+          />
         ))}
         {/* z4 — machine rects + index labels. */}
         <g className="bp-machines">
@@ -162,13 +170,20 @@ export function Blueprint({
   );
 }
 
-/** The bus ribbon + its label + junction rects (z2/z3 — behind the machines). */
-function BusAndJunctions({ lane }: { lane: LaneLayout }) {
+/** The bus ribbon + its label + junction rects (z2/z3 — behind the machines).
+ *  `kind` classes the bus ribbon so a pipe lane reads distinctly (Stage 5 item
+ *  4, `.bp-bus-pipe`). This is a DELIBERATE, NARROW exception to the frozen S4P2
+ *  pin "Blueprint … never re-reads kind (its only use of solve is as the
+ *  layoutStage input)" (features/physical-layout/phase-2/brainstorm.md, Axis 2
+ *  lane-labels bullet) — cited-and-superseded per features/polish/brainstorm.md
+ *  item 4. The kind is read for the CLASS ONLY; label-string ownership stays
+ *  with App. */
+function BusAndJunctions({ lane, kind }: { lane: LaneLayout; kind: LaneKind }) {
   const busY = lane.bus.from.y;
   return (
     <g className="bp-lane">
       <rect
-        className="bp-bus"
+        className={kind === "pipe" ? "bp-bus bp-bus-pipe" : "bp-bus"}
         x={lane.bus.from.x}
         y={busY - BELT_LANE / 2}
         width={lane.bus.to.x - lane.bus.from.x}
