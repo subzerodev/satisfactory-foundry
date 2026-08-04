@@ -1,0 +1,123 @@
+R2 BIDIRECTIONALITY LOG — Stage 8 / Phase 3 auto-chain builder (ticket #39)
+Generated: 2026-08-04T23:25:58Z
+Rule: per distinct new production behavior — PASS run, exact break command,
+genuine framework FAIL naming the new test(s), restore + green re-run.
+==========================================================================
+
+### Behavior 1 — ceil-after-aggregate machine sizing (src/core/chain-builder.ts)
+-- PASS run (baseline):
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+-- BREAK: ceilDiv → floorDiv at the sizing step (line 234)
+   sed 's/ceilDiv(primary.perMinute)/floorDiv(primary.perMinute)/'
+-- FAIL run (framework, naming the new tests):
+     × sizes the shared ingot stage from the summed consumer demand, ceil'd once 3ms
+     × sizes upstream from the built (ceil'd) consumption, not the fractional need 0ms
+     × every link arrives supply ≥ demand (ok-or-surplus by construction) 0ms
+     × WITHOUT the exclusion the same recipe IS selected (exclusion is load-bearing) 1ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/chain-builder.test.ts > proposeChain — fan-in aggregation (ceil after aggregate) > sizes the shared ingot stage from the summed consumer demand, ceil'd once
+ FAIL  src/core/chain-builder.test.ts > proposeChain — demand model (a): ceil'd consumption propagates > sizes upstream from the built (ceil'd) consumption, not the fractional need
+ FAIL  src/core/chain-builder.test.ts > proposeChain — demand model (a): ceil'd consumption propagates > every link arrives supply ≥ demand (ok-or-surplus by construction)
+ FAIL  src/core/chain-builder.test.ts > proposeChain — machine exclusion policy > WITHOUT the exclusion the same recipe IS selected (exclusion is load-bearing)
+      Tests  4 failed | 10 passed (14)
+-- RESTORE (git checkout) + green re-run:
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+
+### Behavior 2 — cycle guard → silent RAW, no hang (src/core/chain-builder.ts)
+-- PASS run (baseline):
+ Test Files  1 passed (1)
+      Tests  1 passed | 13 skipped (14)
+-- BREAK: disable the guard (never demote on a path revisit) — line 174-176
+   perl: replace the guard predicate with if(false) (a 2-cycle would now recurse forever → framework test failure/timeout guard)
+-- FAIL run (framework, cycle-guard test):
+     × a 2-cycle silently demotes to RAW (no error, no hang) 5ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/chain-builder.test.ts > proposeChain — cycle guard > a 2-cycle silently demotes to RAW (no error, no hang)
+      Tests  1 failed | 13 skipped (14)
+-- RESTORE (git checkout) + green re-run:
+ Test Files  1 passed (1)
+      Tests  1 passed | 13 skipped (14)
+
+### Behavior 3 — raw inputs are un-fed (no link) (src/core/chain-builder.ts)
+-- PASS run (baseline):
+ Test Files  1 passed (1)
+      Tests  2 passed | 12 skipped (14)
+-- BREAK: drop the raw-input skip (emit a link even for raw inputs) — line 204
+   perl: 'if (inputPlan.recipe === null) continue;' -> 'if (false) continue;'
+-- FAIL run (framework, single-recipe link test):
+     × sizes each stage by ceil'd demand and links producer→consumer 5ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/chain-builder.test.ts > proposeChain — single-recipe chain > sizes each stage by ceil'd demand and links producer→consumer
+      Tests  1 failed | 1 passed | 12 skipped (14)
+-- RESTORE + green re-run:
+ Test Files  1 passed (1)
+      Tests  2 passed | 12 skipped (14)
+
+### Behavior 4 — excluded-machine recipes never selected (src/core/chain-builder.ts)
+-- PASS run (baseline):
+ Test Files  1 passed (1)
+      Tests  4 passed | 10 skipped (14)
+-- BREAK: ignore the exclusion set (line 99)
+   perl: 'if (excludedMachineIds.has(r.machineId)) continue;' -> 'if (false) continue;'
+-- FAIL run (framework, exclusion tests):
+     × never selects an excluded-machine recipe; its output becomes raw 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/chain-builder.test.ts > proposeChain — machine exclusion policy > never selects an excluded-machine recipe; its output becomes raw
+      Tests  1 failed | 3 passed | 10 skipped (14)
+-- RESTORE + green re-run:
+ Test Files  1 passed (1)
+      Tests  4 passed | 10 skipped (14)
+
+### Behavior 5 — applyChainProposal appends + focuses the target stage (src/state/store.ts)
+-- PASS run (baseline):
+ Test Files  1 passed (1)
+      Tests  5 passed | 113 skipped (118)
+-- BREAK: focus the WRONG stage (stages[0] instead of the target sink) — line 743
+   perl: replace the 'unconsumed sink' target lookup with proposal.stages[0] (item-id sorted → wrong stage when the target isn't first)
+-- FAIL run (framework, applyChainProposal focus test):
+     × appends fresh stages/links, sizes machines, seeds names + tiers, focuses target 11ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > applyChainProposal (Stage 8 / Phase 3) > appends fresh stages/links, sizes machines, seeds names + tiers, focuses target
+      Tests  1 failed | 4 passed | 113 skipped (118)
+-- RESTORE + green re-run:
+ Test Files  1 passed (1)
+      Tests  5 passed | 113 skipped (118)
+
+### Behavior 6 — machineCount overflow THROWS, never truncates (src/state/store.ts)
+-- PASS run (baseline):
+ Test Files  1 passed (1)
+      Tests  1 passed | 117 skipped (118)
+-- BREAK: drop the throw guard (silently Number()-truncate) — line 653
+   perl: 'if (count > BigInt(Number.MAX_SAFE_INTEGER)) {' -> 'if (false) {'
+-- FAIL run (framework, overflow-throw test):
+     × throws (never truncates) when a machine count exceeds MAX_SAFE_INTEGER 9ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > applyChainProposal (Stage 8 / Phase 3) > throws (never truncates) when a machine count exceeds MAX_SAFE_INTEGER
+      Tests  1 failed | 117 skipped (118)
+-- RESTORE + green re-run:
+ Test Files  1 passed (1)
+      Tests  1 passed | 117 skipped (118)
+
+### Behavior 7 — parseRateText rejects non-positive rates (src/ui/ChainBuilder.tsx)
+-- PASS run (baseline):
+ Test Files  1 passed (1)
+      Tests  5 passed | 1 skipped (6)
+-- BREAK: drop the non-positive guard (accept 0 / negatives)
+   perl: 'if (value.lte(Fraction.from(0))) {' -> 'if (false) {'
+-- FAIL run (framework, parseRateText zero/negative tests):
+     × rejects zero (non-positive) 3ms
+     × rejects a negative rate 1ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/ChainBuilder.test.tsx > parseRateText > rejects zero (non-positive)
+ FAIL  src/ui/ChainBuilder.test.tsx > parseRateText > rejects a negative rate
+      Tests  2 failed | 3 passed | 1 skipped (6)
+-- RESTORE + green re-run:
+ Test Files  1 passed (1)
+      Tests  5 passed | 1 skipped (6)
+
+==========================================================================
+All 7 distinct new production behaviors verified bidirectional: each has a
+passing baseline, a genuine framework FAIL under an exact break naming the
+new test(s), and a green re-run after restore.
