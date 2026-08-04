@@ -3,6 +3,23 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-04 — Stage 5 complete: the polish round — and that's the whole plan
+
+> Hey Michael — the finishing touches are in, and with them every stage
+> of the original plan is shipped. What's new: hover anywhere on the
+> schematic and you get a proper styled tooltip instead of the browser's
+> plain one; drag a Docs.json from your file manager and drop it
+> anywhere on the app — it reads the real UTF-16 file correctly, same as
+> the upload button; there's a ☾ button in the header for dark mode (it
+> remembers your choice, follows your system setting until you pick, and
+> darkens everything — canvas, schematic, blueprint); and fluid lanes
+> now look different from belts — dashed blue pipes in both the
+> schematic and the blueprint, so a Refinery build reads at a glance.
+> That's tooltips, drag-drop, dark mode, pipes — the polish list, done.
+> The foundry now does everything the master plan set out: exact solver,
+> your game data, saved plans, chained factory graphs, buildable
+> blueprints, and a finished surface.
+
 ## 2026-08-04 — Stage 4 complete: the blueprint view
 
 > Hey Michael — flip the new "View: Blueprint" button above the

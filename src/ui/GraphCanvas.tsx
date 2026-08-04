@@ -168,7 +168,13 @@ const EDGE_CLASS: Record<EdgeState, string> = {
 // The canvas component.
 // ---------------------------------------------------------------------------
 
-export function GraphCanvas() {
+/** GraphCanvas' first prop (Stage 5 item 3): the theme, forwarded to ReactFlow's
+ *  `colorMode` so the canvas surface tracks the app-level light/dark choice. */
+interface GraphCanvasProps {
+  colorMode: "light" | "dark";
+}
+
+export function GraphCanvas({ colorMode }: GraphCanvasProps) {
   const catalog = useAppStore((s) =>
     s.catalog.status === "ready" ? s.catalog.catalog : null,
   );
@@ -410,6 +416,7 @@ export function GraphCanvas() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        colorMode={colorMode}
         fitView
       >
         <Background />

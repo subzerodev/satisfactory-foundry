@@ -1,0 +1,95 @@
+==================================================================
+Stage 5 polish batch — bidirectionality verification (r2-verification.log)
+Date: 2026-08-04   Branch: feature/polish
+Method: per family — PASS baseline -> sed-break the PRODUCTION code the
+  new test guards -> confirm a GENUINE FAIL that NAMES the new test(s)
+  -> git restore -> confirm PASS again. Proves each new test actually
+  binds to the behaviour it claims (not a tautology / always-green).
+==================================================================
+
+### BASELINE — full suite PASS before any mutation
+ Test Files  17 passed (17)
+      Tests  395 passed (395)
+
+==================================================================
+### FAMILY 1 — segTooltip strings
+MUTATION: src/ui/format.ts segTooltip ' · peak ' -> ' XXX ' (corrupt the pinned tooltip string)
+EXPECT: format.test.ts segTooltip rows + smoke segTooltip rows FAIL
+--- FAIL run ---
+     × segTooltip carries the worked example's honest bus-segment string 3ms
+     × segTooltip shows a segment's honest peakFlow, not the belt's capacity 0ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/format.test.ts > segTooltip > matches the bus-segment tooltip string exactly
+ FAIL  src/ui/format.test.ts > segTooltip > formats a non-integer peakFlow and a single-machine span
+ FAIL  src/ui/smoke.test.tsx > Schematic > segTooltip carries the worked example's honest bus-segment string
+    172|     expect(segTooltip(feedSeg, busCap)).toBe(
+ FAIL  src/ui/smoke.test.tsx > Schematic > segTooltip shows a segment's honest peakFlow, not the belt's capacity
+    189|     expect(segTooltip(tailSeg, busCap)).toBe(
+      Tests  4 failed | 391 passed (395)
+--- restored; PASS run ---
+      Tests  395 passed (395)
+
+==================================================================
+### FAMILY 2 — no-<title>-remains smoke row
+MUTATION: src/ui/Schematic.tsx inject a <title>x</title> back into LaneG
+EXPECT: the 'no native <title> tooltips' smoke row FAILS
+--- FAIL run ---
+     × renders the worked example: enough rects, no native <title> tooltips 6ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/smoke.test.tsx > Schematic > renders the worked example: enough rects, no native <title> tooltips
+      Tests  1 failed | 394 passed (395)
+--- restored; PASS run ---
+      Tests  395 passed (395)
+
+==================================================================
+### FAMILY 3 — fileFromDrop
+MUTATION: src/ui/decode.ts fileFromDrop returns files[1] instead of files[0]
+EXPECT: the 'returns the first file' fileFromDrop row FAILS
+--- FAIL run ---
+     × returns the first file when the drop carries files 5ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/decode.test.ts > fileFromDrop > returns the first file when the drop carries files
+     74|   it("returns the first file when the drop carries files", () => {
+      Tests  1 failed | 394 passed (395)
+--- restored; PASS run ---
+      Tests  395 passed (395)
+
+==================================================================
+### FAMILY 4 — resolveInitialTheme
+MUTATION: src/ui/theme.ts drop the explicit-stored-choice branch (always defer to media)
+EXPECT: the explicit-override table rows (stored=dark mediaDark=false etc.) FAIL
+--- FAIL run ---
+     × stored="dark" mediaDark=false → dark 3ms
+     × stored="light" mediaDark=true → light 0ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/theme.test.ts > resolveInitialTheme > stored="dark" mediaDark=false → dark
+     21|     it(`stored=${JSON.stringify(stored)} mediaDark=${mediaDark} → ${ex…
+ FAIL  src/ui/theme.test.ts > resolveInitialTheme > stored="light" mediaDark=true → light
+     21|     it(`stored=${JSON.stringify(stored)} mediaDark=${mediaDark} → ${ex…
+      Tests  2 failed | 393 passed (395)
+--- restored; PASS run ---
+      Tests  395 passed (395)
+
+==================================================================
+### FAMILY 5 — pipe classes (.lane-pipe schematic + .bp-bus-pipe blueprint)
+MUTATION: Schematic pipeClass forced ""; Blueprint bus className forced "bp-bus"
+EXPECT: the schematic pipe-lane row + the blueprint bp-bus-pipe row FAIL
+--- FAIL run ---
+     × classes a pipe lane's bus segments with lane-pipe (Stage 5 item 4) 4ms
+     × classes a pipe feed's bus ribbon with bp-bus-pipe (Stage 5 item 4) 1ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/smoke.test.tsx > Schematic > classes a pipe lane's bus segments with lane-pipe (Stage 5 item 4)
+AssertionError: expected '<div class="schematic"><svg width="96…' to contain 'lane-pipe'
+Expected: "lane-pipe"
+    260|     expect(html).toContain("lane-pipe");
+ FAIL  src/ui/smoke.test.tsx > Blueprint > classes a pipe feed's bus ribbon with bp-bus-pipe (Stage 5 item 4)
+AssertionError: expected '<div class="bp-view"><svg class="bp-s…' to contain 'bp-bus-pipe'
+Expected: "bp-bus-pipe"
+    399|     // Exactly the pipe feed's ribbon is classed; the belt output's is…
+    400|     expect(html).toContain("bp-bus-pipe");
+    401|     expect((html.match(/bp-bus-pipe/g) ?? []).length).toBe(1);
+      Tests  2 failed | 393 passed (395)
+--- restored; PASS run ---
+      Tests  395 passed (395)
+
+### ALL FAMILIES VERIFIED — every new test binds to its behaviour; full suite green (395).
