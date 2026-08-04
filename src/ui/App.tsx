@@ -409,6 +409,8 @@ export default function App() {
               stageOrder={s.stageOrder}
               links={s.links}
               positions={s.positions}
+              activeStageId={s.activeStageId}
+              onSelectStage={s.setActiveStage}
             />
           ) : (
             <Schematic

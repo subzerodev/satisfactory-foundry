@@ -6,10 +6,11 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
 import { Fraction } from "../core/fraction.ts";
 import type { Catalog } from "../data/types.ts";
 import type { StageNode, StageLink, SolveState } from "../state/store.ts";
-import { deriveChainView } from "./ChainBlueprint.tsx";
+import { ChainBlueprint, deriveChainView } from "./ChainBlueprint.tsx";
 
 const F = (n: number): Fraction => Fraction.from(n);
 
@@ -170,5 +171,69 @@ describe("deriveChainView — solved-only skip + chrome + footer", () => {
     expect(view.footerText).toContain("(+ trains — see per-link)");
     // The train link contributes 0 to the summed transport term.
     expect(view.footerText).toContain("transport 0 MW");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Site focus (Stage 8 / Phase 1, Axis 3). SSR render smoke: the active site's
+// `.selected` outline + the `<g>` button semantics (role/tabIndex). The click
+// DISPATCH itself is the team-lead browser-walk gate (SSR strips handlers, per
+// the canvas-exclusion posture); its target — site.stageId — is pinned at the
+// derivation level (deriveChainView's sites carry the exact ids the closure
+// () => onSelectStage(site.stageId) passes).
+// ---------------------------------------------------------------------------
+
+describe("ChainBlueprint — site focus", () => {
+  const stages: Record<string, StageNode> = {
+    a: stage("a", solved()),
+    b: stage("b", solved("iron_ingot")),
+  };
+  const positions = { a: { x: 0, y: 0 }, b: { x: 300, y: 0 } };
+
+  function render(activeStageId: string) {
+    return renderToStaticMarkup(
+      <ChainBlueprint
+        catalog={catalog}
+        stages={stages}
+        stageOrder={["a", "b"]}
+        links={[]}
+        positions={positions}
+        activeStageId={activeStageId}
+        onSelectStage={() => {}}
+      />,
+    );
+  }
+
+  it("each site `<g>` carries button semantics (role + tabindex)", () => {
+    const html = render("a");
+    // Two solved sites → two role="button" groups, each keyboard-focusable.
+    expect((html.match(/role="button"/g) ?? []).length).toBe(2);
+    expect((html.match(/tabindex="0"/g) ?? []).length).toBe(2);
+  });
+
+  it("the ACTIVE site renders the `.selected` outline modifier; others don't", () => {
+    const html = render("a");
+    // Exactly one selected site (the active one); the other is plain.
+    expect((html.match(/chain-bp-site selected/g) ?? []).length).toBe(1);
+    expect(html).toContain('class="chain-bp-site selected"');
+    expect(html).toContain('class="chain-bp-site"'); // the non-active site
+  });
+
+  it("moving the active cursor moves the `.selected` outline to the new site", () => {
+    // Active b now → exactly one selected site, and it is the one whose foundation
+    // markup differs from the a-active render (the outline tracks activeStageId).
+    const withA = render("a");
+    const withB = render("b");
+    expect((withB.match(/chain-bp-site selected/g) ?? []).length).toBe(1);
+    // The two renders differ (the selected class sits on a different `<g>`).
+    expect(withA).not.toBe(withB);
+  });
+
+  it("site click targets carry the exact stageId the focus closure passes", () => {
+    // The onClick closure is () => onSelectStage(site.stageId). SSR can't fire
+    // it, so pin the wiring's INPUT: deriveChainView's sites are the click
+    // targets, one per solved stage, carrying the ids App threads to setActiveStage.
+    const view = deriveChainView(catalog, stages, ["a", "b"], [], positions);
+    expect(view.sites.map((s) => s.stageId)).toEqual(["a", "b"]);
   });
 });

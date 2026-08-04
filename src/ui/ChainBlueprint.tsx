@@ -44,6 +44,12 @@ interface ChainBlueprintProps {
   stageOrder: string[];
   links: StageLink[];
   positions: Record<string, { x: number; y: number }>;
+  /** The active stage (its site renders with the selected outline). App-owned;
+   *  ChainBlueprint stays store-free — App is the sole store importer. */
+  activeStageId: string;
+  /** Focus a stage (→ setActiveStage in App). Select-only; the view stays
+   *  Combined. Threaded down to each site's `<g>` (Stage 8 / Phase 1, Axis 3). */
+  onSelectStage: (stageId: string) => void;
 }
 
 export function ChainBlueprint({
@@ -52,6 +58,8 @@ export function ChainBlueprint({
   stageOrder,
   links,
   positions,
+  activeStageId,
+  onSelectStage,
 }: ChainBlueprintProps) {
   const view = useMemo(
     () => deriveChainView(catalog, stages, stageOrder, links, positions),
@@ -106,6 +114,8 @@ export function ChainBlueprint({
               originY={origin.y}
               name={info.name}
               powerText={info.powerText}
+              active={site.stageId === activeStageId}
+              onSelect={() => onSelectStage(site.stageId)}
             />
           );
         })}
@@ -129,12 +139,16 @@ function SiteGlyph({
   originY,
   name,
   powerText,
+  active,
+  onSelect,
 }: {
   site: ChainSite;
   originX: number;
   originY: number;
   name: string;
   powerText: string | null;
+  active: boolean;
+  onSelect: () => void;
 }) {
   const { cols, rows } = site.layout.foundations;
   // The foundation grid's own local origin (layoutStage may floor it negative
@@ -144,8 +158,21 @@ function SiteGlyph({
   const fy = site.layout.foundations.origin.y;
   return (
     <g
-      className="chain-bp-site"
+      className={active ? "chain-bp-site selected" : "chain-bp-site"}
       transform={`translate(${originX - fx}, ${originY - fy})`}
+      // Site focus (Stage 8 / Phase 1, Axis 3): clicking a site selects that
+      // stage (select-only — the view stays Combined). role/tabIndex + the
+      // Enter/Space handler give the `<g>` button semantics + keyboard parity.
+      role="button"
+      tabIndex={0}
+      style={{ cursor: "pointer" }}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
     >
       {/* Foundation tiles. */}
       <g className="bp-foundations">
