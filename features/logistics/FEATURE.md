@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-04
 **Status:** in-progress
-**Current phase:** Phase 0 (transport research) — in progress
+**Current phase:** Phase 1 (transport core math) — design next
 **Final PR:** —
 **Epic:** #27 (board #21, Stage 7 milestone 78)
 
@@ -26,10 +26,16 @@ train vs more individual trains."
 
 ### Phase 0 — transport research (RESEARCH-GATE)
 
-- **Status:** in progress — wiki.gg fact-gathering dispatched
-- **Ticket:** #30 (In Progress)
+- **Status:** complete (2026-08-04; 3-round correctness gate — r1 caught the
+  stale Freight Car 1600 m³ description string, r3 REFUTED a false byte-diff
+  claim with U+202F codepoint evidence — + simplify APPROVED_WITH_NITS both
+  rejected-with-rationale; bundled Docs.json verified content-identical to
+  the installed game's export per Michael's tip; ticket #30 Done)
+- **Ticket:** #30 (Done, closed)
 - **Artifact:** `docs/research/transport-facts.md` — per-fact URL +
-  retrieval date; Docs.json-derivable facts marked parser-sourced
+  retrieval date; Docs.json-derivable facts marked parser-sourced; the
+  "never parse capacities from mDescription prose" rule; honest Unknowns
+  (user-supplied trip time is the planner's primary input)
 
 ### Phase 1 — transport core math (deferred design)
 
