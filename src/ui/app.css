@@ -190,6 +190,52 @@ body {
   gap: 6px;
 }
 
+/* Build-chain panel (Stage 8 / Phase 3). */
+.chain-builder {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.chain-builder-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.chain-builder-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chain-builder-error {
+  margin: 8px 0 0;
+  color: var(--error);
+}
+
+.chain-builder-preview {
+  margin-top: 8px;
+}
+
+.chain-builder-rows {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.chain-builder-raw,
+.chain-builder-byproducts,
+.chain-builder-empty {
+  margin: 4px 0 0;
+  color: var(--fg-muted);
+}
+
+.chain-builder-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .tier-controls {
   display: flex;
   align-items: center;

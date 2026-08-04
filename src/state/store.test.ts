@@ -8,6 +8,8 @@ import { parseCatalogFromText } from "../data/catalog.ts";
 import type { PlanFileV1, PlanFileV2, PlanFileV4 } from "../data/plan-store.ts";
 import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
 import type { StageLink } from "./store.ts";
+import { proposeChain } from "../core/chain-builder.ts";
+import type { ChainProposal } from "../core/chain-builder.ts";
 import { applyDrawnDistance } from "../ui/chain-view.ts";
 import type { StateStorage } from "zustand/middleware";
 
@@ -2499,5 +2501,152 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     await store.getState().savePlanAs("Recovered");
     expect(store.getState().planError).toBeNull();
     expect(store.getState().plans!.map((p) => p.name)).toEqual(["Recovered"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyChainProposal (Stage 8 / Phase 3, ticket #39): the additive bulk apply.
+// ---------------------------------------------------------------------------
+
+describe("applyChainProposal (Stage 8 / Phase 3)", () => {
+  /** A store on the two-recipe chain catalog (ore→ingot, ingot→plate). */
+  async function chainCatalogStore() {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT_CHAIN);
+    return store;
+  }
+
+  /** proposeChain against the store's catalog (no excluded machines here). */
+  function propose(
+    store: ReturnType<typeof createAppStore>,
+    target: string,
+    rate: number,
+  ): ChainProposal {
+    const s = store.getState();
+    if (s.catalog.status !== "ready") throw new Error("catalog not ready");
+    return proposeChain(
+      target,
+      Fraction.from(rate),
+      Object.values(s.catalog.catalog.recipes),
+      [],
+    );
+  }
+
+  it("appends fresh stages/links, sizes machines, seeds names + tiers, focuses target", async () => {
+    const store = await chainCatalogStore();
+    // Start with one edited default stage to prove existing state is untouched.
+    store.getState().setUnlockedTiers({ belt: 2, pipe: 1 });
+    store.getState().selectRecipe("ingot_iron");
+    const existingId = store.getState().activeStageId;
+    const existingBefore = store.getState().stages[existingId]!;
+    const orderBefore = [...store.getState().stageOrder];
+    const seqBefore = store.getState().placementSeq;
+
+    // iron_plate @ 60/min → plate stage (2 machines) + ingot stage (2 machines).
+    const proposal = propose(store, "iron_plate", 60);
+    store.getState().applyChainProposal(proposal);
+    const s = store.getState();
+
+    // Existing stage untouched (same id, same selection object contents).
+    expect(s.stages[existingId]).toBeDefined();
+    expect(s.stages[existingId]!.selection.recipeId).toBe(
+      existingBefore.selection.recipeId,
+    );
+    expect(s.stageOrder.slice(0, orderBefore.length)).toEqual(orderBefore);
+
+    // Two proposed stages appended (fresh ids, not the existing one).
+    const appended = s.stageOrder.slice(orderBefore.length);
+    expect(appended).toHaveLength(2);
+    expect(appended).not.toContain(existingId);
+
+    // Names come from recipe display names; counts from the proposal.
+    const byName = new Map(
+      appended.map((id) => [s.stages[id]!.name, s.stages[id]!]),
+    );
+    expect([...byName.keys()].sort()).toEqual(["Iron Ingot", "Iron Plate"]);
+    expect(byName.get("Iron Plate")!.selection.machineCount).toBe(2);
+    expect(byName.get("Iron Ingot")!.selection.machineCount).toBe(2);
+    // clock "100", empty overrides.
+    expect(byName.get("Iron Plate")!.selection.clockPercentText).toBe("100");
+    expect(byName.get("Iron Plate")!.selection.overrides).toEqual({
+      feeds: {},
+      outputs: {},
+    });
+    // Tiers seeded from the ACTIVE stage (belt:2, not the full default table).
+    expect(byName.get("Iron Ingot")!.selection.unlockedTiers).toEqual({
+      belt: 2,
+      pipe: 1,
+    });
+
+    // One new link ingot→plate; monotonic positions never reused.
+    expect(s.links).toHaveLength(1);
+    expect(s.placementSeq).toBe(seqBefore + 2);
+
+    // The target (iron_plate) stage is active.
+    expect(s.stages[s.activeStageId]!.name).toBe("Iron Plate");
+  });
+
+  it("all links arrive ok-or-surplus after derive — never short", async () => {
+    const store = await chainCatalogStore();
+    const proposal = propose(store, "iron_plate", 60);
+    store.getState().applyChainProposal(proposal);
+    const s = store.getState();
+    // The built chain is self-consistent by construction (ceil'd consumption).
+    expect(s.reconciliation.some((f) => f.type === "under-supply")).toBe(false);
+    // The ingot→plate link is exact (2×30 supply = 2×30 demand): no finding.
+    expect(s.reconciliation).toHaveLength(0);
+  });
+
+  it("empty proposal is a no-op", async () => {
+    const store = await chainCatalogStore();
+    store.getState().selectRecipe("iron_plate");
+    const before = store.getState();
+    const orderBefore = [...before.stageOrder];
+    const seqBefore = before.placementSeq;
+    const activeBefore = before.activeStageId;
+
+    const empty: ChainProposal = {
+      stages: [],
+      links: [],
+      rawInputs: [],
+      byproducts: [],
+    };
+    store.getState().applyChainProposal(empty);
+    const s = store.getState();
+    expect(s.stageOrder).toEqual(orderBefore);
+    expect(s.placementSeq).toBe(seqBefore);
+    expect(s.activeStageId).toBe(activeBefore);
+    expect(s.links).toEqual([]);
+  });
+
+  it("a target that is itself raw yields an empty proposal → no-op", async () => {
+    const store = await chainCatalogStore();
+    const orderBefore = [...store.getState().stageOrder];
+    // ore_iron has no producer → the proposal is all-raw (no stages).
+    const proposal = propose(store, "ore_iron", 120);
+    expect(proposal.stages).toEqual([]);
+    store.getState().applyChainProposal(proposal);
+    expect(store.getState().stageOrder).toEqual(orderBefore);
+  });
+
+  it("throws (never truncates) when a machine count exceeds MAX_SAFE_INTEGER", async () => {
+    const store = await chainCatalogStore();
+    // A hand-built proposal with a bigint count past the safe-integer boundary.
+    const huge: ChainProposal = {
+      stages: [
+        {
+          itemId: "iron_plate",
+          recipeId: "iron_plate",
+          machineCount: BigInt(Number.MAX_SAFE_INTEGER) + 1n,
+          outputRate: Fraction.from(1),
+        },
+      ],
+      links: [],
+      rawInputs: [],
+      byproducts: [],
+    };
+    expect(() => store.getState().applyChainProposal(huge)).toThrow(
+      /exceeds Number.MAX_SAFE_INTEGER/,
+    );
   });
 });

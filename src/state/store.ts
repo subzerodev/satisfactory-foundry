@@ -19,6 +19,7 @@ import { solveStage } from "../core/manifold.ts";
 import type { StageSolveResult } from "../core/manifold.ts";
 import { reconcileLinks } from "../core/reconcile.ts";
 import type { LinkInput, LinkFinding } from "../core/reconcile.ts";
+import type { ChainProposal } from "../core/chain-builder.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
 import type { Catalog } from "../data/types.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
@@ -266,6 +267,14 @@ export interface Actions {
   /** Open the LinkInspector for a link (null closes it). */
   selectLink(linkId: string | null): void;
   setStagePosition(id: string, pos: { x: number; y: number }): void;
+  /**
+   * Apply an auto-chain proposal (Stage 8 / Phase 3): APPEND its stages/links to
+   * the current graph with fresh uuids, then derive + reconcile + mirror. The
+   * proposal's target stage becomes active. Existing stages/links are untouched
+   * (append-only, collision-free by construction — all new links are between
+   * fresh ids). An empty proposal (no stages) is a no-op.
+   */
+  applyChainProposal(proposal: ChainProposal): void;
   refreshPlans(): Promise<void>;
   savePlanAs(name: string): Promise<void>;
   loadPlan(id: string): Promise<void>;
@@ -631,6 +640,122 @@ function rebuildFromPlan(
   return {
     ...deriveAllStages(rebuilt, (sel) => sel),
     placementSeq: plan.stages.length,
+  };
+}
+
+/**
+ * Narrow a proposed stage's bigint machineCount to a Selection's safe-integer
+ * number, THROWING (never truncating) past MAX_SAFE_INTEGER — the manifold
+ * `toIndex` precedent. An implausibly-large proposal is a hard error, not a
+ * silently-corrupted plan.
+ */
+function machineCountToNumber(count: bigint): number {
+  if (count > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError(
+      `applyChainProposal: machine count ${count} exceeds ` +
+        "Number.MAX_SAFE_INTEGER; proposal is implausibly large.",
+    );
+  }
+  return Number(count);
+}
+
+/**
+ * Apply an auto-chain proposal (Stage 8 / Phase 3, frozen Axis 5) by APPENDING
+ * its stages/links to the current graph — the rebuildFromPlan composition, made
+ * additive. Each proposed stage gets a fresh uuid, a name from its recipe's
+ * display name, a consecutive placementSlot, and a Selection seeded from the
+ * ACTIVE stage's tiers (the tiers-global invariant — addStage's own rule) with
+ * clock "100" + empty overrides. Links map the proposal's item keys to the fresh
+ * uuids (StageLink.itemId === fromItemId). Then ONE deriveAllStages +
+ * reconciliation + mirrorActive; the proposal's target stage becomes active.
+ *
+ * Append-only ⇒ collision-free: every new link is between fresh ids, so no
+ * `(toStageId, itemId)` clash with an existing link is possible, and one stage
+ * per proposed item forbids duplicate lanes internally. An empty proposal (no
+ * stages) is a no-op — returns the slice unchanged with its placementSeq.
+ */
+function applyProposalToSlice(
+  slice: GraphSlice,
+  placementSeq: number,
+  proposal: ChainProposal,
+): GraphSlice & { placementSeq: number } {
+  if (proposal.stages.length === 0) {
+    return { ...slice, placementSeq };
+  }
+  const { catalog } = slice;
+  const recipeDisplayName = (recipeId: string): string =>
+    catalog.status === "ready"
+      ? (catalog.catalog.recipes[recipeId]?.displayName ?? recipeId)
+      : recipeId;
+  // Tiers seed from the active stage (the canonical global tiers value).
+  const globalTiers = slice.selection.unlockedTiers;
+
+  // Fresh uuid per proposed item, keyed by item id (links resolve through this).
+  const idByItem = new Map<string, string>();
+  for (const stage of proposal.stages) {
+    idByItem.set(stage.itemId, crypto.randomUUID());
+  }
+
+  const stages: Record<string, StageNode> = { ...slice.stages };
+  const stageOrder = [...slice.stageOrder];
+  const positions: Record<string, { x: number; y: number }> = {
+    ...slice.positions,
+  };
+  let seq = placementSeq;
+  for (const stage of proposal.stages) {
+    const id = idByItem.get(stage.itemId)!;
+    const selection: Selection = {
+      recipeId: stage.recipeId,
+      machineCount: machineCountToNumber(stage.machineCount),
+      clockPercentText: "100",
+      unlockedTiers: { ...globalTiers },
+      overrides: { feeds: {}, outputs: {} },
+    };
+    stages[id] = {
+      id,
+      name: recipeDisplayName(stage.recipeId),
+      selection,
+      solve: { status: "idle" },
+    };
+    stageOrder.push(id);
+    // Consecutive monotonic slots — never reused, so no collision handling.
+    positions[id] = placementSlot(seq);
+    seq += 1;
+  }
+
+  // Links: item keys → fresh stage uuids. Both ends are proposed items (raw
+  // leaves emit no link), so both ids resolve. StageLink.itemId === fromItemId.
+  const newLinks: StageLink[] = proposal.links.map((l) => ({
+    id: crypto.randomUUID(),
+    fromStageId: idByItem.get(l.fromItemId)!,
+    toStageId: idByItem.get(l.toItemId)!,
+    itemId: l.fromItemId,
+  }));
+
+  // Target stage becomes active (focus lands on the user's intent). The proposal
+  // doesn't carry the target id, but the target is the unique produced item that
+  // no link consumes: every other produced item is in the closure ONLY because
+  // some stage consumes it (so it appears as a link's fromItemId), while the
+  // target is the sole sink. The `?? stages[0]` fallback is belt-and-braces for
+  // a degenerate single-stage proposal with no links.
+  const consumedItems = new Set(proposal.links.map((l) => l.fromItemId));
+  const targetStage =
+    proposal.stages.find((s) => !consumedItems.has(s.itemId)) ??
+    proposal.stages[0]!;
+  const activeStageId = idByItem.get(targetStage.itemId)!;
+
+  const appended: GraphSlice = {
+    ...slice,
+    stages,
+    stageOrder,
+    positions,
+    links: [...slice.links, ...newLinks],
+    activeStageId,
+    selectedLinkId: null,
+  };
+  return {
+    ...deriveAllStages(appended, (sel) => sel),
+    placementSeq: seq,
   };
 }
 
@@ -1248,6 +1373,14 @@ export function createAppStore(storage?: StateStorage) {
               if (s.stages[id] === undefined) return {};
               return { positions: { ...s.positions, [id]: pos } };
             });
+          },
+
+          applyChainProposal(proposal: ChainProposal) {
+            // Append the proposed stages/links (fresh uuids), derive + reconcile
+            // + mirror, and focus the target stage. Additive rebuildFromPlan
+            // idiom; empty proposal is a no-op. Threads placementSeq through the
+            // helper so the monotonic counter stays never-reused.
+            set((s) => applyProposalToSlice(s, s.placementSeq, proposal));
           },
 
           // --- Plan lifecycle (frozen Axis 3) --------------------------------
