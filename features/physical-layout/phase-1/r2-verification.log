@@ -1,0 +1,80 @@
+Stage 4 / Phase 1 — layout engine: bidirectionality verification log
+=====================================================================
+Worktree: .worktrees/layout-p1   Branch: feature/layout-p1
+Date: 2026-08-04   Baseline suite: 347 → 373 (26 new layout tests)
+
+Method: for each test family, PASS on HEAD, then a surgical sed/perl break to
+the production source, re-run to confirm a GENUINE FAIL naming the family's
+tests, then restore and re-confirm PASS. Plus a lint-enforcement proof that the
+src/layout purity sibling block actually bites.
+
+Commands: `npm run check` (tsc -b && eslint . && prettier --check src) and
+`npx vitest run src/layout/layout.test.ts [-t <family>]`.
+
+
+LINT SIBLING ENFORCEMENT (the whole point of the layout-specific regex)
+-----------------------------------------------------------------------
+[A] Inject `import { store } from "../state/store.ts";` into src/layout/layout.ts
+    PASS→FAIL:  eslint FAILS with
+      "19:1 error '../state/store.ts' import is restricted ... src/layout must
+       not import from the state/ui layers  @typescript-eslint/no-restricted-imports"
+    Restore →  eslint CLEAN.
+[B] Inject `import type { Catalog } from "../data/types.ts";` (data is ALLOWED
+    for layout, unlike the core block which bans it).
+    Result:    eslint CLEAN (no import-ban error) — the layout regex
+      `^\.\./(\.\./)*(state|ui)(/|$)` omits `data` by design.
+    Restore →  eslint CLEAN.
+=> The sibling block enforces state|ui bans while permitting data — proven both
+   directions.
+
+
+FAMILY 1 — ROW PLACEMENT (pitch + grid origins)
+-----------------------------------------------
+HEAD:   family PASS.
+BREAK:  drop the `+ 10` from `pitch = ceilTo10(footprint.width) + 10`.
+FAIL:   3 failed | 1 passed | 22 skipped — the pitch/origin assertions
+        (Constructor 90-pitch, Smelter 60, Foundry 110) fail; gap-11 check fails.
+RESTORE: family PASS.
+
+FAMILY 2 — LANE GEOMETRY (lane y, junction placement/count)
+-----------------------------------------------------------
+HEAD:   family PASS.
+BREAK:  flip the feed-lane y sign: `y = -(BELT_LANE + f*LANE_SPACING)` →
+        `y = (BELT_LANE + f*LANE_SPACING)`.
+FAIL:   2 failed | 4 passed | 20 skipped — feed-lane y-position and
+        junction-centring (busY-derived) assertions fail.
+RESTORE: family PASS.
+
+FAMILY 3 — MARKS (drop marks incl. head-0 + coincident; break-out marks)
+------------------------------------------------------------------------
+HEAD:   family PASS.
+BREAK:  drop the pitch multiply in `boundaryX`: `return m * pitch` → `return m`.
+FAIL:   3 failed | 23 skipped — every mark-x assertion (head 0, boundary 120,
+        coincident 180, break-out 180) fails.
+RESTORE: family PASS.
+
+FAMILY 4 — FOUNDATIONS (80 dm inflation, exact-boundary + one-dm-over)
+---------------------------------------------------------------------
+HEAD:   family PASS.
+BREAK:  floor instead of ceil the far edge:
+        `ceilToMultiple(maxX-originX, 80)` → `floor((maxX-originX)/80)*80`.
+FAIL:   2 failed | 2 passed | 22 skipped — the inflation and one-dm-over
+        col/row counts fail (the exact-80 case still passes, correctly, since
+        floor==ceil on a boundary — which is why the one-dm-over case exists).
+RESTORE: family PASS.
+
+FAMILY 5 — FALLBACK (unknown machineId → default + finding)
+-----------------------------------------------------------
+HEAD:   family PASS.
+BREAK:  flip the finding guard `if (known === undefined)` → `if (known !== undefined)`
+        so the unknown-footprint finding never fires for a real miss.
+FAIL:   2 failed | 24 skipped — the finding-emitted assertion and the
+        no-finding-for-known assertion both fail.
+RESTORE: family PASS.
+
+
+FINAL
+-----
+`npx vitest run src/layout/layout.test.ts` → 26 passed (26).
+`npm test` (full suite) → 373 passed (16 files).
+`npm run check` → tsc + eslint + prettier all clean.
