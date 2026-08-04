@@ -8,6 +8,7 @@ import { parseCatalogFromText } from "../data/catalog.ts";
 import type { PlanFileV1, PlanFileV2, PlanFileV3 } from "../data/plan-store.ts";
 import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
 import type { StageLink } from "./store.ts";
+import { applyDrawnDistance } from "../ui/chain-view.ts";
 import type { StateStorage } from "zustand/middleware";
 
 // ---------------------------------------------------------------------------
@@ -1485,6 +1486,50 @@ describe("stage graph — link transport + selection (Stage 7 P2)", () => {
     store.getState().clearLinkTransport(linkId);
     // The key is fully dropped (belt default), not left as an empty object.
     expect("transport" in store.getState().links[0]!).toBe(false);
+  });
+
+  it("applies a drawn distance through setLinkTransport — road one-way vs drone 2× (the units trap)", async () => {
+    // The Axis-3 measure feed: applyDrawnDistance maps the drawn dm per the
+    // mode's arm, and the store write lands that raw text on the link. 4120 dm
+    // drawn → road distanceText 412 (one-way m); drone flightMetersText 824
+    // (round-trip = 2× one-way). This pins the ONE units-trap mapping site as it
+    // reaches the store.
+    const { store, linkId } = await linkedStore();
+
+    // Road (truck): estimated distanceText = one-way meters.
+    store.getState().setLinkTransport(linkId, {
+      mode: "truck",
+      trip: { kind: "estimated", distanceText: "" },
+    });
+    const roadNext = applyDrawnDistance(store.getState().links[0]!, 4120);
+    store.getState().setLinkTransport(linkId, roadNext!);
+    expect(store.getState().links[0]!.transport).toEqual({
+      mode: "truck",
+      trip: { kind: "estimated", distanceText: "412" },
+    });
+
+    // Drone: estimated flightMetersText = ROUND-TRIP meters (2× the drawn one-way).
+    store.getState().setLinkTransport(linkId, {
+      mode: "drone",
+      fuel: "battery",
+      trip: { kind: "estimated", flightMetersText: "" },
+    });
+    const droneNext = applyDrawnDistance(store.getState().links[0]!, 4120);
+    store.getState().setLinkTransport(linkId, droneNext!);
+    expect(store.getState().links[0]!.transport).toEqual({
+      mode: "drone",
+      fuel: "battery",
+      trip: { kind: "estimated", flightMetersText: "824" },
+    });
+  });
+
+  it("offers no apply mapping for a measured link (never downgrade the basis)", async () => {
+    const { store, linkId } = await linkedStore();
+    store.getState().setLinkTransport(linkId, {
+      mode: "truck",
+      trip: { kind: "measured", roundTripSecondsText: "60" },
+    });
+    expect(applyDrawnDistance(store.getState().links[0]!, 4120)).toBeNull();
   });
 
   it("selectLink opens the inspector; removeLink clears a selection on it", async () => {

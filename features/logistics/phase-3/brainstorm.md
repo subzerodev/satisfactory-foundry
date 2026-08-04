@@ -131,7 +131,10 @@ the LinkInspector — never an automatic write.**
 ## Axis 4 — combined-view power footer (the P2 revisit hook)
 
 **Pick: a footer line on the combined view — "Sites Σ X MW · transport
-Y MW · total Z MW" — computed from the existing per-stage power math plus
+Y MW" (NO merged total: it would sum the ≈-float sites term with the
+exact transport term, laundering the float across the labeled boundary —
+implementation amendment per the #33 boundary decision, 2026-08-04) —
+computed from the existing per-stage power math plus
 the P2 station/port power of CONFIGURED links. Chain Σ elsewhere (canvas
 panel, SummaryCards) stays stages-only, unchanged.**
 

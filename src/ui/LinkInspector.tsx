@@ -19,6 +19,12 @@ import type {
 import type { DroneFuel } from "../core/transport-facts.ts";
 import { formatRate } from "./format.ts";
 import { linkRequiredRate, globalUnlockedTiers } from "./graph-flow.ts";
+import {
+  drawnDistanceDm,
+  drawnMeters,
+  applyDrawnDistance,
+  isEstimatedLink,
+} from "./chain-view.ts";
 import { computeLinkTransport, legalModesFor } from "./transport-plan.ts";
 import {
   MODE_LABEL,
@@ -86,6 +92,8 @@ export function LinkInspector() {
   const selectedLinkId = useAppStore((s) => s.selectedLinkId);
   const links = useAppStore((s) => s.links);
   const stages = useAppStore((s) => s.stages);
+  const stageOrder = useAppStore((s) => s.stageOrder);
+  const positions = useAppStore((s) => s.positions);
   const catalog = useAppStore((s) =>
     s.catalog.status === "ready" ? s.catalog.catalog : null,
   );
@@ -115,6 +123,23 @@ export function LinkInspector() {
     item,
     catalog.tiers,
     globalUnlockedTiers(catalog, stages),
+  );
+
+  // The combined-view drawn straight-line distance (Stage 7 / Phase 3, Axis 3):
+  // null when either endpoint is unsolved (not placed in the chain). Estimated-
+  // mode links get the "use drawn distance" action; measured links a readout
+  // only (a measured time is better information — never downgraded).
+  // Unmemoized by design: this component early-returns above (no-selection /
+  // missing-link guards), so a hook here would violate the Rules of Hooks —
+  // the browser walk caught exactly that when a memo was tried. Recomputing
+  // per render matches this file's existing plan-computation idiom.
+  const distanceDm = drawnDistanceDm(
+    link.id,
+    catalog,
+    stages,
+    stageOrder,
+    links,
+    positions,
   );
 
   return (
@@ -166,6 +191,21 @@ export function LinkInspector() {
       {/* Results (solved-only). An unsolved link shows the mode select but no
           fleet math; an errored config shows its message. */}
       <Results plan={plan} />
+
+      {/* Measure feed (Stage 7 / Phase 3, Axis 3): the combined-view drawn
+          straight-line distance. Estimated-mode links get a "use drawn distance"
+          button; measured links a readout only. Absent when either endpoint is
+          unsolved (no chain placement). */}
+      {distanceDm !== null && (
+        <MeasureFeed
+          distanceDm={distanceDm}
+          estimated={isEstimatedLink(link)}
+          onApply={() => {
+            const next = applyDrawnDistance(link, distanceDm);
+            if (next !== null) setLinkTransport(link.id, next);
+          }}
+        />
+      )}
 
       {caveatFor(mode) !== null && (
         <p className="link-inspector-caveat">{caveatFor(mode)}</p>
@@ -266,6 +306,44 @@ function TripFields({
             </label>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Measure feed — the combined-view drawn distance (Stage 7 / Phase 3, Axis 3).
+// ---------------------------------------------------------------------------
+
+/**
+ * The drawn straight-line distance readout + (estimated-mode only) the "use
+ * drawn distance" action. The distance measures the DRAWN plan — a lower bound
+ * on any real route — so it is labelled "optimistic". Measured-mode links show
+ * the readout with no action (a measured time is better information than a drawn
+ * line — never downgraded).
+ */
+function MeasureFeed({
+  distanceDm,
+  estimated,
+  onApply,
+}: {
+  distanceDm: number;
+  estimated: boolean;
+  onApply: () => void;
+}) {
+  return (
+    <div className="link-inspector-measure">
+      <p className="link-inspector-measure-readout">
+        drawn straight-line — optimistic · {drawnMeters(distanceDm)} m
+      </p>
+      {estimated && (
+        <button
+          type="button"
+          className="link-inspector-measure-apply"
+          onClick={onApply}
+        >
+          use drawn distance
+        </button>
       )}
     </div>
   );
