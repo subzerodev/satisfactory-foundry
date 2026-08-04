@@ -229,7 +229,7 @@ export function computeLinkTransport(
     case "belt":
       return continuousPlan("belt", rate, tiers, unlockedTiers, undefined);
     case "pipe":
-      // Only pipe carries the S8P2 derate; belt is always undated.
+      // Only pipe carries the S8P2 derate; belt is never derated.
       return continuousPlan(
         "pipe",
         rate,

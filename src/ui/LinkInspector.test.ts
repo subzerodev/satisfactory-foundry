@@ -16,6 +16,10 @@ import {
   applyBlockFor,
   setPipeDerate,
   setSharedEnd,
+  toEstimated,
+  toMeasured,
+  setEstimatedText,
+  setMeasuredSeconds,
 } from "./LinkInspector.tsx";
 import type { LinkTransport } from "../state/store.ts";
 
@@ -264,6 +268,80 @@ describe("setSharedEnd — absent-or-true checkbox stripping", () => {
       mode: "train",
       trip: { kind: "measured", roundTripSecondsText: "200" },
       sharedEnds: { to: true },
+    });
+  });
+});
+
+describe("trip edits preserve a train link's sharedEnds (boundary fold)", () => {
+  const flagged: Extract<LinkTransport, { mode: "train" }> = {
+    mode: "train",
+    trip: { kind: "estimated", distanceText: "1500" },
+    sharedEnds: { from: true },
+  };
+
+  it("setEstimatedText carries sharedEnds through", () => {
+    expect(setEstimatedText(flagged, "2000")).toEqual({
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "2000" },
+      sharedEnds: { from: true },
+    });
+  });
+
+  it("toMeasured / toEstimated round-trip keeps the override", () => {
+    const measured = toMeasured(flagged);
+    expect(measured).toEqual({
+      mode: "train",
+      trip: { kind: "measured", roundTripSecondsText: "" },
+      sharedEnds: { from: true },
+    });
+    expect(
+      toEstimated(measured as Extract<LinkTransport, { mode: "train" }>),
+    ).toEqual({
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "" },
+      sharedEnds: { from: true },
+    });
+  });
+
+  it("setMeasuredSeconds carries sharedEnds through", () => {
+    const measured: Extract<LinkTransport, { mode: "train" }> = {
+      mode: "train",
+      trip: { kind: "measured", roundTripSecondsText: "200" },
+      sharedEnds: { from: true, to: true },
+    };
+    expect(setMeasuredSeconds(measured, "240")).toEqual({
+      mode: "train",
+      trip: { kind: "measured", roundTripSecondsText: "240" },
+      sharedEnds: { from: true, to: true },
+    });
+  });
+
+  it("absent sharedEnds stays absent (no key materialized by a trip edit)", () => {
+    const bare: Extract<LinkTransport, { mode: "train" }> = {
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "1500" },
+    };
+    expect(setEstimatedText(bare, "2000")).toEqual({
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "2000" },
+    });
+    expect(toMeasured(bare)).toEqual({
+      mode: "train",
+      trip: { kind: "measured", roundTripSecondsText: "" },
+    });
+  });
+
+  it("road modes are untouched by the fold (no sharedEnds ever)", () => {
+    const truck: Extract<
+      LinkTransport,
+      { mode: "truck" | "tractor" | "explorer" | "fluid-truck" }
+    > = {
+      mode: "truck",
+      trip: { kind: "estimated", distanceText: "800" },
+    };
+    expect(setEstimatedText(truck, "900")).toEqual({
+      mode: "truck",
+      trip: { kind: "estimated", distanceText: "900" },
     });
   });
 });

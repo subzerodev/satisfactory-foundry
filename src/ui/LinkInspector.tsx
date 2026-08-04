@@ -669,7 +669,17 @@ export function setSharedEnd(
  *  by the discriminant, matching the call-site narrowing exactly. */
 type TripTransport = Exclude<LinkTransport, { mode: "belt" | "pipe" }>;
 
-function toEstimated(t: TripTransport): LinkTransport {
+/** Rebuild a train config around a new trip, carrying `sharedEnds` through —
+ *  a trip edit must not wipe the per-end override (boundary-review fold). */
+function trainWithTrip(
+  trip: Extract<LinkTransport, { mode: "train" }>["trip"],
+  sharedEnds: { from?: true; to?: true } | undefined,
+): LinkTransport {
+  const base: LinkTransport = { mode: "train", trip };
+  return sharedEnds !== undefined ? { ...base, sharedEnds } : base;
+}
+
+export function toEstimated(t: TripTransport): LinkTransport {
   if (t.mode === "drone") {
     return {
       mode: "drone",
@@ -677,10 +687,12 @@ function toEstimated(t: TripTransport): LinkTransport {
       trip: { kind: "estimated", flightMetersText: "" },
     };
   }
-  return { mode: t.mode, trip: { kind: "estimated", distanceText: "" } };
+  const trip = { kind: "estimated", distanceText: "" } as const;
+  if (t.mode === "train") return trainWithTrip(trip, t.sharedEnds);
+  return { mode: t.mode, trip };
 }
 
-function toMeasured(t: TripTransport): LinkTransport {
+export function toMeasured(t: TripTransport): LinkTransport {
   if (t.mode === "drone") {
     return {
       mode: "drone",
@@ -688,7 +700,9 @@ function toMeasured(t: TripTransport): LinkTransport {
       trip: { kind: "measured", roundTripSecondsText: "" },
     };
   }
-  return { mode: t.mode, trip: { kind: "measured", roundTripSecondsText: "" } };
+  const trip = { kind: "measured", roundTripSecondsText: "" } as const;
+  if (t.mode === "train") return trainWithTrip(trip, t.sharedEnds);
+  return { mode: t.mode, trip };
 }
 
 function estimatedText(t: TripTransport): string {
@@ -696,7 +710,10 @@ function estimatedText(t: TripTransport): string {
   return t.mode === "drone" ? t.trip.flightMetersText : t.trip.distanceText;
 }
 
-function setEstimatedText(t: TripTransport, text: string): LinkTransport {
+export function setEstimatedText(
+  t: TripTransport,
+  text: string,
+): LinkTransport {
   if (t.mode === "drone") {
     return {
       mode: "drone",
@@ -704,14 +721,19 @@ function setEstimatedText(t: TripTransport, text: string): LinkTransport {
       trip: { kind: "estimated", flightMetersText: text },
     };
   }
-  return { mode: t.mode, trip: { kind: "estimated", distanceText: text } };
+  const trip = { kind: "estimated", distanceText: text } as const;
+  if (t.mode === "train") return trainWithTrip(trip, t.sharedEnds);
+  return { mode: t.mode, trip };
 }
 
 function measuredSecondsText(t: TripTransport): string {
   return t.trip.kind === "measured" ? t.trip.roundTripSecondsText : "";
 }
 
-function setMeasuredSeconds(t: TripTransport, text: string): LinkTransport {
+export function setMeasuredSeconds(
+  t: TripTransport,
+  text: string,
+): LinkTransport {
   if (t.mode === "drone") {
     const existingMeters =
       t.trip.kind === "measured" ? t.trip.flightMetersText : undefined;
@@ -727,10 +749,9 @@ function setMeasuredSeconds(t: TripTransport, text: string): LinkTransport {
       },
     };
   }
-  return {
-    mode: t.mode,
-    trip: { kind: "measured", roundTripSecondsText: text },
-  };
+  const trip = { kind: "measured", roundTripSecondsText: text } as const;
+  if (t.mode === "train") return trainWithTrip(trip, t.sharedEnds);
+  return { mode: t.mode, trip };
 }
 
 function droneMeasuredMeters(t: TripTransport): string {

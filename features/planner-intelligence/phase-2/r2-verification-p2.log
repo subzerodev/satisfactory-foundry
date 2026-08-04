@@ -248,3 +248,14 @@ FINAL FULL-SUITE GREEN (after all restores):
   $ npm run check →  tsc -b + eslint + prettier all clean (exit 0)
 Baseline before this phase: 591 tests. New: +40 → 631.
 ================================================================================
+
+R2-11: trip edits preserve a train link's sharedEnds (boundary-review fold)
+PASS: npx vitest run src/ui/LinkInspector.test.ts -> 17 passed (17)
+BREAK: sed -i 's|return trainWithTrip(trip, t.sharedEnds);|return trainWithTrip(trip, undefined);|g' src/ui/LinkInspector.tsx
+FAIL (genuine, captured with the carry broken):
+ FAIL  src/ui/LinkInspector.test.ts > trip edits preserve a train link's sharedEnds (boundary fold) > setEstimatedText carries sharedEnds through
+ FAIL  src/ui/LinkInspector.test.ts > trip edits preserve a train link's sharedEnds (boundary fold) > toMeasured / toEstimated round-trip keeps the override
+ FAIL  src/ui/LinkInspector.test.ts > trip edits preserve a train link's sharedEnds (boundary fold) > setMeasuredSeconds carries sharedEnds through
+ (1 failed, 3 tests failed | exit 1)
+RESTORE: cp <scratchpad>/LinkInspector.tsx.bak src/ui/LinkInspector.tsx
+RE-RUN: npx vitest run src/ui/LinkInspector.test.ts -> 17 passed (17); full: npm test -> 636 passed (636)

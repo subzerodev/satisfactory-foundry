@@ -1381,9 +1381,9 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                // loadPlanFile returns v3 (migrating older rows), so this spread
-                // widens to v3 — renaming an older row rewrites it as v3,
-                // consistent with the save-over model (any write persists v3).
+                // loadPlanFile returns v4 (migrating older rows), so this spread
+                // widens to v4 — renaming an older row rewrites it as v4,
+                // consistent with the save-over model (any write persists v4).
                 const renamed: PlanFileV4 = {
                   ...plan,
                   name: trimmed,
