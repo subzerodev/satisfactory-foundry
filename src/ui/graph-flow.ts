@@ -495,26 +495,25 @@ export function computeTransportFindings(
   catalog: Catalog,
   stages: Record<string, StageNode>,
   links: StageLink[],
-  unlockedTiers: { belt: number; pipe: number },
 ): string[] {
   const findings: string[] = [];
   for (const link of links) {
+    // Pre-filters stay per-surface: the cheap train-only skip before the call
+    // (a non-train link is never a finding), and the rate-null skip below
+    // (solved-only fleet math). rate is also a downstream input to the
+    // sustainability row/text, so it is resolved here rather than folded away.
     if (link.transport?.mode !== "train") continue;
     const rate = linkRequiredRate(link, stages);
     if (rate === null) continue; // unsolved → no fleet math (solved-only)
-    const item = catalog.items[link.itemId];
-    if (item === undefined) continue;
-    // This surface threads its OWN unlockedTiers argument (not the plan-global
-    // globalUnlockedTiers planForLink derives), so it does not fold to the
-    // shared resolver — the five-arg computeLinkTransport call stays here.
-    const plan = computeLinkTransport(
-      rate,
-      link.transport,
-      item,
-      catalog.tiers,
-      unlockedTiers,
-    );
-    if (plan.kind !== "train") continue; // an errored config is not a finding
+    // #34: the resolve preamble folds to the shared planForLink. Its internal
+    // globalUnlockedTiers equals the plan-global tiers this surface previously
+    // threaded (stamped identically over every stage; the tiers value is never
+    // consulted with zero stages, where no links exist to reach here). null
+    // (missing item) is not a finding; the post-call kind check drops an
+    // errored config (the rate-null skip already excluded the unsolved plan).
+    const plan = planForLink(link, catalog, stages);
+    if (plan === null || plan.kind !== "train") continue;
+    const item = catalog.items[link.itemId]!; // non-null: planForLink resolved
     const row = unsustainableTrainRow(rate, plan.options);
     if (row === null) continue; // sustainable at some consist size
     findings.push(unsustainableTrainText(item.displayName, rate, row));

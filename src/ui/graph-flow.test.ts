@@ -834,10 +834,7 @@ describe("computeTransportFindings", () => {
       mode: "train",
       trip: { kind: "measured", roundTripSecondsText: "60" },
     });
-    const findings = computeTransportFindings(transportCatalog, stages, links, {
-      belt: 4,
-      pipe: 2,
-    });
+    const findings = computeTransportFindings(transportCatalog, stages, links);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toContain("Iron Ingot:");
   });
@@ -847,12 +844,9 @@ describe("computeTransportFindings", () => {
       mode: "train",
       trip: { kind: "measured", roundTripSecondsText: "200" },
     });
-    expect(
-      computeTransportFindings(transportCatalog, stages, links, {
-        belt: 4,
-        pipe: 2,
-      }),
-    ).toEqual([]);
+    expect(computeTransportFindings(transportCatalog, stages, links)).toEqual(
+      [],
+    );
   });
 
   it("a non-train link never contributes a finding", () => {
@@ -860,22 +854,16 @@ describe("computeTransportFindings", () => {
       mode: "truck",
       trip: { kind: "measured", roundTripSecondsText: "60" },
     });
-    expect(
-      computeTransportFindings(transportCatalog, stages, links, {
-        belt: 4,
-        pipe: 2,
-      }),
-    ).toEqual([]);
+    expect(computeTransportFindings(transportCatalog, stages, links)).toEqual(
+      [],
+    );
   });
 
   it("belt (absent transport) never contributes a finding", () => {
     const { stages, links } = graphAt(1000000);
-    expect(
-      computeTransportFindings(transportCatalog, stages, links, {
-        belt: 4,
-        pipe: 2,
-      }),
-    ).toEqual([]);
+    expect(computeTransportFindings(transportCatalog, stages, links)).toEqual(
+      [],
+    );
   });
 });
 

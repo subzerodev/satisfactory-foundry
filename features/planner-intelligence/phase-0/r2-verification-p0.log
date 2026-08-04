@@ -130,8 +130,44 @@ fold), just not to a rate scaling small enough to round to the same fleet.
 
 ---
 
+## #34 follow-up — the fifth site folded (computeTransportFindings)
+
+Recorded on #34: the coordinator verified the provably-equal analysis
+(App.tsx passes the active stage's `selection.unlockedTiers`; plan-global
+stamping makes it identical to `globalUnlockedTiers`' derivation; the
+no-stages fallback is inert since no stages ⇒ no links reach the resolver)
+and directed folding the fifth site too. `computeTransportFindings` now drops
+its `unlockedTiers` parameter and resolves via `planForLink`, keeping the
+cheap train-only pre-filter before the call and the rate-null skip (rate is a
+downstream input to the sustainability row/text).
+
+### B7 — the folded findings site still emits the train finding
+
+Mutation: flip the post-call kind check in `computeTransportFindings` from
+`plan.kind !== "train"` to `plan.kind === "train"`, so train plans are dropped
+instead of kept.
+
+Test: `npx vitest run src/ui/graph-flow.test.ts -t "computeTransportFindings"`
+
+Genuine FAIL:
+
+```
+   × flags a train link whose rate exceeds every consist's pair ceiling
+ FAIL  src/ui/graph-flow.test.ts > computeTransportFindings > flags a train link whose rate exceeds every consist's pair ceiling
+      Tests  1 failed | 3 passed | 29 skipped (33)
+```
+
+The existing four `computeTransportFindings` tests (assertions unchanged; only
+the call signature dropped the 4th arg) still discriminate the folded path —
+proving the `planForLink` resolution produces the same finding the inlined
+five-arg `computeLinkTransport` call did. The stages carry
+`unlockedTiers: { belt: 4, pipe: 2 }`, exactly the value those tests formerly
+threaded explicitly, so `globalUnlockedTiers` derives the identical tiers.
+
+---
+
 ## Post-verification state
 
-Tree clean after every revert (`git status --short` empty). Full suite green:
-`npx vitest run` → 575 passed (23 files); `npm run check` → clean (tsc +
-eslint + prettier).
+Tree clean after every revert (each mutation restored; `git status --short`
+shows only the intended phase edits). Full suite green: `npx vitest run` → 575
+passed (23 files); `npm run check` → clean (tsc + eslint + prettier).
