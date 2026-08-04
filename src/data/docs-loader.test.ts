@@ -527,3 +527,83 @@ describe("parseDocsJson — mStackSize enum → stackSize (Stage 7 / Phase 2)", 
     expect(cat.items["weird"]!.stackSize).toBeNull();
   });
 });
+
+// #28 — the catalog's three Record maps are built null-prototype at the parse
+// boundary, so an id that normalizes to an Object.prototype member name cannot
+// resolve a prototype value under bracket access. normalizeClassName lowercases,
+// so Desc_Constructor_C / Build_Constructor_C / Recipe_Constructor_C all
+// normalize to the key "constructor" — the canonical collision. This pins the
+// boundary through the REAL parse path (a hand-built map would be tautological).
+describe("parseDocsJson — null-prototype maps resist prototype-key collision (#28)", () => {
+  const COLLISION_FRAGMENT = [
+    {
+      NativeClass:
+        "/Script/CoreUObject.Class'/Script/FactoryGame.FGResourceDescriptor'",
+      Classes: [
+        {
+          ClassName: "Desc_Constructor_C",
+          mDisplayName: "Constructor Widget",
+          mForm: "RF_SOLID",
+        },
+      ],
+    },
+    {
+      NativeClass:
+        "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'",
+      Classes: [
+        { ClassName: "Build_Constructor_C", mDisplayName: "Constructor" },
+      ],
+    },
+    {
+      NativeClass: "/Script/CoreUObject.Class'/Script/FactoryGame.FGRecipe'",
+      Classes: [
+        {
+          ClassName: "Recipe_Constructor_C",
+          mDisplayName: "Constructor Widget",
+          mIngredients: "",
+          mProduct:
+            "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Constructor_C\"',Amount=1))",
+          mManufactoringDuration: "1",
+          mProducedIn: "/Game/Path/Build_Constructor_C",
+        },
+      ],
+    },
+  ];
+
+  it("normalizes the colliding ClassNames to the key 'constructor' in each map", () => {
+    const cat = parseDocsJson(COLLISION_FRAGMENT);
+    expect(cat.items["constructor"]).toBeDefined();
+    expect(cat.machines["constructor"]).toBeDefined();
+    expect(cat.recipes["constructor"]).toBeDefined();
+  });
+
+  it("misses cleanly on an absent id — no lookup resolves an Object.prototype member", () => {
+    const cat = parseDocsJson(COLLISION_FRAGMENT);
+    // With a plain-proto {} seed these bracket reads would resolve the
+    // Object.prototype `constructor` function; on a null-proto map they miss.
+    const emptyItem = cat.items["nonexistent"];
+    const emptyMachine = cat.machines["nonexistent"];
+    const emptyRecipe = cat.recipes["nonexistent"];
+    expect(emptyItem).toBeUndefined();
+    expect(emptyMachine).toBeUndefined();
+    expect(emptyRecipe).toBeUndefined();
+    // Belt-and-braces: none of the three prototype-member names resolve either.
+    for (const key of ["constructor", "hasOwnProperty", "toString"]) {
+      // The colliding 'constructor' key IS a real own entry (asserted above);
+      // the point is that on the OTHER two maps it is absent and must miss,
+      // and hasOwnProperty/toString are absent on all three.
+      if (key !== "constructor") {
+        expect(cat.items[key]).toBeUndefined();
+        expect(cat.machines[key]).toBeUndefined();
+        expect(cat.recipes[key]).toBeUndefined();
+      }
+    }
+  });
+
+  it("builds all three maps with a null prototype", () => {
+    const cat = parseDocsJson(COLLISION_FRAGMENT);
+    expect(Object.getPrototypeOf(cat.items)).toBeNull();
+    expect(Object.getPrototypeOf(cat.machines)).toBeNull();
+    expect(Object.getPrototypeOf(cat.recipes)).toBeNull();
+  });
+});
