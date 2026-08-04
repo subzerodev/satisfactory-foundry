@@ -1,0 +1,214 @@
+R2 bidirectionality verification — Stage 8 / Phase 1 (interaction polish, ticket #37)
+=====================================================================================
+
+The R2 rule: every behavior this phase asserts must be shown to FAIL under a
+targeted mutation of the implementation — a test that cannot fail proves nothing.
+Each block below injects ONE mutant into the (committed) implementation, runs the
+behavior's test(s) in isolation (`vitest run <file> -t "<name>"`), and records the
+genuine FAIL. After each block the implementation is restored; the final suite is
+GREEN (see the tail). Baseline test count before this phase: 575. After: 591
+(+16). Mutants were applied to source only — the tests are exactly as committed.
+
+Behaviors covered:
+  B1  setStageMachineCount writes the NAMED non-active stage (mutant: writes active)
+  B2  setStageMachineCount no-ops on an unknown id (mutant: drops the undefined guard)
+  B3  setStageMachineCount(active) delegates + mirrors (mutant: drops mirrorActive)
+  B4  apply block absent for over-supply (mutant: drops the under-supply type gate)
+  B5/B5b fan-out payload wording "×N total" (mutant: hardcodes fanOut=false)
+  B6/B6b unsolved producer → null suggestion (mutant: returns a bogus payload)
+  B7/B7b single-consumer payload N = ceilDiv (mutant: machines+1 off-by-one)
+  B8  matched link → null / idempotent presence (mutant: drops the finding gate)
+  B9  active site renders the .selected outline (mutant: never applies the class)
+  B10 site <g> button semantics role+tabIndex (mutant: drops them)
+  B11 site click targets carry the exact stageIds (mutant: reverses site order)
+  B12 idempotence via the finding gate — no under-supply once supply covers demand
+      (mutant: reconcile emits under-supply even when supply>=demand)
+
+================================================================
+# B1 setStageMachineCount writes the NAMED non-active stage (mutant: writes the active stage) — store.test.ts
+================================================================
+     × writes a NON-active stage's machineCount + re-derives, active stage untouched 16ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > setStageMachineCount — per-stage write (Stage 8 P1, the apply affordance) > writes a NON-active stage's machineCount + re-derives, active stage untouched
+AssertionError: expected 1 to be 2 // Object.is equality
++ Received
+ Test Files  1 failed (1)
+      Tests  1 failed | 112 skipped (113)
+
+================================================================
+# B2 setStageMachineCount is a no-op for an unknown id (mutant: drops the undefined guard) — store.test.ts
+================================================================
+     × is a no-op for an unknown stage id 12ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > setStageMachineCount — per-stage write (Stage 8 P1, the apply affordance) > is a no-op for an unknown stage id
+ Test Files  1 failed (1)
+      Tests  1 failed | 112 skipped (113)
+
+================================================================
+# B3 setStageMachineCount(active) delegates + mirrors (mutant: applyStageSelection drops mirrorActive) — store.test.ts
+================================================================
+     × delegates for the active stage — setStageMachineCount(active) matches setMachineCount 14ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > setStageMachineCount — per-stage write (Stage 8 P1, the apply affordance) > delegates for the active stage — setStageMachineCount(active) matches setMachineCount
+AssertionError: expected { status: 'idle' } to be { status: 'idle' } // Object.is equality
+Received: serializes to the same string
+ Test Files  1 failed (1)
+      Tests  1 failed | 112 skipped (113)
+
+================================================================
+# B4 apply block absent for over-supply (mutant: applyBlockFor drops the under-supply type gate) — LinkInspector.test.ts
+================================================================
+     × over-supplied link (over-supply finding, not under): null — no block 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/LinkInspector.test.ts > applyBlockFor — presence rule > over-supplied link (over-supply finding, not under): null — no block
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 skipped (5)
+
+================================================================
+# B5 fan-out payload wording (mutant: supplySuggestionFor hardcodes fanOut=false) — LinkInspector.test.ts + graph-flow.test.ts
+================================================================
+     × fan-out: N aggregates ALL sibling demands, wording is 'total' 5ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/LinkInspector.test.ts > applyBlockFor — payload matches supplySuggestionFor > fan-out: N aggregates ALL sibling demands, wording is 'total'
+AssertionError: expected { shortfall: '70', machines: 32, …(2) } to deeply equal { shortfall: '70', machines: 32, …(2) }
++ Received
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 skipped (5)
+
+================================================================
+# B5b fan-out aggregate N + wording (mutant: fanOut=false) — graph-flow.test.ts
+================================================================
+     × fan-out: N aggregates ALL sibling demands, wording is '×N total' 5ms
+     × fan-out: N aggregates ALL sibling demands, fanOut true 3ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/graph-flow.test.ts > graphToFlow — match-demand suggestion > fan-out: N aggregates ALL sibling demands, wording is '×N total'
+AssertionError: expected 'Iron Ingot · short 70/min · ×32 cover…' to be 'Iron Ingot · short 70/min · ×32 total' // Object.is equality
+Expected: "Iron Ingot · short 70/min · ×32 total"
+Received: "Iron Ingot · short 70/min · ×32 covers it"
+    598|     expect(edges[0]!.label).toBe("Iron Ingot · short 70/min · ×32 tota…
+    599|     expect(edges[1]!.label).toBe("Iron Ingot · short 110/min · ×32 tot…
+ FAIL  src/ui/graph-flow.test.ts > supplySuggestionFor — apply payload > fan-out: N aggregates ALL sibling demands, fanOut true
+AssertionError: expected { machines: 32, fanOut: false } to deeply equal { machines: 32, fanOut: true }
++ Received
+ Test Files  1 failed (1)
+      Tests  2 failed | 35 skipped (37)
+
+================================================================
+# B6 unsolved producer → null suggestion (mutant: returns a bogus payload for unsolved) — LinkInspector.test.ts + graph-flow.test.ts
+================================================================
+     × unsolved producer (idle): null even with an under-supply finding 6ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/LinkInspector.test.ts > applyBlockFor — presence rule > unsolved producer (idle): null even with an under-supply finding
+AssertionError: expected { shortfall: '140', machines: 1, …(2) } to be null
++ Received:
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 skipped (5)
+
+================================================================
+# B6b unsolved producer → null (graph-flow direct + edge label) — graph-flow.test.ts
+================================================================
+     × unsolved producer → the base under-supply label, no suggestion 5ms
+     × unsolved producer → null (no output lane to size against) 1ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/graph-flow.test.ts > graphToFlow — match-demand suggestion > unsolved producer → the base under-supply label, no suggestion
+AssertionError: expected 'Iron Ingot · short 140/min · ×1 cover…' to be 'Iron Ingot · short 140/min' // Object.is equality
+Received: "Iron Ingot · short 140/min · ×1 covers it"
+ FAIL  src/ui/graph-flow.test.ts > supplySuggestionFor — apply payload > unsolved producer → null (no output lane to size against)
+AssertionError: expected { machines: 1, fanOut: false } to be null
++ Received:
+ Test Files  1 failed (1)
+      Tests  2 failed | 35 skipped (37)
+
+================================================================
+# B8 matched link → null / idempotent (mutant: applyBlockFor drops the finding-presence gate, so a matched/solved producer would still show a block)
+================================================================
+     × matched link (no finding): null — no block 3ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/LinkInspector.test.ts > applyBlockFor — presence rule > matched link (no finding): null — no block
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 skipped (5)
+
+================================================================
+# B7 single-consumer + inspector payload N (mutant: machines+1) — LinkInspector.test.ts
+================================================================
+     × under-supplied + solved producer: block with the shortfall + payload 9ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/LinkInspector.test.ts > applyBlockFor — presence rule > under-supplied + solved producer: block with the shortfall + payload
+AssertionError: expected { Object (shortfall, machines, ...) } to deeply equal { Object (shortfall, machines, ...) }
++ Received
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed | 3 skipped (5)
+
+================================================================
+# B7b single-consumer N = ceilDiv(140,7.5)=19 (mutant: machines+1) — graph-flow.test.ts
+================================================================
+     × single consumer: under-supply label gains '×N covers it' 7ms
+     × single consumer: N = ceilDiv(demand, perMachine), fanOut false 2ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/graph-flow.test.ts > graphToFlow — match-demand suggestion > single consumer: under-supply label gains '×N covers it'
+AssertionError: expected 'Iron Ingot · short 110/min · ×20 cove…' to be 'Iron Ingot · short 110/min · ×19 cove…' // Object.is equality
+Expected: "Iron Ingot · short 110/min · ×19 covers it"
+Received: "Iron Ingot · short 110/min · ×20 covers it"
+    527|     expect(edges[0]!.label).toBe("Iron Ingot · short 110/min · ×19 cov…
+ FAIL  src/ui/graph-flow.test.ts > supplySuggestionFor — apply payload > single consumer: N = ceilDiv(demand, perMachine), fanOut false
+AssertionError: expected { machines: 20, fanOut: false } to deeply equal { machines: 19, fanOut: false }
++ Received
+ Test Files  1 failed (1)
+      Tests  2 failed | 35 skipped (37)
+
+================================================================
+# B9 active site renders .selected outline (mutant: never applies the selected class) — ChainBlueprint.test.tsx
+================================================================
+     × the ACTIVE site renders the `.selected` outline modifier; others don't 10ms
+     × moving the active cursor moves the `.selected` outline to the new site 1ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/ChainBlueprint.test.tsx > ChainBlueprint — site focus > the ACTIVE site renders the `.selected` outline modifier; others don't
+AssertionError: expected +0 to be 1 // Object.is equality
++ Received
+ FAIL  src/ui/ChainBlueprint.test.tsx > ChainBlueprint — site focus > moving the active cursor moves the `.selected` outline to the new site
+AssertionError: expected +0 to be 1 // Object.is equality
++ Received
+ Test Files  1 failed (1)
+      Tests  2 failed | 6 skipped (8)
+
+================================================================
+# B10 site <g> button semantics (mutant: drops role/tabIndex) — ChainBlueprint.test.tsx
+================================================================
+     × each site `<g>` carries button semantics (role + tabindex) 10ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/ChainBlueprint.test.tsx > ChainBlueprint — site focus > each site `<g>` carries button semantics (role + tabindex)
+AssertionError: expected +0 to be 2 // Object.is equality
++ Received
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 skipped (8)
+
+================================================================
+# B11 click targets carry the exact stageIds (mutant: deriveChainView reverses site order) — ChainBlueprint.test.tsx
+================================================================
+     × site click targets carry the exact stageId the focus closure passes 5ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/ChainBlueprint.test.tsx > ChainBlueprint — site focus > site click targets carry the exact stageId the focus closure passes
+AssertionError: expected [ 'b', 'a' ] to deeply equal [ 'a', 'b' ]
++ Received
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 skipped (8)
+
+================================================================
+# B12 idempotence via the finding gate: no under-supply once supply covers demand (mutant: reconcile emits under-supply even when supply>=demand) — graph-flow.test.ts
+================================================================
+     × idempotent via the finding gate: once supply covers demand, NO under-supply finding fires 7ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/graph-flow.test.ts > supplySuggestionFor — apply payload > idempotent via the finding gate: once supply covers demand, NO under-supply finding fires
+AssertionError: expected true to be false // Object.is equality
++ Received
+    763|     // proving the gate is real (supply one machine short: 18 × 7.5 = …
+ Test Files  1 failed (1)
+      Tests  1 failed | 36 skipped (37)
+
+
+=====================================================================================
+FINAL STATE (implementation restored, full suite):
+  Test Files  24 passed (24)
+       Tests  591 passed (591)
+  npm run check: PASS (tsc -b && eslint . && prettier --check src)
+=====================================================================================
