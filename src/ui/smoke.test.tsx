@@ -21,7 +21,7 @@ import { solveStage } from "../core/manifold.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import { FIXTURE_TIERS, WORKED_INPUT, workedResult } from "./fixtures.ts";
 import type { PlanListEntry } from "../data/plan-store.ts";
-import { BundledBanner } from "./App.tsx";
+import { BundledBanner, sanitizeFilename } from "./App.tsx";
 import { UploadScreen } from "./UploadScreen.tsx";
 import { PlansBar } from "./PlansBar.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
@@ -636,5 +636,26 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
     expect(html).toContain("no recipe");
     // The ＋stage control is present in the canvas corner.
     expect(html).toContain("graph-add-stage");
+  });
+});
+
+describe("sanitizeFilename (Stage 6 / Phase 1 — export filename table)", () => {
+  // Each filesystem-unsafe char (/ \ : * ? " < > |) maps to "-"; safe chars pass.
+  const cases: [string, string][] = [
+    ["Iron Line", "Iron Line"], // spaces + letters untouched
+    ["a/b", "a-b"],
+    ["a\\b", "a-b"],
+    ["a:b", "a-b"],
+    ["a*b", "a-b"],
+    ["a?b", "a-b"],
+    ['a"b', "a-b"],
+    ["a<b", "a-b"],
+    ["a>b", "a-b"],
+    ["a|b", "a-b"],
+    ['all/\\:*?"<>|here', "all---------here"], // every unsafe char at once
+    ["dash-and_underscore.1", "dash-and_underscore.1"], // these are all safe
+  ];
+  it.each(cases)("sanitizes %j → %j", (input, expected) => {
+    expect(sanitizeFilename(input)).toBe(expected);
   });
 });

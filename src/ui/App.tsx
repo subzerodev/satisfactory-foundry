@@ -90,8 +90,9 @@ function anyOverride(overrides: {
 }
 
 /** Filesystem-unsafe characters (/ \ : * ? " < > |) → "-", so a plan name is a
- *  legal filename across OSes. Frozen Axis 3 sanitization set. */
-function sanitizeFilename(name: string): string {
+ *  legal filename across OSes. Frozen Axis 3 sanitization set. Exported for the
+ *  sanitization-table test. */
+export function sanitizeFilename(name: string): string {
   return name.replace(/[/\\:*?"<>|]/g, "-");
 }
 
