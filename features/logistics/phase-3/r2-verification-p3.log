@@ -1,0 +1,154 @@
+Stage 7 / Phase 3 — combined multi-stage blueprint — bidirectionality verification log
+Generated: 2026-08-04T19:47:00Z
+Worktree: .worktrees/logistics-p3 (branch feature/logistics-p3)
+Baseline: 537 tests. Post-P3: 567 tests (all green on HEAD).
+  +9 layoutChain (src/layout/layout.test.ts: 26 → 35)
+  +15 chain-view (src/ui/chain-view.test.ts, new)
+  +4 deriveChainView (src/ui/ChainBlueprint.test.ts, new)
+  +2 store measure-feed apply (src/state/store.test.ts: 108 → 110)
+
+Method: per distinct production behavior, PASS on HEAD → break production (sed)
+→ genuine vitest FAIL naming the new test → git checkout restore → PASS. Each
+mutation flips exactly one production fact; the FAIL names the test that pins it.
+Captured verbatim from the run script (scratchpad/biverify.sh).
+
+===================================================================
+FAMILY: layout: layoutChain minimal-K non-overlap
+===================================================================
+--- PASS on HEAD ---
+      Tests  35 passed (35)
+--- BREAK: s|const kPair = Math.min(kx, ky);|const kPair = 0; void kx; void ky;| (src/layout/layout.ts) ---
+--- FAIL (production broken) ---
+ FAIL  src/layout/layout.test.ts > layoutChain — non-overlap + gutter > scales a tight arrangement apart until every pair's bboxes + gutter clear
+ FAIL  src/layout/layout.test.ts > layoutChain — non-overlap + gutter > keeps all pairs non-overlapping across three arranged sites
+ FAIL  src/layout/layout.test.ts > layoutChain — coincidence tie-break (totality) > fans a coincident pair among many so K is finite + no site collides
+ FAIL  src/layout/layout.test.ts > layoutChain — rounding safety at the exact-gutter boundary > grid rounding never re-introduces an overlap the scale excluded
+      Tests  4 failed | 31 passed (35)
+--- restored ---
+
+===================================================================
+FAMILY: layout: layoutChain coincidence tie-break (totality)
+===================================================================
+--- PASS on HEAD ---
+      Tests  35 passed (35)
+--- BREAK: s|return nextFreeSlot();|return { x: p.x, y: p.y };| (src/layout/layout.ts) ---
+--- FAIL (production broken) ---
+ FAIL  src/layout/layout.test.ts > layoutChain — coincidence tie-break (totality) > fans a coincident pair among many so K is finite + no site collides
+ FAIL  src/layout/layout.test.ts > layoutChain — coincidence tie-break (totality) > fans a THREE-site cluster onto a globally collision-free sequence
+ FAIL  src/layout/layout.test.ts > layoutChain — determinism + degenerates > degenerates all-equal positions to the horizontal auto-row
+      Tests  3 failed | 32 passed (35)
+--- restored ---
+
+===================================================================
+FAMILY: layout: layoutChain grid rounding safety
+===================================================================
+--- PASS on HEAD ---
+      Tests  35 passed (35)
+--- BREAK: s|x: ceilTo10((p.x - minPx.x) * k),|x: (p.x - minPx.x) * k * 0,| (src/layout/layout.ts) ---
+--- FAIL (production broken) ---
+ FAIL  src/layout/layout.test.ts > layoutChain — coincidence tie-break (totality) > fans a coincident pair among many so K is finite + no site collides
+ FAIL  src/layout/layout.test.ts > layoutChain — coincidence tie-break (totality) > fans a THREE-site cluster onto a globally collision-free sequence
+ FAIL  src/layout/layout.test.ts > layoutChain — rounding safety at the exact-gutter boundary > grid rounding never re-introduces an overlap the scale excluded
+ FAIL  src/layout/layout.test.ts > layoutChain — determinism + degenerates > degenerates all-equal positions to the horizontal auto-row
+      Tests  5 failed | 30 passed (35)
+--- restored ---
+
+===================================================================
+FAMILY: chain-view: drawnMeters dm->m (÷10)
+===================================================================
+--- PASS on HEAD ---
+      Tests  15 passed (15)
+--- BREAK: s|return Math.round(distanceDm / 10);|return Math.round(distanceDm);| (src/ui/chain-view.ts) ---
+--- FAIL (production broken) ---
+ FAIL  src/ui/chain-view.test.ts > nearestEdgeConnector + drawnMeters > connects the nearest edge midpoints of two horizontally separated boxes
+ FAIL  src/ui/chain-view.test.ts > nearestEdgeConnector + drawnMeters > measures the straight-line distance dm → whole meters
+ FAIL  src/ui/chain-view.test.ts > chainConnectors — labels + mode class + skip > labels a belt link with item name + drawn distance, solid connector
+ FAIL  src/ui/chain-view.test.ts > chainConnectors — labels + mode class + skip > labels a truck link with the public chip + distance, dashed connector
+      Tests  4 failed | 11 passed (15)
+--- restored ---
+
+===================================================================
+FAMILY: chain-view: drone flightMetersText = 2× one-way (round-trip)
+===================================================================
+--- PASS on HEAD ---
+      Tests  15 passed (15)
+--- BREAK: s|flightMetersText: String(oneWayMeters * 2)|flightMetersText: String(oneWayMeters)| (src/ui/chain-view.ts) ---
+--- FAIL (production broken) ---
+     × writes drone ROUND-TRIP meters (2×) into flightMetersText, keeping fuel
+ FAIL  src/ui/chain-view.test.ts > applyDrawnDistance — the units trap per arm > writes drone ROUND-TRIP meters (2×) into flightMetersText, keeping fuel
+      Tests  1 failed | 14 passed (15)
+--- restored ---
+
+===================================================================
+FAMILY: chain-view: road distanceText = one-way meters
+===================================================================
+--- PASS on HEAD ---
+      Tests  15 passed (15)
+--- BREAK: s|distanceText: String(oneWayMeters)|distanceText: String(oneWayMeters * 2)| (src/ui/chain-view.ts) ---
+--- FAIL (production broken) ---
+ FAIL  src/ui/chain-view.test.ts > applyDrawnDistance — the units trap per arm > writes road one-way meters into distanceText (drawn dm ÷ 10)
+ FAIL  src/ui/chain-view.test.ts > applyDrawnDistance — the units trap per arm > writes train one-way meters into distanceText
+      Tests  2 failed | 13 passed (15)
+--- restored ---
+
+===================================================================
+FAMILY: chain-view: vehicle station power summed (40 MW both ends)
+===================================================================
+--- PASS on HEAD ---
+      Tests  15 passed (15)
+--- BREAK: s|return plan.stationPowerMw;|return Fraction.from(0);| (src/ui/chain-view.ts) ---
+--- FAIL (production broken) ---
+ FAIL  src/ui/chain-view.test.ts > chainTransportPower — determinate sums + train note > sums truck-like links at 40 MW each (both ends), no train note
+ FAIL  src/ui/chain-view.test.ts > chainTransportPower — determinate sums + train note > omits train links from the sum but flags hasTrain (the '+ trains' note)
+      Tests  2 failed | 13 passed (15)
+--- restored ---
+
+===================================================================
+FAMILY: chain-view: train omitted → hasTrain note (no range)
+===================================================================
+--- PASS on HEAD ---
+      Tests  15 passed (15)
+--- BREAK: s|if (plan.kind === "train") hasTrain = true;|if (plan.kind === "train") hasTrain = false;| (src/ui/chain-view.ts) ---
+--- FAIL (production broken) ---
+ FAIL  src/ui/chain-view.test.ts > chainTransportPower — determinate sums + train note > omits train links from the sum but flags hasTrain (the '+ trains' note)
+      Tests  1 failed | 14 passed (15)
+--- restored ---
+
+===================================================================
+FAMILY: chain-view: drone port power × nDrones
+===================================================================
+--- PASS on HEAD ---
+      Tests  15 passed (15)
+--- BREAK: s|return plan.result.portPowerMw.mul(Fraction.from(plan.result.nDrones));|return Fraction.from(0);| (src/ui/chain-view.ts) ---
+--- FAIL (production broken) ---
+ FAIL  src/ui/chain-view.test.ts > chainTransportPower — determinate sums + train note > sums drone links at portPowerMw × nDrones
+      Tests  1 failed | 14 passed (15)
+--- restored ---
+
+===================================================================
+FAMILY: ChainBlueprint: solved-only skip + notice count
+===================================================================
+--- PASS on HEAD ---
+      Tests  4 passed (4)
+--- BREAK: s|return stageOrder.filter((id) => stages[id]?.solve.status === "solved");|return stageOrder;| (src/ui/chain-view.ts) ---
+--- FAIL (production broken) ---
+ FAIL  src/ui/ChainBlueprint.test.ts > deriveChainView — solved-only skip + chrome + footer > places only solved stages and counts the skipped ones
+      Tests  1 failed | 3 passed (4)
+--- restored ---
+
+===================================================================
+FAMILY: store: applyDrawnDistance mapping through setLinkTransport
+===================================================================
+--- PASS on HEAD ---
+      Tests  110 passed (110)
+--- BREAK: s|const oneWayMeters = distanceDm / 10;|const oneWayMeters = distanceDm;| (src/ui/chain-view.ts) ---
+--- FAIL (production broken) ---
+ FAIL  src/state/store.test.ts > stage graph — link transport + selection (Stage 7 P2) > applies a drawn distance through setLinkTransport — road one-way vs drone 2× (the units trap)
+      Tests  1 failed | 109 passed (110)
+--- restored ---
+
+===================================================================
+RESTORE CHECK — full suite green again
+===================================================================
+ Test Files  23 passed (23)
+      Tests  567 passed (567)
