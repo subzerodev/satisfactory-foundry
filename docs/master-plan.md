@@ -85,3 +85,28 @@ canvas; polish lands last on the finished surface.
   tests; released via the Stage 5 PR. Record: `features/polish/`.
   **All growth-path stages (2–5) are now shipped — the 2026-08-03
   sequential directive is fully discharged.**
+
+## Post-plan sequence (Stages 6–7)
+
+**Decision (Michael, 2026-08-04):** from the post-plan options, run the
+chain-aware helpers batch now ("all except 3"), then grow the deferred
+combined-blueprint item into a full logistics arc. Sequential, same
+process (all-Claude roster, opus implementers, per-phase gates).
+
+## Stage 6 — Chain-aware helpers
+
+- **Goal:** the chain explains itself — match-demand suggestions on
+  links, computed fix hints on capacity findings, plan export/import as
+  files, exact per-stage + chain power totals (power enters the catalog:
+  parser + cache work).
+- **Epic:** #24 (milestone 77; children #25 data groundwork, #26 helper
+  surfaces). Blocked-by Stage 5.
+
+## Stage 7 — Logistics: combined blueprint + transport planning
+
+- **Goal:** factories span locations — the combined multi-stage
+  blueprint (deferred from Stage 4) plus per-link transport planning:
+  mode (belt/pipe/truck/train/drone) + distance/trip time → how many
+  vehicles sustain the rate; train cars-per-train vs more-trains
+  tradeoffs. Vehicle facts are wiki-grounded (research-gate flagged).
+- **Epic:** #27 (milestone 78). Blocked-by Stage 6.
