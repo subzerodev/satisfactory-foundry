@@ -42,9 +42,13 @@ power: {
                        // independent of any renderer)
   exponent: Fraction;  // mPowerConsumptionExponent verbatim, PER
                        // MACHINE — the snapshot is non-uniform
-                       // (observed: 1.6 majority, 1.321929 minority;
-                       // simplify fold — a module constant would be
-                       // silently wrong). Stored, not applied here.
+                       // (observed: 1.321929 on 15/20 admitted
+                       // buildings, 1.6 on 5 — implementation
+                       // amendment: the simplify pass had the
+                       // majority/minority INVERTED; corrected from a
+                       // direct snapshot count. The load-bearing point
+                       // stands: a module constant would be silently
+                       // wrong). Stored, not applied here.
 }
 ```
 
@@ -256,3 +260,11 @@ power: {
   shapes over existing precedent), import-does-not-auto-load (the
   simpler SEMANTIC), sanitization set, zero test-row redundancy.
 - **v5 FROZEN (2026-08-04).**
+- **Implementation amendment (2026-08-04):** the simplify-fold's
+  exponent distribution was INVERTED (drift-hunt catch): the snapshot
+  has 1.321929 on 15/20 admitted buildings (majority) and 1.6 on 5
+  (generators among them). Corrected above from a direct count; the
+  non-uniformity conclusion (no module constant) is unchanged. Also
+  recorded: catalog-store gains power serialization/revival (structured
+  clone strips Fraction prototypes — an in-scope correctness necessity,
+  round-trip-tested).
