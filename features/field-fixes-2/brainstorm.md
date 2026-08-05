@@ -1,4 +1,4 @@
-# Stage 13 combined — remove schematic, blueprint overlap, override table (tickets #68 + #69 + #70) — brainstorm v2
+# Stage 13 combined — remove schematic, blueprint overlap, override table (tickets #68 + #69 + #70) — brainstorm v3
 
 **Goal.** Michael's field report on the Stage 12 build (2026-08-05,
 verbatim): "remove schematic view its not working also blueprint still
@@ -114,8 +114,12 @@ CSS-only — one wrapper div is budgeted.)
 - Markup: `.lane-overrides` keeps its flex column (head, sub, then a
   NEW `<div className="lane-overrides-table">` wrapping ALL the lane
   wrappers). CSS: `.lane-overrides-table { display: grid;
-  grid-template-columns: max-content max-content }` (label + input
-  tracks); `.lane-overrides-lane` → `display: contents` (the element
+  grid-template-columns: max-content max-content; gap: 8px;
+  align-items: center }` (label + input tracks; the gap and vertical
+  centering CARRY OVER from the dying per-lane grid — r2 both
+  reviewers: display:contents makes those declarations inert on
+  .lane-overrides-lane, so omitting them here would drop the row gap
+  and stretch the inputs); `.lane-overrides-lane` → `display: contents` (the element
   and its data-item stay — pins and grouping semantics intact);
   `.override-row` stays `display: contents`;
   `.lane-overrides-item` keeps its 1/-1 span — now spanning the
@@ -211,3 +215,14 @@ CSS-only — one wrapper div is budgeted.)
   ALWAYS at busY — no at.y ≠ busY case; −24/+32 clear ink and
   neighbors at LANE_SPACING 60; overflow:visible covers below-bus),
   and the two-tab switcher (no third view imminent).
+- v3 (2026-08-05): r2 pair CONVERGED — code-reviewer
+  APPROVED_WITH_NITS (1), adversarial APPROVED_WITH_NITS (1), the
+  SAME nit, folded: the .lane-overrides-table CSS block carries
+  gap: 8px + align-items: center over from the dying per-lane grid
+  (inert under display:contents; omitting them would drop the row
+  gap and stretch inputs). r2 adversarial cleared under determined
+  refutation: the 1/-1 span through two display:contents levels, the
+  max-content×ch interplay, focus/a11y of contents on role-less
+  divs, the rename-not-delete SSR-gate claim (bp-svg mounts only in
+  the solved block, unreachable headless), the svg-scale literal-960
+  value preservation (960/200, 960/3000).
