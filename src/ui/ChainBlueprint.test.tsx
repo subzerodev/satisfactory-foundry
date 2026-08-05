@@ -237,3 +237,110 @@ describe("ChainBlueprint — site focus", () => {
     expect(view.sites.map((s) => s.stageId)).toEqual(["a", "b"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Axis B (P3) — the recipe-less skip-note vocabulary. NEW pin: nothing pinned
+// the prior "not shown — unsolved" text. Assert the two whitespace-safe halves
+// so the JSX line-wrap between "—" and "no" can't break the pin.
+// ---------------------------------------------------------------------------
+
+describe("ChainBlueprint — skip-note vocabulary (Axis B)", () => {
+  function renderWithSkipped(skipped: number) {
+    // One solved site + `skipped` idle stages → the notice renders its count.
+    const stages: Record<string, StageNode> = { a: stage("a", solved()) };
+    const order = ["a"];
+    const positions: Record<string, { x: number; y: number }> = {
+      a: { x: 0, y: 0 },
+    };
+    for (let i = 0; i < skipped; i++) {
+      const id = `skip${i}`;
+      stages[id] = stage(id, { status: "idle" } as SolveState);
+      order.push(id);
+      positions[id] = { x: 0, y: 0 };
+    }
+    return renderToStaticMarkup(
+      <ChainBlueprint
+        catalog={catalog}
+        stages={stages}
+        stageOrder={order}
+        links={[]}
+        positions={positions}
+        activeStageId="a"
+        onSelectStage={() => {}}
+      />,
+    );
+  }
+
+  it("reads the recipe-less phrase (singular)", () => {
+    const html = renderWithSkipped(1);
+    expect(html).toContain("1 ");
+    expect(html).toContain("stage not drawn");
+    expect(html).toContain("no recipe or invalid settings");
+    // The alarming old vocabulary is gone.
+    expect(html).not.toContain("unsolved");
+    expect(html).not.toContain("not shown");
+  });
+
+  it("reads the recipe-less phrase (plural)", () => {
+    const html = renderWithSkipped(2);
+    expect(html).toContain("2 ");
+    expect(html).toContain("stages not drawn");
+    expect(html).toContain("no recipe or invalid settings");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Axis C2 (P3) — the [FIT | DETAIL] toggle in the Combined view, WITHOUT a
+// gutter (C1 scope: ChainBlueprint has no lanes to label). The toggle mounts
+// only when the fit scale is floored (fit < 1); switching mode switches the svg
+// width/height between the fit-scale px and the 1 px/dm DETAIL values.
+// ---------------------------------------------------------------------------
+
+describe("ChainBlueprint — zoom toggle (Axis C2), no gutter (C1 scope)", () => {
+  // Two sites 3000 dm apart → viewBox width ≫ 960, so fit < 1 and the toggle
+  // mounts. A 2-site chain close together (the fixtures above) stays fit ≥ 1.
+  const stages: Record<string, StageNode> = {
+    a: stage("a", solved()),
+    b: stage("b", solved("iron_ingot")),
+  };
+  const wide = { a: { x: 0, y: 0 }, b: { x: 3000, y: 0 } };
+  const near = { a: { x: 0, y: 0 }, b: { x: 300, y: 0 } };
+
+  function render(positions: Record<string, { x: number; y: number }>) {
+    return renderToStaticMarkup(
+      <ChainBlueprint
+        catalog={catalog}
+        stages={stages}
+        stageOrder={["a", "b"]}
+        links={[]}
+        positions={positions}
+        activeStageId="a"
+        onSelectStage={() => {}}
+      />,
+    );
+  }
+
+  it("mounts the toggle only when the chain is floored (fit < 1)", () => {
+    expect(render(near)).not.toContain("bp-zoom-toggle");
+    expect(render(wide)).toContain("bp-zoom-toggle");
+  });
+
+  it("Combined view has NO gutter even when the toggle mounts (C1 scope)", () => {
+    const html = render(wide);
+    expect(html).toContain("bp-zoom-toggle");
+    expect(html).not.toContain("bp-gutter");
+  });
+
+  it("opens at DETAIL (1 px/dm) — svg width equals the raw viewBox width", () => {
+    // DEFAULT mode when mounted is DETAIL = 1 px/dm, so width = w px. The chain's
+    // dm width is the sites' bbox + 2×PAD(40); a 1 px/dm render makes svg
+    // width numerically equal that dm width (an integer here).
+    const html = render(wide);
+    // The site bbox spans x∈[0, 3000+siteWidth]; the exact px equals the dm w.
+    // Pull the svg width and assert it exceeds 960 (never the floored fit px,
+    // which would be ≤ 960) — the DETAIL scale is active by default.
+    const m = html.match(/width="(\d+)"/);
+    expect(m).not.toBeNull();
+    expect(Number(m![1])).toBeGreaterThan(960);
+  });
+});

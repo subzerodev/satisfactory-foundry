@@ -3,6 +3,24 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 12, Phases 2+3: labels off the lanes, views open readable
+
+> Hey Michael — your three remaining complaints are fixed, together.
+> The lane names moved OFF the drawing entirely: they now sit in their
+> own little column to the left of the blueprint, lined up with their
+> belts, so "Heavy Oil Residue" can never garble onto an orange lane
+> again. Big plans now OPEN readable — your 161-machine blueprint
+> starts zoomed in at full detail and you pan it by scrolling; a small
+> [FIT | DETAIL] switch above the drawing flips between the overview
+> and the readable close-up (small plans look exactly as before, no
+> switch shown). The combined view got the same switch. The override
+> boxes finally explain themselves: the panel is headed "BELT LOAD
+> OVERRIDES — type a rate to override a belt's load · empty =
+> computed", and the Feed rows are grouped under the item they carry.
+> And that odd "unsolved" message now just says a stage wasn't drawn
+> because it has no recipe or invalid settings — calm, and only when
+> it's true.
+
 ## 2026-08-05 — Stage 12, Phase 1: the views can handle your real factory
 
 > Hey Michael — the three views now hold up at your 161-machine scale.

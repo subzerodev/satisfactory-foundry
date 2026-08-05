@@ -1,9 +1,9 @@
 # Field fixes: catalog refresh, views at scale, clarity (Stage 12 arc)
 
 **Started:** 2026-08-05
-**Status:** in-progress
-**Current phase:** Phase 2 (clarity pass) — next
-**Final PR:** — (P0 released early via PR #61)
+**Status:** complete — all phases merged; release PR pending
+**Current phase:** — (arc close)
+**Final PR:** — (P0 released via PR #61, P1 via PR #63; final release pending)
 **Epic:** #59 (board #21, Stage 12 milestone 83)
 
 ## Phase status
@@ -20,8 +20,26 @@
   wrapper (bp-svg overflow:visible preserved), margin-inline auto
   centering, paint-order --bg halo on lane names, feed-above/
   output-below asymmetry KEPT; deep plans out of the floor's scope.
-- P1 merged 2026-08-05 (762 tests... see below). P2 (clarity pass):
-  next — child ticket at pickup.
+- P1 merged 2026-08-05 (762 tests... see below); released via PR #63.
+- P2+P3 (#65 + #64, COMBINED per Michael's "fix all issues now"):
+  complete — merged 2026-08-05 (`93298d2`, 767 tests). Decided design
+  (brainstorm v6 FROZEN, 5 correctness rounds + simplify): (Axis A)
+  BELT LOAD OVERRIDES heading + sub-label + per-lane item headings
+  via the App itemName pattern; (Axis B) skip note "N stage(s) not
+  drawn — no recipe or invalid settings"; (Axis C1) Blueprint-only
+  HTML lane-name gutter left of .bp-scroll, labels DETAIL-only at
+  (laneY − minY) × scale, in-SVG lane names removed, width via
+  in-flow sizer twins (boundary-caught IMPORTANT: abs-positioned
+  labels contribute nothing to max-content); (Axis C2) open scale
+  max(fit, 1) + [FIT|DETAIL] toggle in BOTH blueprint views (mounted
+  iff fit < 1, per-view state, default DETAIL), supersedes the P1
+  "no zoom UI" non-goal by Michael's directive. Boundary: APPROVED +
+  NEEDS_REWORK(1 IMPORTANT+2 NIT)→folded→APPROVED/APPROVED_WITH_NITS;
+  diff-simplify APPROVED_WITH_NITS (1 folded, 1 rejected-w-rationale).
+  Walk both media: Computer ×40 (DETAIL 7640px, gutter 92px, FIT
+  collapse), Plastic ×161 (DETAIL 17800px head-anchored, gutter
+  164px with the HOR label, floor-case FIT 1068px), Combined (toggle
+  no-gutter, calm skip note), override panel headings live.
 
 P1 close detail: brainstorm v10 — six design rounds + a BOUNDARY-caught
 HIGH (the fitScale height term capH/vbH silently enlarged sub-cap plans
