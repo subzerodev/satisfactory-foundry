@@ -42,6 +42,8 @@ import {
   pickLinkItem,
   NODE_WIDTH,
   NODE_HEIGHT,
+  RAW_NODE_WIDTH,
+  RAW_NODE_HEIGHT,
 } from "./graph-flow.ts";
 import type { StageNodeData, EdgeState } from "./graph-flow.ts";
 import { chainPowerText } from "./advice.ts";
@@ -168,7 +170,78 @@ function StageNode({ data, selected }: NodeProps<StageFlowNode>) {
   );
 }
 
-const NODE_TYPES: NodeTypes = { stage: StageNode };
+/**
+ * A raw-feed supply card's `data` (Stage 11 / Phase 1, ticket #57): the item
+ * name over its exact demand rate, both pre-formatted by the graphToFlow derive.
+ * Index signature satisfies RF's Node data constraint.
+ */
+interface RawFeedCardData extends Record<string, unknown> {
+  itemName: string;
+  rateText: string;
+}
+
+type RawFeedFlowNode = Node<RawFeedCardData, "rawFeed">;
+
+/**
+ * One raw-feed supply card — the drafting "supply callout" for an extraction
+ * input (Stage 11 / Phase 1). Item name (mono) over the demand rate line, no
+ * controls: the card is non-interactive (draggable/selectable/deletable false
+ * on the RF node). One SOURCE handle, its side following the store's
+ * flowDirection (right in LR, bottom in TB) to mirror the stage card. The
+ * handle takes no connections (isConnectable false — feeds emit, never link).
+ */
+function RawFeedNode({ data }: NodeProps<RawFeedFlowNode>) {
+  const flowDirection = useAppStore((s) => s.flowDirection);
+  const sourcePos = flowDirection === "TB" ? Position.Bottom : Position.Right;
+  return (
+    <div
+      className="raw-feed-node"
+      style={{ width: RAW_NODE_WIDTH, height: RAW_NODE_HEIGHT }}
+    >
+      <Handle
+        type="source"
+        position={sourcePos}
+        id="out"
+        isConnectable={false}
+      />
+      <span className="raw-feed-node-item">{data.itemName}</span>
+      <span className="raw-feed-node-rate">{data.rateText}</span>
+    </div>
+  );
+}
+
+const NODE_TYPES: NodeTypes = { stage: StageNode, rawFeed: RawFeedNode };
+
+/**
+ * The per-change commit decision from onNodesChange, extracted as a pure helper
+ * so the raw-feed invariant is testable in the node-env suite (RF's real
+ * onNodesChange can't fire without a DOM). A drag-END position commits to
+ * `setStagePosition`; a selection commits to `setActiveStage`.
+ *
+ * The raw: id skip (Stage 11 P1, ticket #57) is the APP-LEVEL guard: raw-feed
+ * cards are display-only chrome that must never reach either setter. RF's node
+ * flags (draggable/selectable/deletable false) stop change GENERATION at
+ * runtime, but the onNodesChange loop iterates the RAW `changes` array — the
+ * flags never gate this path, so the skip is the only boundary guard (the r6
+ * correctness re-check reversed the earlier F2 removal, source-decided against
+ * the outside-the-state layer being sufficient here).
+ */
+export function commitNodeChange(
+  c: NodeChange,
+  setters: {
+    setStagePosition: (id: string, pos: { x: number; y: number }) => void;
+    setActiveStage: (id: string) => void;
+  },
+): void {
+  if ("id" in c && c.id.startsWith("raw:")) return;
+  if (c.type === "position" && c.dragging === false && c.position) {
+    setters.setStagePosition(c.id, { x: c.position.x, y: c.position.y });
+  }
+  // Selection change → move the active cursor (store-authoritative).
+  if (c.type === "select" && c.selected) {
+    setters.setActiveStage(c.id);
+  }
+}
 
 /**
  * The flow-direction toggle (Stage 10 / Phase 1). Lives INSIDE the ReactFlow
@@ -347,6 +420,43 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
     [derived.edges, selectedLinkId],
   );
 
+  // Raw-feed supply cards (Stage 11 / Phase 1, ticket #57) — DISPLAY-ONLY chrome
+  // built OUTSIDE the nodes useState/merge (concatenated at the RF `nodes` prop
+  // below). Non-interactive via RF's OWN flags: draggable/selectable/deletable
+  // false stop RF generating position/select changes for them, and because they
+  // sit outside the `nodes` state, applyNodeChanges drops any stray raw: change
+  // as unknown-id. The commit-loop raw: skip is the app-level belt-and-braces.
+  const rawFeedNodes: RawFeedFlowNode[] = useMemo(
+    () =>
+      derived.rawFeeds.nodes.map((n) => ({
+        id: n.id,
+        type: "rawFeed",
+        position: n.position,
+        width: n.width,
+        height: n.height,
+        handles: n.handles.map((h) => ({
+          ...h,
+          position: h.position as Position,
+        })),
+        draggable: false,
+        selectable: false,
+        deletable: false,
+        data: { itemName: n.data.itemName, rateText: n.data.rateText },
+      })),
+    [derived.rawFeeds.nodes],
+  );
+
+  const rawFeedEdges: Edge[] = useMemo(
+    () =>
+      derived.rawFeeds.edges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        className: e.className,
+      })),
+    [derived.rawFeeds.edges],
+  );
+
   // The rendered node list: RF's interim drag frames are held here, merged over
   // the derived structure. `nodesRef` lets onNodesChange read the current list
   // without a stale closure. `structureKey` detects a genuine structure change
@@ -394,18 +504,11 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
       const next = applyNodeChanges(allowed, nodesRef.current);
       setNodes(next as StageFlowNode[]);
 
-      // Commit a drag-END position once (dragging:false on a position change).
+      // Commit a drag-END position / selection once per change. The raw: skip
+      // + drag-END/select commit live in commitNodeChange (a pure helper so the
+      // invariant is node-testable); the loop stays the RAW changes array.
       for (const c of changes) {
-        if (c.type === "position" && c.dragging === false && c.position) {
-          setStagePosition(c.id, {
-            x: c.position.x,
-            y: c.position.y,
-          });
-        }
-        // Selection change → move the active cursor (store-authoritative).
-        if (c.type === "select" && c.selected) {
-          setActiveStage(c.id);
-        }
+        commitNodeChange(c, { setStagePosition, setActiveStage });
       }
     },
     [setStagePosition, setActiveStage],
@@ -525,8 +628,13 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
         </defs>
       </svg>
       <ReactFlow
-        nodes={nodes}
-        edges={derivedEdges}
+        // Raw-feed cards ride at the prop OUTSIDE the useState/merge (Stage 11
+        // P1): nodesRef.current never holds a raw node, so applyNodeChanges
+        // drops any raw:-targeted change as unknown-id, and the resync/merge
+        // machinery stays keyed on derivedNodes only. Edges span both node
+        // populations — RF resolves the raw edge's source/target across them.
+        nodes={[...nodes, ...rawFeedNodes]}
+        edges={[...derivedEdges, ...rawFeedEdges]}
         nodeTypes={NODE_TYPES}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
