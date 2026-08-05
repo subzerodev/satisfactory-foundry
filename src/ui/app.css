@@ -1174,3 +1174,140 @@ body {
 .title-block-power .title-block-value {
   color: var(--accent);
 }
+
+/* =========================================================================
+   Stage 9 / Phase 2 — panels as drawing schedules + arc polish (ticket #46).
+   CSS-ONLY, behaviour-frozen: grouped selectors re-clothe the existing markup;
+   no DOM, no new tokens. See features/drawing-identity/phase-2/brainstorm.md.
+   ========================================================================= */
+
+/* --- Axis 1: schedule idiom ---------------------------------------------
+   The two real tables (train-table, alt-compare-table) read as drawing
+   SCHEDULES: full numeric/mono body, an UPPERCASE letter-spaced header row
+   (text-transform — the DOM casing is untouched so no literal pin churns)
+   over a 2px ink rule, hairline soft row separators. Per-table cell
+   alignment (train right, alt-compare left) is deliberately NOT touched —
+   only the type + rule treatment is shared. */
+.train-table,
+.alt-compare-table {
+  font-family: var(--font-mono-num);
+}
+
+.train-table thead th,
+.alt-compare-table thead th {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 2px solid var(--fg);
+}
+
+.train-table tbody tr,
+.alt-compare-table tbody tr {
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* The applied/current row carries an accent left rule — the schedule's
+   "this is the live line" affordance re-expressed in medium tokens. */
+.alt-compare-current {
+  border-left: 3px solid var(--accent);
+}
+
+/* ChainBuilder's preview is a <ul> (chain-builder-rows), not a table — it
+   gets the same schedule TYPE + hairline separators as a list, so the look
+   carries without forcing table markup. */
+.chain-builder-rows {
+  font-family: var(--font-mono-num);
+  list-style: none;
+  padding-left: 0;
+}
+
+.chain-builder-rows li {
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* --- Axis 2: panel dress -------------------------------------------------
+   ONE grouped selector gives all six panels the uniform sheet dress:
+   --bg-panel ground, a soft hairline frame, square corners. The intended
+   deltas: link-inspector + alt-compare shift --border → --border-soft and
+   lose their 4px radius; the other four GAIN a frame they lacked — the
+   drawing has no rounded or frameless chrome. */
+.link-inspector,
+.findings-panel,
+.summary-cards,
+.plans-bar,
+.chain-builder,
+.alt-compare {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-soft);
+  border-radius: 0;
+}
+
+/* Panel titles take the drafting label idiom (the .title-block-label look)
+   via the existing header classes — no new markup class. Only the two
+   panels that HAVE a title element (LinkInspector, AltCompare) carry one;
+   the other four are control bars / lists with no heading to dress. */
+.link-inspector-title,
+.alt-compare-head {
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+/* Panel controls join the P0 quiet-mono control treatment (the header
+   controls already carry it) — one grouped rule over the panel controls.
+   The close ✕ is excluded via :not() (it is deliberately frameless —
+   its own rule stands unchallenged); FindingsPanel/SummaryCards carry
+   no controls (selectors dropped rather than left dead). */
+.link-inspector button:not(.link-inspector-close),
+.link-inspector select,
+.plans-bar button,
+.plans-bar select,
+.plans-bar input,
+.chain-builder button,
+.chain-builder select,
+.chain-builder input,
+.alt-compare button {
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  color: var(--fg-muted);
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  border-radius: 0;
+}
+
+/* --- Axis 3: SVG refinements ---------------------------------------------
+   Token-consistency only: the site/stage labels join the numeric/mono face
+   (font-family on SVG <text> applies via CSS), and the foundation grid
+   strokes drop to the soft-hairline weight so the floor plan reads on the
+   sheet. Nothing structural. bp-foundation is shared by the schematic and
+   combined-chain blueprints, so one selector covers both. */
+.lane-name,
+.machine-label,
+.bp-machine-label,
+.bp-lane-name,
+.bp-mark-label,
+.chain-bp-name,
+.chain-bp-power,
+.chain-bp-link-label {
+  font-family: var(--font-mono-num);
+}
+
+.bp-foundation {
+  stroke: var(--border-soft);
+}
+
+/* --- Axis 4: a11y focus visibility ---------------------------------------
+   No :focus rule exists today; the new soft chrome risks an invisible
+   default focus ring on vellum. One grouped :focus-visible rule keeps a
+   crisp accent outline on every keyboard-reachable control app-wide. */
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
