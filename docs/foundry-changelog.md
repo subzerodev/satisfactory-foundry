@@ -3,6 +3,21 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 15: the big-factory number row is readable + internal tidy-up
+
+> Hey Michael — two follow-ups from earlier tonight are done. On very
+> big factories (over ~114 machines), the row of little machine
+> numbers under the band no longer piles onto itself: the numbers
+> now keep a readable spacing (your 161-machine plan went from 85
+> overlapping number pairs to zero), every boundary tick stays drawn,
+> and any machine a warning names ALWAYS keeps its number so you can
+> find it. The other item was internal: I investigated deleting some
+> leftover multi-factory layout code and found it still quietly
+> powers the Transport panel's "drawn straight-line" distance — so
+> it stays, now locked in place by a test, and the question of
+> simplifying that measure properly is parked as ticket #81 for
+> whenever you want to decide it. Nothing else changes on screen.
+
 ## 2026-08-05 — Stage 14: your first view is back, the combined one is gone
 
 > Hey Michael — my mistake, corrected. The lane view you liked is

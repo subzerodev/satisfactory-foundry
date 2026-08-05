@@ -265,4 +265,8 @@ process (all-Claude roster, opus implementers, per-phase gates).
   tick stays.
 - **Epic:** #80 (milestone 86; children #77 + #78). Combined cycle.
   Blocked-by Stage 14.
-- **Status:** in progress (started 2026-08-05).
+- **Status:** merged to develop 2026-08-05 (`02490dc`, 759 tests).
+  Walk: Plastic ×161 clean solve 85 → ZERO label crossings, both
+  themes; the nine-pair starving residual pinned exactly; the
+  drawn-distance live twin green. #81 (semantics decision) awaits
+  Michael. Release PR pending → then Stage 15 SHIPPED.
