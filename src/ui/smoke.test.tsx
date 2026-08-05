@@ -500,6 +500,28 @@ describe("Blueprint", () => {
     expect(html).not.toContain("footprint unknown");
   });
 
+  it("labels machine rects 1-based (1..N), not 0-based (#85)", () => {
+    // The solver's machine vocabulary is 1..N and every belt mark ("after
+    // machine m") sits at machine m's right edge. The rect labels must read
+    // 1..N so the mark lands on the rect it names, not one rect early. N=2 here:
+    // the first rect wears "1", the last wears "2" (never a "0").
+    const result = smelterSolve();
+    const { feedLabels, outputLabels } = smelterLabels(result);
+    const html = renderToStaticMarkup(
+      <Blueprint
+        solve={result}
+        machineId="smelter_mk1"
+        machineCount={2}
+        feedLabels={feedLabels}
+        outputLabels={outputLabels}
+      />,
+    );
+    const labels = [...html.matchAll(/class="bp-machine-label"[^>]*>(\d+)</g)].map(
+      (m) => m[1],
+    );
+    expect(labels).toEqual(["1", "2"]);
+  });
+
   it("lifts mark labels OFF the lane band: feed y=−44, output y=152 (#69)", () => {
     // The rate labels moved off the drawing ink (#69). Marks sit ON the bus
     // (mk.at.y === busY): the smelter's feed bus is y=−20, output bus y=120. The

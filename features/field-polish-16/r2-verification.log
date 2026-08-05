@@ -1,0 +1,29 @@
+# Stage 16 — bidirectionality verification log (tickets #83 #84 #85 #86)
+
+Discipline per axis: PASS (fix in, test green) → real break (revert the fix,
+verify the test genuinely FAILS naming the wrong value) → restore (fix back,
+green). Quoted assertion text is the verbatim failure the broken code produced.
+
+Baseline (fix-free trunk, worktree): 759 tests / 31 files green; `npm run check`
+green.
+
+---
+
+## Axis A — #85 Blueprint machine numbers 1-based
+
+Fix: `src/ui/Blueprint.tsx:204` `{i}` → `{i + 1}`.
+Test: `src/ui/smoke.test.tsx` › Blueprint › "labels machine rects 1-based
+(1..N), not 0-based (#85)" — asserts the two rendered `bp-machine-label` texts
+equal `["1", "2"]` on the real Smelter ×2 solve.
+
+- PASS: fix in → `Tests  1 passed`.
+- BREAK: reverted `{i + 1}` → `{i}`; test FAILED:
+  > `AssertionError: expected [ '0', '1' ] to deeply equal [ '1', '2' ]`
+  The break reproduces exactly Michael's report — a 0-based label makes the
+  first rect wear "0" and the "after machine m" mark read one rect early.
+- RESTORE: fix back → `Tests  1 passed`.
+
+Drift-hunt (assumption #2): grepped every `*.test.*` for a 0-based blueprint
+label content pin (`bp-machine-label`, `>0</text>`) — NONE exists (the only
+`machine-label` matches are the schematic band-mark COUNT in smoke.test.tsx).
+The new pin is additive, not a flipped existing pin. Verified.
