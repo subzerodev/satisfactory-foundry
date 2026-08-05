@@ -1,4 +1,13 @@
-# Stage 17 — drawn-distance goes two-site; the chain engine retires (ticket #89) — brainstorm v3
+# Stage 17 — drawn-distance goes two-site; the chain engine retires (ticket #89) — brainstorm v3 — FROZEN 2026-08-06
+
+> **FROZEN.** Correctness: 3 rounds (r1 both NEEDS_REWORK — false
+> guard premise + two source mischaracterizations; r2/r3 — the 2×
+> floor mislabel, converged). Simplify: APPROVED_WITH_NITS (2):
+> the stale step-1-invariant comment rewrite FOLDED into the sweep;
+> the _stageOrder retention REJECTED-with-rationale (dropping the
+> arg would edit a caller this arc doesn't otherwise touch — the
+> underscore posture is the minimal honest encoding). Implementation
+> contract for ticket #89.
 
 **Goal.** Michael's #81 decision (2026-08-05, recorded there and on
 the epic trail): the Transport panel's drawn-distance becomes a pure
@@ -136,7 +145,12 @@ positions)` — signature unchanged:
 - Deleted-surface sweep: zero references to layoutChain/
   fanCoincident/ChainLayout/ChainArrangement/buildChain outside
   intentional comments; layoutStage + ceilTo10 + requiredScaleForPair
-  still consumed.
+  still consumed. When relocating/exporting requiredScaleForPair,
+  REWRITE its step-1-invariant comments (engine :498-500 and :388 —
+  they assert fanCoincident's positive-delta guarantee, retired
+  here) to state the coincident case is a SUPPORTED input yielding
+  K_MIN (simplify fold — the finite-fallback branch is now a
+  contract, not a can't-happen).
 - The kept chain-view tests (nearestEdgeConnector, drawnMeters,
   applyDrawnDistance, isEstimatedLink) green untouched.
 - Bidirectionality log — features/two-site-distance/
@@ -201,3 +215,8 @@ positions)` — signature unchanged:
   _stageOrder underscore exemption, the EXACT 80 dm continuity
   (ceilTo10(160) a no-op), and the decoupling pin's decisiveness
   (80 ≠ 240 under old code).
+- v3-final (2026-08-06): simplify APPROVED_WITH_NITS (2) —
+  dispositioned per the freeze header; the design confirmed
+  net-deleting (an engine retired, a primitive reused, four
+  proportionate pins, siteFor correctly a helper at two call
+  sites). FROZEN — full proceed condition met.
