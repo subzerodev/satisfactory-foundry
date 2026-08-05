@@ -270,3 +270,21 @@ process (all-Claude roster, opus implementers, per-phase gates).
   themes; the nine-pair starving residual pinned exactly; the
   drawn-distance live twin green. #81 (semantics decision) awaits
   Michael. **SHIPPED** — release PR #87 merged to main 2026-08-05.
+
+## Stage 16 — Field polish: rates, names, honest numbers
+
+- **Goal:** Michael's four screenshot asks: (#83) the alt-recipe
+  compare table shows OUTPUT /min (per-row actuals from the primary
+  ProposedStage.outputRate, guarded "—" for demoted candidates);
+  (#84) canvas tiles name the building ("×65 Refinery"); (#85) the
+  blueprint's machine numbers were 0-BASED against the 1-based
+  solver vocabulary — the off-by-one behind his "breaks out after
+  machine 12 but this says before" report (display-only fix, the
+  geometry was right); (#86) schematic numbers centered under their
+  cells, both modes, ticks unchanged.
+- **Epic:** #82 (milestone 87; children #83 #84 #85 #86). Combined
+  cycle under the clear-the-board directive. Blocked-by Stage 15.
+- **Status:** merged to develop 2026-08-05 (`a0ebb29`, 770 tests).
+  THREE design rounds (the wrong output formula, then an unguarded
+  deref, both caught pre-code). Walk: all four axes verified live.
+  Release PR pending → then Stage 16 SHIPPED.
