@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-05
 **Status:** in-progress
-**Current phase:** Phase 1 (canvas: plates, dimension lines, stamps) — design next
+**Current phase:** Phase 2 (panels + schedules + polish) — design next
 **Final PR:** —
 **Epic:** #43 (board #21, Stage 9 milestone 80)
 
@@ -44,10 +44,26 @@ Behavior-frozen arc: presentation only; 703-test suite stays green
 
 ### Phase 1 — canvas
 
+- **Status:** complete (merged --no-ff to develop 2026-08-05; 707/707
+  tests; design gate settled the RF marker/merge mechanics against
+  installed source + caught the no-minimap ungrounded claim; boundary
+  adversarial APPROVED zero findings (geometry, selectors, import
+  order all refuted); diff-simplify APPROVED; both-media walk verified
+  plates/ticks/rotated stamp/notice/chrome live; ticket #45 Done)
+
+### Phase 2 — panels + schedules
+
 - **Status:** design next
 
 ## Decisions log
 
+- 2026-08-05 (P1 landed): the canvas re-skin is CSS + two canvas-level
+  props only (defaultEdgeOptions markerEnd "dim-tick" bare id + the one
+  custom def; Background lines gap 24); the stamp lives on the SVG
+  label rect+text (never the g — RF's inline translate); rotation is
+  per-element fill-box (centers proven coincident); ticks stay ink for
+  all states (line color carries state; two-def fallback parked); the
+  --xy-* overrides ride the existing three-block cascade guard.
 - 2026-08-05 (P0 landed): the existing token names are the identity's
   API (re-valued in place, never renamed); vellum accent is #C25A1D
   (the computed supersession — #E8722D fill-only); three new tokens
