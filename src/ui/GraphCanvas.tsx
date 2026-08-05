@@ -190,7 +190,7 @@ type RawFeedFlowNode = Node<RawFeedCardData, "rawFeed">;
  * flowDirection (right in LR, bottom in TB) to mirror the stage card. The
  * handle takes no connections (isConnectable false — feeds emit, never link).
  */
-function RawFeedNode({ data }: NodeProps<RawFeedFlowNode>) {
+export function RawFeedNode({ data }: NodeProps<RawFeedFlowNode>) {
   const flowDirection = useAppStore((s) => s.flowDirection);
   const sourcePos = flowDirection === "TB" ? Position.Bottom : Position.Right;
   return (
