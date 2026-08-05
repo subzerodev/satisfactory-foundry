@@ -156,6 +156,7 @@ function StageNode({ data, selected }: NodeProps<StageFlowNode>) {
         {data.recipeName !== null && (
           <span className="stage-node-machines">
             ×{data.machineCount} {data.machineName}
+            {/* the single interior space is load-bearing for the ×N Name pin */}
           </span>
         )}
         {data.findingCount > 0 && (
