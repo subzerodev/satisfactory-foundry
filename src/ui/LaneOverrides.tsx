@@ -9,7 +9,7 @@ import { formatRate } from "./format.ts";
 interface LaneOverridesProps {
   result: StageSolveResult;
   overrides: Selection["overrides"];
-  /** id → displayName (App's catalog-access pattern, threaded like Schematic /
+  /** id → displayName (App's catalog-access pattern, threaded like
    *  FindingsPanel) — the per-lane item heading that groups its belt rows. */
   itemName(id: string): string;
   onOverride(

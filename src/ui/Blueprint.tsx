@@ -7,9 +7,9 @@ import { formatRate } from "./format.ts";
 import { ZoomToggle, useReadableScale } from "./blueprint-zoom.tsx";
 
 /**
- * The blueprint view: a top-down, in-game-scale floor plan of one solved stage,
- * the Schematic's sibling leaf. It renders StageLayout geometry verbatim — no
- * geometry math beyond unit scaling at the SVG boundary (the thin-UI pin).
+ * The blueprint view: a top-down, in-game-scale floor plan of one solved stage.
+ * It renders StageLayout geometry verbatim — no geometry math beyond unit
+ * scaling at the SVG boundary (the thin-UI pin).
  *
  * ZERO store imports: App composes every value this needs (machineId,
  * machineCount, the two label arrays) and mounts <Blueprint> only for the
