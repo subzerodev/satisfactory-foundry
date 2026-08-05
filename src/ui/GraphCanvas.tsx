@@ -150,9 +150,13 @@ function StageNode({ data, selected }: NodeProps<StageFlowNode>) {
       </p>
 
       <footer className="stage-node-foot">
-        {/* machineCount blanked when recipe-less (display choice, r3). */}
+        {/* machineCount blanked when recipe-less (display choice, r3). The
+            building name (#84) rides the same line — machineName is non-null
+            whenever recipeName is, so no bare "×N " renders. */}
         {data.recipeName !== null && (
-          <span className="stage-node-machines">×{data.machineCount}</span>
+          <span className="stage-node-machines">
+            ×{data.machineCount} {data.machineName}
+          </span>
         )}
         {data.findingCount > 0 && (
           <span className="stage-node-findings" title="link findings">

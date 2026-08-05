@@ -17,6 +17,8 @@ import { Fraction } from "../core/fraction.ts";
 import type { Finding, StageSolveResult } from "../core/manifold.ts";
 import type { CatalogRecipe, CatalogMachine } from "../data/types.ts";
 import type { Selection, SolveState } from "../state/store.ts";
+import { appStore } from "../state/store.ts";
+import type { Catalog } from "../data/types.ts";
 import { RawFeedNode } from "./GraphCanvas.tsx";
 import { solveStage } from "../core/manifold.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
@@ -606,9 +608,9 @@ describe("Blueprint", () => {
         outputLabels={outputLabels}
       />,
     );
-    const labels = [...html.matchAll(/class="bp-machine-label"[^>]*>(\d+)</g)].map(
-      (m) => m[1],
-    );
+    const labels = [
+      ...html.matchAll(/class="bp-machine-label"[^>]*>(\d+)</g),
+    ].map((m) => m[1]);
     expect(labels).toEqual(["1", "2"]);
   });
 
@@ -1264,6 +1266,91 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
     // <Handle> needs the RF provider, so it can't be rendered in isolation —
     // the data pin lives in graph-flow.test's node-powerText rows instead).
     expect(html).not.toContain("stage-node-power");
+  });
+
+  it("names the building on the tile: ×N MachineName (#84)", async () => {
+    // GraphCanvas's RF12 server snapshot reads the store's INITIAL state
+    // (zustand's getInitialState), so the tile can't be seeded via setState —
+    // stub that one seam with a solved-shaped slice carrying a recipe-bearing
+    // stage (20 Smelters on the Iron Ingot recipe, catalog machine displayName
+    // "Smelter"). The machines span then composes "×20 Smelter" (#84) — the
+    // recipe-less default renders no such span (the existing card SSR pin).
+    const { GraphCanvas } = await import("./GraphCanvas.tsx");
+    const store = appStore as unknown as {
+      getInitialState: () => unknown;
+      getState: () => Record<string, unknown>;
+    };
+    const realInitial = store.getInitialState;
+    const base = store.getState();
+    const F = (n: number) => Fraction.from(n);
+    const CAT: Catalog = {
+      items: {
+        iron_ingot: {
+          id: "iron_ingot",
+          displayName: "Iron Ingot",
+          isFluid: false,
+          stackSize: F(100),
+        },
+        ore_iron: {
+          id: "ore_iron",
+          displayName: "Iron Ore",
+          isFluid: false,
+          stackSize: F(100),
+        },
+      },
+      machines: {
+        smelter: {
+          id: "smelter",
+          displayName: "Smelter",
+          power: { mw: F(4), variable: false, exponent: F(1) },
+        },
+      },
+      recipes: {
+        ingot: {
+          id: "ingot",
+          displayName: "Iron Ingot",
+          machineId: "smelter",
+          isAlternate: false,
+          inputs: [{ itemId: "ore_iron", perMinute: F(30) }],
+          outputs: [{ itemId: "iron_ingot", perMinute: F(30) }],
+          primaryOutputId: "iron_ingot",
+        },
+      },
+      tiers: { belt: [], pipe: [] },
+    };
+    const sel: Selection = {
+      recipeId: "ingot",
+      machineCount: 20,
+      clockPercentText: "100",
+      unlockedTiers: { belt: 4, pipe: 2 },
+      overrides: { feeds: {}, outputs: {} },
+    };
+    const stageNode = {
+      id: "s1",
+      name: "Smelting",
+      selection: sel,
+      solve: { status: "idle" as const },
+    };
+    store.getInitialState = () => ({
+      ...base,
+      catalog: { status: "ready", catalog: CAT },
+      stages: { s1: stageNode },
+      stageOrder: ["s1"],
+      activeStageId: "s1",
+      links: [],
+      reconciliation: [],
+      positions: { s1: { x: 0, y: 0 } },
+      selection: sel,
+      solve: { status: "idle" },
+    });
+    try {
+      const html = renderToStaticMarkup(<GraphCanvas colorMode="light" />);
+      expect(html).toContain(
+        '<span class="stage-node-machines">×20 Smelter</span>',
+      );
+    } finally {
+      store.getInitialState = realInitial;
+    }
   });
 
   it("renders the dimension-tick marker def (Stage 9 P1 Axis 2)", async () => {

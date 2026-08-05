@@ -100,3 +100,38 @@ Tests (`src/ui/chain-builder-adapter.test.ts`):
 
 The overshoot pin also proves the uniform-actuals decision (v1's "current row
 shows R exactly" was dropped): R=100, both current + alt show 120/min, not 100.
+
+---
+
+## Axis D — #84 tiles name the building
+
+Fix: `src/ui/graph-flow.ts` — `StageNodeData` gains `machineName: string | null`
+(:64-70); a `machineNameOf` helper beside `recipeNameOf` (:284-...) returns null
+under the SAME conditions as recipeNameOf (no recipeId / dangling id) else
+`catalog.machines[recipe.machineId]?.displayName ?? recipe.machineId` (the raw-id
+fallback), wired into the node `data` (:645). `src/ui/GraphCanvas.tsx` — the
+machines span renders `×{machineCount} {machineName}` (:154-160, gated on
+recipeName as before).
+Tests:
+  data (`src/ui/graph-flow.test.ts`):
+    - "machineName resolves the machine displayName (#84)"
+    - "machineName falls back to the raw machineId when off the machine table (#84)"
+    - "machineName is null for a recipe-less stage … (#84)"
+  render (`src/ui/smoke.test.tsx` › GraphCanvas SSR):
+    - "names the building on the tile: ×N MachineName (#84)" — RF12 SSR through
+      the real GraphCanvas (getInitialState seam stubbed with a 20-Smelter
+      Iron-Ingot stage) asserts `<span class="stage-node-machines">×20
+      Smelter</span>`.
+
+- PASS: fix in → graph-flow 48 passed; the #84 SSR pin passes.
+- BREAK 1 (GraphCanvas drops the name → bare `×{machineCount}`): the SSR pin
+  FAILED:
+  > `expected '…' to contain '<span class="stage-node-machines">×20 Smelter</span>'`
+  > (rendered `<span class="stage-node-machines">×20</span>` — recipe line still
+  > "Iron Ingot", so the recipe resolved; only the name was dropped).
+- BREAK 2 (machineNameOf returns null instead of the raw-id fallback): the
+  off-table fallback data pin FAILED:
+  > `AssertionError: expected null to be 'smelter'`
+  > (the resolved recipe's off-table machineId no longer falls back — the exact
+  > dangling-"×N " risk the fallback idiom prevents).
+- RESTORE (both) → graph-flow 48 + the #84 SSR pin green.
