@@ -136,3 +136,32 @@ $ npm test
 $ npm run check
 (tsc -b && eslint . && prettier --check src — no errors, no warnings)
 All matched files use Prettier code style!
+
+=== Behavior 5 (boundary fold): gutter width via in-flow sizer twins ===
+Context: boundary adversarial IMPORTANT — absolute labels are out-of-flow and
+contribute nothing to .bp-gutter's max-content, so the populated gutter
+collapsed to zero width. Fix: in-flow invisible .bp-gutter-sizer twins.
+
+PASS (code present):
+$ npx vitest run src/ui/smoke.test.tsx
+  Tests  58 passed (58)
+
+BREAK:
+$ sed -i 's/className="bp-gutter-sizer"/className="bp-gutter-sizer-BROKEN"/' src/ui/Blueprint.tsx
+(Note: a first break attempt survived a substring-matching assertion —
+/bp-gutter-sizer/g matched inside the -BROKEN name. The assertion was
+tightened to quote-delimited /class="bp-gutter-sizer"/g counts before this
+captured cycle; the loose form is gone from the test.)
+
+FAIL (genuine, code broken):
+$ npx vitest run src/ui/smoke.test.tsx
+ ❯ src/ui/smoke.test.tsx (58 tests | 1 failed) 50ms
+     × renders lane-name labels in the HTML gutter, not in the SVG (Axis C1) 4ms
+ FAIL  src/ui/smoke.test.tsx > Blueprint > renders lane-name labels in the HTML gutter, not in the SVG (Axis C1)
+ Test Files  1 failed (1)
+      Tests  1 failed | 57 passed (58)
+
+RESTORE + GREEN:
+$ sed -i 's/className="bp-gutter-sizer-BROKEN"/className="bp-gutter-sizer"/' src/ui/Blueprint.tsx
+$ npx vitest run src/ui/smoke.test.tsx
+  Tests  58 passed (58)

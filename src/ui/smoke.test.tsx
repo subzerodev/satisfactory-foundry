@@ -428,6 +428,12 @@ describe("Blueprint", () => {
     expect(html).toContain("bp-gutter-label");
     expect(html).toContain("Iron Ore");
     expect(html).toContain("Iron Ingot");
+    // The width mechanism: the absolute labels are out-of-flow and contribute
+    // nothing to the gutter's max-content, so each label has an in-flow,
+    // invisible sizer twin that reserves the column width. One per label.
+    expect(html.match(/class="bp-gutter-sizer"/g)?.length).toBe(
+      html.match(/class="bp-gutter-label"/g)?.length,
+    );
   });
 
   it("positions each gutter label at (laneY − minY) × scale px (Axis C1)", () => {

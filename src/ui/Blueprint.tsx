@@ -125,7 +125,10 @@ export function Blueprint({
           only horizontal pan happens inside .bp-scroll. */}
       <div className="bp-row">
         {/* The gutter renders labels only at DETAIL; at FIT it is empty and
-            collapses to zero width (max-content sizing, no padding/border). */}
+            collapses to zero width (max-content sizing, no padding/border).
+            The absolute labels are out-of-flow and contribute NOTHING to
+            max-content, so in-flow invisible sizer twins give the column the
+            longest name's width. */}
         <div className="bp-gutter">
           {atDetail &&
             gutterLabels.map((g) => (
@@ -133,6 +136,16 @@ export function Blueprint({
                 key={g.key}
                 className="bp-gutter-label"
                 style={{ top: `${g.top}px` }}
+              >
+                {g.text}
+              </span>
+            ))}
+          {atDetail &&
+            gutterLabels.map((g) => (
+              <span
+                key={`sz-${g.key}`}
+                className="bp-gutter-sizer"
+                aria-hidden="true"
               >
                 {g.text}
               </span>

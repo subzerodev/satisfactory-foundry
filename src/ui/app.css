@@ -637,6 +637,22 @@ body {
   color: var(--fg-muted);
 }
 
+/* LOAD-BEARING width: the absolute labels are out-of-flow and contribute
+   NOTHING to the gutter's max-content (css-sizing-3 §5.2) — without these
+   in-flow, invisible sizer twins the populated column would also collapse to
+   zero. height 0 keeps them out of the vertical flow; font + padding MUST
+   match .bp-gutter-label so the reserved width equals the widest label. */
+.bp-gutter-sizer {
+  display: block;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  white-space: nowrap;
+  padding-right: 6px;
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+}
+
 /* The [FIT | DETAIL] zoom toggle (P3 Axis C2) — quiet-mono buttons matching the
    header .theme-toggle idiom; the active mode carries the accent ink. */
 .bp-zoom-toggle {
@@ -726,6 +742,12 @@ body {
   dominant-baseline: middle;
 }
 
+.bp-mark-glyph {
+  fill: var(--accent);
+  stroke: var(--accent-strong);
+  stroke-width: 1;
+}
+
 /* Label halo (Stage 12 P1 Axis 2): the rate labels sit at fixed dm offsets and,
    when rows are tight, overlap adjacent dashed pipe lanes (Michael's "Heavy Oil
    Residue" case). paint-order: stroke draws a --bg halo UNDER the glyphs — the
@@ -733,12 +755,6 @@ body {
    units, matched to the ~10 dm font size, so it scales with the plan. (The lane
    NAMES left the SVG for the HTML gutter in P3 Axis C1; the halo now defends
    only the mark labels.) */
-.bp-mark-glyph {
-  fill: var(--accent);
-  stroke: var(--accent-strong);
-  stroke-width: 1;
-}
-
 .bp-mark-label {
   font-size: 10px;
   fill: var(--fg);
