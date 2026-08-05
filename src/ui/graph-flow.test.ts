@@ -259,6 +259,42 @@ describe("graphToFlow — nodes", () => {
     ]);
   });
 
+  it("under TB, emits top/bottom handle geometry (transposed straddle) — Stage 10 P1", () => {
+    const a = stage("a", "Smelting", "ingot", 20, solvedWith({}));
+    const { nodes } = graphToFlow(
+      catalog,
+      { a },
+      ["a"],
+      [],
+      [],
+      { a: { x: 40, y: 40 } },
+      "a",
+      "TB",
+    );
+    // TB: target on the TOP edge, source on the BOTTOM edge, centered
+    // horizontally (x = NODE_WIDTH/2 - 3 = 107), straddling the border (±3).
+    expect(nodes[0]!.handles).toEqual([
+      {
+        id: "in",
+        type: "target",
+        position: "top",
+        x: 107,
+        y: -3,
+        width: 6,
+        height: 6,
+      },
+      {
+        id: "out",
+        type: "source",
+        position: "bottom",
+        x: 107,
+        y: 93,
+        width: 6,
+        height: 6,
+      },
+    ]);
+  });
+
   it("carries recipe display name + machineCount + solveStatus in data", () => {
     const a = stage("a", "Smelting", "ingot", 20, solvedWith({}));
     const { nodes } = graphToFlow(
