@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-05
 **Status:** in-progress
-**Current phase:** Phase 0 (views theming + spacing, #54 + title-block sticky #55) — design
+**Current phase:** Phase 1 (visible raw feeds) — next
 **Final PR:** —
 **Epic:** #53 (board #21, Stage 11 milestone 82)
 
@@ -20,9 +20,19 @@
 
 ## Phase status
 
-- P0 (#54 + #55): design in progress (static CSS audit done — defect
-  list in phase-0/brainstorm.md).
-- P1: after P0.
+- P0 (#54 + #55): complete (merged 2026-08-05, 3a3feae; 728/728,
+  CSS-only). Design: three correctness rounds — the override-row fix
+  went min-width:0 (killed r1: false shared-grid rationale) → 220px
+  (killed r2: both reviewers independently computed the real 51-char
+  output label) → max-content grid (r3 approved on all five refutation
+  axes incl. computed no-overflow); simplify dropped the letter-spacing
+  gold-plating. Boundary: BOTH APPROVED zero findings; diff-simplify
+  APPROVED_WITH_NITS (2 leave-as-is dispositions). Walk: both media —
+  grid aligned/unwrapped/gulf-free with output-lane data, sticky block
+  pinned to the true scrollport bottom (the 15px "failure" was the
+  horizontal-scrollbar metric, not a defect) and released at its
+  natural seat, all radii/type verified, zero console errors.
+- P1: next — child ticket at pickup.
 
 ## Decisions log
 

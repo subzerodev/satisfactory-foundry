@@ -3,6 +3,19 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 11, Phase 0: the views join the drawing, and the title block follows you
+
+> Hey Michael — two of your calls landed. The title block now sticks to
+> the bottom of the window while you scroll, exactly as you suggested —
+> the sheet's corner stamp is always in view. And the views got their
+> overdue treatment: the feed/output rows under the schematic now line
+> up in a proper column with the instrument font (that big empty gap is
+> gone), the hover tooltip and the summary cards and the power chip all
+> went square like the rest of the drawing, the floor-plan site names
+> use the headline face, and the notices match the labels everywhere.
+> Still coming in this stage: the raw inputs — Crude Oil, Copper Ore
+> and friends — showing up in the flow chart itself.
+
 ## 2026-08-05 — Stage 10 complete: breathing room
 
 > Hey Michael — your spacing note, measured and fixed. The panels that
