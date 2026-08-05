@@ -3,6 +3,44 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 10 complete: breathing room
+
+> Hey Michael — your spacing note, measured and fixed. The panels that
+> got their frames in the drawing pass had text sitting right against
+> the rules — they all breathe now with the same inset the inspector
+> always had. The ＋ stage and FLOW buttons were touching; they have a
+> proper gap. And the Mk conveyor/pipe chips were so close their borders
+> merged — they read as separate buttons now. I went over every other
+> surface with a ruler too (header, legend, title block, tables) and
+> they were already right, so nothing else moved. That closes Stage 10 —
+> if a spot still feels cramped to you, name it and it gets fixed on
+> this ticket's tail.
+
+## 2026-08-05 — Stage 10, Phase 1: bigger canvas, your choice of flow
+
+> Hey Michael — the graph area is now much taller by default, and you
+> can resize it yourself: grab the bottom-right corner of the canvas and
+> drag (if the grip ever refuses to drag, tell me — I have a fallback
+> ready). And the flow chart is yours to orient: the FLOW button next to
+> ＋ stage switches between left-to-right and top-to-bottom. Stages
+> you've placed by hand stay exactly where you put them; only the ones
+> the planner placed automatically re-arrange into the new direction,
+> and new stages keep flowing that way. The choice saves with each plan,
+> so a chart you laid out top-to-bottom comes back top-to-bottom. Your
+> spacing notes are next.
+
+## 2026-08-05 — Stage 10, Phase 0: every control matches the paper
+
+> Hey Michael — your first catch, fixed. Every selection box, input,
+> and button now wears the medium: the Recipe picker, the Machines and
+> clock fields, the view and tier toggles, the trip fields in the
+> inspector — all in the instrument font with the soft-ink frame, in
+> both papers. Radios and checkboxes get the orange mark, and even the
+> browser's own dropdown menus and number spinners now follow the
+> theme. Next up: the bigger, resizable graph area and the
+> left-right/top-bottom flow option — and your spacing notes are
+> ticketed for the pass right after.
+
 ## 2026-08-05 — Stage 9 complete: the full drawing identity
 
 > Hey Michael — the last surfaces joined the drawing. The train and

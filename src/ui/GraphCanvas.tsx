@@ -11,7 +11,7 @@
  * Frozen spec: features/chained-stages/phase-2/brainstorm.md.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -21,6 +21,7 @@ import {
   Handle,
   Position,
   applyNodeChanges,
+  useReactFlow,
 } from "@xyflow/react";
 import type {
   Node,
@@ -76,6 +77,13 @@ type StageFlowNode = Node<StageCardData, "stage">;
 function StageNode({ data, selected }: NodeProps<StageFlowNode>) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(data.name);
+  // Read the direction straight from the store (no per-node data churn, frozen
+  // Axis 3): LR puts the target/source handles on the left/right edges, TB on the
+  // top/bottom. These sides MUST match graphToFlow's node-side handle geometry
+  // (RF's handleBounds source) — both are keyed off the same store field.
+  const flowDirection = useAppStore((s) => s.flowDirection);
+  const targetPos = flowDirection === "TB" ? Position.Top : Position.Left;
+  const sourcePos = flowDirection === "TB" ? Position.Bottom : Position.Right;
 
   const commitRename = () => {
     setEditing(false);
@@ -89,9 +97,10 @@ function StageNode({ data, selected }: NodeProps<StageFlowNode>) {
       className={`stage-node solve-${data.solveStatus}${selected ? " selected" : ""}`}
       style={{ width: NODE_WIDTH, height: NODE_HEIGHT }}
     >
-      {/* Node-side handles enable RF's controlled layout + edge routing. */}
-      <Handle type="target" position={Position.Left} id="in" />
-      <Handle type="source" position={Position.Right} id="out" />
+      {/* Node-side handles enable RF's controlled layout + edge routing. Their
+          sides follow the store's flowDirection (Stage 10 P1). */}
+      <Handle type="target" position={targetPos} id="in" />
+      <Handle type="source" position={sourcePos} id="out" />
 
       <header className="stage-node-head">
         {editing ? (
@@ -161,6 +170,47 @@ function StageNode({ data, selected }: NodeProps<StageFlowNode>) {
 
 const NODE_TYPES: NodeTypes = { stage: StageNode };
 
+/**
+ * The flow-direction toggle (Stage 10 / Phase 1). Lives INSIDE the ReactFlow
+ * tree so it can call `useReactFlow().fitView()`: the static `fitView` prop only
+ * seeds the INITIAL fit (fired once), so after a direction switch transposes the
+ * layout 90° the viewport would stay on the old coordinates with nodes scrolled
+ * out of frame. The effect keyed on `flowDirection` re-frames the chart after the
+ * commit that rendered the re-slotted positions — skipping the initial mount so
+ * it only fires on an ACTUAL change (the initial fit is the prop's job).
+ */
+function DirectionToggle() {
+  const flowDirection = useAppStore((s) => s.flowDirection);
+  const setFlowDirection = useAppStore((s) => s.setFlowDirection);
+  const { fitView } = useReactFlow();
+
+  // Skip the initial mount: fire fitView only when flowDirection actually
+  // changes (the static fitView prop already handles the first frame).
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    void fitView();
+  }, [flowDirection, fitView]);
+
+  const next = flowDirection === "LR" ? "TB" : "LR";
+  return (
+    <button
+      className="graph-add-stage"
+      title={
+        flowDirection === "LR"
+          ? "flow left to right — click for top to bottom"
+          : "flow top to bottom — click for left to right"
+      }
+      onClick={() => setFlowDirection(next)}
+    >
+      {flowDirection === "LR" ? "FLOW L→R" : "FLOW T↓B"}
+    </button>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Edge styling — map the reconciliation state to a class.
 // ---------------------------------------------------------------------------
@@ -192,6 +242,7 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
   const reconciliation = useAppStore((s) => s.reconciliation);
   const positions = useAppStore((s) => s.positions);
   const activeStageId = useAppStore((s) => s.activeStageId);
+  const flowDirection = useAppStore((s) => s.flowDirection);
 
   const addStage = useAppStore((s) => s.addStage);
   const removeStage = useAppStore((s) => s.removeStage);
@@ -235,6 +286,7 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
       reconciliation,
       positions,
       activeStageId,
+      flowDirection,
     );
   }, [
     catalog,
@@ -244,6 +296,12 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
     reconciliation,
     positions,
     activeStageId,
+    // flowDirection is load-bearing (frozen Axis 3): a fully-dragged plan (or a
+    // pinned v1–v4 load) toggles with ZERO position change, so without this dep
+    // the memo never recomputes and the node-side handle geometry — RF's
+    // handleBounds source — stays on the old sides while the rendered <Handle>
+    // elements flip. The dep is the whole fix.
+    flowDirection,
   ]);
 
   // Inject the per-node card callbacks (remove/rename) + build RF nodes from the
@@ -489,6 +547,9 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
           <button className="graph-add-stage" onClick={onAddStage}>
             ＋ stage
           </button>
+          {/* Flow-direction toggle (Stage 10 P1) — its own component so its
+              fitView effect lives inside the RF tree (needs useReactFlow). */}
+          <DirectionToggle />
         </Panel>
         {chainPower !== null && (
           <Panel position="bottom-right">

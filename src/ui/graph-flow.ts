@@ -24,7 +24,12 @@ import {
 import { Fraction } from "../core/fraction.ts";
 import type { Catalog } from "../data/types.ts";
 import type { CatalogRecipe } from "../data/types.ts";
-import type { StageNode, StageLink, SolveState } from "../state/store.ts";
+import type {
+  StageNode,
+  StageLink,
+  SolveState,
+  FlowDirection,
+} from "../state/store.ts";
 import type { LinkFinding } from "../core/reconcile.ts";
 
 // ---------------------------------------------------------------------------
@@ -65,7 +70,7 @@ export interface StageNodeData {
 export interface FlowHandle {
   id: string;
   type: "source" | "target";
-  position: "left" | "right";
+  position: "left" | "right" | "top" | "bottom";
   x: number;
   y: number;
   width: number;
@@ -148,11 +153,41 @@ const FALLBACK_POSITION = { x: 40, y: 40 };
 
 /**
  * The node-side handles every stage card carries (one source, one target),
- * centered on the card's left/right edges — geometry mirrors the rendered
- * Handle elements (6px squares straddling the border).
+ * oriented by `direction` (Stage 10 / Phase 1) — geometry mirrors the rendered
+ * Handle elements (6px squares straddling the border). LR centers them on the
+ * card's left/right edges (target left / source right, today's geometry); TB
+ * centers them on the top/bottom edges (target top / source bottom), the same
+ * HANDLE_SIZE straddle math transposed. RF derives handleBounds from this
+ * node-side geometry, so it MUST match the rendered <Handle> sides exactly.
  */
 const HANDLE_SIZE = 6;
-function stageHandles(): FlowHandle[] {
+function stageHandles(direction: FlowDirection): FlowHandle[] {
+  if (direction === "TB") {
+    // Centered horizontally, straddling the top (target) and bottom (source).
+    const x = NODE_WIDTH / 2 - HANDLE_SIZE / 2;
+    return [
+      {
+        id: "in",
+        type: "target",
+        position: "top",
+        x,
+        y: -HANDLE_SIZE / 2,
+        width: HANDLE_SIZE,
+        height: HANDLE_SIZE,
+      },
+      {
+        id: "out",
+        type: "source",
+        position: "bottom",
+        x,
+        y: NODE_HEIGHT - HANDLE_SIZE / 2,
+        width: HANDLE_SIZE,
+        height: HANDLE_SIZE,
+      },
+    ];
+  }
+  // LR (default): centered vertically, straddling the left (target) / right
+  // (source) edges — today's geometry, unchanged.
   const y = NODE_HEIGHT / 2 - HANDLE_SIZE / 2;
   return [
     {
@@ -417,8 +452,10 @@ function powerTextOf(catalog: Catalog, stage: StageNode): string | null {
 /**
  * Project the store graph slice to React Flow's { nodes, edges }. Node ids are
  * stage ids in `stageOrder` (stable canvas ordering); edge ids are link ids.
- * `activeStageId` sets exactly one node's `selected`. Item/recipe display names
- * come from the catalog (required argument). Pure — no RF, no DOM, no store.
+ * `activeStageId` sets exactly one node's `selected`. `flowDirection` (Stage 10 /
+ * Phase 1, default "LR") orients each node's handle geometry — RF's handleBounds
+ * source — so it must match the rendered <Handle> sides. Item/recipe display
+ * names come from the catalog (required argument). Pure — no RF, no DOM, no store.
  */
 export function graphToFlow(
   catalog: Catalog,
@@ -428,6 +465,7 @@ export function graphToFlow(
   reconciliation: LinkFinding[],
   positions: Record<string, { x: number; y: number }>,
   activeStageId: string,
+  flowDirection: FlowDirection = "LR",
 ): FlowGraph {
   const nodes: FlowNode[] = stageOrder
     .filter((id) => stages[id] !== undefined)
@@ -439,7 +477,7 @@ export function graphToFlow(
         position: positions[id] ?? { ...FALLBACK_POSITION },
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
-        handles: stageHandles(),
+        handles: stageHandles(flowDirection),
         selected: id === activeStageId,
         data: {
           name: stage.name,
