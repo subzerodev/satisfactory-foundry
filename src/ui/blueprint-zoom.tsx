@@ -21,16 +21,13 @@ export type ZoomMode = "fit" | "detail";
 const READABLE_PX_PER_DM = 1.0;
 
 /**
- * The active render scale + whether the toggle should mount, from a viewBox's
- * dm dimensions and the view's height cap. `showToggle` is the one canonical
- * gate (fit < 1). When mounted the DEFAULT mode is DETAIL; when not, the view
- * IS already at natural/detail scale (fit ≥ 1), so `atDetail` is true and any
+ * The pure scale decision — the active render scale + whether the toggle
+ * should mount, from a viewBox's dm dimensions and the view's height cap.
+ * Factored out of the hook so it is unit-testable without a renderer.
+ * `showToggle` is the one canonical gate (fit < 1); `mode` is the per-view
+ * state. When mounted the DEFAULT mode is DETAIL; when not, the view IS
+ * already at natural/detail scale (fit ≥ 1), so `atDetail` is true and any
  * DETAIL-only chrome (Blueprint's gutter labels) renders.
- */
-/**
- * The pure scale decision — factored out of the hook so it is unit-testable
- * without a renderer (the toggle mount gate + the FIT/DETAIL scale + the
- * gutter-visibility flag are all derived here). `mode` is the per-view state.
  */
 export function readableScaleFor(
   w: number,
