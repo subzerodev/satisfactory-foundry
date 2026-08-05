@@ -131,4 +131,7 @@ process (all-Claude roster, opus implementers, per-phase gates).
   refinements (per-end stations, pipe derate) → P3 auto-chain builder →
   P4 alt-recipe compare (leverages P3's enumeration machinery).
   Excluded by directive: vehicle catalog admission, sharing/PWA.
-- **Status:** in progress (started 2026-08-04).
+- **Status: SHIPPED 2026-08-05** — all five phases Done (#28 #34 #37
+  #38 #39 #40); 703/703 tests; released to main via PR #41; full gate
+  per phase (dual-review + simplify at design and boundary, browser
+  walks, R2 logs).
