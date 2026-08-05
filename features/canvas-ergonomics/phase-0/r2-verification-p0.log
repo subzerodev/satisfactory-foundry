@@ -1,0 +1,102 @@
+R2 verification — Stage 10 / Phase 0 (ticket #49), base element theming rules
+=============================================================================
+Branch: feature/canvas-p0 (cut from develop @ e5cb63f) — worktree .worktrees/canvas-p0
+Posture: BEHAVIOR-FROZEN, CSS-ONLY. All changes are element/class selectors over
+existing markup in src/ui/app.css. Zero DOM changes, zero new tokens, zero logic.
+
+Node-assertable surface — the honest walk-gated verdict
+-------------------------------------------------------
+Nothing in this diff is node-assertable, and this is stated plainly (never fabricated):
+
+  - The change is pure CSS in app.css. The Vitest suite renders component MARKUP
+    (JSDOM / react-dom static markup) and asserts on class names, element counts,
+    and rendered text — it does NOT load app.css or read computed styles. There is
+    no CSS-property assertion surface in the suite to add to. (grep confirmed: no
+    getComputedStyle / accent-color / ::file-selector-button read in src or tests.)
+  - The design (brainstorm.md v4 FROZEN, Test plan sketch) predicts exactly this:
+    "Zero new node tests (CSS-only; the base rule is walk-gated). Churned pins
+    expected zero." The base rule, radio/checkbox accent, file-selector face, and
+    color-scheme are all computed-style effects invisible to a markup assertion.
+  - Therefore no new node test is added. The visual result (every control in the
+    quiet-mono base look, radios/checkboxes with accent marks, native popups
+    tracking color-scheme, the re-dressed tier/view toggles, the frameless carve-
+    outs) is verified by the manual both-media walk, recorded below as a checklist.
+
+Regression pins — churn audit (expected zero, observed zero)
+------------------------------------------------------------
+Full suite before change: 28 files, 707 tests passed. lint clean (tsc + eslint + prettier).
+Full suite after  change: 28 files, 707 tests passed. lint clean.
+Delta: 0 files, 0 tests, 0 churned pins. Commands run SEPARATELY, each exit 0.
+
+The smoke pins that touch surfaces this diff styles all match markup, never CSS
+properties, so a property change cannot churn them:
+  - smoke.test.tsx:57  expect(html).toContain('type="file"')  — matches the attribute
+  - smoke.test.tsx:803 expect(html).toContain('type="file"')  — matches the attribute
+Neither asserts a computed style; the file inputs' markup is untouched, so both hold.
+
+Drift hunt (pre-implementation, against live worktree source)
+-------------------------------------------------------------
+  - Radios/checkboxes: exactly FOUR, at the ledger's cited lines —
+    LinkInspector.tsx:358 (radio), :366 (radio), :617 (checkbox), :627 (checkbox).
+    grep across src for type="radio"/type="checkbox" (and the {…} object form)
+    returns only these four. Ledger assumption 1 holds.
+  - File inputs: THREE real ones — PlansBar.tsx:104 (plan import), UploadScreen.tsx:47
+    (first-load upload), App.tsx:335 (the header re-upload). The existing
+    .app-header input[type="file"] rule (app.css) targets the App.tsx:335 one; the
+    other two get the bare base box + the ::file-selector-button face. Matches design.
+  - color-scheme: the CSS PROPERTY is set NOWHERE today (grep). The only matches are
+    a prefers-color-scheme MEDIA query (app.css:137) and a window.matchMedia
+    "(prefers-color-scheme: dark)" JS read (App.tsx:184) — neither is the property.
+    Ledger assumption 3 holds: color-scheme is genuinely NEW.
+  - Named exception rules all present at the cited shapes before editing:
+    .link-inspector-close (border:none/background:transparent/cursor:pointer),
+    .stage-node-remove (border:none/background:transparent/cursor:pointer/pad),
+    .theme-toggle (own full mono dress), .app-header input[type="file"] (mono/muted),
+    .stage-node-rename (width:100%/font:inherit — no border yet, the carve-out target),
+    .tier-toggles button (padding+border+background+cursor — the reduce target),
+    .tier-toggles .tier-on (accent active state — survivor),
+    .view-toggle (padding+font-size+cursor+border+background+radius — reduce target),
+    the P2 panel-controls group (.link-inspector button:not(.close), … — fold target).
+  - No smoke pin reads computed styles (grep) — the CSS-only posture is safe.
+
+Specificity re-score (the :where() closure + exceptions winning)
+----------------------------------------------------------------
+  - Base arms all (0,0,1): `button`, `select`, and
+    `input:where(:not([type="radio"]):not([type="checkbox"]))` — :where() zeroes the
+    :not() pseudo-class weight, so the input arm is (0,0,1) not (0,2,1). Confirmed the
+    class exceptions all outrank:
+      .link-inspector-close   (0,1,0) > base — frameless border:none wins.
+      .stage-node-remove      (0,1,0) > base — frameless border:none wins.
+      .stage-node-rename      (0,1,0) > base — new border:none/background:transparent
+                              strips the base box; input reads as an inline edit.
+      .theme-toggle           (0,1,0) > base — own full dress wins.
+      .app-header input[type="file"] (0,2,1) > base — outranks comfortably.
+      .react-flow__controls-button   (0,1,0) > base — RF chrome wins; base only
+                              contributes inert font/radius (accepted, per design).
+  - Accepted leaks (stated in design, matching the RF note): the base's inert props
+    (border-radius:0 / padding / font-family / font-size) leak onto the frameless
+    exceptions where those exceptions don't set them. This does not un-frame anything
+    (border/background are overridden) and is accepted for uniformity.
+
+Both-media walk checklist (manual — vellum + cyanotype)
+-------------------------------------------------------
+This is the gate the node suite cannot express; run per the design's Test plan sketch:
+  [ ] Every control app-wide (header upload + toggle, settings Recipe/Machines/clock/
+      overrides, plans bar, chain builders, inspector mode/trip/fuel/derate, alt-
+      compare + train buttons) reads medium-correct: mono face, --fg-muted ink,
+      transparent ground, --border-soft hairline, square corners.
+  [ ] The stage-node rename input, when editing a plate name, is UN-BOXED — no soft
+      border, transparent ground, inline in the name bar (NOT a control box).
+  [ ] Radios + checkboxes (inspector mode radios + the two derate/option checkboxes)
+      show the --accent tint on their marks in BOTH media — native, never boxed.
+  [ ] Native select popups + number spinners + the file picker track the medium via
+      color-scheme (light on vellum, dark on cyanotype).
+  [ ] File inputs: the button face (::file-selector-button) wears the base look;
+      native-unstyled fallback acceptable where the pseudo is unsupported.
+  [ ] Tier toggles re-dressed by the base (mono/muted/soft border), pointer intact;
+      the active .tier-on button still shows the --accent fill + on-accent text.
+  [ ] View toggle re-dressed by the base (mono/muted/soft border), 13px + its padding
+      kept, pointer intact — its former ink border / panel ground / 4px radius gone.
+  [ ] The frameless close ✕ (.link-inspector-close) and node remove ✕
+      (.stage-node-remove) stay frameless (border:none), pointer intact.
+  [ ] Contrast unchanged (audited tokens); no hardcoded-looking control chrome.

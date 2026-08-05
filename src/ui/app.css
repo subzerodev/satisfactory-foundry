@@ -70,6 +70,12 @@
   --font-display: "Big Shoulders", "Arial Narrow", sans-serif;
   --font-mono-num: "IBM Plex Mono", ui-monospace, Menlo, monospace;
 
+  /* Native form-control chrome tracks the medium (Stage 10 P0). Nothing set
+     color-scheme before this; select popups, number spinners, and the file
+     picker rendered light regardless of theme. light here, dark in BOTH dark
+     blocks (the value-identical cascade-guard pair). */
+  color-scheme: light;
+
   /* React Flow chrome (Stage 9 P1 Axis 4) — the RF surface reads these
      var(--xy-…, default) hooks, so overriding them here re-skins the canvas per
      medium. Vellum: faint ink grid, ink edges, sheet-toned label + controls. */
@@ -98,6 +104,8 @@
    :root:not([data-theme]) (the pinned cascade guard) so an explicit choice
    always wins regardless of cascade order. */
 :root[data-theme="dark"] {
+  color-scheme: dark; /* native chrome follows the cyanotype (S10 P0) */
+
   --fg: #e8f1f8; /* light ink on cyanotype (9.92:1) */
   --fg-muted: #a8c4dc; /* 6.26:1 */
   --bg: #123c63; /* the cyanotype ground */
@@ -136,6 +144,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
+    color-scheme: dark; /* value-identical to the explicit-dark block above */
+
     --fg: #e8f1f8;
     --fg-muted: #a8c4dc;
     --bg: #123c63;
@@ -170,6 +180,59 @@
     --xy-controls-button-border-color: #2a5580;
     --xy-attribution-background-color: rgba(18, 60, 99, 0.5);
   }
+}
+
+/* =========================================================================
+   Stage 10 / Phase 0 — base element theming (ticket #49). CSS-ONLY,
+   behaviour-frozen. Every button/select/input wears the quiet-mono control
+   look by default (mono face, muted ink, transparent ground, --border-soft
+   hairline, square corners) so controls OUTSIDE the six panels match the
+   medium too — the P2 straggler sweep, inverted to a base rule. Class-level
+   exceptions below outrank this. See features/canvas-ergonomics/phase-0/.
+   ========================================================================= */
+
+/* The :where() wrapper is LOAD-BEARING: a bare :not([type=…]) would carry
+   attribute-selector specificity, making this input arm (0,2,1) and silently
+   defeating every class exception. :where() zeroes the pseudo-class weight so
+   all three arms stay (0,0,1) and the carve-outs win as intended. Radios and
+   checkboxes are excluded — native marks must never be boxed (see below). */
+button,
+select,
+input:where(:not([type="radio"]):not([type="checkbox"])) {
+  font-family: var(--font-mono-num);
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  border-radius: 0;
+  padding: 2px 6px;
+}
+
+/* Pointer only on the click controls; text inputs keep the UA text cursor. */
+button,
+select {
+  cursor: pointer;
+}
+
+/* Radios/checkboxes get ONLY the accent tint — carved out of the box rule so
+   the native marks are never boxed or distorted (they are unstyled today, so
+   this is purely additive). */
+input[type="radio"],
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+/* The file-input BUTTON face carries the same base look; unstyled-native
+   fallback is acceptable where ::file-selector-button is unsupported. */
+::file-selector-button {
+  font-family: var(--font-mono-num);
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  border-radius: 0;
+  padding: 2px 6px;
+  cursor: pointer;
 }
 
 body {
@@ -362,11 +425,11 @@ body {
   gap: 2px;
 }
 
+/* Layout-only (S10 P0): the base rule now dresses the box (mono/muted/soft
+   border/square) and supplies the pointer; this rule keeps only the padding
+   it needs. The .tier-on active state below still outranks the base. */
 .tier-toggles button {
   padding: 2px 6px;
-  border: 1px solid var(--border);
-  background: var(--bg-panel);
-  cursor: pointer;
 }
 
 .tier-toggles .tier-on {
@@ -481,13 +544,11 @@ body {
    past the 20 dm geometry pad are not clipped (Axis 2 r1 nit).
    ------------------------------------------------------------------------- */
 
+/* Layout-only (S10 P0): the base rule dresses the box + supplies the pointer;
+   this keeps only the padding + the 13px size it wants (over the base 12px). */
 .view-toggle {
   padding: 4px 10px;
   font-size: 13px;
-  cursor: pointer;
-  border: 1px solid var(--border);
-  background: var(--bg-panel);
-  border-radius: 4px;
 }
 
 /* Theme toggle (Stage 5 item 3; re-skinned S9P0) — a quiet mono control that
@@ -798,9 +859,15 @@ body {
   cursor: text;
 }
 
+/* The inline rename field must NOT be boxed mid-plate (S10 P0 carve-out): the
+   base input rule would give it a soft hairline border + transparent ground;
+   here we strip the border so it reads as an inline edit, not a control box.
+   font: inherit already keeps it in the name-bar type. */
 .stage-node-rename {
   width: 100%;
   font: inherit;
+  border: none;
+  background: transparent;
 }
 
 .stage-node-remove {
@@ -1257,27 +1324,11 @@ body {
   color: var(--fg-muted);
 }
 
-/* Panel controls join the P0 quiet-mono control treatment (the header
-   controls already carry it) — one grouped rule over the panel controls.
-   The close ✕ is excluded via :not() (it is deliberately frameless —
-   its own rule stands unchallenged); FindingsPanel/SummaryCards carry
-   no controls (selectors dropped rather than left dead). */
-.link-inspector button:not(.link-inspector-close),
-.link-inspector select,
-.plans-bar button,
-.plans-bar select,
-.plans-bar input,
-.chain-builder button,
-.chain-builder select,
-.chain-builder input,
-.alt-compare button {
-  font-family: var(--font-mono-num);
-  font-size: 11px;
-  color: var(--fg-muted);
-  border: 1px solid var(--border-soft);
-  background: transparent;
-  border-radius: 0;
-}
+/* The former panel-controls group folded away (Stage 10 P0): its members now
+   inherit the near-identical base element rule (mono/muted/soft border/square
+   ground). The only deltas are the intended 11→12px size bump and the base's
+   2px 6px padding; the .link-inspector-close carve-out it :not()-excluded
+   still stands on its own frameless rule above. */
 
 /* --- Axis 3: SVG refinements ---------------------------------------------
    Token-consistency only: the site/stage labels join the numeric/mono face
