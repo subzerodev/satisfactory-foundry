@@ -1,4 +1,4 @@
-# Stage 17 — drawn-distance goes two-site; the chain engine retires (ticket #89) — brainstorm v1
+# Stage 17 — drawn-distance goes two-site; the chain engine retires (ticket #89) — brainstorm v2
 
 **Goal.** Michael's #81 decision (2026-08-05, recorded there and on
 the epic trail): the Transport panel's drawn-distance becomes a pure
@@ -48,29 +48,51 @@ src/layout/layout.ts.*
 positions)` — signature unchanged:
 
 1. Resolve the link; BOTH endpoints must be solved, else null
-   (unchanged posture).
+   (unchanged posture). **Signature posture (r1 adversarial
+   IMPORTANT):** the 6-arg signature stays for caller stability
+   (LinkInspector.tsx:145-152 passes all six), but `stageOrder`
+   becomes unused in the two-site body — with noUnusedParameters on
+   (tsconfig.app.json:23) it is renamed `_stageOrder` with a
+   one-line "retained for caller stability" comment. Solvedness is
+   checked directly on the two endpoint stages (no solvedStageIds
+   pass).
 2. For each endpoint: `layoutStage(...)` → its foundation bbox
    (local origin + w/h dm) — the per-stage half of today's
    buildChainSites, kept as a small private `siteFor(stage)`.
-3. **Pairwise scale:** `k = max(K_MIN, requiredScaleForPair(posA,
-   layoutA, posB, layoutB))` — the SAME primitive the old K loop
-   maximized, applied to just this pair. The "collision-free
-   placement" spirit survives; the global coupling dies.
-   **Coincident-pair guard (new, load-bearing):** the old flow
-   guaranteed positive canvas deltas via fanCoincident; two-site
-   must handle posA ≈ posB directly — if the canvas delta is zero
-   on both axes, the boxes overlap at every scale → return 0 dm
-   (an honest degenerate: the stages sit on top of each other).
-   requiredScaleForPair must not divide by zero (guard before the
-   call).
+3. **Pairwise scale:** `k = requiredScaleForPair(posA, layoutA,
+   posB, layoutB)` — the SAME primitive the old K loop maximized,
+   applied to just this pair (it clamps to K_MIN internally). The
+   "collision-free placement" spirit survives; the global coupling
+   dies. **NO coincident guard needed (r1 BOTH reviewers — v1's
+   divide-by-zero premise was FALSE):** requiredScaleForPair is
+   TOTAL — each axis guards independently (dx > 0 ? … : Infinity,
+   engine :516-517) and the all-Infinity case returns K_MIN (:520).
+   Exactly-coincident positions therefore yield k = 1, both boxes at
+   the same origin, and nearestEdgeConnector on identical boxes
+   returns 0 dm NATURALLY — no special case in the code at all.
+   **The limit behavior, stated honestly (r1 adversarial
+   IMPORTANT):** as the canvas delta shrinks toward zero, k grows
+   but the scaled separation k×delta converges to the pair's
+   required clearance (leftWidth + CHAIN_GUTTER) — so near-coincident
+   stages read a FLOOR distance (~80 dm for smelter-width sites),
+   NOT a smooth approach to 0; exactly-coincident then snaps to 0.
+   This gutter-enforced floor is INHERITED from the old flow (same
+   behavior there), and the pins below encode it so nobody expects
+   distance→0 continuity.
 4. **No grid rounding:** the ceilTo10 origin-snapping was a
    chain-canvas aesthetic for a drawn view that no longer exists;
    the two-site measure uses the k-scaled origins directly. (Values
    change anyway by decision; stating the drop explicitly so it is
    a decision, not an accident.)
-5. Boxes: each endpoint's foundation bbox at its k-scaled position
-   (position × k, offset by the local foundation origin exactly as
-   siteWorldBox does today, minus the chain placement indirection).
+5. Boxes: each endpoint's foundation bbox `{x: pos.x × k,
+   y: pos.y × k, w: cols × FOUNDATION_TILE, h: rows ×
+   FOUNDATION_TILE}` — exactly siteWorldBox's shape with the
+   k-scaled canvas position substituted for the chain placement
+   origin. NOTE (r1 code IMPORTANT, v1 corrected): siteWorldBox
+   does NOT apply any local foundations.origin offset — the box
+   x/y IS the placement origin (chain-view.ts:38-43, parallel to
+   the engine's siteBox :325-330); the two-site transplant adds NO
+   origin term.
 6. `nearestEdgeConnector(boxA, boxB).distanceDm` — unchanged.
 
 **Pins:**
@@ -81,8 +103,16 @@ positions)` — signature unchanged:
   drove K in the old world, so the new value should equal the old
   80dm modulo the dropped rounding — the implementer pins the
   actual).
-- A pair-only value pin (two stages, known geometry, exact dm).
-- The coincident-pair pin (same position → 0 dm, no throw).
+- A pair-only value pin (two stages, known geometry, exact dm —
+  possibly NOT a multiple of 10 now that the chain rounding is
+  gone; the pin and the walk must not assume round readouts, r1
+  adversarial nit).
+- The coincident-pair pin (same position → 0 dm, no special-case
+  code — it falls out of the total primitive).
+- The FLOOR pin (r1 adversarial): two nearly-coincident stages pin
+  the gutter-enforced floor value (≈ leftWidth + CHAIN_GUTTER —
+  the implementer pins the actual), documenting that the measure
+  does NOT approach 0 smoothly.
 - drawnMeters/applyDrawnDistance/isEstimatedLink tests untouched.
 
 ## Non-goals
@@ -131,3 +161,23 @@ positions)` — signature unchanged:
 - v1 (2026-08-05): initial — grounded in the #81 decision, the S15
   engine map (K loop, fanCoincident, rounding), the ceilTo10
   shared-consumer check, and the S15/S16 review record.
+- v2 (2026-08-06): r1 BOTH NEEDS_REWORK ([code] 2 IMPORTANT + 1 nit;
+  [adversarial] 2 IMPORTANT + 2 nits), all folded: (1) the v1
+  coincident "guard" premise was FALSE — requiredScaleForPair is
+  total (per-axis Infinity guards, K_MIN on all-Infinity), and the
+  0-dm coincident value falls out naturally with NO special case —
+  the guard is DELETED from the design; (2) the near-coincident
+  limit stated honestly — k×delta converges to the pair clearance,
+  so nearby stages read a gutter-enforced floor (~80 dm), inherited
+  from the old flow, now pinned explicitly; (3) siteWorldBox's math
+  corrected (no local-origin offset — the box x/y IS the placement
+  origin; the transplant adds no origin term); (4) the stageOrder
+  unused-parameter posture stated (_stageOrder rename under
+  noUnusedParameters, 6-arg caller stability); (5) fractional-dm
+  readouts acknowledged (no round-number assumptions in pins/walk);
+  buildChain cite :93. Both reviewers confirmed: single-axis-zero
+  pairs are fine (per-axis guards), the retirement sweep is
+  complete, the decoupling pin is decisive (80≠240 under old code),
+  drawnMeters/applyDrawnDistance contracts absorb fractional dm,
+  and the 80 dm A-B continuity is EXACT on the S15 fixture
+  (rounding is a no-op there).
