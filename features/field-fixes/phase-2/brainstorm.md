@@ -1,4 +1,9 @@
-# Stage 12 / P2+P3 combined — clarity + views navigation (tickets #65 + #64) — brainstorm v6
+# Stage 12 / P2+P3 combined — clarity + views navigation (tickets #65 + #64) — brainstorm v6 — FROZEN 2026-08-05
+
+> **FROZEN.** Correctness: r4 pair APPROVED (0+0) on v5; scoped r5
+> pair APPROVED (0+0) on the v6 simplify folds. Simplify:
+> APPROVED_WITH_NITS (3), all dispositioned (v6 history). This is
+> the implementation contract for tickets #64 + #65.
 
 **Goal.** Michael's fix-all-now directive (epic #59 decision 2026-08-05).
 Three fixes: (A) override rows labeled + grouped; (B) one recipe-less
