@@ -201,19 +201,37 @@ describe("computeLayout — band significant set (N=161)", () => {
     148, 149, 161,
   ]);
 
-  it("keeps non-priority labels ≥ 3 indices apart at band pitch (no crowding)", () => {
+  it("saturated fixture: greedy adds nothing; the residual is exactly the nine adjacent priority pairs", () => {
     const layout = computeLayout(solveStage(starving), 161);
-    // pitch is the clamped 8 in band mode; labelPitch/pitch = 20/8 = 2.5 → the
-    // greedy rule keeps kept labels ≥ 3 indices apart. The ONLY permitted closer
-    // pairs are priority-priority (both force-kept — the disclosed findability
-    // residual); every pair involving a GREEDY-kept label must clear 3 indices.
+    // On this starving fixture every greedy candidate sits within 2 indices of
+    // a priority label, so the labeled subset IS the priority tier — the
+    // generic ≥3-index greedy-spacing guarantee is exercised by the no-finding
+    // fixture below (here the spacing loop would be vacuous: every consecutive
+    // kept pair is priority-priority).
+    expect(layout.labeledSignificant).toEqual(
+      [...PRIORITY].sort((x, y) => x - y),
+    );
+    // The by-design findability residual, characterized HONESTLY: force-kept
+    // priority labels closer than 3 indices. On this fixture that is exactly
+    // NINE adjacent pairs (each segment-over-capacity from/to bound pair, plus
+    // the starve pair) — not only {148,149}.
     const kept = layout.labeledSignificant;
+    const closePairs: Array<[number, number]> = [];
     for (let i = 1; i < kept.length; i++) {
-      const a = kept[i - 1]!;
-      const b = kept[i]!;
-      if (PRIORITY.has(a) && PRIORITY.has(b)) continue; // disclosed residual
-      expect(b - a).toBeGreaterThanOrEqual(3);
+      if (kept[i]! - kept[i - 1]! < 3)
+        closePairs.push([kept[i - 1]!, kept[i]!]);
     }
+    expect(closePairs).toEqual([
+      [17, 18],
+      [33, 34],
+      [49, 50],
+      [65, 66],
+      [81, 82],
+      [97, 98],
+      [113, 114],
+      [129, 130],
+      [148, 149],
+    ]);
   });
 
   it("pins the labeled subset for N=161 (21 labels vs 33 significant ticks)", () => {
@@ -231,7 +249,8 @@ describe("computeLayout — band significant set (N=161)", () => {
     expect(layout.labeledSignificant.length).toBeLessThan(
       layout.significant.length,
     );
-    // The {148,149} priority pair is present by design (the disclosed residual).
+    // {148,149} is one of the NINE by-design adjacent priority pairs (the full
+    // residual set is pinned in the saturated-fixture test above).
     expect(layout.labeledSignificant).toContain(148);
     expect(layout.labeledSignificant).toContain(149);
     // A non-finding boundary that crowds a priority label IS thinned out: 146 is

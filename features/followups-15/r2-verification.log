@@ -104,3 +104,11 @@ fixture's labeledSignificant, as the contract's findability invariant requires.
 The 80/240 literals for #77 HELD exactly against the real smelter_mk1 fixture
 geometry (each site's foundation bbox is 1×2 tiles = 80×160 dm; A↔B = 80 dm
 with C=(0,300), 240 dm with C=(50,5)).
+
+=== CORRECTION (boundary fold) ===
+The BEHAVIOR-3 note understated the by-design residual: the starving
+fixture's priority tier yields NINE adjacent force-kept pairs
+({17,18},{33,34},{49,50},{65,66},{81,82},{97,98},{113,114},{129,130},
+{148,149}), not only {148,149}. The saturated-fixture test now pins
+the full nine-pair set; the walk criterion is amended accordingly
+(zero crossings expected on a clean solve).
