@@ -3,6 +3,18 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 12, Phase 0: the supply cards actually show up now
+
+> Hey Michael — you were right, and the miss was mine: the supply cards
+> shipped behind a catalog cache that nothing ever told to refresh, so
+> for you they would never have appeared. Fixed — the next time you
+> open the app it refreshes its game data once (takes a moment on
+> first load), and the Crude Oil card shows up on your Plastic stage
+> from then on. If you'd uploaded your own Docs.json, you'll need to
+> upload it once more. Still coming in this stage: making the
+> blueprint/schematic views readable at your 161-machine scale, and
+> clearer labels on those override boxes.
+
 ## 2026-08-05 — Stage 11 complete: every branch goes back to the ground
 
 > Hey Michael — the missing roots you spotted are in. Every stage that
