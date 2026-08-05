@@ -166,4 +166,4 @@ process (all-Claude roster, opus implementers, per-phase gates).
   (f7ab3ec — CSS resize seam, per-plan LR/TB direction, plan-file v5
   with the userPlaced flag, 728 tests) → P2 (5a86002 — measured spacing
   pass: panel insets, canvas button gap, tier-chip separation).
-  Release: develop → main PR at arc close.
+  Release: PR #52 (develop → main, merged 2026-08-05).
