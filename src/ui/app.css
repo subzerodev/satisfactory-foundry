@@ -70,6 +70,20 @@
   --font-display: "Big Shoulders", "Arial Narrow", sans-serif;
   --font-mono-num: "IBM Plex Mono", ui-monospace, Menlo, monospace;
 
+  /* React Flow chrome (Stage 9 P1 Axis 4) — the RF surface reads these
+     var(--xy-…, default) hooks, so overriding them here re-skins the canvas per
+     medium. Vellum: faint ink grid, ink edges, sheet-toned label + controls. */
+  --xy-background-pattern-color: #d9d3c2; /* faint ink grid line on vellum */
+  --xy-edge-stroke: #24384a; /* ink dimension line */
+  --xy-edge-stroke-selected: #c25a1d; /* accent on selection */
+  --xy-edge-label-color: #24384a; /* ink dimension text */
+  --xy-edge-label-background-color: #ede9dc; /* the sheet */
+  --xy-controls-button-background-color: #f2efe4; /* lighter vellum panel */
+  --xy-controls-button-background-color-hover: #e5e0d0;
+  --xy-controls-button-color: #24384a;
+  --xy-controls-button-border-color: #c9c3b2;
+  --xy-attribution-background-color: rgba(237, 233, 220, 0.5);
+
   font-family:
     system-ui,
     -apple-system,
@@ -105,6 +119,19 @@
   --notice: #f0b46a;
   --error-bg: #3a2b2b;
   --on-error: #10151a;
+
+  /* RF chrome (Axis 4) — cyanotype: pale grid line, pale-ink edges, cyanotype
+     label + controls. Value-identical to the media-query dark block below. */
+  --xy-background-pattern-color: #2a5580; /* pale grid line on cyanotype */
+  --xy-edge-stroke: #e8f1f8; /* pale ink dimension line */
+  --xy-edge-stroke-selected: #f5913e; /* accent on selection */
+  --xy-edge-label-color: #e8f1f8; /* pale ink dimension text */
+  --xy-edge-label-background-color: #123c63; /* the cyanotype ground */
+  --xy-controls-button-background-color: #17466f;
+  --xy-controls-button-background-color-hover: #1c4f7c;
+  --xy-controls-button-color: #e8f1f8;
+  --xy-controls-button-border-color: #2a5580;
+  --xy-attribution-background-color: rgba(18, 60, 99, 0.5);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -130,6 +157,18 @@
     --notice: #f0b46a;
     --error-bg: #3a2b2b;
     --on-error: #10151a;
+
+    /* RF chrome (Axis 4) — value-identical to the explicit-dark block above. */
+    --xy-background-pattern-color: #2a5580;
+    --xy-edge-stroke: #e8f1f8;
+    --xy-edge-stroke-selected: #f5913e;
+    --xy-edge-label-color: #e8f1f8;
+    --xy-edge-label-background-color: #123c63;
+    --xy-controls-button-background-color: #17466f;
+    --xy-controls-button-background-color-hover: #1c4f7c;
+    --xy-controls-button-color: #e8f1f8;
+    --xy-controls-button-border-color: #2a5580;
+    --xy-attribution-background-color: rgba(18, 60, 99, 0.5);
   }
 }
 
@@ -708,6 +747,10 @@ body {
   border-radius: 4px;
 }
 
+/* Machine plate (Stage 9 P1 Axis 1). The stage card reads as a bordered ink
+   plate: square corners (no radius), a 2px ink border, --bg-panel fill. CSS
+   re-clothes the existing markup — zero DOM change, so the smoke/label pins are
+   untouched by construction. */
 .stage-node {
   box-sizing: border-box;
   display: flex;
@@ -716,8 +759,7 @@ body {
   padding: 8px 10px;
   font-size: 13px;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 2px solid var(--fg);
 }
 
 .stage-node.selected {
@@ -725,7 +767,9 @@ body {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
-/* Solve-status tint — the only carrier of per-stage solve health on the card. */
+/* Solve-status tint — the only carrier of per-stage solve health on the plate.
+   Re-expressed in medium tokens (--error is the stamp red; --fg-muted the
+   drafting mid-ink). */
 .stage-node.solve-invalid {
   border-color: var(--error);
 }
@@ -734,15 +778,23 @@ body {
   color: var(--fg-muted);
 }
 
+/* The plate's NAME BAR: the head strip reads as a stencilled title in the
+   display face — letter-spaced + uppercased via CSS (the DOM text keeps its
+   casing, so no literal pin churns), with a hairline rule under it. */
 .stage-node-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .stage-node-name {
+  font-family: var(--font-display);
   font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   cursor: text;
 }
 
@@ -764,8 +816,11 @@ body {
   cursor: not-allowed;
 }
 
+/* Plate data lines (Axis 1): recipe, machine count, and power read as plate
+   readings in the numeric/mono face. */
 .stage-node-recipe {
   margin: 0;
+  font-family: var(--font-mono-num);
 }
 
 .stage-node-no-recipe {
@@ -778,6 +833,7 @@ body {
   align-items: center;
   gap: 8px;
   font-size: 12px;
+  font-family: var(--font-mono-num);
   color: var(--fg-muted);
 }
 
@@ -789,10 +845,12 @@ body {
   font-weight: 600;
 }
 
-/* The per-stage power line (Stage 6 P2) — a small muted line under the foot. */
+/* The per-stage power line (Stage 6 P2) — a small muted plate reading under the
+   foot, in the numeric face (Axis 1). */
 .stage-node-power {
   margin: 0;
   font-size: 11px;
+  font-family: var(--font-mono-num);
   color: var(--fg-muted);
 }
 
@@ -807,7 +865,18 @@ body {
   border-radius: 4px;
 }
 
-/* Edge reconciliation styling. */
+/* Edge reconciliation styling — dimension lines (Stage 9 P1 Axis 2/3). The
+   line carries the state colour (the dim-tick markerEnd is always ink); the
+   label becomes the dimension text, and the under-supply/dangling labels take
+   the inspection-stamp treatment.
+
+   Line state colours: ok = 1px ink, under = stamp red, over = muted, dangling =
+   notice dashed (a within-charter re-color from the former error red). */
+.edge-ok .react-flow__edge-path {
+  stroke: var(--fg);
+  stroke-width: 1;
+}
+
 .edge-under .react-flow__edge-path {
   stroke: var(--error);
 }
@@ -817,8 +886,61 @@ body {
 }
 
 .edge-dangling .react-flow__edge-path {
-  stroke: var(--error);
+  stroke: var(--notice);
   stroke-dasharray: 4 3;
+}
+
+/* Dimension text (Axis 2): the edge label reads as a drafting measurement —
+   near-transparent sheet box, ink text in the numeric face. font-family on SVG
+   <text> applies via CSS. ok/over labels stay this quiet dimension text (no
+   stamp box). */
+.react-flow__edge-textbg {
+  fill: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+
+.react-flow__edge-text {
+  fill: var(--fg);
+  font-family: var(--font-mono-num);
+}
+
+/* Inspection stamp (Axis 3): the under-supply label is the true violation, so
+   it gets the stamped-note treatment — a stamp-red box (opaque sheet fill so
+   the line doesn't read through) with red uppercase text, rotated -2°.
+
+   The rotation goes on the rect + text, NEVER the wrapping <g>: RF sets an
+   inline translate on the <g> (EdgeText, index.mjs:2512) that a CSS transform
+   would clobber. With transform-box: fill-box the rotation pivots on each
+   element's own bbox centre — and those centres COINCIDE, because RF builds the
+   textbg rect symmetrically around the text bbox (x:-padX, width:bbox+2·padX →
+   centre at bbox/2 for both), so rect and text rotate in register (r2-proven). */
+.edge-under .react-flow__edge-textbg {
+  stroke: var(--error);
+  stroke-width: 2;
+  fill: var(--bg);
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: rotate(-2deg);
+}
+
+.edge-under .react-flow__edge-text {
+  fill: var(--error);
+  text-transform: uppercase;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: rotate(-2deg);
+}
+
+/* Dangling note (Axis 3): un-rotated — a notice-stroked box with ink text
+   (notice-coloured text sits below AA on vellum; ink text + notice box passes
+   in both media). */
+.edge-dangling .react-flow__edge-textbg {
+  stroke: var(--notice);
+  stroke-width: 2;
+  fill: var(--bg);
+}
+
+.edge-dangling .react-flow__edge-text {
+  fill: var(--fg);
 }
 
 /* -------------------------------------------------------------------------
