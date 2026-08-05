@@ -288,3 +288,16 @@ process (all-Claude roster, opus implementers, per-phase gates).
   THREE design rounds (the wrong output formula, then an unguarded
   deref, both caught pre-code). Walk: all four axes verified live.
   **SHIPPED** — release PR #88 merged to main 2026-08-05.
+
+## Stage 17 — Drawn-distance goes two-site; the chain engine retires
+
+- **Goal:** Michael's #81 decision: the Transport drawn-distance
+  measures only the two endpoint stages (pairwise
+  requiredScaleForPair at K_MIN, coincident-pair 0dm guard, no chain
+  rounding); moving an unrelated stage no longer changes it. The
+  chain-layout engine (layoutChain, fanCoincident, the K loop, the
+  chain types, buildChain) and its tests retire; the S15 coupling
+  pin flips to a decoupling pin. Supersedes the S15 keep on #77.
+- **Ticket:** #89 (milestone 88). The last build item under the
+  clear-the-board directive. Blocked-by Stage 16.
+- **Status:** in progress (started 2026-08-05).
