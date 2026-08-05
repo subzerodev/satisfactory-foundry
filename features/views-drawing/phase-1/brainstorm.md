@@ -321,6 +321,10 @@ Real tests (bidirectionality log required):
   rounds; the fold verified holeless (the === true read collapses
   undefined/false/true correctly through either serialization idiom;
   the round-trip pin stays load-bearing).
+- SUPERSEDED (2026-08-05, Stage 12 P0 / #60): the v7-simplify F1
+  disposition (no version bump) proved wrong in the field — a healthy
+  bundled cache has NO natural re-parse trigger, so the feature stayed
+  invisible for existing users. CATALOG_PARSER_VERSION 3 → 4 restored.
 - v7-simplify (2026-08-05): one-shot simplify pass NEEDS_REWORK
   (advisory — 4 findings, all dispositioned): F1 FOLDED — the
   parser-version bump dropped (the optional field makes stale caches

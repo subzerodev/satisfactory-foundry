@@ -125,7 +125,7 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     const db = await openDb();
     const stored = await db.get<Record<string, unknown>>("catalog", "current");
     await db.put("catalog", { ...stored, parser_version: 2 }, "current");
-    expect(CATALOG_PARSER_VERSION).toBe(3);
+    expect(CATALOG_PARSER_VERSION).toBe(4);
     expect((await loadCatalog()).status).toBe("stale");
   });
 
