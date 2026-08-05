@@ -95,8 +95,8 @@ export function ChainBlueprint({
     <div className="bp-view">
       {skippedCount > 0 && (
         <p className="bp-notice">
-          {skippedCount} {skippedCount === 1 ? "stage" : "stages"} not shown —
-          unsolved
+          {skippedCount} {skippedCount === 1 ? "stage" : "stages"} not drawn — no
+          recipe or invalid settings
         </p>
       )}
       <div className="bp-scroll">
