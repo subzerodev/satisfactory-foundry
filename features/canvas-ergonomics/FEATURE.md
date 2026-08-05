@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-05
 **Status:** in-progress
-**Current phase:** Phase 1 (resizable canvas + flow direction, #51) — design FROZEN, implementation next
+**Current phase:** Phase 2 (spacing pass, #50) — next
 **Final PR:** —
 **Epic:** #48 (board #21, Stage 10 milestone 81)
 
@@ -21,10 +21,21 @@
 - P0 (#49): complete (merged 2026-08-05; 707/707; three design rounds
   — the :not() specificity trap fixed with :where(); boundary + walk
   clean).
-- P1 (#51): design FROZEN 2026-08-05 (three correctness rounds to
-  convergence + simplify dispositioned — phase-1/brainstorm.md v3);
-  implementation next (opus, feature/canvas-p1 worktree). P2 (#50):
-  spacing pass — Michael's live feedback, runs after P1.
+- P1 (#51): complete (merged 2026-08-05, f7ab3ec; 728/728, +22 tests).
+  Design: three correctness rounds to convergence + simplify (the r2
+  save→load pinning hole caught pre-impl). Implementation: opus, zero
+  drift, one plumbing realization (loadPlanWithOrigin/v5Native — boundary-
+  verified complete across all plan paths). Boundary: code-reviewer
+  APPROVED_WITH_NITS (log nits, folded) + adversarial APPROVED; diff-
+  simplify APPROVED_WITH_NITS (stale-comment fold + no-action). Walk:
+  both media — resize seam computed-verified + RF live-tracking proven,
+  LR↔TB round-trips (handles flip, autos re-grid exact, fitView
+  re-frames), TB placement flows downward, zero console errors. The
+  native grip drag itself is browser-UA machinery synthetic events can't
+  drive — Michael's first real drag is the last evidence; fallback
+  recorded in the frozen spec.
+- P2 (#50): spacing pass — Michael's live feedback, runs last (audits
+  the post-P1 layout).
 
 ## Decisions log
 
