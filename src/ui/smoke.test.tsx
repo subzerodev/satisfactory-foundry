@@ -299,6 +299,42 @@ describe("Schematic", () => {
     );
     expect(html).toContain("lane-pipe");
   });
+
+  it("band mode (N=161): ONE band + ×161, and NOT 161 machine ticks (Axis 1)", () => {
+    const result = solveStage({ ...WORKED_INPUT, machineCount: 161 });
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={result}
+        machineCount={161}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    // The break convention: one band group carrying the count, no per-machine
+    // tick groups (the noise the band replaces).
+    expect((html.match(/class="machine-band"/g) ?? []).length).toBe(1);
+    expect(html).toContain("×161");
+    expect(html).not.toContain('class="machine"');
+  });
+
+  it("below the threshold (N=114): the full tick row, no band (Axis 1)", () => {
+    const result = solveStage({ ...WORKED_INPUT, machineCount: 114 });
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={result}
+        machineCount={114}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    // At/below N=114 today's rendering is unchanged: per-machine tick groups, no
+    // band, no count glyph.
+    expect(html).not.toContain("machine-band");
+    expect(html).not.toContain("×114");
+    expect((html.match(/class="machine"/g) ?? []).length).toBe(114);
+  });
 });
 
 describe("Blueprint", () => {
@@ -346,9 +382,16 @@ describe("Blueprint", () => {
     // dm-native viewBox = (origin.x−20 origin.y−20 cols×80+40 rows×80+40).
     // Smelter ×2 layout: origin {0,−80}, cols 2, rows 3.
     expect(html).toContain('viewBox="-20 -100 200 280"');
-    // The dm-native SVG width is fluid; preserveAspectRatio keeps it undistorted.
-    expect(html).toContain('width="100%"');
-    expect(html).toContain('preserveAspectRatio="xMidYMid meet"');
+    // Stage 12 P1 Axis 2: width="100%"+meet is REPLACED by explicit dm→px width
+    // and height from the shared fitScale (this pin churns deliberately). The
+    // smelter's 200×280 viewBox is HEIGHT-governed under the 520 cap —
+    // fitScale = min(960/200=4.8, 520/280≈1.857) = 1.857 (fit disengaged, above
+    // the 0.06 floor) — so height renders pixel-identical to today's capped meet
+    // (280×1.857=520) and width follows the same scale (200×1.857≈371.43).
+    expect(html).toContain('width="371.42857142857144"');
+    expect(html).toContain('height="520"');
+    expect(html).not.toContain('width="100%"');
+    expect(html).not.toContain("preserveAspectRatio");
     // 6 foundation tiles (2 cols × 3 rows).
     expect((html.match(/bp-foundation"/g) ?? []).length).toBe(6);
     // 2 machine rects.

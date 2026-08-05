@@ -3,6 +3,7 @@ import type { ChainLayout, ChainSite } from "../layout/layout.ts";
 import type { Catalog } from "../data/types.ts";
 import type { StageNode, StageLink } from "../state/store.ts";
 import { formatRate } from "./format.ts";
+import { fitScale } from "./svg-scale.ts";
 import { chainPowerText, stagePowerTextFor } from "./advice.ts";
 import {
   buildChain,
@@ -83,7 +84,10 @@ export function ChainBlueprint({
   const w = chain.bounds.w + 2 * PAD;
   const h = chain.bounds.h + 2 * PAD;
   const viewBox = `${minX} ${minY} ${w} ${h}`;
-  const svgHeight = Math.min(h, MAX_SVG_HEIGHT);
+  // Same shared dm→px floor as Blueprint, at the chain's own height cap (640):
+  // explicit px replaces width="100%"+meet so a wide chain never compresses its
+  // sites to hairlines; a floored chain scrolls inside .bp-scroll.
+  const scale = fitScale(w, h, MAX_SVG_HEIGHT);
 
   const originOf = new Map(chain.sites.map((s) => [s.stageId, s.origin]));
 
@@ -95,35 +99,36 @@ export function ChainBlueprint({
           unsolved
         </p>
       )}
-      <svg
-        className="bp-svg chain-bp-svg"
-        viewBox={viewBox}
-        width="100%"
-        height={svgHeight}
-        preserveAspectRatio="xMidYMid meet"
-      >
-        {/* Per-site geometry: each site translated to its world-dm origin. */}
-        {sites.map((site) => {
-          const origin = originOf.get(site.stageId)!;
-          const info = chrome.find((c) => c.stageId === site.stageId)!;
-          return (
-            <SiteGlyph
-              key={site.stageId}
-              site={site}
-              originX={origin.x}
-              originY={origin.y}
-              name={info.name}
-              powerText={info.powerText}
-              active={site.stageId === activeStageId}
-              onSelect={() => onSelectStage(site.stageId)}
-            />
-          );
-        })}
-        {/* Inter-site connectors on top of the sites. */}
-        {connectors.map((conn) => (
-          <Connector key={conn.linkId} conn={conn} />
-        ))}
-      </svg>
+      <div className="bp-scroll">
+        <svg
+          className="bp-svg chain-bp-svg"
+          viewBox={viewBox}
+          width={w * scale}
+          height={h * scale}
+        >
+          {/* Per-site geometry: each site translated to its world-dm origin. */}
+          {sites.map((site) => {
+            const origin = originOf.get(site.stageId)!;
+            const info = chrome.find((c) => c.stageId === site.stageId)!;
+            return (
+              <SiteGlyph
+                key={site.stageId}
+                site={site}
+                originX={origin.x}
+                originY={origin.y}
+                name={info.name}
+                powerText={info.powerText}
+                active={site.stageId === activeStageId}
+                onSelect={() => onSelectStage(site.stageId)}
+              />
+            );
+          })}
+          {/* Inter-site connectors on top of the sites. */}
+          {connectors.map((conn) => (
+            <Connector key={conn.linkId} conn={conn} />
+          ))}
+        </svg>
+      </div>
       <p className="chain-bp-footer">{footerText}</p>
     </div>
   );

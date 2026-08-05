@@ -4,6 +4,7 @@ import { layoutStage } from "../layout/layout.ts";
 import type { LaneLayout, BeltMark } from "../layout/layout.ts";
 import { FOOTPRINTS } from "../layout/footprints.ts";
 import { formatRate } from "./format.ts";
+import { fitScale } from "./svg-scale.ts";
 
 /**
  * The blueprint view: a top-down, in-game-scale floor plan of one solved stage,
@@ -85,87 +86,90 @@ export function Blueprint({
   const h = rows * FOUNDATION_TILE + 2 * PAD;
   const viewBox = `${minX} ${minY} ${w} ${h}`;
 
-  // Cap the on-screen height (dm→px) so tall floor plans stay in view; width is
-  // fluid at 100% and preserveAspectRatio keeps the plan undistorted.
-  const svgHeight = Math.min(h, MAX_SVG_HEIGHT);
+  // Explicit dm→px scale (Axis 2): the shared floor replaces width="100%"+meet.
+  // fitScale reproduces today's effective meet scale (the height cap participates
+  // via capH=MAX_SVG_HEIGHT), then refuses to shrink a wide 161-machine row below
+  // the readability floor — that render exceeds 960 and scrolls in .bp-scroll.
+  const scale = fitScale(w, h, MAX_SVG_HEIGHT);
 
   return (
     <div className="bp-view">
       {notice}
-      <svg
-        className="bp-svg"
-        viewBox={viewBox}
-        width="100%"
-        height={svgHeight}
-        preserveAspectRatio="xMidYMid meet"
-      >
-        {/* z1 — foundation tiles: the cols×rows 8 m grid under everything. */}
-        <g className="bp-foundations">
-          {Array.from({ length: rows }, (_, r) =>
-            Array.from({ length: cols }, (_, c) => (
-              <rect
-                key={`f-${r}-${c}`}
-                className="bp-foundation"
-                x={origin.x + c * FOUNDATION_TILE}
-                y={origin.y + r * FOUNDATION_TILE}
-                width={FOUNDATION_TILE}
-                height={FOUNDATION_TILE}
-              />
-            )),
-          )}
-        </g>
-        {/* z2/z3 — lane buses + junction rects, behind the machines. The spec's
+      <div className="bp-scroll">
+        <svg
+          className="bp-svg"
+          viewBox={viewBox}
+          width={w * scale}
+          height={h * scale}
+        >
+          {/* z1 — foundation tiles: the cols×rows 8 m grid under everything. */}
+          <g className="bp-foundations">
+            {Array.from({ length: rows }, (_, r) =>
+              Array.from({ length: cols }, (_, c) => (
+                <rect
+                  key={`f-${r}-${c}`}
+                  className="bp-foundation"
+                  x={origin.x + c * FOUNDATION_TILE}
+                  y={origin.y + r * FOUNDATION_TILE}
+                  width={FOUNDATION_TILE}
+                  height={FOUNDATION_TILE}
+                />
+              )),
+            )}
+          </g>
+          {/* z2/z3 — lane buses + junction rects, behind the machines. The spec's
             load-bearing pin is the z-ORDER (bus → junction → machine → mark), so
             a lane's bus/junctions and its marks are split into two passes: these
             draw under the machine row, the marks (below) draw over it. */}
-        {layout.feedLanes.map((lane, i) => (
-          <BusAndJunctions
-            key={`fb-${lane.itemId}-${i}`}
-            lane={lane}
-            kind={solve.feeds[i]!.kind}
-          />
-        ))}
-        {layout.outputLanes.map((lane, j) => (
-          <BusAndJunctions
-            key={`ob-${lane.itemId}-${j}`}
-            lane={lane}
-            kind={solve.outputs[j]!.kind}
-          />
-        ))}
-        {/* z4 — machine rects + index labels. */}
-        <g className="bp-machines">
-          {layout.machines.map((m, i) => (
-            <g key={`m-${i}`} className="bp-machine">
-              <rect x={m.x} y={m.y} width={m.w} height={m.h} />
-              <text
-                className="bp-machine-label"
-                x={m.x + m.w / 2}
-                y={m.y + m.h / 2}
-              >
-                {i}
-              </text>
-            </g>
+          {layout.feedLanes.map((lane, i) => (
+            <BusAndJunctions
+              key={`fb-${lane.itemId}-${i}`}
+              lane={lane}
+              kind={solve.feeds[i]!.kind}
+            />
           ))}
-        </g>
-        {/* z5 — belt marks (drop glyphs for feed, breakout glyphs for output),
+          {layout.outputLanes.map((lane, j) => (
+            <BusAndJunctions
+              key={`ob-${lane.itemId}-${j}`}
+              lane={lane}
+              kind={solve.outputs[j]!.kind}
+            />
+          ))}
+          {/* z4 — machine rects + index labels. */}
+          <g className="bp-machines">
+            {layout.machines.map((m, i) => (
+              <g key={`m-${i}`} className="bp-machine">
+                <rect x={m.x} y={m.y} width={m.w} height={m.h} />
+                <text
+                  className="bp-machine-label"
+                  x={m.x + m.w / 2}
+                  y={m.y + m.h / 2}
+                >
+                  {i}
+                </text>
+              </g>
+            ))}
+          </g>
+          {/* z5 — belt marks (drop glyphs for feed, breakout glyphs for output),
             in front of the machines, with their rate labels. */}
-        {layout.feedLanes.map((lane, i) => (
-          <Marks
-            key={`fm-${lane.itemId}-${i}`}
-            lane={lane}
-            label={feedLabels[i] ?? lane.itemId}
-            side="feed"
-          />
-        ))}
-        {layout.outputLanes.map((lane, j) => (
-          <Marks
-            key={`om-${lane.itemId}-${j}`}
-            lane={lane}
-            label={outputLabels[j] ?? lane.itemId}
-            side="output"
-          />
-        ))}
-      </svg>
+          {layout.feedLanes.map((lane, i) => (
+            <Marks
+              key={`fm-${lane.itemId}-${i}`}
+              lane={lane}
+              label={feedLabels[i] ?? lane.itemId}
+              side="feed"
+            />
+          ))}
+          {layout.outputLanes.map((lane, j) => (
+            <Marks
+              key={`om-${lane.itemId}-${j}`}
+              lane={lane}
+              label={outputLabels[j] ?? lane.itemId}
+              side="output"
+            />
+          ))}
+        </svg>
+      </div>
     </div>
   );
 }
