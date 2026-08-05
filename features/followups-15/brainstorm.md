@@ -1,4 +1,4 @@
-# Stage 15 combined — chain-engine disposition + band label declutter (tickets #77 + #78) — brainstorm v1
+# Stage 15 combined — chain-engine disposition + band label declutter (tickets #77 + #78) — brainstorm v2
 
 **Goal.** Michael's call-up (2026-08-05, verbatim): "ok work on that
 77 and 78".
@@ -32,16 +32,24 @@
    exported (chain-view.test.ts imports it); drawnDistanceDm etc.
    stay exported (LinkInspector). layoutChain stays exported
    (layout.test.ts + buildChain).
-3. **#78 — band label mechanics:** MachineBand (Schematic.tsx:177-
-   215) renders, for EVERY significant index, a boundary tick + an
-   index label at xOf(index) = machines[index−1].x. significant =
-   set-union of entries/breakouts/segment-bounds/finding-referenced
-   (layout.ts:103-143), exposed on SchematicLayout (:57). At Plastic
-   ×161: breakouts every 3 machines, pitch ≈ 5.7px → labels ~17px
-   apart vs ~12px two-digit width → the 85 measured crossings. The
-   band's ×N count text (Schematic.tsx:188-190) already shows the
-   total. Non-band mode already THINS labels (machines[].labeled via
-   labelStep, LAYOUT.labelPitch = 20 — the in-repo precedent).
+3. **#78 — band label mechanics (arithmetic CORRECTED, r1 both
+   reviewers):** MachineBand (Schematic.tsx:176-216) renders, for
+   EVERY significant index, a boundary tick + an index label at
+   xOf(index) = machines[index−1].x. significant = set-union of
+   entries/breakouts/segment-bounds/finding-referenced
+   (layout.ts:103-143), exposed on SchematicLayout (:57). The
+   rendered band pitch is ALWAYS the clamped minPitch = 8px (the
+   unfloored 5.7 only decides band mode, layout.ts:210-214) — and
+   the real crowding source is CONSECUTIVE significant indices: the
+   pinned N=161 set (layout.test.ts:161-168) is triples
+   {16,17,18}, {32,33,34}, … at 1-index = 8px spacing vs ~12px
+   two-digit width at the 10px mono label font (app.css:511) — the
+   85 measured crossings. The band's ×N count text
+   (Schematic.tsx:198-200, y = top+24 — a different row from the
+   labels at top+52, so labels can never collide with it) already
+   shows the total. Non-band mode already THINS labels
+   (machines[].labeled via labelStep, LAYOUT.labelPitch = 20 — the
+   in-repo precedent and the SAME shared constant).
 
 ## Axis A — #77: internalize + pin + record (NOT delete)
 
@@ -55,12 +63,22 @@
   max over all pairs) — the pin that makes the byte-identical
   contract explicit and protects any future re-scope.
 - The engine (layoutChain + helpers + its layout.test.ts blocks)
-  stays UNCHANGED — recorded on #77 as value-load-bearing, with the
-  future re-scope (a pure two-site measure) named as a Michael-call
-  behavior change, not a refactor.
+  stays UNCHANGED — recorded on #77 as value-load-bearing. The
+  future re-scope (a pure two-site measure) is a Michael-call
+  behavior change with its OWN design ticket **#81** (created at r1
+  fold per the hard follow-on rule — r1 adversarial MEDIUM), carded
+  on the board awaiting his call.
 - #77's acceptance line is superseded by this decision (the
   "engine deleted" clause was written before the K-coupling
-  grounding; the decision comment on #77 carries the supersession).
+  grounding; the decision comment on #77 carries the supersession —
+  legitimate without Michael because the user-visible byte-identical
+  contract is preserved; only delete-vs-internalize changes, r1
+  adversarial confirmed).
+- The pin's concrete case (r1 adversarial constructed + verified):
+  three smelters (bbox 80×160), A=(0,0), B=(100,0); with C=(0,300)
+  K is driven by A-B → A↔B nearest-edge = 80dm; moving C to (50,5)
+  drives K via the C pairs → A↔B = 240dm. Grid rounding and K_MIN
+  do not decouple the pair.
 
 ## Axis B — #78: thin the band's labels, keep every tick
 
@@ -78,14 +96,23 @@ layout.ts.**
      names exactly these indices. Accepted residual: two finding
      machines closer than the pitch may still crowd (findings are
      rare; naming correctness beats aesthetics; stated).
-  2. GREEDY FILL ascending over the remaining significant indices:
-     keep index m's label iff its px distance ((m − k) × pitch,
-     nearest kept neighbor on either side) ≥ LAYOUT.labelPitch (20 —
-     the SAME constant the non-band labelStep thinning uses; no new
-     constant).
+  2. GREEDY FILL ascending over the remaining significant indices —
+     **the kept set is PRE-SEEDED with the entire priority tier**
+     (r1 BOTH reviewers, the converged IMPORTANT: without seeding,
+     a greedy label can land < labelPitch from a priority label —
+     concrete case at the pinned N=161 set: greedy candidate 146
+     sits 2 indices = 16px from priority 148): keep index m's label
+     iff its px distance ((m − k) × pitch) to the nearest kept
+     label on EITHER side — priority or greedy — ≥ LAYOUT.labelPitch
+     (20; the SAME constant the non-band labelStep thinning uses).
+     In band mode pitch is always the clamped 8, so the rule keeps
+     labels ≥ 3 indices = 24px apart — clearing the ~18px
+     worst-case three-digit width at the 10px font by construction
+     (r1 adversarial verified).
   3. No last-index anchor: the band's ×N count already communicates
      the total, so losing the last label to thinning costs nothing
-     (stated — the r-review should check this reasoning).
+     (r1 adversarial verified: the ×N text sits at y = top+24, a
+     different row from the labels at top+52).
 - MachineBand renders the tick for every significant index, the
   label only when the index is in labeledSignificant.
 - Wire ×28 unaffected (band is off below N=115); non-band labeling
@@ -129,15 +156,37 @@ layout.ts.**
    if any kept test imports one, that test moves to the internal
    surface via the public drawnDistanceDm instead).
 3. The label glyph widths (two-digit ≈ 12px, three-digit ≈ 18px at
-   the 11px mono label size) vs labelPitch 20 — the greedy rule
-   clears by construction; the walk scan is the visual gate.
+   the 10px mono label size — app.css:511, cite corrected r1) vs
+   the ≥24px kept spacing at band pitch 8 — the greedy rule clears
+   by construction; the walk scan is the visual gate.
 4. significantMachines currently returns one merged set; the split
    (finding-tier vs rest) is an internal refactor of that function
-   with the merged set unchanged (ticks identical — pinned by
-   existing band tests if any, else by the SSR tick count).
+   with the merged set unchanged — ticks-identical is ENFORCED by
+   the existing exact pin layout.test.ts:161-168 (stated as fact,
+   r1: it pins the full significant array and does NOT pin any
+   label count, so labeledSignificant adds churn-free; the SSR band
+   pin smoke.test.tsx:274-289 also stands).
 
 ## Revision history
 
 - v1 (2026-08-05): initial — grounded in the pickup grounding on #77
   (the K-coupling kill), the MachineBand/significant mechanics, the
   labelPitch precedent, and the measured 85-crossing walk evidence.
+- v2 (2026-08-05): r1 — code-reviewer NEEDS_REWORK (2 IMPORTANT + 2
+  nits), adversarial APPROVED_WITH_NITS (1 MEDIUM + 4 LOW),
+  converged on the Axis B gaps; all folded: (1) the greedy kept-set
+  is explicitly PRE-SEEDED with the priority tier and every
+  candidate checks against ALL kept labels (the 146-vs-148 16px
+  counterexample); (2) the crowding arithmetic corrected — band
+  pitch is always the clamped 8, the crowding source is consecutive
+  significant triples at 8px, the rule yields ≥3-index/24px kept
+  spacing clearing the 18px worst case at the 10px font; (3) cites
+  corrected (MachineBand :176-216, ×N text :198-200 on its own row,
+  label font 10px); (4) Assumption #4 stated as fact
+  (layout.test.ts:161-168 pins significant exactly; nothing pins
+  label count); (5) the MEDIUM ticket-rule gap discharged — the
+  future two-site-measure re-scope now has its OWN design ticket
+  #81, carded. BOTH reviewers independently confirmed the
+  K-coupling claim (the adversarial constructed the 80dm→240dm
+  numeric case, folded into the pin's test plan) and the zero
+  external consumers of the three de-export candidates.
