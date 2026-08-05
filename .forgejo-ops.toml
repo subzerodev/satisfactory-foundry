@@ -35,3 +35,4 @@ extra = ["epic", "blocked"]    # stage:N labels are generated from [stages]
 "12" = "Stage 12 — Field fixes: catalog refresh, views at scale, clarity"
 "13" = "Stage 13 — Field fixes round 2: remove schematic, blueprint overlap, override table"
 "14" = "Stage 14 — Correction: restore schematic, remove combined view"
+"15" = "Stage 15 — Follow-ups: chain-engine collapse + band label declutter"

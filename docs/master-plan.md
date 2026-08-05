@@ -250,3 +250,19 @@ process (all-Claude roster, opus implementers, per-phase gates).
   ×161 both themes; Blueprint intact; no Combined. Follow-ups: #77
   (chain-engine collapse), #78 (pre-existing band index-label
   crowding). **SHIPPED** — release PR #79 merged to main 2026-08-05.
+
+## Stage 15 — Follow-ups: chain-engine collapse + band label declutter
+
+- **Goal:** Michael's call-up ("ok work on that 77 and 78"): (#77)
+  the chain-layout engine behind LinkInspector's drawn distance —
+  pickup grounding killed the deletion premise (the collision-scale K
+  maximizes over ALL site pairs, so distances depend on every stage's
+  position; byte-identical ⇒ internalize + pin + record, full
+  deletion is a Michael-call semantics change); (#78) the schematic
+  band's index labels crowd at dense breakout patterns (85 measured
+  crossings at Plastic ×161) — thin the LABELS by the existing
+  labelPitch with finding-referenced machines always kept; every
+  tick stays.
+- **Epic:** #80 (milestone 86; children #77 + #78). Combined cycle.
+  Blocked-by Stage 14.
+- **Status:** in progress (started 2026-08-05).
