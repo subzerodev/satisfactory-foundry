@@ -1,0 +1,114 @@
+Stage 15 (#77 + #78) — bidirectionality verification log
+Worktree: .worktrees/followups-15 (branch feature/followups-15, from develop@fc6171d)
+Date: 2026-08-05
+
+Protocol per behavior: PASS at HEAD → introduce a real break → confirm a
+genuine FAIL naming the guarding test(s) → restore → confirm green again. Each
+break was a plausible regression of the exact behavior under guard, not a
+throwaway edit.
+
+Baseline (full worktree suite, HEAD): 31 files, 759 tests PASS; npm run check
+clean (tsc -b + eslint + prettier). Trunk-only (no nested .worktrees), so the
+count is not double-counted (per the vitest-worktree-double-count memory note).
+
+===========================================================================
+BEHAVIOR 1 — #77 de-export is compile-enforced (tsc)
+---------------------------------------------------------------------------
+Guard: the three de-exported helpers (solvedStageIds, buildChainSites,
+buildChain) are module-private; any external import must fail to compile.
+
+PASS   : npx tsc -b → exit 0 (no external importer exists).
+BREAK  : add src/ui/_biditest_deexport.ts:
+           import { buildChain } from "./chain-view.ts";
+FAIL   : tsc raised
+           _biditest_deexport.ts(2,10): error TS2459: Module
+           '"./chain-view.ts"' declares 'buildChain' locally, but it is not
+           exported.
+         (TS2459 is the modern variant of the classic TS2305 "no exported
+         member" — same compile-enforcement of the de-export; it names the
+         de-exported symbol.)
+RESTORE: rm src/ui/_biditest_deexport.ts → tsc -b exit 0 (green).
+
+===========================================================================
+BEHAVIOR 2 — #77 global K-coupling pin
+---------------------------------------------------------------------------
+Guard: chain-view.test.ts > "drawnDistanceDm — global K-coupling (three
+stages)" > "pins A↔B = 80 dm when C is far, 240 dm when C is near — the
+C-move couples A↔B". Locks that layoutChain's scale K is a max over ALL
+site pairs, so moving stage C alone changes the measured A↔B distance.
+
+PASS   : chain-view.test.ts → 8 passed.
+BREAK  : in drawnDistanceDm, build the chain from only the two link endpoints'
+         positions (a naive two-site measure that ignores C):
+           const twoOnly = { [link.fromStageId]: …, [link.toStageId]: … };
+           const chain = buildChain(sites, solvedIds, twoOnly);
+FAIL   : chain-view.test.ts → 1 failed | 7 passed. The failing test is exactly
+         "pins A↔B = 80 dm when C is far, 240 dm when C is near — the C-move
+         couples A↔B" (dropping C decouples the pair; A↔B no longer moves).
+RESTORE: revert chain-view.ts → 8 passed (green).
+
+===========================================================================
+BEHAVIOR 3 — #78 label thinning subset (layout unit)
+---------------------------------------------------------------------------
+Guard: layout.test.ts band-set block: "keeps non-priority labels ≥ 3 indices
+apart at band pitch", "pins the labeled subset for N=161 (21 labels vs 33
+significant ticks)", and "greedy-fills a no-finding band: drops the crowding
+second-of-pair, keeps ≥ 3 apart". labeledSignificant must be a THINNED subset
+of significant.
+
+PASS   : layout.test.ts + smoke.test.tsx → 85 passed.
+BREAK  : in computeLayout, set labeledSignificant = significant (no thinning —
+         label every significant index).
+FAIL   : → 4 failed | 81 passed. Failing tests:
+           - "keeps non-priority labels ≥ 3 indices apart at band pitch"
+           - "pins the labeled subset for N=161 (21 labels vs 33 ticks)"
+           - "greedy-fills a no-finding band: drops the crowding second-of-pair"
+           - (BEHAVIOR 4's SSR test, below, fails in the same break)
+RESTORE: revert layout.ts → 85 passed (green).
+
+===========================================================================
+BEHAVIOR 4 — #78 SSR ticks > labels
+---------------------------------------------------------------------------
+Guard: smoke.test.tsx > Schematic > "band mode (#78): renders MORE ticks than
+index labels on the dense fixture". The N=161 starving fixture must render
+strictly more machine-band-mark ticks than machine-label texts.
+
+PASS   : smoke.test.tsx → 50 passed (band ticks 33 > labels 21).
+BREAK  : same no-thinning break as BEHAVIOR 3 (labeledSignificant =
+         significant → every tick also gets a label → ticks == labels).
+FAIL   : the SSR test "band mode (#78): renders MORE ticks than index labels on
+         the dense fixture" failed (ticks == labels, so ticks > labels is
+         false). Named in the BEHAVIOR 3 break run above.
+RESTORE: revert layout.ts → green.
+
+===========================================================================
+Final state after all restores: npm run check clean; full worktree suite
+31 files / 759 tests PASS.
+
+NOTE (drift found, not papered over): the frozen contract sketched the N=161
+finding-referenced (priority) tier as the pair {148,149}. The real starving
+solve emits NINE segment-over-capacity findings in addition to the starve, so
+the actual priority tier is
+  {2,17,18,33,34,49,50,65,66,81,82,97,98,113,114,129,130,145,148,149,161}
+(all force-labeled). The MECHANISM is exactly the frozen design — priority tier
+pre-seeded, greedy fill ≥ labelPitch — and the merged `significant` set is
+byte-identical (layout.test.ts:161 still passes). Only the expected literal for
+labeledSignificant moved from the sketched [1,16,32,…,148,149,160] to the real
+[2,17,18,…,148,149,161]. To still exercise the greedy fill in isolation, a
+NO-finding band fixture (plain worked input at N=161, empty priority tier) was
+added: significant [1,16,17,…,160,161] thins to [1,16,32,48,64,80,96,112,128,
+144,160], proving the ≥ 3-index greedy spacing. The {148,149} priority-priority
+residual (labels 8px apart, force-kept) is present by design in the starving
+fixture's labeledSignificant, as the contract's findability invariant requires.
+
+The 80/240 literals for #77 HELD exactly against the real smelter_mk1 fixture
+geometry (each site's foundation bbox is 1×2 tiles = 80×160 dm; A↔B = 80 dm
+with C=(0,300), 240 dm with C=(50,5)).
+
+=== CORRECTION (boundary fold) ===
+The BEHAVIOR-3 note understated the by-design residual: the starving
+fixture's priority tier yields NINE adjacent force-kept pairs
+({17,18},{33,34},{49,50},{65,66},{81,82},{97,98},{113,114},{129,130},
+{148,149}), not only {148,149}. The saturated-fixture test now pins
+the full nine-pair set; the walk criterion is amended accordingly
+(zero crossings expected on a clean solve).

@@ -55,6 +55,16 @@ export interface SchematicLayout {
    * data; empty when `band` is false (the full tick row renders instead).
    */
   significant: number[];
+  /**
+   * The subset of `significant` that carries an index LABEL (ticks stay on every
+   * significant index — only the text thins). Empty when `band` is false. The
+   * finding-referenced machines are always labeled (the S12P1 findability
+   * invariant: the findings panel names exactly those indices); the remaining
+   * significant indices are greedy-filled so no two kept labels sit closer than
+   * `labelPitch` px — clearing the 10px-mono glyph crowding at the band's 8px
+   * pitch. Returned sorted ascending.
+   */
+  labeledSignificant: number[];
   feeds: LaneTrack[];
   outputs: LaneTrack[];
 }
@@ -103,20 +113,32 @@ export function bandMode(machineCount: number): boolean {
 function significantMachines(
   result: StageSolveResult,
   machineCount: number,
-): number[] {
+): { significant: number[]; findingReferenced: number[] } {
+  // The finding-referenced tier is collected separately so the label-thinning
+  // rule can PRIORITIZE it (findings name exactly these indices — they must stay
+  // labeled). `marks` is the full union; `findings` is the priority subset. The
+  // merged `significant` result is IDENTICAL to before the split (both derive
+  // from the same adds), so ticks are unchanged.
   const marks = new Set<number>();
+  const findings = new Set<number>();
   const add = (m: number) => {
     if (m >= 1 && m <= machineCount) marks.add(m);
+  };
+  const addFinding = (m: number) => {
+    if (m >= 1 && m <= machineCount) {
+      marks.add(m);
+      findings.add(m);
+    }
   };
 
   const noteFinding = (f: Finding) => {
     if (f.type === "segment-over-capacity") {
-      add(f.fromMachine);
-      add(f.toMachine);
+      addFinding(f.fromMachine);
+      addFinding(f.toMachine);
     } else if (f.type === "starved-machines") {
-      if (f.partial !== undefined) add(f.partial.machine);
-      if (f.starvedFrom !== undefined) add(f.starvedFrom);
-      if (f.starvedTo !== undefined) add(f.starvedTo);
+      if (f.partial !== undefined) addFinding(f.partial.machine);
+      if (f.starvedFrom !== undefined) addFinding(f.starvedFrom);
+      if (f.starvedTo !== undefined) addFinding(f.starvedTo);
     }
   };
 
@@ -139,7 +161,52 @@ function significantMachines(
     lane.findings.forEach(noteFinding);
   }
 
-  return [...marks].sort((a, b) => a - b);
+  return {
+    significant: [...marks].sort((a, b) => a - b),
+    findingReferenced: [...findings].sort((a, b) => a - b),
+  };
+}
+
+/**
+ * The subset of `significant` that carries an index label (Stage 15 / #78). At
+ * the band's clamped 8px pitch, consecutive significant machines put two-/three-
+ * digit labels ~12–18px apart — they overlap. This thins the TEXT (ticks stay on
+ * every significant index):
+ *
+ *   1. PRIORITY — every finding-referenced machine is labeled (the findings
+ *      panel names exactly these; naming correctness beats aesthetics, so two
+ *      close findings may still crowd — an accepted, rare residual).
+ *   2. GREEDY FILL — the kept set is PRE-SEEDED with the whole priority tier,
+ *      then the remaining significant indices are walked ascending; index m is
+ *      kept iff its px distance ((m − k) × pitch) to the NEAREST already-kept
+ *      label on either side — priority or greedy — is ≥ labelPitch. Pre-seeding
+ *      is load-bearing: without it a greedy label can land < labelPitch from a
+ *      priority one. At band pitch 8 the rule keeps non-priority labels ≥ 3
+ *      indices (24px) apart.
+ *
+ * The band's ×N count communicates the total, so no last-index anchor is needed.
+ */
+function labeledSignificantOf(
+  significant: number[],
+  findingReferenced: number[],
+  pitch: number,
+): number[] {
+  const kept = new Set<number>(findingReferenced);
+  const findingSet = new Set<number>(findingReferenced);
+
+  // Greedy fill over the non-priority significant indices, ascending. Keep m
+  // only when the nearest already-kept label (priority OR greedy, either side)
+  // is ≥ labelPitch px away.
+  for (const m of significant) {
+    if (findingSet.has(m)) continue; // priority tier already seeded
+    let nearest = Infinity;
+    for (const k of kept) {
+      nearest = Math.min(nearest, Math.abs(m - k) * pitch);
+    }
+    if (nearest >= LAYOUT.labelPitch) kept.add(m);
+  }
+
+  return [...kept].sort((a, b) => a - b);
 }
 
 /** Boundary x after machine m (m = 0..N): the shared entry/break-out/edge x. */
@@ -216,7 +283,13 @@ export function computeLayout(
   const width = scrolled ? LAYOUT.marginX * 2 + pitch * N : LAYOUT.viewW;
 
   const band = bandMode(N);
-  const significant = band ? significantMachines(result, N) : [];
+  const sig = band
+    ? significantMachines(result, N)
+    : { significant: [], findingReferenced: [] };
+  const significant = sig.significant;
+  const labeledSignificant = band
+    ? labeledSignificantOf(significant, sig.findingReferenced, pitch)
+    : [];
 
   const labelStep =
     pitch >= LAYOUT.labelPitch
@@ -259,6 +332,7 @@ export function computeLayout(
     machineTop,
     machines,
     significant,
+    labeledSignificant,
     feeds,
     outputs,
   };

@@ -224,3 +224,16 @@ layout.ts.**
   findability invariant; the layout-layer field beats component
   computation; scope actively shed). FROZEN — full proceed condition
   met.
+- v3-amendment (2026-08-05, boundary-caught, BOTH reviewers): the
+  walk criterion's residual characterization was understated 9× —
+  the REAL starving-fixture priority tier (21 indices; 9
+  segment-over-capacity findings + the starve) yields NINE adjacent
+  force-kept pairs ({17,18},{33,34},{49,50},{65,66},{81,82},{97,98},
+  {113,114},{129,130},{148,149}), each crowding by design exactly as
+  {148,149} does. AMENDED walk criterion: the schematic collision
+  scan's crossing set must equal EXACTLY the adjacent
+  priority-priority pairs of the rendered solve — nine on the
+  starving test fixture, ZERO on a clean (no-finding) solve, which
+  is what the live browser walk exercises. The vacuous
+  spacing-loop test was replaced by an exact nine-pair residual pin;
+  the r2 log carries a correction note.
