@@ -10,7 +10,7 @@
 
 The app as a FICSIT engineering drawing. Vellum drafting sheet (light):
 paper #EDE9DC, ink #24384A, FICSIT orange #E8722D (the ONE accent),
-stamp red #B3382C. Cyanotype blueprint (dark — the theme toggle is a
+stamp red #B3382C — vellum accent SUPERSEDED at P0 r1 to #C25A1D (#E8722D computes 2.51:1 on vellum, failing the 3:1 gate; demoted to fill-under-light-text only). Cyanotype blueprint (dark — the theme toggle is a
 medium change): ground #123C63, line ink #D9E8F5, orange #F5913E,
 stamp #FF8073. Type: Big Shoulders (display) + IBM Plex Mono (all
 numbers/rates/title-block) + quiet sans prose. Structure as
