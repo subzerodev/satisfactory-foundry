@@ -1,0 +1,138 @@
+# Stage 12 P2+P3 — bidirectionality verification log (tickets #64 + #65)
+# Proves each new test genuinely fails when its production behavior is broken.
+# Worktree: .worktrees/field-p23 (branch feature/field-p23, base 4a925a3)
+# Generated: 2026-08-05T18:13:17Z
+
+Baseline test counts: develop@4a925a3 = 753 ; this branch HEAD = 767 (+14 new).
+Representative coverage: one revert per distinct production behavior.
+
+============================================================
+Behavior 1 — Axis A: LaneOverrides panel + per-lane item headings
+Test file: src/ui/smoke.test.tsx
+New test: 'renders the panel heading, sub-label, and per-lane item headings (Axis A)'
+============================================================
+
+--- PASS (green) ---
+ Test Files  1 passed (1)
+      Tests  1 passed | 57 skipped (58)
+
+--- BREAK ---
+$ sed -i 's/>BELT LOAD OVERRIDES</>OVERRIDES</' src/ui/LaneOverrides.tsx
+(drops the 'BELT LOAD' words from the heading — the pinned phrase is gone)
+
+--- FAIL (genuine) ---
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/smoke.test.tsx > LaneOverrides > renders the panel heading, sub-label, and per-lane item headings (Axis A)
+AssertionError: expected '<div class="lane-overrides"><div clas…' to contain 'BELT LOAD OVERRIDES'
+Expected: "BELT LOAD OVERRIDES"
+    612|     expect(html).toContain("BELT LOAD OVERRIDES");
+      Tests  1 failed | 57 skipped (58)
+
+--- RESTORE + re-run (green) ---
+$ sed -i 's/>OVERRIDES</>BELT LOAD OVERRIDES</' src/ui/LaneOverrides.tsx
+ Test Files  1 passed (1)
+      Tests  1 passed | 57 skipped (58)
+
+============================================================
+Behavior 2 — Axis B: recipe-less skip-note vocabulary
+Test file: src/ui/ChainBlueprint.test.tsx
+New tests: skip-note '(singular)' + '(plural)'
+============================================================
+
+--- PASS (green) ---
+ Test Files  1 passed (1)
+      Tests  2 passed | 11 skipped (13)
+
+--- BREAK (revert to the old vocabulary) ---
+$ sed -i 's/not drawn —/not shown —/; s/no recipe or invalid settings/unsolved/' src/ui/ChainBlueprint.tsx
+
+--- FAIL (genuine) ---
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/ChainBlueprint.test.tsx > ChainBlueprint — skip-note vocabulary (Axis B) > reads the recipe-less phrase (singular)
+AssertionError: expected '<div class="bp-view"><p class="bp-not…' to contain 'stage not drawn'
+Expected: "stage not drawn"
+    277|     expect(html).toContain("stage not drawn");
+ FAIL  src/ui/ChainBlueprint.test.tsx > ChainBlueprint — skip-note vocabulary (Axis B) > reads the recipe-less phrase (plural)
+AssertionError: expected '<div class="bp-view"><p class="bp-not…' to contain 'stages not drawn'
+Expected: "stages not drawn"
+    287|     expect(html).toContain("stages not drawn");
+      Tests  2 failed | 11 skipped (13)
+
+--- RESTORE + re-run (green) ---
+$ git checkout src/ui/ChainBlueprint.tsx
+ Test Files  1 passed (1)
+      Tests  2 passed | 11 skipped (13)
+
+============================================================
+Behavior 3 — Axis C1: Blueprint gutter labels + (laneY − minY) × scale
+Test file: src/ui/smoke.test.tsx
+New tests: 'renders lane-name labels in the HTML gutter...' +
+           'positions each gutter label at (laneY − minY) × scale px'
+============================================================
+
+--- PASS (green) ---
+ Test Files  1 passed (1)
+      Tests  3 passed | 55 skipped (58)
+
+--- BREAK (drop the load-bearing viewBox-origin term) ---
+$ sed -i 's/top: (lane.bus.from.y - minY) * scale,/top: lane.bus.from.y * scale,/g' src/ui/Blueprint.tsx
+(bare laneY×scale — the smelter feed lane y=−20 now yields top:-20px, not top:80px)
+
+--- FAIL (genuine) ---
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/smoke.test.tsx > Blueprint > positions each gutter label at (laneY − minY) × scale px (Axis C1)
+AssertionError: expected '<div class="bp-view"><div class="bp-r…' to contain 'top:80px'
+Expected: "top:80px"
+Received: "<div class="bp-view"><div class="bp-row"><div class="bp-gutter"><span class="bp-gutter-label" style="top:-20px">Iron Ore</span><span class="bp-gutter-label" style="top:120px">Iron Ingot</span></div><div class="bp-scroll"><svg class="bp-svg" viewBox="-20 -100 200 280" width="200" height="280"><g class="bp-foundations"><rect class="bp-foundation" x="0" y="-80" width="80" height="80"></rect><rect class="bp-foundation" x="80" y="-80" width="80" height="80"></rect><rect class="bp-foundation" x="0" y="0" width="80" height="80"></rect><rect class="bp-foundation" x="80" y="0" width="80" height="80"></rect><rect class="bp-foundation" x="0" y="80" width="80" height="80"></rect><rect class="bp-foundation" x="80" y="80" width="80" height="80"></rect></g><g class="bp-lane"><rect class="bp-bus" x="0" y="-30" width="120" height="20"></rect><rect class="bp-junction" x="5" y="-40" width="40" height="40"></rect><rect class="bp-junction" x="65" y="-40" width="40" height="40"></rect></g><g class="bp-lane"><rect class="bp-bus" x="0" y="110" width="120" height="20"></rect><rect class="bp-junction" x="5" y="100" width="40" height="40"></rect><rect class="bp-junction" x="65" y="100" width="40" height="40"></rect></g><g class="bp-machines"><g class="bp-machine"><rect x="0" y="0" width="50" height="100"></rect><text class="bp-machine-label" x="25" y="50">0</text></g><g class="bp-machine"><rect x="60" y="0" width="50" height="100"></rect><text class="bp-machine-label" x="85" y="50">1</text></g></g><g class="bp-marks"><circle class="bp-mark-glyph" cx="0" cy="-20" r="8"></circle><text class="bp-mark-label" x="12" y="-16">60/min</text></g><g class="bp-marks"><circle class="bp-mark-glyph" cx="0" cy="120" r="8"></circle><text class="bp-mark-label" x="12" y="124">60/min (60/min load)</text></g></svg></div></div></div>"
+    449|     expect(html).toContain("top:80px");
+    450|     expect(html).toContain("top:220px");
+      Tests  1 failed | 57 skipped (58)
+
+--- RESTORE + re-run (green) ---
+$ git checkout src/ui/Blueprint.tsx
+ Test Files  1 passed (1)
+      Tests  3 passed | 55 skipped (58)
+
+============================================================
+Behavior 4 — Axis C2: FIT|DETAIL toggle (mount gate + scale), BOTH views
+Test files: src/ui/blueprint-zoom.test.ts (pure), src/ui/smoke.test.tsx
+            (Blueprint), src/ui/ChainBlueprint.test.tsx (Combined, no gutter)
+New tests: readableScaleFor gate/scale/gutter-visibility; Blueprint
+           'floored wide plan: mounts the toggle...'; ChainBlueprint
+           'mounts the toggle only when...' + 'opens at DETAIL...'
+============================================================
+
+--- PASS (green) ---
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+
+--- BREAK (drop the max(fit,1) DETAIL composition) ---
+$ sed -i 's/effectiveMode === "detail" ? Math.max(fit, READABLE_PX_PER_DM) : fit;/fit;/' src/ui/blueprint-zoom.tsx
+(DETAIL no longer opens at 1 px/dm — a floored plan stays at the fit scale)
+
+--- FAIL (genuine) ---
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/ChainBlueprint.test.tsx > ChainBlueprint — zoom toggle (Axis C2), no gutter (C1 scope) > opens at DETAIL (1 px/dm) — svg width equals the raw viewBox width
+AssertionError: expected 960 to be greater than 960
+ FAIL  src/ui/blueprint-zoom.test.ts > readableScaleFor — the toggle gate + FIT/DETAIL scale > DETAIL scale is 1 px/dm; FIT scale is the floored fit — floored plan
+AssertionError: expected 0.26373626373626374 to be 1 // Object.is equality
+ FAIL  src/ui/smoke.test.tsx > Blueprint > floored wide plan: mounts the toggle, opens at DETAIL with a populated gutter
+AssertionError: expected 960 to be 3640 // Object.is equality
+      Tests  3 failed | 3 passed | 69 skipped (75)
+
+--- RESTORE + re-run (green) ---
+$ git checkout src/ui/blueprint-zoom.tsx
+ Test Files  3 passed (3)
+      Tests  6 passed | 69 skipped (75)
+
+============================================================
+Final — full worktree suite green + lint clean (post-restore)
+============================================================
+
+$ npm test
+ Test Files  31 passed (31)
+      Tests  767 passed (767)
+
+$ npm run check
+(tsc -b && eslint . && prettier --check src — no errors, no warnings)
+All matched files use Prettier code style!
