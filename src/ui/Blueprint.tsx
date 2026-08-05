@@ -7,9 +7,9 @@ import { formatRate } from "./format.ts";
 import { ZoomToggle, useReadableScale } from "./blueprint-zoom.tsx";
 
 /**
- * The blueprint view: a top-down, in-game-scale floor plan of one solved stage,
- * the Schematic's sibling leaf. It renders StageLayout geometry verbatim — no
- * geometry math beyond unit scaling at the SVG boundary (the thin-UI pin).
+ * The blueprint view: a top-down, in-game-scale floor plan of one solved stage.
+ * It renders StageLayout geometry verbatim — no geometry math beyond unit
+ * scaling at the SVG boundary (the thin-UI pin).
  *
  * ZERO store imports: App composes every value this needs (machineId,
  * machineCount, the two label arrays) and mounts <Blueprint> only for the
@@ -255,6 +255,25 @@ function BusAndJunctions({ lane, kind }: { lane: LaneLayout; kind: LaneKind }) {
   );
 }
 
+/**
+ * The rate-label baseline offset from the mark's bus y, per side (#69). Marks
+ * always sit ON the lane band (mk.at.y === busY), so the label lifted OFF the
+ * band clears the drawing ink: the junction rects span exactly ±20 about busY
+ * (40×40 SPLITTER/MERGER footprints), the band ±10, the glyph r=8.
+ *
+ * Feed lanes lift UP (−24): the 10dm label bbox ≈ [busY−34, busY−24], 4dm clear
+ * of the junction top at busY−20 and, at LANE_SPACING 60, 6dm short of the
+ * neighbour lane's junction bottom (busY−60+20 = busY−40).
+ *
+ * Output lanes mirror DOWN (+32): bbox ≈ [busY+22, busY+32], clearing the
+ * junction bottom at busY+20 by ~2dm. The asymmetry is deliberate — the tighter
+ * output margin holds because the rate glyphs have no descenders, and below-bus
+ * overflow rides the .bp-svg overflow:visible posture (S12P1). This is dm
+ * geometry, so both margins hold identically at FIT and DETAIL. The geometry
+ * clearance test in the smoke suite is what PROTECTS these tight margins.
+ */
+export const MARK_LABEL_DY = { feed: -24, output: 32 } as const;
+
 /** Belt marks + rate labels (z5 — in front of the machines). The lane NAME now
  *  lives in the HTML gutter (P3 Axis C1), not in the SVG. */
 function Marks({ lane, side }: { lane: LaneLayout; side: "feed" | "output" }) {
@@ -263,7 +282,11 @@ function Marks({ lane, side }: { lane: LaneLayout; side: "feed" | "output" }) {
       {lane.marks.map((mk: BeltMark) => (
         <Fragment key={`mk-${mk.index}`}>
           <circle className="bp-mark-glyph" cx={mk.at.x} cy={mk.at.y} r={8} />
-          <text className="bp-mark-label" x={mk.at.x + 12} y={mk.at.y + 4}>
+          <text
+            className="bp-mark-label"
+            x={mk.at.x + 12}
+            y={mk.at.y + MARK_LABEL_DY[side]}
+          >
             {side === "output" && mk.load !== undefined
               ? `${formatRate(mk.capacity)}/min (${formatRate(mk.load)}/min load)`
               : `${formatRate(mk.capacity)}/min`}

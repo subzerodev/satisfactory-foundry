@@ -1,9 +1,9 @@
 # Field fixes: catalog refresh, views at scale, clarity (Stage 12 arc)
 
 **Started:** 2026-08-05
-**Status:** complete — all phases merged; release PR pending
-**Current phase:** — (arc close)
-**Final PR:** — (P0 released via PR #61, P1 via PR #63; final release pending)
+**Status:** SHIPPED 2026-08-05
+**Current phase:** — (arc closed)
+**Final PR:** #66 (P0 early via PR #61, P1 via PR #63)
 **Epic:** #59 (board #21, Stage 12 milestone 83)
 
 ## Phase status

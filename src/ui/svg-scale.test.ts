@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { fitScale, MIN_PX_PER_DM } from "./svg-scale.ts";
-import { LAYOUT } from "./layout.ts";
 
 /**
  * The shared dm→px scale floor (Stage 12 P1 Axis 2). fitScale is the min of the
@@ -16,7 +15,7 @@ describe("fitScale — the shared scale floor", () => {
     // silently rendering it 1.86× today's size).
     const scale = fitScale(200, 280, 520);
     expect(scale).toBe(1);
-    expect(scale).toBeLessThan(LAYOUT.viewW / 200);
+    expect(scale).toBeLessThan(960 / 200);
   });
 
   it("caps a DEEPER-than-cap plan exactly as today's min(h,cap) attribute", () => {
@@ -29,7 +28,7 @@ describe("fitScale — the shared scale floor", () => {
     // A wide-but-shallow plan: 3000×100 under cap 520. min(960/3000=0.32,
     // 520/100=5.2) → width governs at 0.32, still above the 0.06 floor.
     const scale = fitScale(3000, 100, 520);
-    expect(scale).toBeCloseTo(LAYOUT.viewW / 3000, 10);
+    expect(scale).toBeCloseTo(960 / 3000, 10);
     expect(scale).toBeGreaterThan(MIN_PX_PER_DM);
   });
 

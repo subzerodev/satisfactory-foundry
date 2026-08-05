@@ -27,7 +27,6 @@ import { UploadScreen } from "./UploadScreen.tsx";
 import { PlansBar } from "./PlansBar.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
 import { SummaryCards } from "./SummaryCards.tsx";
-import { Schematic } from "./Schematic.tsx";
 import { Blueprint } from "./Blueprint.tsx";
 import App from "./App.tsx";
 import { LaneOverrides } from "./LaneOverrides.tsx";
@@ -181,30 +180,11 @@ describe("SummaryCards", () => {
   });
 });
 
-describe("Schematic", () => {
-  it("renders the worked example: enough rects, no native <title> tooltips", () => {
-    const html = renderToStaticMarkup(
-      <Schematic
-        result={workedResult()}
-        machineCount={20}
-        tiers={FIXTURE_TIERS}
-        unlocked={{ belt: 4, pipe: 2 }}
-        itemName={itemName}
-      />,
-    );
-    expect((html.match(/<rect/g) ?? []).length).toBeGreaterThanOrEqual(20);
-    // Stage 5 item 1: the native <title> tooltips are gone — the styled hover
-    // div carries the text now, so no <title> element remains in the markup.
-    // (The tooltip text itself is pinned at the segTooltip/beltLabel level: the
-    // beltLabel "Feed 2 …" string at format.test.ts:54-56, and the segTooltip
-    // strings in the two rows below.)
-    expect(html).not.toContain("<title>");
-  });
-
-  it("segTooltip carries the worked example's honest bus-segment string", () => {
-    // The former smoke:156 render assertion ("peak 480/min of 480/min"), now a
-    // function-level assertion FED A REAL SOLVE (Stage 5 item 1 / r2 fold): the
-    // string lived only in <title> markup, so its coverage moves to segTooltip.
+describe("segTooltip (bus-segment hover string, Stage 5 item 1)", () => {
+  // The segTooltip helper survives the schematic removal (#68) — it is a pure
+  // formatter for the bus-segment hover string, still fed real solves here so
+  // the pinned strings gate against a live solver, not a hand-built fixture.
+  it("carries the worked example's honest bus-segment string", () => {
     // The feed lane's head segment carries the full 480/min peak at N=20.
     const result = workedResult();
     const feedSeg = result.feeds[0]!.segments[0]!;
@@ -214,12 +194,9 @@ describe("Schematic", () => {
     );
   });
 
-  it("segTooltip shows a segment's honest peakFlow, not the belt's capacity", () => {
-    // The former smoke:177, now a segTooltip function assertion (Stage 5 item
-    // 1). N=17: the last output breakout carries 30/min on a Mk1 (60/min) belt
-    // — the tooltip must say peak 30, not 60 (boundary review r1 catch). The
-    // layout-level peakFlow pin (layout.test.ts:85-94) holds the data
-    // invariant; feeding a real solve keeps the render-binding half meaningful.
+  it("shows a segment's honest peakFlow, not the belt's capacity", () => {
+    // N=17: the last output breakout carries 30/min on a Mk1 (60/min) belt —
+    // the tooltip must say peak 30, not 60 (boundary review r1 catch).
     const result = solveStage({ ...WORKED_INPUT, machineCount: 17 });
     const outSegs = result.outputs[0]!.segments;
     const tailSeg = outSegs[outSegs.length - 1]!;
@@ -229,111 +206,6 @@ describe("Schematic", () => {
     expect(segTooltip(tailSeg, busCap)).toBe(
       "machines 17–17 · peak 30/min of 480/min",
     );
-  });
-
-  it("marks a segment implicated by an over-capacity finding", () => {
-    const base = workedResult();
-    const doctored: StageSolveResult = {
-      ...base,
-      feeds: base.feeds.map((lane, i) =>
-        i === 0
-          ? {
-              ...lane,
-              findings: [
-                {
-                  type: "segment-over-capacity",
-                  itemId: lane.itemId,
-                  fromMachine: 1,
-                  toMachine: 16,
-                  peakFlow: Fraction.from(480),
-                  busCapacity: Fraction.from(480),
-                },
-              ],
-            }
-          : lane,
-      ),
-    };
-    const html = renderToStaticMarkup(
-      <Schematic
-        result={doctored}
-        machineCount={20}
-        tiers={FIXTURE_TIERS}
-        unlocked={{ belt: 4, pipe: 2 }}
-        itemName={itemName}
-      />,
-    );
-    expect(html).toContain("seg-error");
-  });
-
-  it("classes a pipe lane's bus segments with lane-pipe (Stage 5 item 4)", () => {
-    // A fluid recipe fixture: one pipe feed at 150/min through the real solver,
-    // so the pipe kind flows to the schematic lane. The distinct treatment is a
-    // CSS class (.lane-pipe) — pin its presence in the markup.
-    const result = solveStage({
-      machineCount: 4,
-      clockPercent: Fraction.from(100),
-      capacities: FIXTURE_TIERS,
-      feeds: [
-        {
-          itemId: "water",
-          kind: "pipe" as const,
-          perMachineRate: Fraction.from(150),
-        },
-      ],
-      outputs: [
-        {
-          itemId: "iron_ingot",
-          kind: "belt" as const,
-          perMachineRate: Fraction.from(30),
-        },
-      ],
-    });
-    const html = renderToStaticMarkup(
-      <Schematic
-        result={result}
-        machineCount={4}
-        tiers={FIXTURE_TIERS}
-        unlocked={{ belt: 4, pipe: 2 }}
-        itemName={itemName}
-      />,
-    );
-    expect(html).toContain("lane-pipe");
-  });
-
-  it("band mode (N=161): ONE band + ×161, and NOT 161 machine ticks (Axis 1)", () => {
-    const result = solveStage({ ...WORKED_INPUT, machineCount: 161 });
-    const html = renderToStaticMarkup(
-      <Schematic
-        result={result}
-        machineCount={161}
-        tiers={FIXTURE_TIERS}
-        unlocked={{ belt: 4, pipe: 2 }}
-        itemName={itemName}
-      />,
-    );
-    // The break convention: one band group carrying the count, no per-machine
-    // tick groups (the noise the band replaces).
-    expect((html.match(/class="machine-band"/g) ?? []).length).toBe(1);
-    expect(html).toContain("×161");
-    expect(html).not.toContain('class="machine"');
-  });
-
-  it("below the threshold (N=114): the full tick row, no band (Axis 1)", () => {
-    const result = solveStage({ ...WORKED_INPUT, machineCount: 114 });
-    const html = renderToStaticMarkup(
-      <Schematic
-        result={result}
-        machineCount={114}
-        tiers={FIXTURE_TIERS}
-        unlocked={{ belt: 4, pipe: 2 }}
-        itemName={itemName}
-      />,
-    );
-    // At/below N=114 today's rendering is unchanged: per-machine tick groups, no
-    // band, no count glyph.
-    expect(html).not.toContain("machine-band");
-    expect(html).not.toContain("×114");
-    expect((html.match(/class="machine"/g) ?? []).length).toBe(114);
   });
 });
 
@@ -406,6 +278,28 @@ describe("Blueprint", () => {
     expect(html).toContain("Iron Ingot");
     // A known footprint emits no unknown-footprint notice.
     expect(html).not.toContain("footprint unknown");
+  });
+
+  it("lifts mark labels OFF the lane band: feed y=−44, output y=152 (#69)", () => {
+    // The rate labels moved off the drawing ink (#69). Marks sit ON the bus
+    // (mk.at.y === busY): the smelter's feed bus is y=−20, output bus y=120. The
+    // label baseline lifts by MARK_LABEL_DY — feed −24 → y=−44, output +32 →
+    // y=152 — clear of the ±20 junction rects. x stays at.x+12 (head mark → 12).
+    const result = smelterSolve();
+    const { feedLabels, outputLabels } = smelterLabels(result);
+    const html = renderToStaticMarkup(
+      <Blueprint
+        solve={result}
+        machineId="smelter_mk1"
+        machineCount={2}
+        feedLabels={feedLabels}
+        outputLabels={outputLabels}
+      />,
+    );
+    // The feed head mark's rate label sits at the lifted feed baseline.
+    expect(html).toContain('class="bp-mark-label" x="12" y="-44"');
+    // The output head breakout's rate label sits at the mirrored output baseline.
+    expect(html).toContain('class="bp-mark-label" x="12" y="152"');
   });
 
   it("renders lane-name labels in the HTML gutter, not in the SVG (Axis C1)", () => {
@@ -575,14 +469,20 @@ describe("Blueprint", () => {
   });
 });
 
-describe("App view toggle (Axis 1 default)", () => {
-  it("boots to the schematic-default surface — no blueprint mounted eagerly", () => {
+describe("App view tabs (#68 — blueprint default)", () => {
+  it("boots to the initializing surface — no plan leaf mounted eagerly", () => {
     // App SSR renders the store's default path (catalog initializing in node),
-    // so the solved block + toggle are not reachable headless. What IS pinned:
-    // the default view is component-local useState("schematic"), so App never
-    // eagerly mounts the Blueprint leaf. A crash here would fail the wiring.
+    // so the solved block + view tabs are not reachable headless — the tab
+    // markup + its active-marking is a browser-walk gate. What IS pinned here:
+    // App never eagerly mounts a plan leaf (bp-svg absent) because the whole
+    // solved block is gated behind status "solved", which the unsolved SSR path
+    // does not reach. The default view is component-local useState("blueprint")
+    // — no schematic View member survives. A crash here would fail the wiring.
     const html = renderToStaticMarkup(<App />);
     expect(html).not.toContain("bp-svg");
+    // The schematic surface is gone entirely (#68) — no schematic leaf, no
+    // "schematic" View member, nothing schematic-shaped reachable from App.
+    expect(html.toLowerCase()).not.toContain("schematic");
   });
 });
 
@@ -625,11 +525,41 @@ describe("LaneOverrides", () => {
     expect(html).toContain(">Iron Ore</div>");
     expect(html).toContain(">Iron Ingot</div>");
   });
+
+  it("wraps ALL lane groups in one table; head + sub sit OUTSIDE it (#70)", () => {
+    // Axis C hoists the grid to a single inner .lane-overrides-table so the input
+    // column aligns across every lane. Structural pin: the head + sub render
+    // BEFORE the table opens (outside the grid, by structure not span), and every
+    // lane wrapper renders AFTER it (inside the grid). CSS alignment itself is
+    // not SSR-assertable — the browser walk owns the visual column check.
+    const html = renderToStaticMarkup(
+      <LaneOverrides
+        result={workedResult()}
+        overrides={{ feeds: {}, outputs: {} }}
+        itemName={itemName}
+        onOverride={noop}
+      />,
+    );
+    const tableAt = html.indexOf('class="lane-overrides-table"');
+    const headAt = html.indexOf('class="lane-overrides-head"');
+    const subAt = html.indexOf('class="lane-overrides-sub"');
+    const firstLaneAt = html.indexOf('class="lane-overrides-lane"');
+    expect(tableAt).toBeGreaterThan(-1);
+    // Head + sub precede the table wrapper (they are NOT grid items).
+    expect(headAt).toBeGreaterThan(-1);
+    expect(subAt).toBeGreaterThan(-1);
+    expect(headAt).toBeLessThan(tableAt);
+    expect(subAt).toBeLessThan(tableAt);
+    // Every lane wrapper sits inside the table (after its opening tag).
+    expect(firstLaneAt).toBeGreaterThan(tableAt);
+    // All lane wrappers (1 feed ore_iron + 1 output iron_ingot) live in it.
+    expect((html.match(/class="lane-overrides-lane"/g) ?? []).length).toBe(2);
+  });
 });
 
 describe("FindingsPanel", () => {
   // The FULL fixed table (6 belt + 2 pipe) + the unlock count pair drive the
-  // fix hints; the app threads both from the Schematic call site.
+  // fix hints; the app threads both from the FindingsPanel call site.
   const fullUnlocked = {
     belt: TIER_TABLE.belt.length,
     pipe: TIER_TABLE.pipe.length,

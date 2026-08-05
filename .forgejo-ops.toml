@@ -33,3 +33,4 @@ extra = ["epic", "blocked"]    # stage:N labels are generated from [stages]
 "10" = "Stage 10 — Canvas ergonomics + theming stragglers"
 "11" = "Stage 11 — Views join the drawing + visible raw feeds"
 "12" = "Stage 12 — Field fixes: catalog refresh, views at scale, clarity"
+"13" = "Stage 13 — Field fixes round 2: remove schematic, blueprint overlap, override table"

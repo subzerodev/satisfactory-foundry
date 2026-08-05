@@ -8,18 +8,16 @@
  * disengages and (b) refuses to shrink machines below a readable floor.
  */
 
-import { LAYOUT } from "./layout.ts";
-
 /**
- * The fixed reference width the fit computes against — the Schematic's own
- * posture (LAYOUT.viewW = 960), NOT a measured container. `width="100%"` needed
- * no measurement, and a live-containerW formula would need ResizeObserver
- * plumbing this design never specified; the Schematic already renders fixed-960
- * in the same content column, so the Blueprint matches it. Consequence: a
- * width-governed plan is pixel-identical to today only in a 960-wide column —
- * narrower columns render larger (toward readability), wider ~6.25% smaller.
+ * The fixed reference width the fit computes against (960 dm), NOT a measured
+ * container. `width="100%"` needed no measurement, and a live-containerW formula
+ * would need ResizeObserver plumbing this design never specified; 960 is the
+ * blueprint fit reference in its own right — the content column's design width.
+ * Consequence: a width-governed plan is pixel-identical to today only in a
+ * 960-wide column — narrower columns render larger (toward readability), wider
+ * ~6.25% smaller.
  */
-const REF_W = LAYOUT.viewW;
+const REF_W = 960;
 
 /**
  * Readability floor: the minimum px per decimeter the plan may render at. Tuned
