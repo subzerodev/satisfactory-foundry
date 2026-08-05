@@ -222,4 +222,7 @@ process (all-Claude roster, opus implementers, per-phase gates).
   (per-lane grids can't share columns today).
 - **Epic:** #67 (milestone 84; children #68 A, #69 B, #70 C).
   Combined cycle per the S12 P2+P3 precedent. Blocked-by Stage 12.
-- **Status:** in progress (started 2026-08-05).
+- **Status:** merged to develop 2026-08-05 (`bafae8c`, 749 tests,
+  +421/−1150 — the schematic surface deleted whole). Walk: the #69
+  collision scan 35 → ZERO at both zooms/themes; 66 override inputs
+  one aligned column. Release PR pending → then Stage 13 SHIPPED.

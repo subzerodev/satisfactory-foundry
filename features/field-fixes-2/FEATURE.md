@@ -1,20 +1,28 @@
 # Field fixes round 2: remove schematic, blueprint overlap, override table (Stage 13 arc)
 
 **Started:** 2026-08-05
-**Status:** in-progress — combined design cycle
-**Current phase:** design (brainstorm v1 → dual-review)
+**Status:** complete — merged to develop `bafae8c`; release PR pending
+**Current phase:** — (arc close)
 **Final PR:** —
 **Epic:** #67 (board #21, Stage 13 milestone 84; children #68 A, #69 B, #70 C)
 
 ## Phase status
 
-- Combined cycle (A remove schematic + honest switcher, B mark-label
-  overlap fix, C override table): brainstorm v1 written 2026-08-05,
-  entering the r1 dual-review (all-Claude degraded roster).
+- Combined cycle COMPLETE (merged 2026-08-05, `bafae8c`, 749 tests
+  +421/−1150). Design: brainstorm v3 FROZEN (r1 both NEEDS_REWORK —
+  converged IMPORTANT on the grid-hoist header bug; r2 both
+  APPROVED_WITH_NITS — shared gap/align-items nit; simplify APPROVED
+  0). Implementation: 4 commits, zero drift. Boundary: APPROVED +
+  APPROVED_WITH_NITS (2 non-gating: format helpers → #71,
+  geometry-test coupling rejected-with-rationale); diff-simplify
+  APPROVED_WITH_NITS (1 LOW .view-tab CSS duplication,
+  rejected-with-rationale). Walk: Wire ×28 + Plastic ×161, both
+  themes, FIT + DETAIL — collision scan 35 → ZERO; 66 override
+  inputs one aligned column; tabs honest; no schematic reachable.
 - Grounding on record: the #69 live overlap audit (35 mark-label/
   junction crossings at DETAIL on Wire ×28; zero text-on-text); the
-  schematic deletion surface grep (svg-scale.ts LAYOUT import is the
-  one non-schematic dependency); the per-lane override grids.
+  schematic deletion surface grep (svg-scale.ts LAYOUT import was
+  the one non-schematic dependency); the per-lane override grids.
 
 ## Decisions log
 

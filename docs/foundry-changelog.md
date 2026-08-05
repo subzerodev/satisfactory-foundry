@@ -3,6 +3,23 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 13: schematic removed, last overlaps gone, tidy override table
+
+> Hey Michael — all three of tonight's reports are done. The schematic
+> view is gone, as ordered — and it turns out it was wearing the wrong
+> name tag: the old button showed the view you'd switch TO, so the
+> broken view in your screenshot was actually the schematic calling
+> itself "Blueprint". The switcher is now two honest tabs, BLUEPRINT
+> and COMBINED, showing which one you're on, and the app opens
+> straight into the Blueprint. The real blueprint overlap you
+> suspected did exist — the little rate numbers were sitting on top
+> of the junction squares on the belts — and every one of them now
+> sits clear of the drawing, above the feed belts and below the
+> output belts (I measured 35 collisions before, zero after, at both
+> zoom levels and in both papers). And the BELT LOAD OVERRIDES panel
+> is one proper table now: every input box lines up in a single
+> column from top to bottom, whatever the group.
+
 ## 2026-08-05 — Stage 12, Phases 2+3: labels off the lanes, views open readable
 
 > Hey Michael — your three remaining complaints are fixed, together.
