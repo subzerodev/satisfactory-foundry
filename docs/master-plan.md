@@ -197,6 +197,7 @@ process (all-Claude roster, opus implementers, per-phase gates).
   wording is inconsistent across surfaces.
 - **Epic:** #59 (milestone 83). P0 catalog version bump (#60, fix) →
   P1 views at scale (full design loop) → P2 clarity pass.
-- **Status:** in progress (started 2026-08-05). P0 merged 2026-08-05
-  (version bump 3→4; heal walk-proven: a forced-v3 cache re-parses and
-  the supply cards appear).
+- **Status:** in progress (started 2026-08-05). P0 merged + released
+  early (PR #61). P1 merged 2026-08-05 (LOD band + scale floor; the
+  boundary gate caught a sub-cap enlargement the six design rounds
+  missed). P2 (clarity) next.

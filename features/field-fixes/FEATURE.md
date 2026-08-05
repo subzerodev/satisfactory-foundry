@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-05
 **Status:** in-progress
-**Current phase:** Phase 1 (views at scale, #62) — design FROZEN, implementation next
+**Current phase:** Phase 2 (clarity pass) — next
 **Final PR:** — (P0 released early via PR #61)
 **Epic:** #59 (board #21, Stage 12 milestone 83)
 
@@ -20,7 +20,17 @@
   wrapper (bp-svg overflow:visible preserved), margin-inline auto
   centering, paint-order --bg halo on lane names, feed-above/
   output-below asymmetry KEPT; deep plans out of the floor's scope.
-- P2 (clarity pass): after P1 — child ticket at pickup.
+- P1 merged 2026-08-05 (762 tests... see below). P2 (clarity pass):
+  next — child ticket at pickup.
+
+P1 close detail: brainstorm v10 — six design rounds + a BOUNDARY-caught
+HIGH (the fitScale height term capH/vbH silently enlarged sub-cap plans
+1.86×; corrected to min(vbH,capH)/vbH, spec+code+tests in one fold).
+Boundary: APPROVED_WITH_NITS + NEEDS_REWORK→folded→re-check
+APPROVED_WITH_NITS; diff-simplify APPROVED_WITH_NITS (3 LOW leave-as-is).
+Walk both media: band ×161 zero ticks with boundary labels, floor
+1068px scrollable no-meet, halo live, small plans natural size, zero
+console errors.
 
 ## Decisions log
 
