@@ -12,8 +12,19 @@
  * `PlanFileV3` — the same graph plus optional per-link `transport`. Stage 8 /
  * Phase 2 adds `PlanFileV4` — the same graph, now with the transport union's two
  * S8P2 extensions (pipe `deratePercentText`, train `sharedEnds`) legal in the
- * per-link config. Save always writes the LATEST version (v4); read accepts all
- * four, migrating v1/v2/v3 in memory (`migrateV1`/`migrateV2`/`migrateV3`).
+ * per-link config. Stage 10 / Phase 1 adds `PlanFileV5` — the same graph plus a
+ * top-level `flowDirection` ("LR"|"TB") and an optional per-stage `userPlaced?:
+ * true` flag. Save always writes the LATEST version (v5); read accepts all five,
+ * migrating v1/v2/v3/v4 in memory (`migrateV1`/`migrateV2`/`migrateV3`/
+ * `migrateV4`).
+ *
+ * WHY a v5 bump and not v4-in-place (both new fields are optional-shaped): a
+ * pre-Stage-10 build's v4 validator IGNORES the top-level `flowDirection` and the
+ * per-stage `userPlaced`, so a TB-laid, position-pinned file would validate under
+ * the old build and SILENTLY DROP both — it would render the chart's vertical
+ * layout with LR handles, and lose the auto-vs-user placement distinction on the
+ * next direction switch. A v5 header makes the old build reject the file loudly
+ * (load → null) instead. Same silent-drop argument recorded for v4 (and v3).
  *
  * WHY a v4 bump and not v3-in-place (both new fields are optional): a pre-P2
  * build's v3 validator IGNORES the new fields (`isTransportShape`'s pipe arm
@@ -27,6 +38,7 @@ import type {
   Selection,
   LinkTransport,
   TransportMode,
+  FlowDirection,
 } from "../state/store.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
 import { Fraction } from "../core/fraction.ts";
@@ -127,6 +139,40 @@ export interface PlanFileV4 {
   links: PlanLinkV4[];
 }
 
+/**
+ * Stage 10 / Phase 1: a v5 stage entry — a v2 stage (name + selection +
+ * optional position) plus an optional `userPlaced?: true` flag. The flag marks a
+ * stage the user hand-dragged, so the direction switch leaves it pinned while
+ * re-gridding the auto-placed ones. It PERSISTS because save writes `position`
+ * unconditionally: position-presence alone can't survive a round-trip as an
+ * auto-vs-user signal (every auto slot materializes into a file position), so
+ * the flag is the only durable carrier of the distinction. Written ONLY for
+ * user-placed stages; absent ⇒ auto-placed.
+ */
+export interface PlanStageV5 extends PlanStageV2 {
+  userPlaced?: true;
+}
+
+/**
+ * Stage 10 / Phase 1: the whole-graph file with a persisted flow direction and
+ * per-stage placement intent. Same header + links as v4; `stages` are
+ * `PlanStageV5` and a top-level `flowDirection` ("LR"|"TB") records the chart's
+ * orientation. Save always writes this; `loadPlanFile` returns it directly (v5)
+ * or via `migrateV4`/… (older files, defaulting `flowDirection: "LR"`).
+ * Orientation is a property of the drawing (like positions), so it persists
+ * per-plan — a TB chart reloaded must come back TB, not render vertical with
+ * left/right handles.
+ */
+export interface PlanFileV5 {
+  format_version: 5;
+  name: string;
+  createdAt: string; // ISO
+  updatedAt: string; // ISO
+  flowDirection: FlowDirection;
+  stages: PlanStageV5[];
+  links: PlanLinkV4[];
+}
+
 /** The 7-key `DroneFuel` union as a validator lookup set (the file validator
  *  pins the drone arm's `fuel` ∈ these). */
 const DRONE_FUELS: ReadonlySet<string> = new Set<DroneFuel>([
@@ -155,8 +201,8 @@ export interface PlanListEntry {
   updatedAt: string;
 }
 
-/** Persist a plan file under `id` (create or overwrite). Always v4. */
-export async function savePlan(plan: PlanFileV4, id: string): Promise<void> {
+/** Persist a plan file under `id` (create or overwrite). Always v5. */
+export async function savePlan(plan: PlanFileV5, id: string): Promise<void> {
   const db = await openDb();
   await db.put(PLANS_STORE, plan, id);
 }
@@ -171,9 +217,10 @@ export async function listPlans(): Promise<PlanListEntry[]> {
   const rows = await db.getAllWithKeys<unknown>(PLANS_STORE);
   const entries: PlanListEntry[] = [];
   for (const { key, value } of rows) {
-    // Any loadable format renders a row: v1/v2/v3 migrate, v4 is the current
-    // shape. Header fields co-locate across all four.
+    // Any loadable format renders a row: v1/v2/v3/v4 migrate, v5 is the current
+    // shape. Header fields co-locate across all five.
     if (
+      isPlanFileV5(value) ||
       isPlanFileV4(value) ||
       isPlanFileV3(value) ||
       isPlanFileV2(value) ||
@@ -188,29 +235,51 @@ export async function listPlans(): Promise<PlanListEntry[]> {
 
 /**
  * Validate an arbitrary value as a plan file THIS build can use, returning a
- * `PlanFileV4` (migrating a valid v3/v2/v1 in memory) or null on corrupt/foreign.
- * The single acceptance rule shared by `loadPlan` (IDB rows) and `importPlan`
- * (uploaded exports): v4 first, else v3 via `migrateV3`, else v2 via
- * `migrateV2` (chained through v3), else v1 via `migrateV1` (chained up).
+ * `PlanFileV5` (migrating a valid v4/v3/v2/v1 in memory) or null on
+ * corrupt/foreign. The single acceptance rule shared by `loadPlan` (IDB rows)
+ * and `importPlan` (uploaded exports): v5 first, else v4 via `migrateV4`, else
+ * v3 via `migrateV4∘migrateV3`, else v2/v1 chained up.
  */
-export function validatePlanFile(value: unknown): PlanFileV4 | null {
-  if (isPlanFileV4(value)) return value;
-  if (isPlanFileV3(value)) return migrateV3(value);
-  if (isPlanFileV2(value)) return migrateV3(migrateV2(value));
-  if (isPlanFileV1(value)) return migrateV3(migrateV2(migrateV1(value)));
+export function validatePlanFile(value: unknown): PlanFileV5 | null {
+  if (isPlanFileV5(value)) return value;
+  if (isPlanFileV4(value)) return migrateV4(value);
+  if (isPlanFileV3(value)) return migrateV4(migrateV3(value));
+  if (isPlanFileV2(value)) return migrateV4(migrateV3(migrateV2(value)));
+  if (isPlanFileV1(value)) {
+    return migrateV4(migrateV3(migrateV2(migrateV1(value))));
+  }
   return null;
 }
 
 /**
- * Load + validate one plan, returning a `PlanFileV4` (migrating v3/v2/v1 files in
- * memory). Returns null on missing OR corrupt-for-this-build. V4 is tried first;
- * older files fall back to `migrateV3`/`migrateV2`/`migrateV1`. Migration is
- * read-side only — the stored row is untouched until the next save-over (v4).
+ * Load + validate one plan, returning a `PlanFileV5` (migrating v4/v3/v2/v1 files
+ * in memory). Returns null on missing OR corrupt-for-this-build. V5 is tried
+ * first; older files fall back through `migrateV4`/`migrateV3`/`migrateV2`/
+ * `migrateV1`. Migration is read-side only — the stored row is untouched until
+ * the next save-over (v5).
  */
-export async function loadPlan(id: string): Promise<PlanFileV4 | null> {
+export async function loadPlan(id: string): Promise<PlanFileV5 | null> {
   const db = await openDb();
   const value = await db.get<unknown>(PLANS_STORE, id);
   return validatePlanFile(value);
+}
+
+/**
+ * Load + validate one plan AND report whether the STORED row was v5-native
+ * (Stage 10 / Phase 1). The store's load rebuild needs this to seed `userPlaced`:
+ * a v5-native file carries the explicit per-stage flag (auto stages seed as
+ * auto), while a migrated v1–v4 file has no flag — its layout seeds conservatively
+ * from position-presence (positioned ⇒ pinned). Migration erases the origin
+ * version, so it's captured here, before validate migrates. `wasV5` is false for
+ * a null (missing/corrupt) load.
+ */
+export async function loadPlanWithOrigin(
+  id: string,
+): Promise<{ file: PlanFileV5 | null; wasV5: boolean }> {
+  const db = await openDb();
+  const value = await db.get<unknown>(PLANS_STORE, id);
+  const wasV5 = isPlanFileV5(value);
+  return { file: validatePlanFile(value), wasV5 };
 }
 
 /**
@@ -265,6 +334,28 @@ export function migrateV3(plan: PlanFileV3): PlanFileV4 {
     name: plan.name,
     createdAt: plan.createdAt,
     updatedAt: plan.updatedAt,
+    stages: plan.stages,
+    links: plan.links,
+  };
+}
+
+/**
+ * Migrate a validated v4 file to v5 in memory (Stage 10 / Phase 1): IDENTITY on
+ * the graph — a v4 file never carried a direction, so it migrates as `"LR"`,
+ * which is exactly how it was laid out (the implicit pre-v5 orientation). Stages
+ * carry over unchanged (no `userPlaced` flag — a pre-v5 file's seeding falls back
+ * to position-presence at load, the store's conservative pinning cost). Only the
+ * version header flips + the direction defaults. Timestamps carry VERBATIM (the
+ * save-over path reads the prior file's createdAt, so a migrated row must not
+ * reset it).
+ */
+export function migrateV4(plan: PlanFileV4): PlanFileV5 {
+  return {
+    format_version: 5,
+    name: plan.name,
+    createdAt: plan.createdAt,
+    updatedAt: plan.updatedAt,
+    flowDirection: "LR",
     stages: plan.stages,
     links: plan.links,
   };
@@ -397,21 +488,42 @@ function isPlanFileV4(value: unknown): value is PlanFileV4 {
 }
 
 /**
- * The shared header/stages/link-index validation for the whole-graph files (v3
- * and v4 — identical but for the version literal, checked by the caller, and the
- * per-link transport checker passed in). Pins the frozen P1 refusals at the file
- * boundary: self-link, in-range indices, no duplicate `(to, itemId)` feed lane.
+ * Reviver-style shape check for a PlanFileV5 (Stage 10 / Phase 1). Identical to
+ * the v4 header/stages/link-index invariants (same transport checker), PLUS a
+ * top-level `flowDirection` that must be literally `"LR"` or `"TB"` and, on each
+ * stage, an OPTIONAL `userPlaced` that — when present — must be literally `true`.
+ * A malformed direction or a `userPlaced` that isn't `true` FAILS validation
+ * (the strictness posture — no silent coercion). The per-stage `userPlaced`
+ * check rides on `isStageV2Shape` via the extended {@link isStageV5Shape}.
+ */
+function isPlanFileV5(value: unknown): value is PlanFileV5 {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (v.format_version !== 5) return false;
+  if (v.flowDirection !== "LR" && v.flowDirection !== "TB") return false;
+  return isGraphFileBody(v, isTransportShapeV4, isStageV5Shape);
+}
+
+/**
+ * The shared header/stages/link-index validation for the whole-graph files (v3,
+ * v4, v5 — identical but for the version literal + top-level fields, checked by
+ * the caller, the per-link transport checker, and the per-stage shape checker
+ * passed in). Pins the frozen P1 refusals at the file boundary: self-link,
+ * in-range indices, no duplicate `(to, itemId)` feed lane. `stageShape` defaults
+ * to the v2/v3/v4 stage shape; v5 passes the extended `isStageV5Shape` (which
+ * adds the optional `userPlaced` check).
  */
 function isGraphFileBody(
   v: Record<string, unknown>,
   transportShape: (t: unknown) => boolean,
+  stageShape: (s: unknown) => boolean = isStageV2Shape,
 ): boolean {
   if (typeof v.name !== "string") return false;
   if (typeof v.createdAt !== "string" || typeof v.updatedAt !== "string") {
     return false;
   }
   if (!Array.isArray(v.stages) || v.stages.length < 1) return false;
-  if (!v.stages.every(isStageV2Shape)) return false;
+  if (!v.stages.every(stageShape)) return false;
   if (!Array.isArray(v.links)) return false;
   const stageCount = v.stages.length;
   const seen = new Set<string>();
@@ -575,6 +687,19 @@ function isStageV2Shape(stage: unknown): boolean {
       return false;
     }
   }
+  return true;
+}
+
+/**
+ * A v5 stage entry: `isStageV2Shape` (name + selection + optional position) plus
+ * an OPTIONAL `userPlaced` that — when present — must be literally `true`. Any
+ * other value (false, 1, "true") is corrupt-for-this-build (the strictness
+ * posture — the flag is a write-only-when-set marker, never a tri-state).
+ */
+function isStageV5Shape(stage: unknown): boolean {
+  if (!isStageV2Shape(stage)) return false;
+  const s = stage as Record<string, unknown>;
+  if (s.userPlaced !== undefined && s.userPlaced !== true) return false;
   return true;
 }
 

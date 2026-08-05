@@ -5,7 +5,7 @@ import { resetDbCache } from "../data/db.ts";
 import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
-import type { PlanFileV1, PlanFileV2, PlanFileV4 } from "../data/plan-store.ts";
+import type { PlanFileV1, PlanFileV2, PlanFileV5 } from "../data/plan-store.ts";
 import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
 import type { StageLink } from "./store.ts";
 import { proposeChain } from "../core/chain-builder.ts";
@@ -1891,6 +1891,100 @@ describe("stage graph — canvas positions + auto-placement (Stage 3 P2)", () =>
   });
 });
 
+// ---------------------------------------------------------------------------
+// Stage 10 / Phase 1 — flow direction + userPlaced
+// ---------------------------------------------------------------------------
+
+describe("stage graph — flow direction + userPlaced (Stage 10 P1)", () => {
+  it("boots LR by default with an empty userPlaced set", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    const s = store.getState();
+    expect(s.flowDirection).toBe("LR");
+    expect(s.userPlaced).toEqual({});
+  });
+
+  it("placementSlot TB arm: addStage under TB flows downward (rows), columns wrap", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    store.getState().setFlowDirection("TB");
+    store.getState().addStage(); // seq 1 → TB: x=40, y=40+140=180
+    store.getState().addStage(); // seq 2 → TB: x=40, y=40+280=320
+    store.getState().addStage(); // seq 3 → TB: x=40, y=40+420=460
+    store.getState().addStage(); // seq 4 → TB: x=40+260=300, y=40 (col wraps)
+    const s = store.getState();
+    const slots = s.stageOrder.map((id) => s.positions[id]);
+    expect(slots).toEqual([
+      { x: 40, y: 40 }, // the seq-0 default stage, re-slotted on the LR→TB switch
+      { x: 40, y: 180 },
+      { x: 40, y: 320 },
+      { x: 40, y: 460 },
+      { x: 300, y: 40 },
+    ]);
+  });
+
+  it("setStagePosition marks the stage userPlaced", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    const id = store.getState().activeStageId;
+    expect(store.getState().userPlaced[id]).toBeUndefined();
+    store.getState().setStagePosition(id, { x: 500, y: 500 });
+    expect(store.getState().userPlaced[id]).toBe(true);
+  });
+
+  it("removeStage prunes the userPlaced entry (no orphans)", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    store.getState().addStage();
+    const second = store.getState().stageOrder[1]!;
+    store.getState().setStagePosition(second, { x: 1, y: 2 });
+    expect(store.getState().userPlaced[second]).toBe(true);
+    store.getState().removeStage(second);
+    expect(store.getState().userPlaced[second]).toBeUndefined();
+  });
+
+  it("setFlowDirection transposes NON-userPlaced positions by order index", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    store.getState().addStage(); // seq 1
+    store.getState().addStage(); // seq 2
+    // All three are auto-placed (LR grid). Switch to TB → order-index re-grid.
+    store.getState().setFlowDirection("TB");
+    const s = store.getState();
+    const slots = s.stageOrder.map((id) => s.positions[id]);
+    // Order indices 0,1,2 → TB slots: down the first column.
+    expect(slots).toEqual([
+      { x: 40, y: 40 },
+      { x: 40, y: 180 },
+      { x: 40, y: 320 },
+    ]);
+    // Re-slotting a stage NEVER marks it userPlaced (the switch must stay pure).
+    expect(s.userPlaced).toEqual({});
+  });
+
+  it("setFlowDirection preserves userPlaced positions, re-slots only auto ones", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    store.getState().addStage(); // index 1, auto
+    store.getState().addStage(); // index 2, auto
+    const [first, dragged, auto] = store.getState().stageOrder;
+    // Hand-drag the middle stage — it becomes userPlaced and must stay pinned.
+    store.getState().setStagePosition(dragged!, { x: 999, y: 888 });
+    store.getState().setFlowDirection("TB");
+    const s = store.getState();
+    // The dragged stage keeps its exact position…
+    expect(s.positions[dragged!]).toEqual({ x: 999, y: 888 });
+    // …while the two auto stages re-grid to their order-index TB slots.
+    expect(s.positions[first!]).toEqual({ x: 40, y: 40 });
+    expect(s.positions[auto!]).toEqual({ x: 40, y: 320 });
+    // userPlaced still holds exactly the one dragged stage.
+    expect(s.userPlaced).toEqual({ [dragged!]: true });
+  });
+
+  it("setFlowDirection on the same direction is a no-op (positions untouched)", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    store.getState().addStage();
+    const before = store.getState().positions;
+    store.getState().setFlowDirection("LR"); // already LR
+    expect(store.getState().positions).toBe(before);
+    expect(store.getState().flowDirection).toBe("LR");
+  });
+});
+
 describe("stage graph — canLink mirrors addLink refusals (Stage 3 P2)", () => {
   const link = (
     fromStageId: string,
@@ -2036,6 +2130,127 @@ describe("plans carry the graph (Stage 3 P3)", () => {
 
     // activeStageId is the first stage after load (deterministic).
     expect(s.activeStageId).toBe(nSmelt);
+  });
+
+  it("restores flowDirection: a TB plan reloads TB (Stage 10 P1)", async () => {
+    const store = await chainStore();
+    store.getState().setFlowDirection("TB");
+    await store.getState().savePlanAs("Vertical");
+    const id = store.getState().plans![0]!.id;
+
+    const fresh = await chainStore();
+    expect(fresh.getState().flowDirection).toBe("LR"); // boot default
+    await fresh.getState().loadPlan(id);
+    expect(fresh.getState().flowDirection).toBe("TB");
+  });
+
+  it("save→load→switch: an auto stage stays re-griddable, a dragged stage stays pinned (Stage 10 P1)", async () => {
+    // The r2 save→load hole: without the persisted userPlaced flag, every auto
+    // slot would seed as user-placed after one round-trip (save writes position
+    // unconditionally), permanently exempting auto nodes from the switch.
+    const store = await chainStore();
+    store.getState().addStage(); // a second stage, auto-placed
+    const draggedStage = store.getState().stageOrder[1]!;
+    // Drag ONLY the second stage → it is userPlaced; the first stays auto.
+    store.getState().setStagePosition(draggedStage, { x: 700, y: 700 });
+    await store.getState().savePlanAs("Mixed");
+    const id = store.getState().plans![0]!.id;
+
+    const fresh = await chainStore();
+    await fresh.getState().loadPlan(id);
+    const loaded = fresh.getState();
+    // The flag survived the round-trip: only the dragged stage is userPlaced.
+    const [nAuto, nDragged] = loaded.stageOrder;
+    expect(loaded.userPlaced[nAuto!]).toBeUndefined();
+    expect(loaded.userPlaced[nDragged!]).toBe(true);
+
+    // Switch LR→TB: the auto stage RE-GRIDS (order index 0 → TB slot), the
+    // dragged stage stays EXACTLY where the user put it.
+    fresh.getState().setFlowDirection("TB");
+    const afterTB = fresh.getState();
+    expect(afterTB.positions[nAuto!]).toEqual({ x: 40, y: 40 });
+    expect(afterTB.positions[nDragged!]).toEqual({ x: 700, y: 700 });
+
+    // And switch back TB→LR: the auto stage re-grids again, dragged still pinned.
+    fresh.getState().setFlowDirection("LR");
+    const afterLR = fresh.getState();
+    expect(afterLR.positions[nAuto!]).toEqual({ x: 40, y: 40 });
+    expect(afterLR.positions[nDragged!]).toEqual({ x: 700, y: 700 });
+  });
+
+  it("a v1-migrated positionless stage auto-slots in the file direction and stays re-griddable (Stage 10 P1)", async () => {
+    // A v1 row has no position and no userPlaced flag → it loads auto-placed
+    // (re-griddable), and its load-time slot uses the FILE's direction. migrateV4
+    // defaults a v1-origin file to "LR", so the load slot is the LR index-0 slot.
+    const store = await chainStore();
+    const db = await (await import("../data/db.ts")).openDb();
+    const v1: PlanFileV1 = {
+      format_version: 1,
+      name: "LegacyAuto",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      stages: [
+        {
+          selection: {
+            recipeId: "ingot_iron",
+            machineCount: 1,
+            clockPercentText: "100",
+            unlockedTiers: { belt: 1, pipe: 1 },
+            overrides: { feeds: {}, outputs: {} },
+          },
+        },
+      ],
+      links: [],
+    };
+    await db.put("plans", v1, "legacy-auto");
+    await store.getState().loadPlan("legacy-auto");
+    const s = store.getState();
+    const only = s.stageOrder[0]!;
+    // Loaded LR (migrateV4 default) at index 0's LR slot; NOT userPlaced.
+    expect(s.flowDirection).toBe("LR");
+    expect(s.positions[only]).toEqual({ x: 40, y: 40 });
+    expect(s.userPlaced[only]).toBeUndefined();
+    // A switch re-grids it (it was never user-placed).
+    store.getState().setFlowDirection("TB");
+    expect(store.getState().positions[only]).toEqual({ x: 40, y: 40 });
+  });
+
+  it("a pre-v5 positioned stage loads pinned — a subsequent switch does NOT re-slot it (Stage 10 P1)", async () => {
+    // v1–v4 files carry no userPlaced flag, so seeding falls back to
+    // position-presence: a positioned pre-v5 stage is conservatively treated as
+    // intent (pinned), the stated cost of not scrambling an old layout on switch.
+    const store = await chainStore();
+    const db = await (await import("../data/db.ts")).openDb();
+    // A v4 row with an explicit (non-grid) position and no userPlaced concept.
+    const v4 = {
+      format_version: 4 as const,
+      name: "LegacyPinned",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      stages: [
+        {
+          name: "Stage 1",
+          selection: {
+            recipeId: "ingot_iron",
+            machineCount: 1,
+            clockPercentText: "100",
+            unlockedTiers: { belt: 1, pipe: 1 },
+            overrides: { feeds: {}, outputs: {} },
+          },
+          position: { x: 321, y: 654 },
+        },
+      ],
+      links: [],
+    };
+    await db.put("plans", v4, "legacy-pinned");
+    await store.getState().loadPlan("legacy-pinned");
+    const s = store.getState();
+    const only = s.stageOrder[0]!;
+    // Seeded userPlaced from position-presence → pinned.
+    expect(s.userPlaced[only]).toBe(true);
+    store.getState().setFlowDirection("TB");
+    // The switch leaves it exactly where the file put it (not re-slotted).
+    expect(store.getState().positions[only]).toEqual({ x: 321, y: 654 });
   });
 
   it("a null machineCount in the file → NaN on load (per stage), rendered invalid", async () => {
@@ -2211,7 +2426,7 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     expect(store.getState().links).toHaveLength(linksBefore);
   });
 
-  it("renaming a v1 row persists it as v4 (save-over model)", async () => {
+  it("renaming a v1 row persists it as v5 (save-over model)", async () => {
     const store = await chainStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2235,9 +2450,9 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     await db.put("plans", v1, "v1-id");
 
     await store.getState().renamePlan("v1-id", "NewName");
-    // The stored row is now v4, renamed, single "Stage 1" stage.
-    const raw = (await db.get<PlanFileV4>("plans", "v1-id"))!;
-    expect(raw.format_version).toBe(4);
+    // The stored row is now v5, renamed, single "Stage 1" stage.
+    const raw = (await db.get<PlanFileV5>("plans", "v1-id"))!;
+    expect(raw.format_version).toBe(5);
     expect(raw.name).toBe("NewName");
     expect(raw.stages[0]!.name).toBe("Stage 1");
     // createdAt carried verbatim through the migration + rename.
@@ -2256,7 +2471,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     return store;
   }
 
-  it("exportPlan returns the stored v4 JSON verbatim (re-parses to the saved file)", async () => {
+  it("exportPlan returns the stored v5 JSON verbatim (re-parses to the saved file)", async () => {
     const store = await readyStore();
     store.getState().selectRecipe("ingot_iron");
     store.getState().setClockPercentText("37.5");
@@ -2265,13 +2480,13 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
 
     const json = await store.getState().exportPlan(id);
     expect(json).not.toBeNull();
-    const parsed = JSON.parse(json!) as PlanFileV4;
-    expect(parsed.format_version).toBe(4);
+    const parsed = JSON.parse(json!) as PlanFileV5;
+    expect(parsed.format_version).toBe(5);
     expect(parsed.name).toBe("Exported");
     expect(parsed.stages[0]!.selection.recipeId).toBe("ingot_iron");
     expect(parsed.stages[0]!.selection.clockPercentText).toBe("37.5");
     // Pretty-printed (2-space indent), matching JSON.stringify(plan, null, 2).
-    expect(json).toContain('\n  "format_version": 4');
+    expect(json).toContain('\n  "format_version": 5');
   });
 
   it("exportPlan on a missing id returns null (no throw)", async () => {
@@ -2279,7 +2494,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     expect(await store.getState().exportPlan("does-not-exist")).toBeNull();
   });
 
-  it("exportPlan emits the MIGRATED v4 form for a stored v1 row", async () => {
+  it("exportPlan emits the MIGRATED v5 form for a stored v1 row", async () => {
     const store = await readyStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2303,9 +2518,9 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     await db.put("plans", v1, "legacy-id");
 
     const json = await store.getState().exportPlan("legacy-id");
-    const parsed = JSON.parse(json!) as PlanFileV4;
-    // The export is what a LOAD would see: v4, one "Stage 1" stage, createdAt kept.
-    expect(parsed.format_version).toBe(4);
+    const parsed = JSON.parse(json!) as PlanFileV5;
+    // The export is what a LOAD would see: v5, one "Stage 1" stage, createdAt kept.
+    expect(parsed.format_version).toBe(5);
     expect(parsed.name).toBe("LegacyPlan");
     expect(parsed.stages[0]!.name).toBe("Stage 1");
     expect(parsed.createdAt).toBe("2026-01-01T00:00:00.000Z");
@@ -2584,6 +2799,28 @@ describe("applyChainProposal (Stage 8 / Phase 3)", () => {
 
     // The target (iron_plate) stage is active.
     expect(s.stages[s.activeStageId]!.name).toBe("Iron Plate");
+  });
+
+  it("under TB, appended stages auto-place in the downward (TB) grid", async () => {
+    const store = await chainCatalogStore();
+    // Switch to TB first: the seq-0 default stage re-slots to TB index 0.
+    store.getState().setFlowDirection("TB");
+    const seqBefore = store.getState().placementSeq;
+    const proposal = propose(store, "iron_plate", 60);
+    store.getState().applyChainProposal(proposal);
+    const s = store.getState();
+    const appended = s.stageOrder.slice(s.stageOrder.length - 2);
+    // Appended at seqs 1 and 2 → TB slots down the first column (not the LR row).
+    const slots = appended.map((id) => s.positions[id]);
+    expect(slots).toEqual([
+      { x: 40, y: 40 + 140 },
+      { x: 40, y: 40 + 280 },
+    ]);
+    expect(s.placementSeq).toBe(seqBefore + 2);
+    // Appended stages are auto-placed → NOT userPlaced (a later switch re-grids).
+    for (const id of appended) {
+      expect(s.userPlaced[id]).toBeUndefined();
+    }
   });
 
   it("all links arrive ok-or-surplus after derive — never short", async () => {

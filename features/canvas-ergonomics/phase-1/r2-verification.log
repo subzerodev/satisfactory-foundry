@@ -1,0 +1,157 @@
+# Stage 10 / Phase 1 — bidirectionality verification log (ticket #51)
+
+Each distinct NEW production behavior is verified bidirectionally: the exact
+test command + its PASS with the production code present, then the revert/break
+that removes the behavior, the genuine vitest FAIL naming the new test(s), and
+the restore + green re-run. This proves the tests actually exercise the new
+code — a test that passes both with and without the behavior is vacuous.
+
+All commands run from the worktree root
+(/home/subzerodev/workspace/satisfactory-foundry/.worktrees/canvas-p1).
+
+===============================================================================
+BEHAVIOR 1 — direction-switch re-slot semantics (setFlowDirection)
+  Production: src/state/store.ts — setFlowDirection re-slots every NON-userPlaced
+  stage to its order-index slot in the new direction (pure position write).
+  New tests: src/state/store.test.ts
+    - "setFlowDirection transposes NON-userPlaced positions by order index"
+    - "setFlowDirection preserves userPlaced positions, re-slots only auto ones"
+===============================================================================
+
+--- [1a] PASS with production code present ---
+$ npx vitest run src/state/store.test.ts -t 'setFlowDirection'
+ Test Files  1 passed (1)
+      Tests  3 passed | 131 skipped (134)
+
+--- [1b] BREAK: setFlowDirection writes the field only, no re-slot ---
+(edit src/state/store.ts: replace the re-slot loop with 'return { flowDirection: dir }')
+$ npx vitest run src/state/store.test.ts -t 'setFlowDirection'
+     × setFlowDirection transposes NON-userPlaced positions by order index 8ms
+     × setFlowDirection preserves userPlaced positions, re-slots only auto ones 1ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > stage graph — flow direction + userPlaced (Stage 10 P1) > setFlowDirection transposes NON-userPlaced positions by order index
+AssertionError: expected [ { x: 40, y: 40 }, …(2) ] to deeply equal [ { x: 40, y: 40 }, …(2) ]
+ FAIL  src/state/store.test.ts > stage graph — flow direction + userPlaced (Stage 10 P1) > setFlowDirection preserves userPlaced positions, re-slots only auto ones
+AssertionError: expected { x: 560, y: 40 } to deeply equal { x: 40, y: 320 }
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed | 131 skipped (134)
+--- [1c] RESTORE + green re-run ---
+$ npx vitest run src/state/store.test.ts -t 'setFlowDirection'
+ Test Files  1 passed (1)
+      Tests  3 passed | 131 skipped (134)
+
+===============================================================================
+BEHAVIOR 2 — v5 persistence + migration (flowDirection + userPlaced)
+  Production: src/data/plan-store.ts — migrateV4 defaults flowDirection 'LR';
+  save writes v5 (top-level flowDirection + per-stage userPlaced when set);
+  loadPlanWithOrigin + rebuildFromPlan seed userPlaced from the flag (v5-native)
+  else position-presence (pre-v5).
+  New tests:
+    - plan-store.test.ts 'migrateV4 (v4 -> v5, direction defaults LR)' block
+    - plan-store.test.ts 'v5 round-trip (flowDirection + userPlaced)'
+    - store.test.ts 'save->load->switch: an auto stage stays re-griddable...'
+===============================================================================
+
+--- [2a] PASS with production code present ---
+$ npx vitest run src/data/plan-store.test.ts -t 'migrateV4'
+ Test Files  1 passed (1)
+      Tests  2 passed | 59 skipped (61)
+$ npx vitest run src/state/store.test.ts -t 'save.load.switch'
+ Test Files  1 passed (1)
+      Tests  1 passed | 133 skipped (134)
+
+--- [2b] BREAK (i): migrateV4 defaults flowDirection 'TB' (should be 'LR') ---
+(edit src/data/plan-store.ts migrateV4: flowDirection 'LR' -> 'TB')
+$ npx vitest run src/data/plan-store.test.ts -t 'migrateV4'
+     × flips the header, defaults flowDirection 'LR'; stages/links/timestamps verbatim 6ms
+     × a stored v4 row still loads (migrated to v5) through loadPlan 2ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/plan-store.test.ts > plan-store — migrateV4 (v4 → v5, direction defaults LR) > flips the header, defaults flowDirection 'LR'; stages/links/timestamps verbatim
+AssertionError: expected 'TB' to be 'LR' // Object.is equality
+ FAIL  src/data/plan-store.test.ts > plan-store — migrateV4 (v4 → v5, direction defaults LR) > a stored v4 row still loads (migrated to v5) through loadPlan
+AssertionError: expected 'TB' to be 'LR' // Object.is equality
+ Test Files  1 failed (1)
+      Tests  2 failed | 59 skipped (61)
+
+--- [2b] BREAK (ii): save drops the per-stage userPlaced flag (the r2 hole) ---
+(edit src/state/store.ts savePlanAs: omit the userPlaced spread on each stage)
+$ npx vitest run src/state/store.test.ts -t 'save.load.switch'
+     × save→load→switch: an auto stage stays re-griddable, a dragged stage stays pinned (Stage 10 P1) 11ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > plans carry the graph (Stage 3 P3) > save→load→switch: an auto stage stays re-griddable, a dragged stage stays pinned (Stage 10 P1)
+AssertionError: expected undefined to be true // Object.is equality
+ Test Files  1 failed (1)
+      Tests  1 failed | 133 skipped (134)
+
+--- [2c] RESTORE + green re-run (both) ---
+$ npx vitest run src/data/plan-store.test.ts -t 'migrateV4'
+ Test Files  1 passed (1)
+      Tests  2 passed | 59 skipped (61)
+$ npx vitest run src/state/store.test.ts -t 'save.load.switch'
+ Test Files  1 passed (1)
+      Tests  1 passed | 133 skipped (134)
+
+===============================================================================
+BEHAVIOR 3 — TB handle geometry + TB auto-placement
+  Production: src/ui/graph-flow.ts stageHandles TB arm (top/bottom straddle);
+  src/state/store.ts placementSlot TB arm (rows-down, columns-wrap transpose).
+  New tests:
+    - graph-flow.test.ts 'under TB, emits top/bottom handle geometry ...'
+    - store.test.ts 'placementSlot TB arm: addStage under TB flows downward ...'
+===============================================================================
+
+--- [3a] PASS with production code present ---
+$ npx vitest run src/ui/graph-flow.test.ts -t 'top/bottom handle geometry'
+ Test Files  1 passed (1)
+      Tests  1 passed | 37 skipped (38)
+$ npx vitest run src/state/store.test.ts -t 'placementSlot TB arm'
+ Test Files  1 passed (1)
+      Tests  1 passed | 133 skipped (134)
+
+--- [3b] BREAK (i): stageHandles ignores TB, always emits the LR arm ---
+(edit src/ui/graph-flow.ts stageHandles: guard the TB branch off)
+$ npx vitest run src/ui/graph-flow.test.ts -t 'top/bottom handle geometry'
+     × under TB, emits top/bottom handle geometry (transposed straddle) — Stage 10 P1 5ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/graph-flow.test.ts > graphToFlow — nodes > under TB, emits top/bottom handle geometry (transposed straddle) — Stage 10 P1
+AssertionError: expected [ …(2) ] to deeply equal [ …(2) ]
+-     "position": "top",
++     "position": "left",
+-     "position": "bottom",
++     "position": "right",
+ Test Files  1 failed (1)
+      Tests  1 failed | 37 skipped (38)
+
+--- [3b] BREAK (ii): placementSlot ignores TB, always emits the LR grid ---
+(edit src/state/store.ts placementSlot: guard the TB transpose off)
+$ npx vitest run src/state/store.test.ts -t 'placementSlot TB arm'
+     × placementSlot TB arm: addStage under TB flows downward (rows), columns wrap 9ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > stage graph — flow direction + userPlaced (Stage 10 P1) > placementSlot TB arm: addStage under TB flows downward (rows), columns wrap
+AssertionError: expected [ { x: 40, y: 40 }, …(4) ] to deeply equal [ { x: 40, y: 40 }, …(4) ]
+ Test Files  1 failed (1)
+      Tests  1 failed | 133 skipped (134)
+
+--- [3c] RESTORE + green re-run (both) ---
+$ npx vitest run src/ui/graph-flow.test.ts -t 'top/bottom handle geometry'
+ Test Files  1 passed (1)
+      Tests  1 passed | 37 skipped (38)
+$ npx vitest run src/state/store.test.ts -t 'placementSlot TB arm'
+ Test Files  1 passed (1)
+      Tests  1 passed | 133 skipped (134)
+
+===============================================================================
+All three behaviors verified bidirectionally: each test FAILS with its
+production behavior removed and PASSES with it restored. Full gate below.
+===============================================================================
+
+=== Full gate (aggregate, appended per boundary-review nit) ===
+$ npm run check; echo exit=$?
+exit=0
+$ npm test | tail -3
+   Start at  12:17:41
+   Duration  547ms (transform 3.69s, setup 0ms, import 5.52s, tests 306ms, environment 2ms)
+
+exit=0
+ Test Files  28 passed (28)
+      Tests  728 passed (728)

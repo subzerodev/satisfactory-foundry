@@ -836,6 +836,9 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
     expect(html).toContain("no recipe");
     // The ＋stage control is present in the canvas corner.
     expect(html).toContain("graph-add-stage");
+    // The flow-direction toggle is present too (Stage 10 P1), defaulting to the
+    // LR label (the store boots "LR").
+    expect(html).toContain("FLOW L→R");
     // The default Stage 1 is recipe-less/idle → no power line (uniform rule);
     // the powerText-non-null render is the browser-walk gate (StageNode's
     // <Handle> needs the RF provider, so it can't be rendered in isolation —

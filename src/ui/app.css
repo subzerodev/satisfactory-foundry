@@ -784,9 +784,17 @@ body {
 
 .graph-canvas {
   width: 100%;
-  height: 340px;
+  /* Bigger + user-resizable (Stage 10 P1 Axis 1): a taller default, vertical
+     drag-resize between a floor and 85vh. resize needs overflow ≠ visible (the
+     existing `hidden` satisfies it); RF's ResizeObserver tracks the new size
+     live. radius-0 folds the Stage 9 straggler (the app's last rounded chrome).
+     No persistence of the chosen height — session-only, browser-native. */
+  height: 560px;
+  min-height: 340px;
+  max-height: 85vh;
+  resize: vertical;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 0;
   background: var(--bg-panel);
   overflow: hidden;
 }
@@ -922,7 +930,10 @@ body {
 
 /* The chain-Σ power line (Stage 6 P2) — a small muted panel, bottom-right. */
 .graph-chain-power {
-  margin: 0;
+  /* Corner inset (Stage 10 P1 Axis 1): the power panel renders bottom-right,
+     the same corner the browser paints the resize grip (~16px square). Keep it
+     clear of the grip so the drag affordance stays reachable. */
+  margin: 0 18px 18px 0;
   padding: 4px 10px;
   font-size: 12px;
   color: var(--fg-muted);
