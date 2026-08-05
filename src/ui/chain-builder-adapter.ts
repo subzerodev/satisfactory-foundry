@@ -184,18 +184,27 @@ export function candidateRecipesFor(
 function subtreePower(
   proposal: ChainProposal,
   catalog: Catalog,
-): { total: Fraction; variable: boolean } {
+): { total: Fraction; variable: boolean; minMw: Fraction; maxMw: Fraction } {
   let total = Fraction.from(0);
   let variable = false;
+  // The min/max bounds accumulate in the SAME loop (diff-simplify fold): a
+  // variable machine contributes its bounds, a constant one its mw as both —
+  // so the mixed-subtree envelope stays honest and the two sums cannot drift
+  // on which stages they skip.
+  let minMw = Fraction.from(0);
+  let maxMw = Fraction.from(0);
   for (const stage of proposal.stages) {
     const machineId = catalog.recipes[stage.recipeId]?.machineId;
     if (machineId === undefined) continue;
     const power = catalog.machines[machineId]?.power;
     if (power === undefined) continue;
-    total = total.add(Fraction.from(stage.machineCount).mul(power.mw));
+    const count = Fraction.from(stage.machineCount);
+    total = total.add(count.mul(power.mw));
     if (power.variable) variable = true;
+    minMw = minMw.add(count.mul(power.minMw ?? power.mw));
+    maxMw = maxMw.add(count.mul(power.maxMw ?? power.mw));
   }
-  return { total, variable };
+  return { total, variable, minMw, maxMw };
 }
 
 /**
@@ -207,35 +216,21 @@ function subtreePower(
  * on a non-variable total), matching stagePowerText's varies-suffix contract.
  */
 function subtreePowerText(proposal: ChainProposal, catalog: Catalog): string {
-  const { total, variable } = subtreePower(proposal, catalog);
-  if (!variable) {
-    // Constant total: render exact via the count=1 identity (1 × total = total).
-    return stagePowerText(
-      { mw: total, variable: false, exponent: Fraction.from(1) },
-      1,
-      Fraction.from(100),
-    );
-  }
-  // Variable total: also sum the exact min/max bounds so the varies suffix
-  // brackets the same total the leading number shows (the S6 boundary fold).
-  let minMw = Fraction.from(0);
-  let maxMw = Fraction.from(0);
-  for (const stage of proposal.stages) {
-    const machineId = catalog.recipes[stage.recipeId]?.machineId;
-    if (machineId === undefined) continue;
-    const power = catalog.machines[machineId]?.power;
-    if (power === undefined) continue;
-    const count = Fraction.from(stage.machineCount);
-    // A variable machine carries min/max bounds; a constant one draws its mw as
-    // both bounds (so the mixed-subtree envelope stays honest).
-    minMw = minMw.add(count.mul(power.minMw ?? power.mw));
-    maxMw = maxMw.add(count.mul(power.maxMw ?? power.mw));
-  }
-  return stagePowerText(
-    { mw: total, variable: true, minMw, maxMw, exponent: Fraction.from(1) },
-    1,
-    Fraction.from(100),
-  );
+  const { total, variable, minMw, maxMw } = subtreePower(proposal, catalog);
+  // Pure formatting over the one-loop struct: the constant total renders exact
+  // via the count=1 identity; the variable total carries the summed bounds so
+  // the varies suffix brackets the same number the leading figure shows.
+  return variable
+    ? stagePowerText(
+        { mw: total, variable: true, minMw, maxMw, exponent: Fraction.from(1) },
+        1,
+        Fraction.from(100),
+      )
+    : stagePowerText(
+        { mw: total, variable: false, exponent: Fraction.from(1) },
+        1,
+        Fraction.from(100),
+      );
 }
 
 /** Compact "Item A/min · Item B/min" text from a proposal's item-rate list, or

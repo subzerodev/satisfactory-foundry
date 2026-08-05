@@ -16,7 +16,7 @@
 
 import { useAppStore } from "../state/store.ts";
 import type { Selection, SolveState } from "../state/store.ts";
-import type { Catalog } from "../data/types.ts";
+import type { Catalog, CatalogRecipe } from "../data/types.ts";
 import { Fraction } from "../core/fraction.ts";
 import {
   candidateRecipesFor,
@@ -104,7 +104,7 @@ export function altCompareModel(
  *  the arc's integer rule. */
 export function swapPayloadFor(
   stageId: string,
-  candidate: Parameters<typeof swapMachineCountFor>[0],
+  candidate: CatalogRecipe,
   rate: Fraction,
 ): SwapPayload {
   return {
