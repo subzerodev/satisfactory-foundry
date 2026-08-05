@@ -212,7 +212,15 @@ function MachineBand({
                 machines stay locatable without the labels colliding. */}
             <line x1={xOf(index)} x2={xOf(index)} y1={top} y2={top + 40} />
             {labeled.has(index) ? (
-              <text className="machine-label" x={xOf(index)} y={top + 52}>
+              // Center the label under the cell (#86), same as non-band mode; the
+              // boundary tick above stays at xOf(index). A constant +pitch/2 shift
+              // preserves every label-to-label distance, so the S15 thinning
+              // spacing guarantee (≥3-index / 24px) is unaffected.
+              <text
+                className="machine-label"
+                x={xOf(index) + pitch / 2}
+                y={top + 52}
+              >
                 {index}
               </text>
             ) : null}
@@ -304,7 +312,14 @@ export function Schematic({
                 height={40}
               />
               {m.labeled && (
-                <text className="machine-label" x={m.x} y={machineTopY + 52}>
+                <text
+                  className="machine-label"
+                  x={m.x + layout.pitch / 2}
+                  y={machineTopY + 52}
+                >
+                  {/* Center the number UNDER the machine cell (#86): the label
+                      names the machine, not the boundary. m.x is the cell's left
+                      edge; +pitch/2 puts it mid-cell. Ticks stay on boundaries. */}
                   {m.index}
                 </text>
               )}

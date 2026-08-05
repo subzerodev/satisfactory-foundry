@@ -27,3 +27,32 @@ Drift-hunt (assumption #2): grepped every `*.test.*` for a 0-based blueprint
 label content pin (`bp-machine-label`, `>0</text>`) — NONE exists (the only
 `machine-label` matches are the schematic band-mark COUNT in smoke.test.tsx).
 The new pin is additive, not a flipped existing pin. Verified.
+
+---
+
+## Axis B — #86 schematic numbers centered
+
+Fix: `src/ui/Schematic.tsx` — non-band label x `m.x` → `m.x + layout.pitch/2`
+(:307); band significant label x `xOf(index)` → `xOf(index) + pitch/2` (:215).
+Boundary TICKS unchanged (line x1/x2 still at `xOf(index)` / `m.x`).
+Tests: `src/ui/smoke.test.tsx` › Schematic ›
+  (i)  "centers non-band machine labels under the cell (m.x + pitch/2) (#86)"
+  (ii) "band mode: label centers at xOf + pitch/2 while the tick stays at xOf (#86)"
+
+- PASS: fix in → `Tests  2 passed`. All S15 layout thinning pins (nine-pair
+  residual, labeled subsets, ticks>labels) still green (`layout.test.ts` +
+  smoke #78 pin) — the +pitch/2 shift is constant, so label-to-label distances
+  are unchanged.
+- BREAK: reverted BOTH x expressions back to `m.x` / `xOf(index)`; both pins
+  FAILED:
+  > (i)  `expected '…' to contain '<text class="machine-label" x="46.5" y="'`
+  >      (broken markup rendered the label at bare `x="24"` — the cell's left
+  >      edge / boundary, N=20 pitch=45 so center is 24+22.5=46.5)
+  > (ii) `expected '…' to contain '<text class="machine-label" x="36" y="'`
+  >      (broken markup rendered the first band label at bare `x="32"` — on its
+  >      boundary tick; band pitch=8 so center is 32+4=36, and the tick line
+  >      `x1="32" x2="32"` stays put either way, proving tick ≠ label)
+- RESTORE: fix back → `Tests  2 passed`.
+
+The break exactly reproduces Michael's report ("numbers arent in the middle …
+hard to see where the feed out is") — labels sitting ON the boundary line.

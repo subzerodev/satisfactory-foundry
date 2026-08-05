@@ -202,6 +202,41 @@ describe("Schematic", () => {
     expect(html).not.toContain("<title>");
   });
 
+  it("centers non-band machine labels under the cell (m.x + pitch/2) (#86)", () => {
+    // The label names the machine, so it centers under the cell, not on the
+    // boundary line at the cell's left edge. Worked N=20 fixture: machine 1's
+    // cell starts at marginX (its x from computeLayout), so its label x is that
+    // + pitch/2. Pinned against computeLayout so the exact pixel can't drift.
+    const layout = computeLayout(workedResult(), 20);
+    const machine1CenterX = layout.machines[0]!.x + layout.pitch / 2;
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={workedResult()}
+        machineCount={20}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    // Machine 1's label sits at its cell start + pitch/2 (mid-cell), not at m.x.
+    expect(html).toContain(
+      `<text class="machine-label" x="${machine1CenterX}" y=`,
+    );
+    // Every rendered machine-label x is a cell-CENTER (m.x + pitch/2), never a
+    // bare cell-start m.x — the whole row shifted, so no boundary label survives.
+    const labelXs = new Set(
+      [...html.matchAll(/class="machine-label" x="([\d.]+)"/g)].map((m) =>
+        Number(m[1]),
+      ),
+    );
+    expect(labelXs.size).toBeGreaterThan(0);
+    for (const m of layout.machines) {
+      if (!m.labeled) continue;
+      expect(labelXs.has(m.x + layout.pitch / 2)).toBe(true);
+      expect(labelXs.has(m.x)).toBe(false); // never on the boundary
+    }
+  });
+
   it("marks a segment implicated by an over-capacity finding", () => {
     const base = workedResult();
     const doctored: StageSolveResult = {
@@ -330,6 +365,61 @@ describe("Schematic", () => {
     expect(ticks).toBeGreaterThan(0);
     expect(labels).toBeGreaterThan(0);
     expect(ticks).toBeGreaterThan(labels);
+  });
+
+  it("band mode: label centers at xOf + pitch/2 while the tick stays at xOf (#86)", () => {
+    // Same dense starving-161 fixture. Each significant machine's boundary tick
+    // stays at the cell's left edge (xOf = machines[index-1].x); the surviving
+    // label centers under the cell (xOf + pitch/2). Pinned against computeLayout:
+    // the FIRST labeled significant index's tick x1 == its m.x, and its label x
+    // == m.x + pitch/2 — the tick and label no longer coincide.
+    const result = solveStage({
+      machineCount: 161,
+      clockPercent: Fraction.from(100),
+      capacities: FIXTURE_TIERS,
+      feeds: [
+        {
+          itemId: "ore_iron",
+          kind: "belt" as const,
+          perMachineRate: Fraction.from(30),
+          overrides: [Fraction.from(50)],
+        },
+      ],
+      outputs: [
+        {
+          itemId: "iron_ingot",
+          kind: "belt" as const,
+          perMachineRate: Fraction.from(30),
+        },
+      ],
+    });
+    const layout = computeLayout(result, 161);
+    expect(layout.band).toBe(true);
+    const firstLabeled = layout.labeledSignificant[0]!;
+    const cellX = layout.machines[firstLabeled - 1]!.x; // xOf(firstLabeled)
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={result}
+        machineCount={161}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    // The boundary tick is UNCHANGED at the cell's left edge.
+    expect(html).toContain(`<line x1="${cellX}" x2="${cellX}"`);
+    // The band label centers at xOf + pitch/2 — distinct from the tick.
+    expect(html).toContain(
+      `<text class="machine-label" x="${cellX + layout.pitch / 2}" y=`,
+    );
+    // No band label sits AT a bare xOf (all labels shifted by +pitch/2).
+    for (const idx of layout.labeledSignificant) {
+      const x = layout.machines[idx - 1]!.x;
+      expect(html).not.toContain(`<text class="machine-label" x="${x}" y=`);
+      expect(html).toContain(
+        `<text class="machine-label" x="${x + layout.pitch / 2}" y=`,
+      );
+    }
   });
 
   it("below the threshold (N=114): the full tick row, no band (Axis 1)", () => {
