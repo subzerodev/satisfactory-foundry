@@ -842,6 +842,16 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
     // the data pin lives in graph-flow.test's node-powerText rows instead).
     expect(html).not.toContain("stage-node-power");
   });
+
+  it("renders the dimension-tick marker def (Stage 9 P1 Axis 2)", async () => {
+    // The dim-tick <marker> def is canvas chrome the edges' markerEnd references
+    // (RF creates no auto-def for a string marker). It renders inside a hidden
+    // <svg><defs> in GraphCanvas, so the opportunistic SSR reaches it — this
+    // pins its presence; the tick's rendered look is a browser-walk gate.
+    const { GraphCanvas } = await import("./GraphCanvas.tsx");
+    const html = renderToStaticMarkup(<GraphCanvas colorMode="light" />);
+    expect(html).toContain('id="dim-tick"');
+  });
 });
 
 describe("sanitizeFilename (Stage 6 / Phase 1 — export filename table)", () => {
