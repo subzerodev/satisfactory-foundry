@@ -1,21 +1,13 @@
 /**
- * Pure derive helpers for the combined multi-stage view (Stage 7 / Phase 3,
- * frozen Axes 2–4) — the testable core the ChainBlueprint component renders.
- * ZERO React/DOM/store: connector geometry, the drawn-distance measure feed
- * (Axis 3), and the combined-view power footer (Axis 4) are all plain functions
- * over the world-dm ChainLayout + the existing transport-plan/text pair, so the
- * whole render contract is node-testable (the S4 canvas-exclusion posture — data
- * pinned here, render smoke minimal).
- *
- * Wording that already exists is REUSED, never restated: link labels compose the
- * PUBLIC computeLinkTransport + edgeChip pair (transport-plan/transport-text) —
- * the same composition graph-flow's private transportChipFor performs — plus the
- * flowing item's display name and the new drawn-distance token. The footer's
- * transport term is an EXACT Fraction sum (station/port constants × integer
- * counts); train links are omitted with a note (frozen Axis 4).
+ * Pure derive helpers for the chain drawn-distance measure feed (Stage 7 /
+ * Phase 3, Axis 3), the surviving surface after the Combined view was removed
+ * (#75). ZERO React/DOM/store: the world-dm chain assembly + nearest-edge
+ * geometry + the estimated-link measure-feed mapping are plain functions the
+ * LinkInspector consumes (drawnDistanceDm → drawnMeters → applyDrawnDistance).
+ * The connector-rendering + power-footer derivations went with the Combined
+ * component (only its casualties, per the corrected consumer split).
  */
 
-import { Fraction } from "../core/fraction.ts";
 import { layoutChain, layoutStage } from "../layout/layout.ts";
 import type {
   Point,
@@ -27,9 +19,6 @@ import { FOOTPRINTS } from "../layout/footprints.ts";
 import type { Catalog } from "../data/types.ts";
 import type { StageNode, StageLink, LinkTransport } from "../state/store.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
-import { planForLink } from "./graph-flow.ts";
-import type { TransportPlan } from "./transport-plan.ts";
-import { edgeChip } from "./transport-text.ts";
 
 // ---------------------------------------------------------------------------
 // Site placement lookup — world-dm bbox per placed site.
@@ -60,10 +49,10 @@ const FOUNDATION_TILE = 80;
 
 // ---------------------------------------------------------------------------
 // Chain assembly — build the solved-only ChainSites + the world-dm layout from
-// the store slice (shared by ChainBlueprint and the LinkInspector measure feed).
+// the store slice (the LinkInspector measure feed's geometry basis).
 // ---------------------------------------------------------------------------
 
-/** The solved stage ids in stageOrder — the sites the combined view places
+/** The solved stage ids in stageOrder — the sites the chain layout places
  *  (unsolved/invalid stages are skipped; frozen Axis 1 solved-only). */
 export function solvedStageIds(
   stages: Record<string, StageNode>,
@@ -115,10 +104,10 @@ export function buildChain(
 }
 
 /**
- * The drawn straight-line distance (dm) for one link on the combined view, or
- * null when either endpoint is skipped (unsolved) — the SAME nearest-edge
- * geometry chainConnectors uses, exposed so the LinkInspector can offer the
- * measure feed without re-deriving the connector labels.
+ * The drawn straight-line distance (dm) for one link, or null when either
+ * endpoint is skipped (unsolved) — the nearest-edge geometry between the two
+ * sites' foundation bboxes, exposed so the LinkInspector can offer the measure
+ * feed without re-deriving any connector labels.
  */
 export function drawnDistanceDm(
   linkId: string,
@@ -188,86 +177,6 @@ export function drawnMeters(distanceDm: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Inter-site link rendering data (Axis 2).
-// ---------------------------------------------------------------------------
-
-/** Whether a link's mode draws as a dashed (vehicle-class) or solid
- *  (belt/pipe continuous) connector — a mode-class visual only, no pathfinding. */
-export function isVehicleModeLink(link: StageLink): boolean {
-  const mode = link.transport?.mode ?? "belt";
-  return mode !== "belt" && mode !== "pipe";
-}
-
-/** One inter-site connector's full render data: the two endpoints, the dashed
- *  flag, and the composed label (item name + the public chip + drawn distance).
- *  Returns null when either endpoint is skipped (unsolved/not-placed) — a
- *  skipped endpoint also skips its links (frozen Axis 1). */
-export interface ChainConnector {
-  linkId: string;
-  from: Point;
-  to: Point;
-  dashed: boolean;
-  label: string;
-}
-
-export function chainConnectors(
-  chain: ChainLayout,
-  sites: ChainSite[],
-  links: StageLink[],
-  catalog: Catalog,
-  stages: Record<string, StageNode>,
-): ChainConnector[] {
-  const out: ChainConnector[] = [];
-  for (const link of links) {
-    const fromBox = siteWorldBox(chain, sites, link.fromStageId);
-    const toBox = siteWorldBox(chain, sites, link.toStageId);
-    if (fromBox === null || toBox === null) continue; // skipped endpoint
-    const conn = nearestEdgeConnector(fromBox, toBox);
-    out.push({
-      linkId: link.id,
-      from: conn.from,
-      to: conn.to,
-      dashed: isVehicleModeLink(link),
-      label: connectorLabel(link, catalog, stages, conn.distanceDm),
-    });
-  }
-  return out;
-}
-
-/**
- * The connector label: the flowing item's display name, the public transport
- * chip (computeLinkTransport + edgeChip — "" for belt/unsolved/errored), and the
- * drawn-distance token. No new wording vocabulary beyond the distance token.
- */
-function connectorLabel(
-  link: StageLink,
-  catalog: Catalog,
-  stages: Record<string, StageNode>,
-  distanceDm: number,
-): string {
-  const itemName = catalog.items[link.itemId]?.displayName ?? link.itemId;
-  const chip = linkChip(link, catalog, stages);
-  return `${itemName}${chip} · ${drawnMeters(distanceDm)} m`;
-}
-
-/** The transport chip suffix (" · 3 trucks", "≈" on estimated) via the public
- *  pair, or "" for belt/unsolved/errored — the same composition graph-flow's
- *  private transportChipFor performs, done here at the public boundary. */
-function linkChip(
-  link: StageLink,
-  catalog: Catalog,
-  stages: Record<string, StageNode>,
-): string {
-  if (link.transport === undefined || link.transport.mode === "belt") return "";
-  // #34: the resolve preamble folds to the shared planForLink; the belt-skip
-  // pre-filter above stays. Null (missing item) chips nothing, matching today.
-  const plan = planForLink(link, catalog, stages);
-  if (plan === null) return "";
-  const chip = edgeChip(plan);
-  return chip === null ? "" : ` ${chip}`;
-}
-
-// ---------------------------------------------------------------------------
 // Axis 3 — the measure feed: map a drawn distance to the P2 raw-text field per
 // the mode's arm (the units trap in ONE mapping site).
 // ---------------------------------------------------------------------------
@@ -329,59 +238,4 @@ export function applyDrawnDistance(
     mode: t.mode,
     trip: { kind: "estimated", distanceText: String(oneWayMeters) },
   };
-}
-
-// ---------------------------------------------------------------------------
-// Axis 4 — the combined-view power footer.
-// ---------------------------------------------------------------------------
-
-/**
- * The combined-view power footer parts (frozen Axis 4). `sitesText` is the
- * chain Σ over solved stages (exact at 100% clock, labeled-≈ when any stage is
- * overclocked — the advice.ts chainPowerText discipline; null when no stage
- * bills power). `transportMw` is the EXACT Fraction sum of DETERMINATE link
- * power: truck-likes 40 MW (both ends), drone portPowerMw × nDrones; belt/pipe
- * 0; train links OMITTED. `hasTrain` flags any configured+solved train link, so
- * the renderer appends "(+ trains — see per-link)".
- */
-export interface ChainPowerFooter {
-  transportMw: Fraction;
-  hasTrain: boolean;
-}
-
-export function chainTransportPower(
-  links: StageLink[],
-  catalog: Catalog,
-  stages: Record<string, StageNode>,
-): ChainPowerFooter {
-  let transportMw = Fraction.from(0);
-  let hasTrain = false;
-  for (const link of links) {
-    const mode = link.transport?.mode ?? "belt";
-    if (mode === "belt" || mode === "pipe") continue; // no stations → 0
-    // #34: the resolve preamble folds to the shared planForLink; the belt/pipe
-    // skip pre-filter above stays. Null (missing item) contributes nothing.
-    const plan = planForLink(link, catalog, stages);
-    if (plan === null) continue;
-    if (plan.kind === "train") hasTrain = true; // omitted from the sum, noted
-    transportMw = transportMw.add(planPowerMw(plan));
-  }
-  return { transportMw, hasTrain };
-}
-
-/**
- * One plan's determinate transport power (MW), exact Fraction: a vehicle plan's
- * station power (40 MW, both ends), a drone plan's portPowerMw × nDrones.
- * Train / continuous / unsolved / errored plans contribute 0 (a train link is
- * counted via `hasTrain`, not summed — the omit-with-note discipline).
- */
-function planPowerMw(plan: TransportPlan): Fraction {
-  switch (plan.kind) {
-    case "vehicle":
-      return plan.stationPowerMw;
-    case "drone":
-      return plan.result.portPowerMw.mul(Fraction.from(plan.result.nDrones));
-    default:
-      return Fraction.from(0);
-  }
 }

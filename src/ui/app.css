@@ -795,57 +795,6 @@ body {
   stroke-linejoin: round;
 }
 
-/* Combined multi-stage blueprint (Stage 7 / Phase 3, Axis 2). Reuses the bp-*
-   foundation/machine styling per site; the chain-bp-* classes add the site
-   chrome + inter-site connectors + the power footer. */
-/* Site names take the display face (Stage 11 P0) — echoing the stage
-   plates' name treatment, scaled to the floor plan. */
-.chain-bp-name {
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  fill: var(--fg);
-}
-
-.chain-bp-power {
-  font-size: 10px;
-  fill: var(--fg-muted);
-}
-
-/* Site focus (Stage 8 / Phase 1, Axis 3): the active site's foundation bbox
-   gets the accent outline — the stage-node `.selected` idiom, applied to the
-   site's foundation tiles (the SVG surface the click targets). */
-.chain-bp-site.selected .bp-foundation {
-  stroke: var(--accent);
-  stroke-width: 2;
-}
-
-/* Inter-site connectors: solid for belt/pipe, dashed for vehicle modes (a
-   mode-class visual only — no pathfinding). */
-.chain-bp-link {
-  stroke: var(--accent-strong);
-  stroke-width: 2;
-  fill: none;
-}
-
-.chain-bp-link-dashed {
-  stroke-dasharray: 8 5;
-}
-
-.chain-bp-link-label {
-  font-size: 11px;
-  fill: var(--fg);
-  text-anchor: middle;
-}
-
-.chain-bp-footer {
-  margin: 8px 0 0;
-  font-family: var(--font-mono-num);
-  font-size: 11px;
-  color: var(--fg-muted);
-}
-
 .lane-overrides {
   display: flex;
   flex-direction: column;
