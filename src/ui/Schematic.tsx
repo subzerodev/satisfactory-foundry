@@ -176,11 +176,13 @@ function LaneG({
 function MachineBand({
   machines,
   significant,
+  labeledSignificant,
   pitch,
   top,
 }: {
   machines: SchematicLayout["machines"];
   significant: number[];
+  labeledSignificant: number[];
   pitch: number;
   top: number;
 }) {
@@ -191,6 +193,9 @@ function MachineBand({
   // (pitch − 2) rect width, mirroring the per-tick rendering it replaces.
   const bandW = last.x + Math.max(pitch - 2, 1) - bandX;
   const marks = new Set(significant);
+  // Every significant index keeps its tick; only the thinned subset carries a
+  // label (labels crowd at the band's 8px pitch, ticks do not).
+  const labeled = new Set(labeledSignificant);
   const xOf = (index: number) => machines[index - 1]!.x;
   return (
     <g className="machine-band">
@@ -202,13 +207,15 @@ function MachineBand({
         .sort((a, b) => a - b)
         .map((index) => (
           <g key={`sig-${index}`} className="machine-band-mark">
-            {/* A boundary tick at the significant machine's left edge + its
-                index label, so every textually-referenced machine stays
-                locatable in the band. */}
+            {/* A boundary tick at every significant machine's left edge; the
+                index label only when it survives thinning, so referenced
+                machines stay locatable without the labels colliding. */}
             <line x1={xOf(index)} x2={xOf(index)} y1={top} y2={top + 40} />
-            <text className="machine-label" x={xOf(index)} y={top + 52}>
-              {index}
-            </text>
+            {labeled.has(index) ? (
+              <text className="machine-label" x={xOf(index)} y={top + 52}>
+                {index}
+              </text>
+            ) : null}
           </g>
         ))}
     </g>
@@ -283,6 +290,7 @@ export function Schematic({
           <MachineBand
             machines={layout.machines}
             significant={layout.significant}
+            labeledSignificant={layout.labeledSignificant}
             pitch={layout.pitch}
             top={machineTopY}
           />
