@@ -1,9 +1,9 @@
 # Views join the drawing + visible raw feeds (Stage 11 arc)
 
 **Started:** 2026-08-05
-**Status:** in-progress
-**Current phase:** Phase 1 (visible raw feeds) — next
-**Final PR:** —
+**Status:** complete — both phases merged; release PR at close
+**Current phase:** — (arc closed 2026-08-05)
+**Final PR:** develop → main (see epic #53 close audit)
 **Epic:** #53 (board #21, Stage 11 milestone 82)
 
 ## Phase decomposition
@@ -32,7 +32,30 @@
   pinned to the true scrollport bottom (the 15px "failure" was the
   horizontal-scrollbar metric, not a defect) and released at its
   natural seat, all radii/type verified, zero console errors.
-- P1: next — child ticket at pickup.
+- P1 (#57): complete (merged 2026-08-05, 055d3dc; 741/741, +13
+  tests). The most reviewed design of the project: SIX correctness
+  rounds + simplify — two recipe-set classification heuristics killed
+  by catalog measurement (HOR byproduct; Water mirror-case), the
+  cache-hit regression trap and the fixture tsc break caught pre-code
+  (→ optional ground-truth isRawResource flag, no version bump), and
+  one simplify fold REVERSED by a source-decided r6 re-check (the
+  commit-loop raw: guard). Implementation: opus, zero drift; boundary
+  BOTH APPROVED zero findings; diff-simplify dispositioned (comment
+  pointers folded). Walk: both media + both directions — the Plastic ←
+  Crude Oil flagship live at exact spec geometry, rates exact
+  (30/min → 510/min at 17 machines), stale-cache self-healing
+  demonstrated, zero console errors.
+
+## Final report
+
+Stage 11 arc: Michael's round-2 feedback, three tickets, two merges.
+P0 gave the three views the full drawing treatment and pinned the
+title block to the viewport bottom (his call). P1 made every raw
+extraction input visible in the chain flow — derived display-only
+supply cards with solver-exact rates, classified by the game's own
+resource declarations, zero new persistent state. The review gates
+earned their keep throughout: eight design revisions on P1 alone, each
+killing a real defect before code. Suite 728 → 741.
 
 ## Decisions log
 

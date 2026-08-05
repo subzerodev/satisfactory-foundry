@@ -3,6 +3,19 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 11 complete: every branch goes back to the ground
+
+> Hey Michael — the missing roots you spotted are in. Every stage that
+> drinks straight from the ground now shows it in the flow chart: your
+> Plastic stage gets a dashed "Crude Oil 510/min" supply card feeding
+> into it, copper chains show their ore, and the rates are the solver's
+> exact numbers. The cards ride along when you drag a stage, flip sides
+> when you switch the flow direction, and only appear where a raw
+> input isn't already fed by a lane. One note: the very first time you
+> open the app after this update, the supply cards may not show until
+> the catalog refreshes itself — they'll be there from then on. That
+> closes Stage 11.
+
 ## 2026-08-05 — Stage 11, Phase 0: the views join the drawing, and the title block follows you
 
 > Hey Michael — two of your calls landed. The title block now sticks to
