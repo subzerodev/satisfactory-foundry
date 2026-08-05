@@ -44,7 +44,7 @@ completeness with zero new state.
    claim literally true; the docs-loader sets it `true` only for
    FGResourceDescriptor items)** (docs-loader already holds
    `nativeClass` per group, docs-loader.ts:63, in scope through the item branch :66-80 — one added test +
-   field); NO parser-version bump (simplify F1 — the optional field makes a
+   field); NO parser-version bump [SUPERSEDED 2026-08-05, Stage 12 P0 / #60 — bump 3→4 restored; see the changelog tail] (simplify F1 — the optional field makes a
    stale cache SELF-HEALING: absent reads non-raw via the `=== true`
    read, so a pre-flag cache merely shows no feed cards until its next
    natural re-parse — acceptable for display chrome, and strictly
@@ -321,10 +321,6 @@ Real tests (bidirectionality log required):
   rounds; the fold verified holeless (the === true read collapses
   undefined/false/true correctly through either serialization idiom;
   the round-trip pin stays load-bearing).
-- SUPERSEDED (2026-08-05, Stage 12 P0 / #60): the v7-simplify F1
-  disposition (no version bump) proved wrong in the field — a healthy
-  bundled cache has NO natural re-parse trigger, so the feature stayed
-  invisible for existing users. CATALOG_PARSER_VERSION 3 → 4 restored.
 - v7-simplify (2026-08-05): one-shot simplify pass NEEDS_REWORK
   (advisory — 4 findings, all dispositioned): F1 FOLDED — the
   parser-version bump dropped (the optional field makes stale caches
@@ -353,3 +349,7 @@ Real tests (bidirectionality log required):
   rounds, every element dual-approved) + the F1 subtraction (r6
   dual-verified sound) — every line now carries both-reviewer
   approval. FROZEN.
+- SUPERSEDED (2026-08-05, Stage 12 P0 / #60): the v7-simplify F1
+  disposition (no version bump) proved wrong in the field — a healthy
+  bundled cache has NO natural re-parse trigger, so the feature stayed
+  invisible for existing users. CATALOG_PARSER_VERSION 3 → 4 restored.
