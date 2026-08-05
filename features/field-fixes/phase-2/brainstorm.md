@@ -1,4 +1,4 @@
-# Stage 12 / P2+P3 combined — clarity + views navigation (tickets #65 + #64) — brainstorm v5
+# Stage 12 / P2+P3 combined — clarity + views navigation (tickets #65 + #64) — brainstorm v6
 
 **Goal.** Michael's fix-all-now directive (epic #59 decision 2026-08-05).
 Three fixes: (A) override rows labeled + grouped; (B) one recipe-less
@@ -98,9 +98,10 @@ Open scale = max(fitScale, READABLE_PX_PER_DM) with READABLE = 1.0
 (natural size — making the toggle label honest): small plans open
 exactly as today (fit ≥ 1 → unchanged, the natural-size posture
 preserved), big plans open at 1 px/dm readable detail. The toggle
-(quiet-mono buttons, shown ONLY when fit < 1, per-view presentation
-useState): [FIT | DETAIL] — DETAIL = 1 px/dm, FIT = the P1 fit/floor
-scale. ChainBlueprint gets the toggle WITHOUT a gutter (C1 scope).
+(quiet-mono buttons; mounted iff fitScale(w, h, cap) < 1 — the ONE
+canonical gate, every other mention defers here (simplify nit);
+per-view presentation useState): [FIT | DETAIL] — DETAIL = 1 px/dm,
+FIT = the P1 fit/floor scale. ChainBlueprint gets the toggle WITHOUT a gutter (C1 scope).
 Pan = native scroll (head-anchored passively via scrollLeft 0 —
 stated as passive, r1 nit). **.bp-scroll KEEPS overflow: auto — the
 r2 "→ overflow-x: auto" fold is REVERTED (r3 adversarial IMPORTANT:
@@ -160,7 +161,10 @@ The gutter labels reposition with the active scale (same px math).
    itemId; catalog access pattern to verify at implementation — the
    parent panel has the catalog).
 3. The gutter column width sizes to the longest item name at 11px
-   screen mono (CSS max-content — no dm constant needed).
+   screen mono (CSS max-content — no dm constant needed) WHEN
+   POPULATED, i.e. at DETAIL; at FIT the gutter renders empty and
+   collapses to zero width (an empty max-content flex column — the
+   "gutter collapses" in C1, made explicit per simplify nit).
 4. The zoom toggle is presentation-only state (component useState —
    not store, not persisted).
 
@@ -222,3 +226,18 @@ The gutter labels reposition with the active scale (same px math).
   kind legibility — defensible overview), Axis B across all three
   SolveState statuses, the minY term, the open-scale formula, the
   pin-safety claims.
+- v6 (2026-08-05): r4 pair BOTH APPROVED (0 + 0, explicit loop-done)
+  → correctness converged. One-shot claude-simplify-reviewer:
+  APPROVED_WITH_NITS (3), dispositioned: (1) "sub-label exceeds the
+  directive" REJECTED — Michael's verbatim field reports are "what
+  are these input boxes its unclear" and "the feed info overrider
+  still needs a label"; the empty-vs-computed sub-label answers
+  exactly that observed confusion, it is not speculative; (2) toggle
+  gate stated thrice → FOLDED: C2 now carries the one canonical gate
+  (mounted iff fitScale(w, h, cap) < 1), other mentions defer; (3)
+  gutter width at FIT under-specified → FOLDED: ledger #3 states the
+  empty gutter collapses to zero width at FIT (max-content sizing
+  applies only when populated at DETAIL). Simplify also affirmed:
+  DETAIL-only gutter, per-view useState, gutter-outside-scroll flex
+  row, C1 scoping, and max(fit,1) are each the minimal correct shape;
+  nothing speculative found.
