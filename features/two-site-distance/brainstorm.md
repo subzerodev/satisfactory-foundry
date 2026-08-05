@@ -124,7 +124,8 @@ positions)` — signature unchanged:
 
 ## Test plan sketch
 
-- The three pins above (decoupling, pair value, coincident guard).
+- The four pins above (decoupling, pair value, coincident 0-dm,
+  the near-coincident floor).
 - Deleted-surface sweep: zero references to layoutChain/
   fanCoincident/ChainLayout/ChainArrangement/buildChain outside
   intentional comments; layoutStage + ceilTo10 + requiredScaleForPair
@@ -132,9 +133,9 @@ positions)` — signature unchanged:
 - The kept chain-view tests (nearestEdgeConnector, drawnMeters,
   applyDrawnDistance, isEstimatedLink) green untouched.
 - Bidirectionality log — features/two-site-distance/
-  r2-verification.log (the decoupling pin's break = restore the
-  global-K path or perturb C-handling; the guard's break = remove
-  it → throw).
+  r2-verification.log (the decoupling pin's break = reintroduce a
+  C-dependent term; the floor pin's break = drop the pairwise k;
+  each break verified to genuinely fail).
 - Walk: build a 3-stage chain (the Computer flow), select a link,
   read the distance; MOVE an unrelated stage → the readout must NOT
   change (the #81 acceptance); move an endpoint → it changes.
