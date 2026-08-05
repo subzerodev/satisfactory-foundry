@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-05
 **Status:** in-progress
-**Current phase:** Phase 0 (theming stragglers) — pickup next
+**Current phase:** Phase 1 (resizable canvas + flow direction) — design next
 **Final PR:** —
 **Epic:** #48 (board #21, Stage 10 milestone 81)
 
@@ -16,7 +16,19 @@
   builder apply placement; user positions untouched). Behavior phase:
   full design loop (preference home, persistence, plan-file impact).
 
+## Phase status
+
+- P0 (#49): complete (merged 2026-08-05; 707/707; three design rounds
+  — the :not() specificity trap fixed with :where(); boundary + walk
+  clean).
+- P1: design next. P2 (#50): spacing pass — Michael's live feedback,
+  runs after P1.
+
 ## Decisions log
+
+- 2026-08-05 (P0 landed): base element rules are the control-theming
+  API (the :where() wrapper is load-bearing); enumerate exceptions,
+  never stragglers; color-scheme rides the three-block guard.
 
 - 2026-08-05: Arc started from Michael's live feedback; decomposition
   on epic #48.

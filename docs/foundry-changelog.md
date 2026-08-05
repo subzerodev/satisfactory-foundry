@@ -3,6 +3,18 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 10, Phase 0: every control matches the paper
+
+> Hey Michael — your first catch, fixed. Every selection box, input,
+> and button now wears the medium: the Recipe picker, the Machines and
+> clock fields, the view and tier toggles, the trip fields in the
+> inspector — all in the instrument font with the soft-ink frame, in
+> both papers. Radios and checkboxes get the orange mark, and even the
+> browser's own dropdown menus and number spinners now follow the
+> theme. Next up: the bigger, resizable graph area and the
+> left-right/top-bottom flow option — and your spacing notes are
+> ticketed for the pass right after.
+
 ## 2026-08-05 — Stage 9 complete: the full drawing identity
 
 > Hey Michael — the last surfaces joined the drawing. The train and
