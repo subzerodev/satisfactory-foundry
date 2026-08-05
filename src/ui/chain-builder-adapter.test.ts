@@ -11,13 +11,21 @@ import { describe, it, expect } from "vitest";
 import { Fraction } from "../core/fraction.ts";
 import type { BuilderRecipe } from "../core/chain-builder.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
-import type { Catalog } from "../data/types.ts";
+import type {
+  Catalog,
+  CatalogItem,
+  CatalogMachine,
+  CatalogRecipe,
+} from "../data/types.ts";
 import {
   EXCLUDED_MACHINE_IDS,
   proposeChainForCatalog,
   toProposalPreview,
   previewRowText,
   itemRateLineText,
+  candidateRecipesFor,
+  candidateRowsFor,
+  swapMachineCountFor,
 } from "./chain-builder-adapter.ts";
 // The real bundled snapshot as raw text (Vite ?raw), parsed through the SAME
 // pipeline the app uses — the rows guard catalog drift (renamed ids, a new
@@ -156,5 +164,304 @@ describe("adapter — preview shaping", () => {
       { itemName: "Water", rate: "360" },
     ]);
     expect(line).toBe("Iron Ore 780/min, Water 360/min");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Alternate-recipe comparison (Stage 8 / Phase 4, ticket #40): candidate
+// enumeration + per-candidate metrics. The metric-sum rows run against a
+// SYNTHETIC catalog (exact expected machines/power); the enumeration + a
+// distinct-metrics row run against the real bundled Iron Ingot alternates.
+// ---------------------------------------------------------------------------
+
+/** Terse synthetic catalog builders — enough shape for the alt-compare helpers
+ *  (items for names, machines for power, recipes for enumeration + subtree). */
+function item(id: string, displayName: string): CatalogItem {
+  return { id, displayName, isFluid: false, stackSize: F(100) };
+}
+function machine(
+  id: string,
+  mw: number,
+  opts?: { variable?: boolean; minMw?: number; maxMw?: number },
+): CatalogMachine {
+  const power = {
+    mw: F(mw),
+    variable: opts?.variable ?? false,
+    exponent: F(1),
+    ...(opts?.minMw !== undefined ? { minMw: F(opts.minMw) } : {}),
+    ...(opts?.maxMw !== undefined ? { maxMw: F(opts.maxMw) } : {}),
+  };
+  return { id, displayName: id, power };
+}
+function crecipe(
+  id: string,
+  displayName: string,
+  machineId: string,
+  outputs: Array<[string, number]>,
+  inputs: Array<[string, number]>,
+  isAlternate = false,
+): CatalogRecipe {
+  const out = outputs.map(([itemId, perMinute]) => ({
+    itemId,
+    perMinute: F(perMinute),
+  }));
+  return {
+    id,
+    displayName,
+    machineId,
+    isAlternate,
+    primaryOutputId: out[0]!.itemId,
+    outputs: out,
+    inputs: inputs.map(([itemId, perMinute]) => ({
+      itemId,
+      perMinute: F(perMinute),
+    })),
+  };
+}
+function synthCatalog(
+  items: CatalogItem[],
+  machines: CatalogMachine[],
+  recipes: CatalogRecipe[],
+): Catalog {
+  return {
+    items: Object.fromEntries(items.map((i) => [i.id, i])),
+    machines: Object.fromEntries(machines.map((m) => [m.id, m])),
+    recipes: Object.fromEntries(recipes.map((r) => [r.id, r])),
+    tiers: { belt: [F(60)], pipe: [F(300)] },
+  };
+}
+
+describe("alt-compare — candidate enumeration", () => {
+  it("lists default (non-alternate) first, then alternates ascending by id", () => {
+    const cat = synthCatalog(
+      [item("ingot", "Ingot"), item("ore", "Ore")],
+      [machine("smelter", 4)],
+      [
+        crecipe(
+          "r_alt_z",
+          "Alt Z",
+          "smelter",
+          [["ingot", 45]],
+          [["ore", 40]],
+          true,
+        ),
+        crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]]),
+        crecipe(
+          "r_alt_a",
+          "Alt A",
+          "smelter",
+          [["ingot", 50]],
+          [["ore", 50]],
+          true,
+        ),
+      ],
+    );
+    const ids = candidateRecipesFor(cat, "ingot").map((r) => r.id);
+    // Default first; alternates ascending (r_alt_a before r_alt_z).
+    expect(ids).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
+  });
+
+  it("excludes converter/packager recipes from candidacy", () => {
+    const cat = synthCatalog(
+      [item("ingot", "Ingot"), item("ore", "Ore")],
+      [machine("smelter", 4), machine("converter", 0), machine("packager", 0)],
+      [
+        crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]]),
+        crecipe(
+          "r_conv",
+          "Conv",
+          "converter",
+          [["ingot", 60]],
+          [["ore", 60]],
+          true,
+        ),
+        crecipe(
+          "r_pack",
+          "Pack",
+          "packager",
+          [["ingot", 60]],
+          [["ore", 60]],
+          true,
+        ),
+      ],
+    );
+    const ids = candidateRecipesFor(cat, "ingot").map((r) => r.id);
+    // Converter/packager never listed → only the smelter recipe survives → <2 →
+    // empty (nothing to compare against).
+    expect(ids).toEqual([]);
+  });
+
+  it("returns empty when the item has fewer than 2 candidates", () => {
+    const cat = synthCatalog(
+      [item("ingot", "Ingot"), item("ore", "Ore")],
+      [machine("smelter", 4)],
+      [crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]])],
+    );
+    expect(candidateRecipesFor(cat, "ingot")).toEqual([]);
+  });
+});
+
+describe("alt-compare — per-candidate metrics (synthetic, exact)", () => {
+  // ingot has TWO producers: standard (30/min, smelter 4 MW) and a faster
+  // alternate (60/min, foundry 16 MW). Both draw ore (raw). At R=120: standard
+  // needs 4 smelters (4×4=16 MW); alternate needs 2 foundries (2×16=32 MW).
+  const cat = synthCatalog(
+    [item("ingot", "Ingot"), item("ore", "Ore")],
+    [machine("smelter", 4), machine("foundry", 16)],
+    [
+      crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]]),
+      crecipe(
+        "r_alt",
+        "Alternate",
+        "foundry",
+        [["ingot", 60]],
+        [["ore", 45]],
+        true,
+      ),
+    ],
+  );
+
+  it("sums machines + power exactly across the subtree per candidate", () => {
+    const rows = candidateRowsFor(cat, "ingot", "r_std", F(120));
+    expect(rows).toHaveLength(2);
+    const [std, alt] = rows;
+
+    expect(std!.recipeId).toBe("r_std");
+    expect(std!.isCurrent).toBe(true); // current recipe marked
+    expect(std!.machines).toBe("4"); // ceil(120/30)
+    expect(std!.power).toBe("16 MW"); // 4 × 4 MW, exact
+    expect(std!.rawDraw).toBe("Ore 120/min"); // 4 × 30 ore
+
+    expect(alt!.recipeId).toBe("r_alt");
+    expect(alt!.isCurrent).toBe(false);
+    expect(alt!.machines).toBe("2"); // ceil(120/60)
+    expect(alt!.power).toBe("32 MW"); // 2 × 16 MW, exact
+    expect(alt!.rawDraw).toBe("Ore 90/min"); // 2 × 45 ore
+  });
+
+  it("propagates the variable-power flag with the varies suffix", () => {
+    // A candidate whose machine is variable-power → the row power carries the
+    // "(varies A–B MW)" suffix from the summed exact bounds.
+    const varCat = synthCatalog(
+      [item("ingot", "Ingot"), item("ore", "Ore")],
+      [
+        machine("smelter", 4),
+        machine("refinery", 30, { variable: true, minMw: 20, maxMw: 40 }),
+      ],
+      [
+        crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]]),
+        crecipe(
+          "r_var",
+          "Variable",
+          "refinery",
+          [["ingot", 60]],
+          [["ore", 45]],
+          true,
+        ),
+      ],
+    );
+    const rows = candidateRowsFor(varCat, "ingot", "r_std", F(120));
+    const varRow = rows.find((r) => r.recipeId === "r_var")!;
+    // 2 refineries: 2×30 = 60 midpoint, bounds 2×20=40 .. 2×40=80.
+    expect(varRow.power).toBe("60 MW (varies 40–80 MW)");
+    // The non-variable candidate carries NO varies suffix.
+    const stdRow = rows.find((r) => r.recipeId === "r_std")!;
+    expect(stdRow.power).toBe("16 MW");
+  });
+
+  it("notes byproducts compactly; '—' when there is no raw draw", () => {
+    // A candidate whose sole input is itself produced (no raw), and which emits a
+    // byproduct. widget ← gadget (produced) ; widget recipe also outputs scrap.
+    const bpCat = synthCatalog(
+      [
+        item("widget", "Widget"),
+        item("gadget", "Gadget"),
+        item("scrap", "Scrap"),
+        item("ore", "Ore"),
+      ],
+      [machine("assembler", 10), machine("smelter", 4)],
+      [
+        crecipe(
+          "r_widget_a",
+          "Widget A",
+          "assembler",
+          [["widget", 30]],
+          [["gadget", 30]],
+        ),
+        crecipe(
+          "r_widget_b",
+          "Widget B",
+          "assembler",
+          [
+            ["widget", 30],
+            ["scrap", 15],
+          ],
+          [["gadget", 30]],
+          true,
+        ),
+        crecipe(
+          "r_gadget",
+          "Gadget",
+          "smelter",
+          [["gadget", 30]],
+          [["ore", 30]],
+        ),
+      ],
+    );
+    const rows = candidateRowsFor(bpCat, "widget", "r_widget_a", F(30));
+    const bRow = rows.find((r) => r.recipeId === "r_widget_b")!;
+    // widget's only input (gadget) is produced → no raw at the widget stage, but
+    // the gadget subtree draws ore → raw draw is Ore. Byproduct scrap noted.
+    expect(bRow.rawDraw).toBe("Ore 30/min");
+    expect(bRow.byproducts).toBe("Scrap 15/min");
+    // The plain candidate has no byproducts → null.
+    const aRow = rows.find((r) => r.recipeId === "r_widget_a")!;
+    expect(aRow.byproducts).toBeNull();
+  });
+});
+
+describe("alt-compare — bundled Iron Ingot alternates", () => {
+  it("surfaces exactly 5 candidates: default + Iron Alloy, Basic, Leached, Pure Iron", () => {
+    const cands = candidateRecipesFor(catalog, "iron_ingot");
+    expect(cands.map((c) => c.id)).toEqual([
+      "ingot_iron", // default (Smelter), non-alternate → first
+      "alternate_ingot_iron", // Iron Alloy Ingot
+      "alternate_iron_ingot_basic", // Basic Iron Ingot
+      "alternate_iron_ingot_leached", // Leached Iron Ingot
+      "alternate_pure_iron_ingot", // Pure Iron Ingot
+    ]);
+    // The default leads; the four alternates follow ascending by id.
+    expect(cands[0]!.isAlternate).toBe(false);
+    expect(cands.slice(1).every((c) => c.isAlternate)).toBe(true);
+  });
+
+  it("scores the 5 rows with distinct, plausible metrics", () => {
+    const rows = candidateRowsFor(catalog, "iron_ingot", "ingot_iron", F(60));
+    expect(rows).toHaveLength(5);
+    // The current (default) row is marked and carries no Apply-changing flag.
+    expect(rows[0]!.isCurrent).toBe(true);
+    expect(rows.slice(1).every((r) => !r.isCurrent)).toBe(true);
+    // Every row reports a positive machine count and a power string.
+    for (const r of rows) {
+      expect(Number(r.machines)).toBeGreaterThan(0);
+      expect(r.power).toMatch(/MW/);
+      expect(r.rawDraw.length).toBeGreaterThan(0);
+    }
+    // Distinct configurations → not every row is byte-identical (the whole point
+    // of the comparison): at least two rows differ on machines OR raw draw.
+    const fingerprints = new Set(rows.map((r) => `${r.machines}|${r.rawDraw}`));
+    expect(fingerprints.size).toBeGreaterThan(1);
+  });
+});
+
+describe("alt-compare — swap machine count (ceil at compared rate)", () => {
+  it("ceilDivs the compared rate by the candidate's primary perMinute", () => {
+    const r = crecipe("r", "R", "m", [["ingot", 65]], [["ore", 7]], true);
+    // 60/min via a 65/machine recipe → ceil(60/65) = 1.
+    expect(swapMachineCountFor(r, F(60))).toBe(1);
+    // 130/min → ceil(130/65) = 2 exactly.
+    expect(swapMachineCountFor(r, F(130))).toBe(2);
+    // 131/min → ceil(131/65) = 3 (ceil over-produces).
+    expect(swapMachineCountFor(r, F(131))).toBe(3);
   });
 });
