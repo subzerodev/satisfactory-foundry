@@ -118,14 +118,14 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     expect((await loadCatalog()).status).toBe("empty");
   });
 
-  it("treats a version-2 cached row as stale under version 3 (the stackSize bump)", async () => {
+  it("treats a version-2 cached row as stale under the current version", async () => {
     // A pre-Stage-7 row (parser_version 2, items lacking stackSize) must be
     // discarded, not revived — the frozen Axis 2 stale-and-discard behavior.
     await saveCatalog("raw", sampleCatalog());
     const db = await openDb();
     const stored = await db.get<Record<string, unknown>>("catalog", "current");
     await db.put("catalog", { ...stored, parser_version: 2 }, "current");
-    expect(CATALOG_PARSER_VERSION).toBe(3);
+    expect(CATALOG_PARSER_VERSION).toBe(4);
     expect((await loadCatalog()).status).toBe("stale");
   });
 
