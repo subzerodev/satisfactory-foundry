@@ -5,7 +5,7 @@ import { resetDbCache } from "../data/db.ts";
 import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
-import type { PlanFileV1, PlanFileV2, PlanFileV4 } from "../data/plan-store.ts";
+import type { PlanFileV1, PlanFileV2, PlanFileV5 } from "../data/plan-store.ts";
 import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
 import type { StageLink } from "./store.ts";
 import { proposeChain } from "../core/chain-builder.ts";
@@ -2211,7 +2211,7 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     expect(store.getState().links).toHaveLength(linksBefore);
   });
 
-  it("renaming a v1 row persists it as v4 (save-over model)", async () => {
+  it("renaming a v1 row persists it as v5 (save-over model)", async () => {
     const store = await chainStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2235,9 +2235,9 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     await db.put("plans", v1, "v1-id");
 
     await store.getState().renamePlan("v1-id", "NewName");
-    // The stored row is now v4, renamed, single "Stage 1" stage.
-    const raw = (await db.get<PlanFileV4>("plans", "v1-id"))!;
-    expect(raw.format_version).toBe(4);
+    // The stored row is now v5, renamed, single "Stage 1" stage.
+    const raw = (await db.get<PlanFileV5>("plans", "v1-id"))!;
+    expect(raw.format_version).toBe(5);
     expect(raw.name).toBe("NewName");
     expect(raw.stages[0]!.name).toBe("Stage 1");
     // createdAt carried verbatim through the migration + rename.
@@ -2256,7 +2256,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     return store;
   }
 
-  it("exportPlan returns the stored v4 JSON verbatim (re-parses to the saved file)", async () => {
+  it("exportPlan returns the stored v5 JSON verbatim (re-parses to the saved file)", async () => {
     const store = await readyStore();
     store.getState().selectRecipe("ingot_iron");
     store.getState().setClockPercentText("37.5");
@@ -2265,13 +2265,13 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
 
     const json = await store.getState().exportPlan(id);
     expect(json).not.toBeNull();
-    const parsed = JSON.parse(json!) as PlanFileV4;
-    expect(parsed.format_version).toBe(4);
+    const parsed = JSON.parse(json!) as PlanFileV5;
+    expect(parsed.format_version).toBe(5);
     expect(parsed.name).toBe("Exported");
     expect(parsed.stages[0]!.selection.recipeId).toBe("ingot_iron");
     expect(parsed.stages[0]!.selection.clockPercentText).toBe("37.5");
     // Pretty-printed (2-space indent), matching JSON.stringify(plan, null, 2).
-    expect(json).toContain('\n  "format_version": 4');
+    expect(json).toContain('\n  "format_version": 5');
   });
 
   it("exportPlan on a missing id returns null (no throw)", async () => {
@@ -2279,7 +2279,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     expect(await store.getState().exportPlan("does-not-exist")).toBeNull();
   });
 
-  it("exportPlan emits the MIGRATED v4 form for a stored v1 row", async () => {
+  it("exportPlan emits the MIGRATED v5 form for a stored v1 row", async () => {
     const store = await readyStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2303,9 +2303,9 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     await db.put("plans", v1, "legacy-id");
 
     const json = await store.getState().exportPlan("legacy-id");
-    const parsed = JSON.parse(json!) as PlanFileV4;
-    // The export is what a LOAD would see: v4, one "Stage 1" stage, createdAt kept.
-    expect(parsed.format_version).toBe(4);
+    const parsed = JSON.parse(json!) as PlanFileV5;
+    // The export is what a LOAD would see: v5, one "Stage 1" stage, createdAt kept.
+    expect(parsed.format_version).toBe(5);
     expect(parsed.name).toBe("LegacyPlan");
     expect(parsed.stages[0]!.name).toBe("Stage 1");
     expect(parsed.createdAt).toBe("2026-01-01T00:00:00.000Z");

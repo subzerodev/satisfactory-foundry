@@ -32,10 +32,15 @@ import {
   savePlan as savePlanFile,
   listPlans as listPlanFiles,
   loadPlan as loadPlanFile,
+  loadPlanWithOrigin,
   deletePlan as deletePlanFile,
   validatePlanFile,
 } from "../data/plan-store.ts";
-import type { PlanFileV4, PlanListEntry } from "../data/plan-store.ts";
+import type {
+  PlanFileV5,
+  PlanStageV5,
+  PlanListEntry,
+} from "../data/plan-store.ts";
 
 // ---------------------------------------------------------------------------
 // State shape (frozen brainstorm Axis 2)
@@ -148,6 +153,14 @@ export type LinkTransport =
 export type TransportMode = LinkTransport["mode"];
 
 /**
+ * The flow-chart orientation (Stage 10 / Phase 1): "LR" lays the chain
+ * left-to-right (today's implicit orientation, handles on the left/right edges),
+ * "TB" top-to-bottom (handles on the top/bottom). Drives auto-placement + the
+ * rendered handle sides; user-positioned nodes stay put across a switch.
+ */
+export type FlowDirection = "LR" | "TB";
+
+/**
  * A directed item feed: `from`'s output belts of `itemId` feed `to`'s input
  * lane of `itemId`. Item-level, not belt-level (physical routing is Stage 4).
  * `transport` is OPTIONAL; absent ⇒ `mode: "belt"` (today's implicit default —
@@ -195,6 +208,23 @@ export interface AppState {
    * construction, so no collision handling is needed (frozen Axis 2 simplify).
    */
   placementSeq: number;
+  /**
+   * The flow-chart orientation (Stage 10 / Phase 1), default "LR". Persists
+   * per-plan in the v5 file (orientation is a property of the drawing, like
+   * positions); a switch re-slots every NON-userPlaced stage + flips the handle
+   * sides. The store stays window-free — the plan file is its only persistence.
+   */
+  flowDirection: FlowDirection;
+  /**
+   * The set of stage ids the user hand-dragged (Stage 10 / Phase 1). `true`-valued
+   * membership only; set by `setStagePosition` (the drag-END commit), pruned with
+   * the stage on remove, seeded at load (v5: from the per-stage flag; pre-v5:
+   * from position-presence). A direction switch re-slots only NON-members —
+   * user-placed nodes keep their exact positions. Persists via the v5
+   * `userPlaced?: true` flag because save writes positions unconditionally, so
+   * position-presence alone can't survive a round-trip as the auto-vs-user signal.
+   */
+  userPlaced: Record<string, true>;
   /**
    * The active stage's selection/solve, MIRRORED at top level so the frozen v1
    * UI + the existing store suite read `selection`/`solve` unchanged. Kept
@@ -278,6 +308,14 @@ export interface Actions {
   /** Open the LinkInspector for a link (null closes it). */
   selectLink(linkId: string | null): void;
   setStagePosition(id: string, pos: { x: number; y: number }): void;
+  /**
+   * Set the flow-chart orientation (Stage 10 / Phase 1). Same-direction is a
+   * no-op. Otherwise writes `flowDirection` and re-slots every NON-userPlaced
+   * stage to its order-index slot in the new direction (a pure position write —
+   * no derive, no reconciliation; positions are presentation). userPlaced stages
+   * keep their exact positions; re-slotted stages are NOT marked userPlaced.
+   */
+  setFlowDirection(dir: FlowDirection): void;
   /**
    * Apply an auto-chain proposal (Stage 8 / Phase 3): APPEND its stages/links to
    * the current graph with fresh uuids, then derive + reconcile + mirror. The
@@ -469,6 +507,8 @@ type GraphSlice = Pick<
   | "links"
   | "reconciliation"
   | "positions"
+  | "flowDirection"
+  | "userPlaced"
   | "selection"
   | "solve"
   | "selectedLinkId"
@@ -573,9 +613,9 @@ function deriveAllStages(
 }
 
 /**
- * Whole-graph replacement from a loaded `PlanFileV4` (Stage 3 / Phase 3, frozen
- * Axis 4). Builds a fresh graph — new stage/link uuids — and applies the frozen
- * load treatments per stage:
+ * Whole-graph replacement from a loaded `PlanFileV5` (Stage 3 / Phase 3, frozen
+ * Axis 4; Stage 10 / Phase 1 adds direction + userPlaced). Builds a fresh graph —
+ * new stage/link uuids — and applies the frozen load treatments per stage:
  *
  * - machineCount `null → NaN` (plans persist via IDB structured clone, which
  *   keeps a live NaN — the null edge arises from hand-authored/imported/legacy
@@ -585,7 +625,16 @@ function deriveAllStages(
  *   progression, not plan content — the file's stored tiers are dead-on-read);
  * - recipeId re-validated against the current catalog (absent → null); overrides
  *   apply VERBATIM (the load posture — the #5 override-CLEAR is upload-only);
- * - positions from the file entry, else the auto-slot for the entry's index;
+ * - positions from the file entry, else the auto-slot for the entry's index (in
+ *   the FILE's direction — a v1-migrated positionless stage must slot per the
+ *   orientation the file was saved in);
+ * - flowDirection restored from the file (pre-v5 migrated as "LR"); userPlaced
+ *   seeded from the per-stage `userPlaced` flag when the stored row was v5-native
+ *   (`v5Native`), else from position-presence (v1–v4 — the distinction is
+ *   unrecoverable after this fills the positions map, so pre-v5 layouts load
+ *   conservatively pinned, the stated cost). The origin matters because an
+ *   all-auto v5 plan and a positioned pre-v5 plan are otherwise identical after
+ *   migration (both carry positions, no flags) yet must seed differently;
  * - stageOrder = array order; links rebuilt from indices; placementSeq =
  *   stages.length; activeStageId = first (matches removeStage's cursor-to-first).
  *
@@ -596,7 +645,8 @@ function deriveAllStages(
  */
 function rebuildFromPlan(
   slice: GraphSlice,
-  plan: PlanFileV4,
+  plan: PlanFileV5,
+  v5Native: boolean,
 ): GraphSlice & { placementSeq: number } {
   const { catalog } = slice;
   // Current global tiers (the active mirror holds the canonical global value).
@@ -605,6 +655,7 @@ function rebuildFromPlan(
   const stages: Record<string, StageNode> = {};
   const stageOrder: string[] = [];
   const positions: Record<string, { x: number; y: number }> = {};
+  const userPlaced: Record<string, true> = {};
   plan.stages.forEach((entry, i) => {
     const id = ids[i]!;
     const saved = entry.selection;
@@ -624,7 +675,16 @@ function rebuildFromPlan(
     };
     stages[id] = { id, name: entry.name, selection, solve: { status: "idle" } };
     stageOrder.push(id);
-    positions[id] = entry.position ?? placementSlot(i);
+    // Positionless entries (v1-migrated) auto-slot in the FILE's direction; a
+    // saved position restores exactly. The fallback direction is plan-level.
+    positions[id] = entry.position ?? placementSlot(i, plan.flowDirection);
+    // Seed userPlaced: a v5-native row carries the explicit flag (auto stages
+    // omit it → stay auto); a migrated v1–v4 row has no flag, so fall back to
+    // position-presence (positioned ⇒ conservatively pinned, the stated cost).
+    const pinned = v5Native
+      ? entry.userPlaced === true
+      : entry.position !== undefined;
+    if (pinned) userPlaced[id] = true;
   });
   const links: StageLink[] = plan.links.map((l) => ({
     id: crypto.randomUUID(),
@@ -642,6 +702,8 @@ function rebuildFromPlan(
     stageOrder,
     links,
     positions,
+    flowDirection: plan.flowDirection,
+    userPlaced,
     activeStageId: ids[0]!,
     selectedLinkId: null,
   };
@@ -729,8 +791,9 @@ function applyProposalToSlice(
       solve: { status: "idle" },
     };
     stageOrder.push(id);
-    // Consecutive monotonic slots — never reused, so no collision handling.
-    positions[id] = placementSlot(seq);
+    // Consecutive monotonic slots in the current direction — never reused, so no
+    // collision handling. Appended stages are auto-placed (not userPlaced).
+    positions[id] = placementSlot(seq, slice.flowDirection);
     seq += 1;
   }
 
@@ -775,11 +838,22 @@ function applyProposalToSlice(
 // ---------------------------------------------------------------------------
 
 /**
- * The column-flow slot a monotonic placement sequence maps to: four columns
- * 260px apart, rows 140px apart (frozen Axis 2). Never-reused seq → no two
- * auto-placed nodes share a slot, so no collision handling.
+ * The auto-placement slot a monotonic placement sequence maps to, oriented by
+ * `dir` (Stage 10 / Phase 1). LR keeps today's grid — four COLUMNS 260px apart,
+ * rows 140px apart, reading right-then-wrap. TB transposes it — four ROWS 140px
+ * apart, columns 260px apart, so a growing chain flows downward. Never-reused seq
+ * → no two auto-placed nodes share a slot, so no collision handling.
  */
-function placementSlot(seq: number): { x: number; y: number } {
+function placementSlot(
+  seq: number,
+  dir: FlowDirection,
+): { x: number; y: number } {
+  if (dir === "TB") {
+    return {
+      x: 40 + Math.floor(seq / 4) * 260,
+      y: 40 + (seq % 4) * 140,
+    };
+  }
   return {
     x: 40 + (seq % 4) * 260,
     y: 40 + Math.floor(seq / 4) * 140,
@@ -941,10 +1015,14 @@ export function createAppStore(storage?: StateStorage) {
           links: [],
           reconciliation: [],
           selectedLinkId: null,
-          // The default stage auto-places at seq 0's slot; placementSeq then
-          // points at the next free slot (Stage 3 / Phase 2).
-          positions: { [firstStage.id]: placementSlot(0) },
+          // The default stage auto-places at seq 0's slot in the default LR
+          // direction; placementSeq then points at the next free slot (Stage 3 /
+          // Phase 2). flowDirection boots "LR" (today's orientation); userPlaced
+          // is empty — the default stage is auto-placed (Stage 10 / Phase 1).
+          positions: { [firstStage.id]: placementSlot(0, "LR") },
           placementSeq: 1,
+          flowDirection: "LR",
+          userPlaced: {},
           selection: firstStage.selection,
           solve: firstStage.solve,
           catalogSource: null,
@@ -1250,14 +1328,16 @@ export function createAppStore(storage?: StateStorage) {
                 unlockedTiers: { ...active.selection.unlockedTiers },
               };
               const derived = deriveStage(s.catalog, stage);
-              // Auto-place at the current monotonic seq slot; bump the counter
-              // (never reused, so no collision handling — frozen Axis 2).
+              // Auto-place at the current monotonic seq slot in the current
+              // direction; bump the counter (never reused, so no collision
+              // handling — frozen Axis 2). A fresh stage is auto-placed, so it
+              // is NOT added to userPlaced — a later direction switch re-grids it.
               return {
                 stages: { ...s.stages, [derived.id]: derived },
                 stageOrder: [...s.stageOrder, derived.id],
                 positions: {
                   ...s.positions,
-                  [derived.id]: placementSlot(s.placementSeq),
+                  [derived.id]: placementSlot(s.placementSeq, s.flowDirection),
                 },
                 placementSeq: s.placementSeq + 1,
               };
@@ -1278,6 +1358,10 @@ export function createAppStore(storage?: StateStorage) {
               // cursor/last-stage rules below are unchanged. No orphan entries.
               const positions = { ...s.positions };
               delete positions[id];
+              // Prune its userPlaced entry too (Stage 10 / Phase 1) — the flag
+              // rides with the stage, so no orphan pins accumulate.
+              const userPlaced = { ...s.userPlaced };
+              delete userPlaced[id];
               // Cascade: links touching the removed stage go with it (structure
               // the user explicitly deleted), unlike a recipe-change dangling.
               const links = s.links.filter(
@@ -1299,6 +1383,7 @@ export function createAppStore(storage?: StateStorage) {
                     stages,
                     stageOrder,
                     positions,
+                    userPlaced,
                     links,
                     activeStageId,
                   }),
@@ -1404,10 +1489,35 @@ export function createAppStore(storage?: StateStorage) {
 
           setStagePosition(id: string, pos: { x: number; y: number }) {
             // Pure position write — no derive, no reconciliation (cadence row:
-            // none/none). The canvas commits this once on drag-end.
+            // none/none). The canvas commits this once on drag-end. The drag is
+            // the user's intent, so mark the stage userPlaced (Stage 10 / P1) —
+            // a subsequent direction switch then leaves it pinned.
             set((s) => {
               if (s.stages[id] === undefined) return {};
-              return { positions: { ...s.positions, [id]: pos } };
+              return {
+                positions: { ...s.positions, [id]: pos },
+                userPlaced: { ...s.userPlaced, [id]: true },
+              };
+            });
+          },
+
+          setFlowDirection(dir: FlowDirection) {
+            set((s) => {
+              // Same-direction set is a no-op (avoids a needless re-slot render).
+              if (s.flowDirection === dir) return {};
+              // Re-slot every NON-userPlaced stage by its stageOrder index in the
+              // new direction. Order-index re-gridding is deterministic, compacts
+              // removal gaps, and only ever touches nodes the user never moved
+              // (original placement seqs aren't retained). Pure position write —
+              // no derive, no reconciliation (positions are presentation, the
+              // setStagePosition cadence). Re-slotted stages are NOT marked
+              // userPlaced — the switch never pollutes that set.
+              const positions = { ...s.positions };
+              s.stageOrder.forEach((id, i) => {
+                if (s.userPlaced[id] === true) return;
+                positions[id] = placementSlot(i, dir);
+              });
+              return { flowDirection: dir, positions };
             });
           },
 
@@ -1454,14 +1564,21 @@ export function createAppStore(storage?: StateStorage) {
                 // Capture the WHOLE graph (Stage 3 / Phase 3): stages in
                 // stageOrder (array order IS stageOrder), each carrying name +
                 // selection + position; links index-encoded (stage id → index).
+                // Stage 10 / Phase 1: position is written UNCONDITIONALLY (exact
+                // restore stands); the `userPlaced: true` flag is written ONLY for
+                // a user-placed stage, so a v5 load can seed the auto-vs-user
+                // distinction that position-presence alone can't carry.
                 const s = get();
                 const indexOf = new Map(s.stageOrder.map((id, i) => [id, i]));
-                const stages = s.stageOrder.map((id) => {
+                const stages: PlanStageV5[] = s.stageOrder.map((id) => {
                   const node = s.stages[id]!;
                   return {
                     name: node.name,
                     selection: node.selection,
                     position: s.positions[id],
+                    ...(s.userPlaced[id] === true
+                      ? { userPlaced: true as const }
+                      : {}),
                   };
                 });
                 // Links index-encoded; the transport payload carries verbatim
@@ -1477,21 +1594,23 @@ export function createAppStore(storage?: StateStorage) {
                 }));
                 if (match) {
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV4 = {
-                    format_version: 4,
+                  const plan: PlanFileV5 = {
+                    format_version: 5,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
+                    flowDirection: s.flowDirection,
                     stages,
                     links,
                   };
                   await savePlanFile(plan, match.id);
                 } else {
-                  const plan: PlanFileV4 = {
-                    format_version: 4,
+                  const plan: PlanFileV5 = {
+                    format_version: 5,
                     name: trimmed,
                     createdAt: now,
                     updatedAt: now,
+                    flowDirection: s.flowDirection,
                     stages,
                     links,
                   };
@@ -1508,14 +1627,17 @@ export function createAppStore(storage?: StateStorage) {
             return enqueue(async () => {
               set({ planError: null });
               try {
-                const plan = await loadPlanFile(id);
-                if (plan === null) {
+                // Load with origin: rebuild seeds userPlaced from the explicit
+                // flag for a v5-native row, else from position-presence (Stage 10
+                // / Phase 1 — the origin is unrecoverable after migration).
+                const { file, wasV5 } = await loadPlanWithOrigin(id);
+                if (file === null) {
                   // Corrupt/missing → planError, state untouched.
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
                 // Whole-graph replacement (Stage 3 / Phase 3, frozen Axis 4).
-                set((s) => rebuildFromPlan(s, plan));
+                set((s) => rebuildFromPlan(s, file, wasV5));
                 // Loading a plan never touches the catalog or catalogSource.
               } catch (err) {
                 set({ planError: planErrorMessage(err) });
@@ -1550,10 +1672,10 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                // loadPlanFile returns v4 (migrating older rows), so this spread
-                // widens to v4 — renaming an older row rewrites it as v4,
-                // consistent with the save-over model (any write persists v4).
-                const renamed: PlanFileV4 = {
+                // loadPlanFile returns v5 (migrating older rows), so this spread
+                // widens to v5 — renaming an older row rewrites it as v5,
+                // consistent with the save-over model (any write persists v5).
+                const renamed: PlanFileV5 = {
                   ...plan,
                   name: trimmed,
                   updatedAt: new Date().toISOString(),
@@ -1623,7 +1745,7 @@ export function createAppStore(storage?: StateStorage) {
                   // Overwrite the existing row: keep ITS createdAt (a foreign
                   // payload's timestamp is untrusted), stamp updatedAt now.
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV4 = {
+                  const plan: PlanFileV5 = {
                     ...file,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
@@ -1633,7 +1755,7 @@ export function createAppStore(storage?: StateStorage) {
                 } else {
                   // New row: createdAt now (savePlanAs precedent — new names get
                   // now, never the untrusted foreign timestamp).
-                  const plan: PlanFileV4 = {
+                  const plan: PlanFileV5 = {
                     ...file,
                     name: trimmed,
                     createdAt: now,
