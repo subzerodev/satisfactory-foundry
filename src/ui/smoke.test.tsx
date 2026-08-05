@@ -408,6 +408,90 @@ describe("Blueprint", () => {
     expect(html).not.toContain("footprint unknown");
   });
 
+  it("renders lane-name labels in the HTML gutter, not in the SVG (Axis C1)", () => {
+    // The lane NAMES left the SVG for the screen-space HTML gutter (P3 Axis C1);
+    // the in-SVG <text class="bp-lane-name"> elements are gone. The smelter is a
+    // sub-cap fit = 1 plan, so it opens at DETAIL and the gutter is populated.
+    const result = smelterSolve();
+    const { feedLabels, outputLabels } = smelterLabels(result);
+    const html = renderToStaticMarkup(
+      <Blueprint
+        solve={result}
+        machineId="smelter_mk1"
+        machineCount={2}
+        feedLabels={feedLabels}
+        outputLabels={outputLabels}
+      />,
+    );
+    // The names live in gutter spans now — the removed SVG class is absent.
+    expect(html).not.toContain("bp-lane-name");
+    expect(html).toContain("bp-gutter-label");
+    expect(html).toContain("Iron Ore");
+    expect(html).toContain("Iron Ingot");
+  });
+
+  it("positions each gutter label at (laneY − minY) × scale px (Axis C1)", () => {
+    // The negative-origin term is load-bearing: the smelter's viewBox minY is
+    // −100 (origin.y −80, minus PAD 20). At the sub-cap fit = 1 scale, the feed
+    // bus (y −20) lands at (−20 − −100) × 1 = 80px and the output bus (y 120) at
+    // (120 − −100) × 1 = 220px. A bare laneY×scale would misplace both.
+    const result = smelterSolve();
+    const { feedLabels, outputLabels } = smelterLabels(result);
+    const html = renderToStaticMarkup(
+      <Blueprint
+        solve={result}
+        machineId="smelter_mk1"
+        machineCount={2}
+        feedLabels={feedLabels}
+        outputLabels={outputLabels}
+      />,
+    );
+    expect(html).toContain("top:80px");
+    expect(html).toContain("top:220px");
+  });
+
+  it("shows NO zoom toggle for a sub-cap plan (fit ≥ 1) — opens as today", () => {
+    const result = smelterSolve();
+    const { feedLabels, outputLabels } = smelterLabels(result);
+    const html = renderToStaticMarkup(
+      <Blueprint
+        solve={result}
+        machineId="smelter_mk1"
+        machineCount={2}
+        feedLabels={feedLabels}
+        outputLabels={outputLabels}
+      />,
+    );
+    expect(html).not.toContain("bp-zoom-toggle");
+  });
+
+  it("floored wide plan: mounts the toggle, opens at DETAIL with a populated gutter", () => {
+    // A 60-machine smelter row → viewBox ≫ 960 (fit < 1), so the toggle mounts.
+    // DEFAULT mode is DETAIL (1 px/dm), so the gutter labels render and the svg
+    // width is the raw dm width (natural size), not the floored fit px.
+    const result = solveStage({ ...smelterInput, machineCount: 60 });
+    const html = renderToStaticMarkup(
+      <Blueprint
+        solve={result}
+        machineId="smelter_mk1"
+        machineCount={60}
+        feedLabels={result.feeds.map((l) => itemName(l.itemId))}
+        outputLabels={result.outputs.map((l) => itemName(l.itemId))}
+      />,
+    );
+    // The toggle mounts (fit < 1) and defaults to DETAIL — gutter populated.
+    expect(html).toContain("bp-zoom-toggle");
+    expect(html).toContain("bp-gutter-label");
+    // At DETAIL = 1 px/dm the svg width equals the dm viewBox width (3640),
+    // which is > 960 — the floored FIT px would be ≤ 960.
+    const m = html.match(/class="bp-svg"[^>]*width="(\d+)"/);
+    expect(m).not.toBeNull();
+    expect(Number(m![1])).toBe(3640);
+    // Both feed + output lane names sit at the DETAIL lane y positions.
+    expect(html).toContain("top:80px");
+    expect(html).toContain("top:220px");
+  });
+
   it("renders the unknown-footprint notice for an off-table machineId", () => {
     const result = smelterSolve();
     const { feedLabels, outputLabels } = smelterLabels(result);

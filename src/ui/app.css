@@ -605,10 +605,69 @@ body {
   padding: 12px 0;
 }
 
+/* The blueprint flex row (Stage 12 P3 Axis C1): [.bp-gutter][.bp-scroll > svg].
+   The gutter is an HTML column LEFT of and OUTSIDE .bp-scroll — align-items:
+   flex-start pins its top to the svg's, so the absolute label offsets share the
+   svg's origin. Blueprint-only; ChainBlueprint mounts .bp-scroll directly. */
+.bp-row {
+  display: flex;
+  align-items: flex-start;
+}
+
+/* The lane-name gutter (P3 Axis C1). Labels are absolutely positioned within
+   it, so it is the positioning context. LOAD-BEARING zero-collapse: at FIT the
+   gutter renders empty and must shrink to zero width — max-content sizing with
+   NO padding/border/min-width/gap makes an empty column occupy no space. */
+.bp-gutter {
+  position: relative;
+  width: max-content;
+}
+
+/* One gutter label per lane: right-aligned mono 11px SCREEN px (not dm-scaled),
+   at top = (laneY − viewBoxMinY) × scale (set inline). Absolute so it sits at
+   its lane's rendered y regardless of the neighbours. */
+.bp-gutter-label {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  padding-right: 6px;
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+/* The [FIT | DETAIL] zoom toggle (P3 Axis C2) — quiet-mono buttons matching the
+   header .theme-toggle idiom; the active mode carries the accent ink. */
+.bp-zoom-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.bp-zoom-btn {
+  padding: 2px 8px;
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+  border: 1px solid var(--border-soft);
+  background: transparent;
+}
+
+.bp-zoom-btn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 /* Scroll wrapper (Stage 12 P1 Axis 2), mirroring .schematic-scroll: a floored
    wide plan renders past the 960 reference and scrolls here. A NEW wrapper — NOT
    .bp-svg, whose overflow: visible is load-bearing for out-of-box mark labels
-   and must not be mode-flipped. */
+   and must not be mode-flipped. .bp-scroll keeps overflow: auto and — the
+   load-bearing gutter-alignment invariant — NO height cap: the explicit-px svg
+   sizes it, the inner vertical scrollbar never engages, so vertical pan is page
+   scroll (which carries the in-flow gutter), and only horizontal pan happens
+   inside the box. */
 .bp-scroll {
   overflow: auto;
 }
@@ -667,22 +726,13 @@ body {
   dominant-baseline: middle;
 }
 
-/* Label halo (Stage 12 P1 Axis 2): lane names + rate labels sit at fixed dm
-   offsets and, when rows are tight, overlap adjacent dashed pipe lanes (Michael's
-   "Heavy Oil Residue" case). paint-order: stroke draws a --bg halo UNDER the
-   glyphs — the drafting convention for text over linework. Stroke width is in
-   viewBox (dm) units, matched to the ~11 dm font size, so it scales with the
-   plan. The feed-above/output-below asymmetry (Blueprint.tsx Marks) is KEPT —
-   the halo resolves label-on-lane, not label placement. */
-.bp-lane-name {
-  font-size: 11px;
-  fill: var(--fg-muted);
-  paint-order: stroke;
-  stroke: var(--bg);
-  stroke-width: 3;
-  stroke-linejoin: round;
-}
-
+/* Label halo (Stage 12 P1 Axis 2): the rate labels sit at fixed dm offsets and,
+   when rows are tight, overlap adjacent dashed pipe lanes (Michael's "Heavy Oil
+   Residue" case). paint-order: stroke draws a --bg halo UNDER the glyphs — the
+   drafting convention for text over linework. Stroke width is in viewBox (dm)
+   units, matched to the ~10 dm font size, so it scales with the plan. (The lane
+   NAMES left the SVG for the HTML gutter in P3 Axis C1; the halo now defends
+   only the mark labels.) */
 .bp-mark-glyph {
   fill: var(--accent);
   stroke: var(--accent-strong);
@@ -1505,7 +1555,6 @@ body {
 .lane-name,
 .machine-label,
 .bp-machine-label,
-.bp-lane-name,
 .bp-mark-label,
 .chain-bp-power,
 .chain-bp-link-label {
