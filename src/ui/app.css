@@ -637,8 +637,8 @@ body {
   color: var(--fg-muted);
 }
 
-/* LOAD-BEARING width: the absolute labels are out-of-flow and contribute
-   NOTHING to the gutter's max-content (css-sizing-3 §5.2) — without these
+/* LOAD-BEARING width: the absolute labels are out-of-flow, and out-of-flow
+   boxes are excluded from intrinsic (max-content) sizing — without these
    in-flow, invisible sizer twins the populated column would also collapse to
    zero. height 0 keeps them out of the vertical flow; font + padding MUST
    match .bp-gutter-label so the reserved width equals the widest label. */

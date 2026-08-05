@@ -430,10 +430,11 @@ describe("Blueprint", () => {
     expect(html).toContain("Iron Ingot");
     // The width mechanism: the absolute labels are out-of-flow and contribute
     // nothing to the gutter's max-content, so each label has an in-flow,
-    // invisible sizer twin that reserves the column width. One per label.
-    expect(html.match(/class="bp-gutter-sizer"/g)?.length).toBe(
-      html.match(/class="bp-gutter-label"/g)?.length,
-    );
+    // invisible sizer twin that reserves the column width. One per label —
+    // the count guard keeps the twinning assertion from passing vacuously.
+    const labelCount = html.match(/class="bp-gutter-label"/g)?.length ?? 0;
+    expect(labelCount).toBeGreaterThan(0);
+    expect(html.match(/class="bp-gutter-sizer"/g)?.length).toBe(labelCount);
   });
 
   it("positions each gutter label at (laneY − minY) × scale px (Axis C1)", () => {
