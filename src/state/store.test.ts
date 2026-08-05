@@ -2650,3 +2650,156 @@ describe("applyChainProposal (Stage 8 / Phase 3)", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// applyRecipeSwap (Stage 8 / Phase 4, ticket #40): the alt-recipe apply — ONE
+// atomic write of recipe + resized count + cleared overrides, on a NAMED stage.
+// ---------------------------------------------------------------------------
+
+// A catalog with a STANDARD (ingot_iron, 30/min) and an ALTERNATE
+// (alternate_pure_iron_ingot, 65/min from ore+water) producer of iron_ingot, so
+// a swap between two real recipes is observable. The alternate ClassName's
+// `Alternate_` marks isAlternate at parse.
+const DOCS_TEXT_SWAP = JSON.stringify([
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGResourceDescriptor'",
+    Classes: [
+      {
+        ClassName: "Desc_OreIron_C",
+        mDisplayName: "Iron Ore",
+        mForm: "RF_SOLID",
+      },
+      { ClassName: "Desc_Water_C", mDisplayName: "Water", mForm: "RF_LIQUID" },
+    ],
+  },
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGItemDescriptor'",
+    Classes: [
+      {
+        ClassName: "Desc_IronIngot_C",
+        mDisplayName: "Iron Ingot",
+        mForm: "RF_SOLID",
+      },
+    ],
+  },
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'",
+    Classes: [
+      { ClassName: "Build_SmelterMk1_C", mDisplayName: "Smelter" },
+      { ClassName: "Build_FoundryMk1_C", mDisplayName: "Foundry" },
+    ],
+  },
+  {
+    NativeClass: "/Script/CoreUObject.Class'/Script/FactoryGame.FGRecipe'",
+    Classes: [
+      {
+        ClassName: "Recipe_IngotIron_C",
+        mDisplayName: "Iron Ingot",
+        mIngredients:
+          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_OreIron_C\"',Amount=1))",
+        mProduct:
+          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_IronIngot_C\"',Amount=1))",
+        mManufactoringDuration: "2",
+        mProducedIn: "/Game/Path/Build_SmelterMk1_C",
+      },
+      {
+        // isAlternate via the `Alternate_` ClassName token. 13 ore + 6 water over
+        // 12s → per-machine 65 ingot / 30 water(fluid), a distinct rate.
+        ClassName: "Recipe_Alternate_PureIronIngot_C",
+        mDisplayName: "Alternate: Pure Iron Ingot",
+        mIngredients:
+          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_OreIron_C\"',Amount=7),(ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Water_C\"',Amount=4000))",
+        mProduct:
+          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_IronIngot_C\"',Amount=13))",
+        mManufactoringDuration: "12",
+        mProducedIn: "/Game/Path/Build_FoundryMk1_C",
+      },
+    ],
+  },
+]);
+
+describe("applyRecipeSwap (Stage 8 / Phase 4)", () => {
+  async function swapStore() {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT_SWAP);
+    return store;
+  }
+
+  it("writes recipeId + machineCount together and re-derives (atomic)", async () => {
+    const store = await swapStore();
+    const id = store.getState().activeStageId;
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setMachineCount(4);
+    // Sanity: the standard recipe is solved at 4 machines.
+    expect(store.getState().stages[id]!.selection.recipeId).toBe("ingot_iron");
+    expect(store.getState().solve.status).toBe("solved");
+
+    store.getState().applyRecipeSwap(id, "alternate_pure_iron_ingot", 2);
+    const s = store.getState();
+    // BOTH landed in ONE write — recipe and count, no intermediate state.
+    expect(s.stages[id]!.selection.recipeId).toBe("alternate_pure_iron_ingot");
+    expect(s.stages[id]!.selection.machineCount).toBe(2);
+    // Re-derived against the new recipe (solved, mirror followed since active).
+    expect(s.stages[id]!.solve.status).toBe("solved");
+    expect(s.solve).toBe(s.stages[id]!.solve);
+  });
+
+  it("clears lane overrides; preserves clock + tiers (selectRecipe posture)", async () => {
+    const store = await swapStore();
+    const id = store.getState().activeStageId;
+    store.getState().setUnlockedTiers({ belt: 3, pipe: 1 });
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setClockPercentText("150");
+    store.getState().setMachineCount(4);
+    // Seed a lane override addressing the OLD recipe's item.
+    store.getState().setOverride("feeds", "ore_iron", 0, "90");
+    expect(store.getState().selection.overrides.feeds.ore_iron).toBeDefined();
+
+    store.getState().applyRecipeSwap(id, "alternate_pure_iron_ingot", 3);
+    const sel = store.getState().stages[id]!.selection;
+    // Overrides cleared (they lane-addressed the OLD recipe).
+    expect(sel.overrides).toEqual({ feeds: {}, outputs: {} });
+    // Clock + tiers preserved across the swap (rode the spread).
+    expect(sel.clockPercentText).toBe("150");
+    expect(sel.unlockedTiers).toEqual({ belt: 3, pipe: 1 });
+  });
+
+  it("is a no-op for an unknown stage id (never a phantom stage)", async () => {
+    const store = await swapStore();
+    const id = store.getState().activeStageId;
+    store.getState().selectRecipe("ingot_iron");
+    const before = store.getState().stages[id]!;
+    const keysBefore = Object.keys(store.getState().stages).sort();
+
+    store.getState().applyRecipeSwap("no-such-stage", "ingot_iron", 5);
+    const s = store.getState();
+    expect(s.stages[id]).toBe(before);
+    expect(Object.keys(s.stages).sort()).toEqual(keysBefore);
+    expect(s.stages["no-such-stage"]).toBeUndefined();
+  });
+
+  it("swapping a NON-active stage does not steal the cursor", async () => {
+    const store = await swapStore();
+    const a = store.getState().stageOrder[0]!;
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setMachineCount(4);
+    store.getState().addStage();
+    const b = store.getState().stageOrder[1]!;
+    store.getState().setActiveStage(b); // b is active
+    const beforeActive = store.getState().stages[b]!;
+
+    // Swap the NON-active stage a.
+    store.getState().applyRecipeSwap(a, "alternate_pure_iron_ingot", 2);
+    const s = store.getState();
+    // a took the write.
+    expect(s.stages[a]!.selection.recipeId).toBe("alternate_pure_iron_ingot");
+    expect(s.stages[a]!.selection.machineCount).toBe(2);
+    // b (active) is UNTOUCHED — cursor + mirror never followed the a write.
+    expect(s.activeStageId).toBe(b);
+    expect(s.stages[b]!.selection).toBe(beforeActive.selection);
+    expect(s.selection).toBe(s.stages[b]!.selection);
+  });
+});
