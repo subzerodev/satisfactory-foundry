@@ -311,3 +311,4 @@ process (all-Claude roster, opus implementers, per-phase gates).
   first-round; diff-simplify 2 nits (orphaned exports) folded; r2
   fold pair APPROVED+APPROVED. Walk: unrelated-stage move left the
   readout at 22 m, endpoint move changed it 22→51 m, both themes.
+  **SHIPPED** — release PR #90 merged to main 2026-08-06.
