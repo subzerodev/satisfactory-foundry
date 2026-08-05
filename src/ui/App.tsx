@@ -27,6 +27,7 @@ import { Legend } from "./Legend.tsx";
 import { GraphCanvas } from "./GraphCanvas.tsx";
 import { ChainBuilder } from "./ChainBuilder.tsx";
 import { LinkInspector } from "./LinkInspector.tsx";
+import { AltCompare } from "./AltCompare.tsx";
 import "./app.css";
 
 // Wire the bundled default catalog once, at module load: fetch the static
@@ -351,6 +352,11 @@ export default function App() {
         onTiers={s.setUnlockedTiers}
         onClearOverrides={s.clearOverrides}
       />
+      {/* Alternate-recipe comparison (Stage 8 / Phase 4): the compare block for
+          the active stage's recipe, next to the Recipe select. Self-gates on a
+          solved stage whose primary item has ≥2 candidate producers (renders
+          nothing otherwise). */}
+      <AltCompare />
       <PlansBar
         plans={s.plans}
         planError={s.planError}

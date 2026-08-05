@@ -241,6 +241,17 @@ export interface Actions {
    *  preserved unless that stage is active). The apply affordance's writer —
    *  targets the under-supplied link's PRODUCER, which is often not active. */
   setStageMachineCount(stageId: string, n: number): void;
+  /** Swap a NAMED stage's recipe AND resize its machine count in ONE atomic
+   *  write + re-derive (Stage 8 / Phase 4, the alt-recipe apply). No existing
+   *  action writes recipeId + machineCount together; a two-step
+   *  selectRecipe-then-count would derive an intermediate wrong-sized state.
+   *  Clears lane overrides (they address the OLD recipe's items — selectRecipe's
+   *  posture); preserves clock + tiers. Unknown stageId is a no-op. */
+  applyRecipeSwap(
+    stageId: string,
+    recipeId: string,
+    machineCount: number,
+  ): void;
   setClockPercentText(text: string): void;
   setUnlockedTiers(t: { belt: number; pipe: number }): void;
   setOverride(
@@ -1130,6 +1141,31 @@ export function createAppStore(storage?: StateStorage) {
               return applyStageSelection(s, stageId, {
                 ...stage.selection,
                 machineCount: n,
+              });
+            });
+          },
+
+          applyRecipeSwap(
+            stageId: string,
+            recipeId: string,
+            machineCount: number,
+          ) {
+            set((s) => {
+              const stage = s.stages[stageId];
+              if (stage === undefined) return {};
+              // ONE atomic write of the full composed selection: recipe +
+              // resized count together (a two-step selectRecipe-then-count would
+              // derive an intermediate wrong-sized state). Overrides clear per
+              // selectRecipe's posture — they lane-address the OLD recipe's
+              // items. clockPercentText + unlockedTiers ride the spread. Written
+              // to the NAMED stage (not the active mirror) so a table-row Apply
+              // on a non-active stage does not steal the cursor
+              // (setStageMachineCount precedent).
+              return applyStageSelection(s, stageId, {
+                ...stage.selection,
+                recipeId,
+                machineCount,
+                overrides: { feeds: {}, outputs: {} },
               });
             });
           },

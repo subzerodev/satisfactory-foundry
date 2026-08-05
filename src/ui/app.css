@@ -852,3 +852,42 @@ body {
 .findings-transport {
   margin-top: 8px;
 }
+
+/* Alternate-recipe comparison (Stage 8 / Phase 4) — the trainOptions idiom. */
+.alt-compare {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px;
+  margin: 12px 0;
+}
+
+.alt-compare-head {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.alt-compare-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: 100%;
+}
+
+.alt-compare-table th,
+.alt-compare-table td {
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  text-align: left;
+}
+
+.alt-compare-current {
+  font-weight: 600;
+}
+
+.alt-compare-mark {
+  color: var(--fg-muted);
+}
+
+.alt-compare-byproducts {
+  color: var(--fg-muted);
+  font-size: 12px;
+}

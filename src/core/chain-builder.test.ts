@@ -389,3 +389,118 @@ function assertLinksNotShort(
     expect(producer.outputRate.gte(need)).toBe(true);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Recipe overrides (Stage 8 / Phase 4, the comparison seam): the optional 5th
+// param forces a named recipe for an item, BEFORE the default policy, lifting
+// the isAlternate + machine-exclusion filters — but the cycle guard still
+// applies, and an invalid override falls back to the default (keeps totality).
+// ---------------------------------------------------------------------------
+
+describe("proposeChain — recipe overrides", () => {
+  // ingot has a standard (r_std) and an ALTERNATE (r_alt) producer; the
+  // alternate is faster (45 vs 30) but the default policy skips alternates.
+  const recipes = [
+    recipe("r_std_ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
+    recipe("r_alt_ingot", "foundry", [["ingot", 45]], [["ore", 40]], true),
+  ];
+
+  it("selects the NAMED alternate for the target, bypassing the isAlternate filter", () => {
+    // Override ingot → the alternate. 45/machine ⇒ ceil(45/45)=1 machine.
+    const overrides = new Map([["ingot", "r_alt_ingot"]]);
+    const p = proposeChain("ingot", F(45), recipes, [], overrides);
+    expect(stageFor(p, "ingot")).toMatchObject({
+      recipeId: "r_alt_ingot",
+      machineCount: 1n,
+    });
+    // The default (no override) picks the standard recipe — proves the override
+    // is what flipped it, not the fixture.
+    const dflt = proposeChain("ingot", F(45), recipes, []);
+    expect(stageFor(dflt, "ingot")).toMatchObject({ recipeId: "r_std_ingot" });
+  });
+
+  it("overrides an item deep in the closure; unoverridden items keep the default", () => {
+    // plate ← ingot ← ore. Override ONLY the deeper ingot to its alternate; the
+    // top-level plate resolves by default policy (its own standard recipe).
+    const deep = [
+      recipe("r_plate", "constructor", [["plate", 20]], [["ingot", 30]]),
+      recipe("r_std_ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
+      recipe("r_alt_ingot", "foundry", [["ingot", 45]], [["ore", 40]], true),
+    ];
+    const overrides = new Map([["ingot", "r_alt_ingot"]]);
+    const p = proposeChain("plate", F(60), deep, [], overrides);
+    // plate: unoverridden → its standard recipe.
+    expect(stageFor(p, "plate")).toMatchObject({ recipeId: "r_plate" });
+    // ingot: overridden → the alternate.
+    expect(stageFor(p, "ingot")).toMatchObject({ recipeId: "r_alt_ingot" });
+    // Every link still arrives supply ≥ demand under the swapped deep recipe.
+    assertLinksNotShort(p, deep, "plate", F(60));
+  });
+
+  it("respects a machine-excluded recipe when it is the override target", () => {
+    // ore's only producer is a converter (excluded by default → ore is RAW).
+    // An override naming that converter recipe LIFTS the exclusion.
+    const withConv = [
+      recipe("r_ore_conv", "converter", [["ore", 60]], [["limestone", 90]]),
+      recipe("r_ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
+    ];
+    const overrides = new Map([["ore", "r_ore_conv"]]);
+    const p = proposeChain("ingot", F(30), withConv, ["converter"], overrides);
+    // ore is now produced by the excluded converter (override wins over exclusion).
+    expect(stageFor(p, "ore")).toMatchObject({ recipeId: "r_ore_conv" });
+    expect(p.rawInputs).toEqual([{ itemId: "limestone", rate: F(90) }]);
+  });
+
+  it("IGNORES an override naming an unknown recipe id (falls back to default)", () => {
+    const overrides = new Map([["ingot", "r_does_not_exist"]]);
+    const p = proposeChain("ingot", F(30), recipes, [], overrides);
+    // Unknown id → invalid → default policy picks the standard recipe.
+    expect(stageFor(p, "ingot")).toMatchObject({ recipeId: "r_std_ingot" });
+  });
+
+  it("IGNORES an override whose recipe does NOT primary-produce the item", () => {
+    // r_plate primary-produces plate, not ingot — naming it for ingot is invalid.
+    const withPlate = [
+      recipe("r_plate", "constructor", [["plate", 20]], [["ingot", 30]]),
+      recipe("r_std_ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
+    ];
+    const overrides = new Map([["ingot", "r_plate"]]);
+    const p = proposeChain("ingot", F(30), withPlate, [], overrides);
+    // Non-primary override → invalid → default policy picks the standard recipe.
+    expect(stageFor(p, "ingot")).toMatchObject({ recipeId: "r_std_ingot" });
+  });
+
+  it("still demotes a CYCLING override recipe to RAW (the guard outlives the override)", () => {
+    // a's default is r_a (needs b, acyclic). An override forces a to r_a_cyc,
+    // which self-consumes a — the guard must catch it exactly as for a
+    // default-selected cycling recipe, silently demoting a to RAW.
+    const cyc = [
+      recipe("r_a", "m", [["a", 10]], [["ore", 10]]),
+      recipe(
+        "r_a_cyc",
+        "m",
+        [["a", 10]],
+        [
+          ["a", 5],
+          ["ore", 5],
+        ],
+      ),
+    ];
+    const overrides = new Map([["a", "r_a_cyc"]]);
+    const p = proposeChain("a", F(10), cyc, [], overrides);
+    // The overridden recipe self-consumes a → guard demotes a to RAW.
+    expect(p.stages).toEqual([]);
+    expect(p.links).toEqual([]);
+    expect(p.rawInputs).toEqual([{ itemId: "a", rate: F(10) }]);
+  });
+
+  it("an ABSENT/EMPTY override map is byte-identical to the 4-arg call", () => {
+    const deep = [
+      recipe("r_plate", "constructor", [["plate", 20]], [["ingot", 30]]),
+      recipe("r_ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
+    ];
+    const noArg = proposeChain("plate", F(60), deep, []);
+    const emptyMap = proposeChain("plate", F(60), deep, [], new Map());
+    expect(emptyMap).toEqual(noArg);
+  });
+});
