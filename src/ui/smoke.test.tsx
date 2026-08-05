@@ -505,6 +505,7 @@ describe("LaneOverrides", () => {
       <LaneOverrides
         result={workedResult()}
         overrides={overrides}
+        itemName={itemName}
         onOverride={noop}
       />,
     );
@@ -512,6 +513,26 @@ describe("LaneOverrides", () => {
     expect(html).toContain('value="90"');
     // A row per belt of every lane (2 feed + 2 output).
     expect((html.match(/<input/g) ?? []).length).toBe(4);
+  });
+
+  it("renders the panel heading, sub-label, and per-lane item headings (Axis A)", () => {
+    const html = renderToStaticMarkup(
+      <LaneOverrides
+        result={workedResult()}
+        overrides={{ feeds: {}, outputs: {} }}
+        itemName={itemName}
+        onOverride={noop}
+      />,
+    );
+    // The drafting-label panel heading + its one-line sub-label.
+    expect(html).toContain("BELT LOAD OVERRIDES");
+    expect(html).toContain("type a rate to override a belt");
+    expect(html).toContain("empty = computed");
+    // Each lane heads its rows with the catalog displayName (the worked example
+    // is ore_iron feed + iron_ingot output).
+    expect(html).toContain("lane-overrides-item");
+    expect(html).toContain(">Iron Ore</div>");
+    expect(html).toContain(">Iron Ingot</div>");
   });
 });
 

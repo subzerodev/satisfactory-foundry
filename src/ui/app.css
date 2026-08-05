@@ -756,6 +756,38 @@ body {
   padding: 12px 0;
 }
 
+/* Panel heading (Axis A) — the drafting-label idiom shared with the panel
+   titles (.link-inspector-title / .alt-compare-head). */
+.lane-overrides-head {
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+/* One-line sub-label answering the field-reported "what are these input boxes". */
+.lane-overrides-sub {
+  margin: 0;
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+/* Per-lane item heading (Axis A) — the schedule-header idiom (mono 11px,
+   letter-spaced, uppercase). Spans the lane's max-content×2 grid so it heads
+   both the label and input tracks (the grid dissolves .override-row via
+   display: contents, so a bare cell would sit in one column only). */
+.lane-overrides-item {
+  grid-column: 1 / -1;
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
 /* Per-lane label/input columns (Stage 11 P0): the lane is the grid — a
    shared max-content track aligns every input without the dead min-width
    gulf, and max-content never wraps the ~51-char output labels. Rows
