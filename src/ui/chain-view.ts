@@ -54,7 +54,7 @@ const FOUNDATION_TILE = 80;
 
 /** The solved stage ids in stageOrder — the sites the chain layout places
  *  (unsolved/invalid stages are skipped; frozen Axis 1 solved-only). */
-export function solvedStageIds(
+function solvedStageIds(
   stages: Record<string, StageNode>,
   stageOrder: string[],
 ): string[] {
@@ -63,7 +63,7 @@ export function solvedStageIds(
 
 /** One ChainSite per solved stage: its per-stage layout at the recipe's machine
  *  footprint. Order follows stageOrder for determinism. */
-export function buildChainSites(
+function buildChainSites(
   catalog: Catalog,
   stages: Record<string, StageNode>,
   solvedIds: string[],
@@ -90,7 +90,7 @@ export function buildChainSites(
 
 /** The world-dm chain layout for the solved sites, from their canvas positions
  *  (the arrangement — Assumption #1: every stage has a position). */
-export function buildChain(
+function buildChain(
   sites: ChainSite[],
   solvedIds: string[],
   positions: Record<string, { x: number; y: number }>,
