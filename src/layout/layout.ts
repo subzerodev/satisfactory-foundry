@@ -265,62 +265,32 @@ function buildJunctions(
 }
 
 // ---------------------------------------------------------------------------
-// layoutChain (Stage 7 / Phase 3, frozen Axis 1) — compose the per-stage
-// StageLayouts into ONE world-dm floor plan, scaling the canvas arrangement so
-// no two sites' foundation bboxes overlap. Pure, deterministic, layout-internal:
-// it consumes only StageLayout (this module's own contract) + a plain px
-// arrangement, and emits dm origins. No state/ui imports (the layout purity
-// block), no Fraction (geometry, not solver rates).
+// Two-site scale primitive (Stage 17, ticket #89) — the collision-free scale
+// for ONE pair of sites, the residue of the retired chain composer. The
+// drawn-distance measure (chain-view.ts) scales the two endpoint stages' canvas
+// positions apart by this K so their foundation bboxes clear the gutter, then
+// reads the nearest-edge distance. Pure, deterministic, layout-internal: it
+// consumes only StageLayout (this module's own contract) + plain canvas points,
+// and emits a scalar. No state/ui imports (the layout purity block), no Fraction
+// (geometry, not solver rates).
 // ---------------------------------------------------------------------------
-
-/** One stage's precomputed layout, tagged by its stable stage id. */
-export interface ChainSite {
-  stageId: string;
-  layout: StageLayout;
-}
-
-/** A stage's canvas position (RELATIVE px — magnitudes are pixels, not meters;
- *  only the arrangement/intent is used, scaled to world dm by the composer). */
-export interface ChainArrangement {
-  stageId: string;
-  x: number;
-  y: number;
-}
-
-/** A placed site: its stage id + the world-dm origin its foundation bbox's
- *  top-left corner lands at. Add `origin` to each `layout.foundations` rect to
- *  read a site element's world coordinate. */
-export interface ChainPlacement {
-  stageId: string;
-  origin: Point;
-}
-
-export interface ChainLayout {
-  units: "dm";
-  sites: ChainPlacement[];
-  /** The world-dm bounding box enclosing every placed site's foundation bbox. */
-  bounds: Rect;
-  /** The uniform px→dm scale the composer chose (the minimal non-overlap K,
-   *  grid-rounded origins aside). 0 sites → 1 (nothing to scale). */
-  scale: number;
-}
 
 /**
  * The per-axis gutter (one foundation tile, 80 dm) that must separate two
- * sites' foundation bboxes: `layoutChain` scales the arrangement until every
- * pair clears this on at least one axis, and the < 10 dm grid-rounding drift
- * can never close it (the separating-axis argument keeps ≥ 70 dm — test-pinned).
+ * sites' foundation bboxes: `requiredScaleForPair` returns the scale that clears
+ * this on at least one axis.
  */
 const CHAIN_GUTTER = FOUNDATION_TILE;
 
-/** The scale floor: even a tightly-arranged single pair never scales BELOW this
+/** The scale floor: even a tightly-arranged pair never scales BELOW this
  *  (keeps a degenerate/near-coincident arrangement from collapsing to nothing,
  *  and keeps the world plan legible). Chosen at 1 (px≈dm) — K only grows. */
 const K_MIN = 1;
 
 /** A site's world-dm foundation bbox at a given origin: the tile grid inflated
- *  to dm, translated by the origin. */
-function siteBox(origin: Point, layout: StageLayout): Rect {
+ *  to dm, translated by the origin. NO local-origin offset — the box x/y IS the
+ *  placement origin (the two-site measure relies on this; adds no origin term). */
+export function siteBox(origin: Point, layout: StageLayout): Rect {
   const { cols, rows } = layout.foundations;
   return {
     x: origin.x,
@@ -331,162 +301,6 @@ function siteBox(origin: Point, layout: StageLayout): Rect {
 }
 
 /**
- * The world-dm floor plan for a solved chain (frozen Axis 1). `sites` are the
- * per-stage layouts to place; `arrangement` carries each site's canvas px
- * position (relative only — the user's mental map). The composer runs three
- * deterministic steps:
- *
- *   1. Coincidence tie-break — any cluster of sites sharing one canvas point
- *      (a reachable drag state) is fanned apart FIRST onto a globally
- *      collision-free slot sequence (the placementSlot mechanism), so every
- *      pair carries strictly positive separation before K is derived. Without
- *      this a coincident pair's required K is infinite. All positions equal (or
- *      a single site) degenerates to the horizontal auto-row.
- *   2. Minimal scale K — the max over pairs of (required dm separation / canvas
- *      separation) that keeps every pair's foundation bboxes + the 80 dm gutter
- *      from overlapping; clamped to K_MIN. Finite by step 1.
- *   3. Grid rounding — each scaled origin rounds UP to the 1 m grid (ceilTo10).
- *      Drift < 10 dm per axis < the 80 dm gutter, so rounding never
- *      re-introduces an overlap step 2 excluded (separating-axis argument).
- *
- * `arrangement` MUST carry an entry per site (the store auto-slots every stage —
- * Assumption #1); a site missing from `arrangement` falls back to the origin,
- * which the tie-break then fans like any coincidence.
- */
-export function layoutChain(
-  sites: ChainSite[],
-  arrangement: ChainArrangement[],
-): ChainLayout {
-  if (sites.length === 0) {
-    return {
-      units: "dm",
-      sites: [],
-      bounds: { x: 0, y: 0, w: 0, h: 0 },
-      scale: 1,
-    };
-  }
-
-  const posOf = new Map(
-    arrangement.map((a) => [a.stageId, { x: a.x, y: a.y }]),
-  );
-  // Canvas px positions in stageOrder (== sites order), origin fallback.
-  const raw = sites.map((s) => posOf.get(s.stageId) ?? { x: 0, y: 0 });
-
-  // --- Step 1: coincidence tie-break -------------------------------------
-  // Fan every zero-separation cluster onto a GLOBALLY collision-free slot
-  // sequence, checked against ALL occupied points (including other clusters'
-  // fanned members), so no fanned site can land on any occupied point. The
-  // single-site / all-equal case degenerates to the horizontal auto-row here.
-  const points = fanCoincident(raw);
-
-  // --- Step 2: minimal scale K -------------------------------------------
-  // K = max over pairs of (required dm separation / canvas separation). The
-  // required separation is the smallest s such that scaling both sites' bboxes
-  // apart by s×(their canvas delta) clears the gutter on one axis. Because the
-  // bbox extents are FIXED (scale moves origins, not sizes), we solve per pair
-  // for the K that first clears, and take the max. Finite: every pair now has a
-  // strictly positive canvas delta (step 1).
-  let k = K_MIN;
-  for (let i = 0; i < points.length; i++) {
-    for (let j = i + 1; j < points.length; j++) {
-      k = Math.max(
-        k,
-        requiredScaleForPair(
-          points[i]!,
-          sites[i]!.layout,
-          points[j]!,
-          sites[j]!.layout,
-        ),
-      );
-    }
-  }
-
-  // --- Step 3: grid rounding ---------------------------------------------
-  // Scale each canvas point by K (relative to the min corner so origins stay
-  // non-negative), then snap up to the 1 m grid.
-  const minPx = points.reduce(
-    (acc, p) => ({ x: Math.min(acc.x, p.x), y: Math.min(acc.y, p.y) }),
-    { x: Infinity, y: Infinity },
-  );
-  const placements: ChainPlacement[] = sites.map((s, idx) => {
-    const p = points[idx]!;
-    return {
-      stageId: s.stageId,
-      origin: {
-        x: ceilTo10((p.x - minPx.x) * k),
-        y: ceilTo10((p.y - minPx.y) * k),
-      },
-    };
-  });
-
-  // Bounds enclose every placed site's foundation bbox.
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  placements.forEach((pl, idx) => {
-    const box = siteBox(pl.origin, sites[idx]!.layout);
-    minX = Math.min(minX, box.x);
-    minY = Math.min(minY, box.y);
-    maxX = Math.max(maxX, box.x + box.w);
-    maxY = Math.max(maxY, box.y + box.h);
-  });
-
-  return {
-    units: "dm",
-    sites: placements,
-    bounds: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
-    scale: k,
-  };
-}
-
-/**
- * Fan every coincident cluster onto a globally collision-free slot sequence.
- * A site that shares its canvas point with ANY other site is a cluster member;
- * ALL members of every cluster (including the first-seen) are relocated onto a
- * single monotonic horizontal auto-row sequence, checked against every point
- * that stays put AND every slot already handed out, so no fanned member can
- * land on another site or another cluster's member — totality closes by
- * construction (r2 fold). Sites on a genuinely unique point keep it. The
- * all-equal case is one big cluster → every site lands on the row (the
- * degenerate horizontal auto-row); a single site is trivially unique. The
- * auto-row pitch is one canvas "column" (the store's placementSlot 260 px step).
- * Order follows `raw` (== stageOrder) for determinism.
- */
-function fanCoincident(raw: Point[]): Point[] {
-  const key = (p: Point): string => `${p.x},${p.y}`;
-  // Multiplicity of each original point: a point shared by ≥2 sites is a
-  // cluster and ALL its members fan out; a unique point stays.
-  const count = new Map<string, number>();
-  for (const p of raw) count.set(key(p), (count.get(key(p)) ?? 0) + 1);
-
-  const AUTO_ROW_PITCH = 260;
-  // Points that stay put (unique originals) seed the occupied set so no fanned
-  // slot can collide with them.
-  const occupied = new Set<string>();
-  for (const p of raw) {
-    if ((count.get(key(p)) ?? 0) === 1) occupied.add(key(p));
-  }
-
-  let nextSlot = 0;
-  const nextFreeSlot = (): Point => {
-    let slot: Point;
-    do {
-      slot = { x: nextSlot * AUTO_ROW_PITCH, y: 0 };
-      nextSlot += 1;
-    } while (occupied.has(key(slot)));
-    occupied.add(key(slot));
-    return slot;
-  };
-
-  return raw.map((p) => {
-    if ((count.get(key(p)) ?? 0) === 1) return { x: p.x, y: p.y };
-    // A cluster member (including the first-seen) fans onto the next free slot.
-    return nextFreeSlot();
-  });
-}
-
-/**
  * The minimal scale K such that scaling canvas points `pa`/`pb` apart by K (and
  * placing each site's fixed-size foundation bbox at the scaled origin) clears
  * the gutter on at least one axis. Only the origin DELTA scales — the bbox
@@ -494,12 +308,17 @@ function fanCoincident(raw: Point[]): Point[] {
  * when `K × dx − w(left box) = gutter`, i.e. `K = (w(left) + gutter) / dx`. The
  * left box on x is the one with the smaller scaled origin, which (scaling
  * preserves order) is the one with the smaller canvas x; likewise for y. We take
- * the SMALLER of the two per-axis K thresholds (clearing EITHER axis suffices),
- * then the caller maxes across pairs. Infinity on an axis with zero canvas delta
- * (can't separate along it by scaling — step 1 guarantees at least one axis has
- * a positive delta, so kPair is finite).
+ * the SMALLER of the two per-axis K thresholds (clearing EITHER axis suffices).
+ *
+ * TOTAL over its inputs: an axis with zero canvas delta yields Infinity (that
+ * axis can't be separated by scaling), and the ALL-Infinity case — exactly
+ * COINCIDENT points, a SUPPORTED input — returns K_MIN. Coincident endpoints
+ * are therefore a contract, not a can't-happen: both bboxes land at the same
+ * origin and the caller's nearest-edge read is 0 dm naturally. (This replaces
+ * the retired chain composer's step-1 fan-out invariant, which formerly
+ * guaranteed a positive per-pair delta so this branch was unreachable.)
  */
-function requiredScaleForPair(
+export function requiredScaleForPair(
   pa: Point,
   la: StageLayout,
   pb: Point,

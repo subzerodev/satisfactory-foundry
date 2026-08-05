@@ -130,21 +130,22 @@ describe("applyDrawnDistance — the units trap per arm", () => {
 });
 
 // ---------------------------------------------------------------------------
-// drawnDistanceDm — the global K-coupling pin (#77).
+// drawnDistanceDm — the two-site measure (Stage 17, ticket #89).
 //
-// drawnDistanceDm derives site origins through layoutChain, whose scale K is a
-// MAX over ALL site pairs (layout.ts:389-402). So the measured A↔B distance is
-// NOT a property of the A-B pair alone — a third stage C can drive K up and
-// stretch A↔B. This pin makes that byte-identical contract explicit: it locks
-// BOTH the A↔B distance at two C positions AND the fact that moving C alone
-// changes A↔B. It is the value guard that forbids replacing the engine with a
-// naive two-site measure without a deliberate, ticket-tracked semantics change.
+// The chain composer retired: drawnDistanceDm is now a PURE pair measure —
+// only the two endpoint stages' positions + footprints enter. The four pins
+// below lock that contract: DECOUPLING (moving a third stage cannot change the
+// readout — the exact inversion of the retired global-K coupling pin), the
+// exact pair value (fractional now that the chain grid-rounding is gone),
+// COINCIDENT endpoints reading 0 dm with no special case (the primitive is
+// total), and the near-coincident FLOOR (edge distance = CHAIN_GUTTER, NOT a
+// smooth approach to 0).
 // ---------------------------------------------------------------------------
 
-describe("drawnDistanceDm — global K-coupling (three stages)", () => {
+describe("drawnDistanceDm — two-site measure (#89)", () => {
   // A single solved smelter stage: one output lane, one machine. layoutStage
   // renders this to a 1×2-tile foundation bbox (80×160 dm) — the geometry the
-  // pin's exact distances are computed against.
+  // pins' exact distances are computed against.
   function smelterSolve(): SolveState {
     return {
       status: "solved",
@@ -181,7 +182,7 @@ describe("drawnDistanceDm — global K-coupling (three stages)", () => {
     };
   }
 
-  // buildChainSites reads only catalog.recipes[recipeId].machineId.
+  // siteFor reads only catalog.recipes[recipeId].machineId.
   const catalog = {
     recipes: { smelt_iron: { machineId: "smelter_mk1" } },
   } as unknown as Catalog;
@@ -194,48 +195,80 @@ describe("drawnDistanceDm — global K-coupling (three stages)", () => {
   const stageOrder = ["A", "B", "C"];
   const links: StageLink[] = [link("AB", "A", "B", "iron_ingot")];
 
-  it("pins A↔B = 80 dm when C is far, 240 dm when C is near — the C-move couples A↔B", () => {
-    // A=(0,0), B=(100,0) fixed. Each smelter's foundation bbox is 80×160 dm.
-    //
-    // C far — C=(0,300): the A-B pair (dx=100) drives K = (80+80)/100 = 1.6;
-    // C's pairs sit 300 px away and need less scale, so A-B origins scale to a
-    // 160 dm gap → nearest edges (A right 80,80) ↔ (B left 160,80) = 80 dm.
-    const cFar = {
+  // Pin 1 — DECOUPLING (replaces the retired global-K coupling pin, same
+  // fixture). A=(0,0), B=(100,0). Each smelter bbox is 80×160 dm; the A-B pair
+  // drives k = (leftWidth 80 + gutter 80)/dx 100 = 1.6, so origins scale to a
+  // 160 dm gap → nearest edges (A right 80,80) ↔ (B left 160,80) = 80 dm. This
+  // is byte-identical for BOTH C positions — moving C cannot touch A↔B (the
+  // exact inversion of the old test, where the near C drove it to 240 dm). The
+  // 80 dm equals the old far-C value EXACTLY: the retired ceilTo10(160) snap was
+  // a no-op on this already-grid-aligned geometry.
+  it("A↔B is IDENTICAL regardless of a third stage C (decoupling)", () => {
+    const withCFar = drawnDistanceDm("AB", catalog, stages, stageOrder, links, {
       A: { x: 0, y: 0 },
       B: { x: 100, y: 0 },
       C: { x: 0, y: 300 },
-    };
-    const dFar = drawnDistanceDm(
+    });
+    const withCNear = drawnDistanceDm(
       "AB",
       catalog,
       stages,
       stageOrder,
       links,
-      cFar,
+      {
+        A: { x: 0, y: 0 },
+        B: { x: 100, y: 0 },
+        C: { x: 50, y: 5 }, // the position that drove A↔B to 240 dm under the old K
+      },
     );
-    expect(dFar).not.toBeNull();
-    expect(dFar!).toBeCloseTo(80);
+    expect(withCFar).not.toBeNull();
+    expect(withCNear).not.toBeNull();
+    // Both read 80 dm — the pair value — and are equal: C is decoupled.
+    expect(withCFar!).toBeCloseTo(80);
+    expect(withCNear!).toBeCloseTo(80);
+    expect(withCNear!).toBeCloseTo(withCFar!);
+  });
 
-    // C near — C=(50,5): now the C-A / C-B pairs (dx=50) drive K = 160/50 = 3.2,
-    // dominating the A-B pair. A-B origins scale to a 320 dm gap → A↔B = 240 dm.
-    // A and B never moved; ONLY C did — proving the max-over-pairs coupling.
-    const cNear = {
+  // Pin 2 — the exact pair value at a k-driven diagonal (no round-number
+  // assumption; the chain grid-rounding is gone). A=(0,0), B=(80,60): dx=80,
+  // dy=60; leftWidth=80 (A), topHeight=160 (A); kx=(80+80)/80=2, ky=(160+80)/60
+  // =4 → k=min=2. B origin scales to (160,120). Nearest edges: A right (80,80)
+  // ↔ B top (200,120) → Δ=(120,40) → √16000 = 40√10 ≈ 126.49 dm — NOT a
+  // multiple of 10.
+  it("reads the exact (fractional) nearest-edge distance for a known pair", () => {
+    const d = drawnDistanceDm("AB", catalog, stages, stageOrder, links, {
       A: { x: 0, y: 0 },
-      B: { x: 100, y: 0 },
-      C: { x: 50, y: 5 },
-    };
-    const dNear = drawnDistanceDm(
-      "AB",
-      catalog,
-      stages,
-      stageOrder,
-      links,
-      cNear,
-    );
-    expect(dNear).not.toBeNull();
-    expect(dNear!).toBeCloseTo(240);
+      B: { x: 80, y: 60 },
+    });
+    expect(d).not.toBeNull();
+    expect(d!).toBeCloseTo(Math.sqrt(16000)); // 40√10 ≈ 126.4911
+  });
 
-    // The coupling itself: moving C alone changed the A↔B distance.
-    expect(dNear!).not.toBeCloseTo(dFar!);
+  // Pin 3 — coincident endpoints read 0 dm with NO special-case code. The
+  // primitive is total: all-Infinity per-axis → K_MIN, both boxes land at the
+  // same origin, and nearestEdgeConnector on identical boxes returns 0 naturally.
+  it("reads 0 dm for coincident endpoints (falls out of the total primitive)", () => {
+    const d = drawnDistanceDm("AB", catalog, stages, stageOrder, links, {
+      A: { x: 10, y: 10 },
+      B: { x: 10, y: 10 },
+    });
+    expect(d).not.toBeNull();
+    expect(d!).toBeCloseTo(0);
+  });
+
+  // Pin 4 — the near-coincident FLOOR on an axis-aligned approach. A=(0,0),
+  // B=(1,0): as the canvas delta shrinks, k grows (here k=(80+80)/1=160) but the
+  // scaled origin separation converges to leftWidth+gutter = 160 dm, so the
+  // nearest-EDGE distance floors at the gutter = 80 dm (160 − leftWidth 80) —
+  // NOT leftWidth+gutter (that is the ORIGIN separation), and NOT a smooth
+  // approach to 0. The measure jumps to 0 only when the endpoints are EXACTLY
+  // coincident (Pin 3).
+  it("floors the near-coincident axis-aligned edge distance at CHAIN_GUTTER (80 dm)", () => {
+    const d = drawnDistanceDm("AB", catalog, stages, stageOrder, links, {
+      A: { x: 0, y: 0 },
+      B: { x: 1, y: 0 },
+    });
+    expect(d).not.toBeNull();
+    expect(d!).toBeCloseTo(80); // == CHAIN_GUTTER, the gutter-enforced floor
   });
 });

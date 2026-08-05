@@ -1,131 +1,95 @@
 /**
- * Pure derive helpers for the chain drawn-distance measure feed (Stage 7 /
- * Phase 3, Axis 3), the surviving surface after the Combined view was removed
- * (#75). ZERO React/DOM/store: the world-dm chain assembly + nearest-edge
- * geometry + the estimated-link measure-feed mapping are plain functions the
+ * Pure derive helpers for the drawn-distance measure feed (Stage 17, ticket #89
+ * — the two-site rewrite of the former Stage 7 chain surface). ZERO
+ * React/DOM/store: the two-site foundation-bbox scaling + nearest-edge geometry
+ * + the estimated-link measure-feed mapping are plain functions the
  * LinkInspector consumes (drawnDistanceDm → drawnMeters → applyDrawnDistance).
- * The connector-rendering + power-footer derivations went with the Combined
- * component (only its casualties, per the corrected consumer split).
+ * The multi-site chain composer retired with #89; only the pure pair measure and
+ * the units-trap mapping remain.
  */
 
-import { layoutChain, layoutStage } from "../layout/layout.ts";
-import type {
-  Point,
-  ChainLayout,
-  ChainSite,
-  ChainArrangement,
+import {
+  layoutStage,
+  requiredScaleForPair,
+  siteBox,
 } from "../layout/layout.ts";
+import type { Point, StageLayout } from "../layout/layout.ts";
 import { FOOTPRINTS } from "../layout/footprints.ts";
 import type { Catalog } from "../data/types.ts";
 import type { StageNode, StageLink, LinkTransport } from "../state/store.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
 
 // ---------------------------------------------------------------------------
-// Site placement lookup — world-dm bbox per placed site.
+// The two-site drawn-distance measure (Stage 17, ticket #89) — a PURE pair
+// measure: only the two endpoint stages' positions + footprints matter. The
+// chain composer retired; moving any OTHER stage cannot change the readout.
 // ---------------------------------------------------------------------------
 
-/** A placed site's world-dm foundation bbox (origin + tile grid), or null when
- *  the site is not in the chain (skipped/unsolved). */
-function siteWorldBox(
-  chain: ChainLayout,
-  sites: ChainSite[],
-  stageId: string,
-): { x: number; y: number; w: number; h: number } | null {
-  const placement = chain.sites.find((s) => s.stageId === stageId);
-  const site = sites.find((s) => s.stageId === stageId);
-  if (placement === undefined || site === undefined) return null;
-  const { cols, rows } = site.layout.foundations;
-  return {
-    x: placement.origin.x,
-    y: placement.origin.y,
-    w: cols * FOUNDATION_TILE,
-    h: rows * FOUNDATION_TILE,
-  };
-}
-
-/** Foundation tile edge (8 m) — restated locally (matches layout.ts
- *  FOUNDATION_TILE, the same S4P2 restatement posture Blueprint uses). */
-const FOUNDATION_TILE = 80;
-
-// ---------------------------------------------------------------------------
-// Chain assembly — build the solved-only ChainSites + the world-dm layout from
-// the store slice (the LinkInspector measure feed's geometry basis).
-// ---------------------------------------------------------------------------
-
-/** The solved stage ids in stageOrder — the sites the chain layout places
- *  (unsolved/invalid stages are skipped; frozen Axis 1 solved-only). */
-function solvedStageIds(
-  stages: Record<string, StageNode>,
-  stageOrder: string[],
-): string[] {
-  return stageOrder.filter((id) => stages[id]?.solve.status === "solved");
-}
-
-/** One ChainSite per solved stage: its per-stage layout at the recipe's machine
- *  footprint. Order follows stageOrder for determinism. */
-function buildChainSites(
-  catalog: Catalog,
-  stages: Record<string, StageNode>,
-  solvedIds: string[],
-): ChainSite[] {
-  return solvedIds.map((id) => {
-    const stage = stages[id]!;
-    const machineId =
-      stage.selection.recipeId !== null
-        ? (catalog.recipes[stage.selection.recipeId]?.machineId ?? "")
-        : "";
-    return {
-      stageId: id,
-      layout: layoutStage(
-        stage.solve.status === "solved"
-          ? stage.solve.result
-          : { feeds: [], outputs: [], findings: [] },
-        machineId,
-        stage.selection.machineCount,
-        FOOTPRINTS,
-      ),
-    };
-  });
-}
-
-/** The world-dm chain layout for the solved sites, from their canvas positions
- *  (the arrangement — Assumption #1: every stage has a position). */
-function buildChain(
-  sites: ChainSite[],
-  solvedIds: string[],
-  positions: Record<string, { x: number; y: number }>,
-): ChainLayout {
-  const arrangement: ChainArrangement[] = solvedIds.map((id) => ({
-    stageId: id,
-    x: positions[id]?.x ?? 0,
-    y: positions[id]?.y ?? 0,
-  }));
-  return layoutChain(sites, arrangement);
+/** One endpoint stage's per-stage layout at the recipe's machine footprint —
+ *  the per-stage residue of the retired buildChainSites. */
+function siteFor(catalog: Catalog, stage: StageNode): StageLayout {
+  const machineId =
+    stage.selection.recipeId !== null
+      ? (catalog.recipes[stage.selection.recipeId]?.machineId ?? "")
+      : "";
+  return layoutStage(
+    stage.solve.status === "solved"
+      ? stage.solve.result
+      : { feeds: [], outputs: [], findings: [] },
+    machineId,
+    stage.selection.machineCount,
+    FOOTPRINTS,
+  );
 }
 
 /**
  * The drawn straight-line distance (dm) for one link, or null when either
- * endpoint is skipped (unsolved) — the nearest-edge geometry between the two
- * sites' foundation bboxes, exposed so the LinkInspector can offer the measure
- * feed without re-deriving any connector labels.
+ * endpoint is unsolved — the nearest-edge geometry between the two endpoint
+ * stages' foundation bboxes. A pure TWO-SITE measure (ticket #89): the pair's
+ * canvas positions are scaled apart by the SAME `requiredScaleForPair` primitive
+ * the old chain K maximized (here on just this pair, clamped to K_MIN
+ * internally), so the boxes clear the gutter; no third stage enters. Coincident
+ * endpoints fall out naturally — the primitive is total, returns K_MIN, both
+ * boxes land at the same origin, and the nearest-edge read is 0 dm with no
+ * special case. Near-coincident axis-aligned pairs read a gutter-enforced FLOOR
+ * (edge distance = CHAIN_GUTTER), NOT a smooth approach to 0 — inherited from
+ * the retired flow, pinned in the tests.
+ *
+ * `_stageOrder` is retained for caller stability (LinkInspector passes six args)
+ * — the two-site body checks solvedness directly on the two endpoint stages and
+ * no longer needs the order.
  */
 export function drawnDistanceDm(
   linkId: string,
   catalog: Catalog,
   stages: Record<string, StageNode>,
-  stageOrder: string[],
+  _stageOrder: string[],
   links: StageLink[],
   positions: Record<string, { x: number; y: number }>,
 ): number | null {
   const link = links.find((l) => l.id === linkId);
   if (link === undefined) return null;
-  const solvedIds = solvedStageIds(stages, stageOrder);
-  const sites = buildChainSites(catalog, stages, solvedIds);
-  const chain = buildChain(sites, solvedIds, positions);
-  const fromBox = siteWorldBox(chain, sites, link.fromStageId);
-  const toBox = siteWorldBox(chain, sites, link.toStageId);
-  if (fromBox === null || toBox === null) return null;
-  return nearestEdgeConnector(fromBox, toBox).distanceDm;
+
+  const from = stages[link.fromStageId];
+  const to = stages[link.toStageId];
+  // BOTH endpoints must be solved (checked directly on the two stages).
+  if (from?.solve.status !== "solved" || to?.solve.status !== "solved") {
+    return null;
+  }
+
+  const layoutA = siteFor(catalog, from);
+  const layoutB = siteFor(catalog, to);
+  const posA = positions[link.fromStageId] ?? { x: 0, y: 0 };
+  const posB = positions[link.toStageId] ?? { x: 0, y: 0 };
+
+  // Scale the pair apart so their foundation bboxes clear the gutter, then read
+  // the nearest-edge distance. NO grid rounding (the chain-canvas aesthetic
+  // retired); the k-scaled origins feed siteBox directly — its box x/y IS the
+  // placement origin, no local-origin term.
+  const k = requiredScaleForPair(posA, layoutA, posB, layoutB);
+  const boxA = siteBox({ x: posA.x * k, y: posA.y * k }, layoutA);
+  const boxB = siteBox({ x: posB.x * k, y: posB.y * k }, layoutB);
+  return nearestEdgeConnector(boxA, boxB).distanceDm;
 }
 
 // ---------------------------------------------------------------------------
