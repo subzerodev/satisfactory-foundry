@@ -18,6 +18,7 @@ import type {
 import type { Selection, SolveState } from "../state/store.ts";
 import type { OutputLaneResult } from "../core/manifold.ts";
 import { AltCompare, altCompareModel, swapPayloadFor } from "./AltCompare.tsx";
+import { appStore } from "../state/store.ts";
 
 const F = (n: number): Fraction => Fraction.from(n);
 
@@ -245,5 +246,39 @@ describe("AltCompare SSR smoke", () => {
     // would fail the wiring; the visual render is the browser-walk gate.
     const html = renderToStaticMarkup(<AltCompare />);
     expect(html).toBe("");
+  });
+
+  it("renders the OUTPUT header + per-row output cell (#83)", () => {
+    // The component reads the singleton via zustand's useStore, whose SSR
+    // snapshot is api.getInitialState() (NOT getState()) — so setState can't
+    // drive a renderToStaticMarkup pass. Stub that one seam with a solved slice
+    // (ready CAT — ingot has 2 candidates — on r_std at 120/min) so the presence
+    // gate passes and the table renders. Assertions: the OUTPUT header sits
+    // between MACHINES and POWER, and a row's cell shows the actual produced
+    // rate (std 4×30 = 120/min at R=120).
+    const sel = selection("r_std");
+    const sol = solvedWith("ingot", 120);
+    const store = appStore as unknown as {
+      getInitialState: () => unknown;
+      getState: () => unknown;
+    };
+    const realInitial = store.getInitialState;
+    const seeded = {
+      ...(store.getState() as object),
+      catalog: { status: "ready" as const, catalog: CAT },
+      activeStageId: "s1",
+      selection: sel,
+      solve: sol,
+    };
+    store.getInitialState = () => seeded;
+    try {
+      const html = renderToStaticMarkup(<AltCompare />);
+      // The OUTPUT header sits between MACHINES and POWER (column order).
+      expect(html).toContain("<th>machines</th><th>output</th><th>power</th>");
+      // A row's OUTPUT cell shows the actual produced rate (120/min at R=120).
+      expect(html).toContain("<td>120/min</td>");
+    } finally {
+      store.getInitialState = realInitial;
+    }
   });
 });

@@ -201,7 +201,11 @@ export function Blueprint({
                     x={m.x + m.w / 2}
                     y={m.y + m.h / 2}
                   >
-                    {i}
+                    {/* 1-based: the solver's machine vocabulary is 1..N (#85). The
+                        rect index i is 0-based; every belt mark ("after machine m")
+                        sits at machine m's right edge, so a 0-based label made the
+                        mark read one rect early. */}
+                    {i + 1}
                   </text>
                 </g>
               ))}

@@ -339,6 +339,22 @@ describe("alt-compare — per-candidate metrics (synthetic, exact)", () => {
     expect(alt!.rawDraw).toBe("Ore 90/min"); // 2 × 45 ore
   });
 
+  it("pins each candidate's OUTPUT as its own actual produced rate, incl. the current row + a ceil-overshoot (#83)", () => {
+    // R=100 is NOT a multiple of either producer's per-machine rate, so both
+    // ceil-overshoot: std 30/min → ceil(100/30)=4 → 120/min; alt 60/min →
+    // ceil(100/60)=2 → 120/min. The OUTPUT column shows each candidate's actual
+    // produced rate — uniformly, INCLUDING the current row (v1's "current row
+    // shows R exactly" claim was dropped: the current ceil overshoots too).
+    const rows = candidateRowsFor(cat, "ingot", "r_std", F(100));
+    const std = rows.find((r) => r.recipeId === "r_std")!;
+    const alt = rows.find((r) => r.recipeId === "r_alt")!;
+    expect(std.isCurrent).toBe(true);
+    expect(std.output).toBe("120/min"); // 4 × 30, the current row's own actual
+    expect(alt.output).toBe("120/min"); // 2 × 60, the alternate's overshoot
+    // The overshoot is real: R was 100, both produce 120 — not clamped to R.
+    expect(std.output).not.toBe("100/min");
+  });
+
   it("propagates the variable-power flag with the varies suffix", () => {
     // A candidate whose machine is variable-power → the row power carries the
     // "(varies A–B MW)" suffix from the summed exact bounds.
@@ -417,6 +433,81 @@ describe("alt-compare — per-candidate metrics (synthetic, exact)", () => {
     // The plain candidate has no byproducts → null.
     const aRow = rows.find((r) => r.recipeId === "r_widget_a")!;
     expect(aRow.byproducts).toBeNull();
+  });
+
+  it("MULTI-STAGE OUTPUT is the PRIMARY stage's rate, NOT machines × perMinute (#83, the v1-formula-catcher)", () => {
+    // widget ← gadget: a 2-stage subtree. At R=30, the widget stage is 1 machine
+    // producing 30/min, but `machines` is the SUBTREE Σ (widget 1 + gadget 1 =
+    // 2). v1's WRONG formula (machines × perMinute) would give 2 × 30 = "60/min";
+    // the honest OUTPUT is the widget primary stage's own outputRate = 30/min.
+    // This is the test the multi-stage divergence demanded (r1 BLOCKER).
+    const bpCat = synthCatalog(
+      [item("widget", "Widget"), item("gadget", "Gadget"), item("ore", "Ore")],
+      [machine("assembler", 10), machine("smelter", 4)],
+      [
+        crecipe(
+          "r_widget_a",
+          "Widget A",
+          "assembler",
+          [["widget", 30]],
+          [["gadget", 30]],
+        ),
+        crecipe(
+          "r_widget_b",
+          "Widget B",
+          "assembler",
+          [["widget", 30]],
+          [["gadget", 30]],
+          true,
+        ),
+        crecipe(
+          "r_gadget",
+          "Gadget",
+          "smelter",
+          [["gadget", 30]],
+          [["ore", 30]],
+        ),
+      ],
+    );
+    const rows = candidateRowsFor(bpCat, "widget", "r_widget_a", F(30));
+    const aRow = rows.find((r) => r.recipeId === "r_widget_a")!;
+    // Subtree Σ is 2 machines, but OUTPUT is the widget primary stage's rate.
+    expect(aRow.machines).toBe("2");
+    expect(aRow.output).toBe("30/min"); // the primary stage, NOT 2 × 30 = 60
+    expect(aRow.output).not.toBe("60/min"); // the v1 formula would have said 60
+  });
+
+  it("SELF-CONSUMING candidate: OUTPUT is '—' WITHOUT throwing (#83, the v2-deref-catcher)", () => {
+    // A recipe listing its own primary output among its inputs passes candidacy
+    // but is demoted to RAW by proposeChain's cycle guard — leaving NO stage for
+    // itemId. The guarded lookup degrades to "—"; an unguarded .find().outputRate
+    // would TypeError inside the render (r2 IMPORTANT/MAJOR). Two candidates so
+    // the item is comparable at all (candidateRecipesFor needs ≥2).
+    const selfCat = synthCatalog(
+      [item("ingot", "Ingot"), item("ore", "Ore")],
+      [machine("smelter", 4)],
+      [
+        crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]]),
+        // r_loop consumes its OWN primary output (ingot) → self-consuming.
+        crecipe(
+          "r_loop",
+          "Looping",
+          "smelter",
+          [["ingot", 60]],
+          [["ingot", 10]],
+          true,
+        ),
+      ],
+    );
+    let rows!: ReturnType<typeof candidateRowsFor>;
+    expect(() => {
+      rows = candidateRowsFor(selfCat, "ingot", "r_std", F(30));
+    }).not.toThrow();
+    const loop = rows.find((r) => r.recipeId === "r_loop")!;
+    expect(loop.output).toBe("—"); // demoted to raw, no stage for ingot
+    // The non-self-consuming candidate still shows its real rate.
+    const std = rows.find((r) => r.recipeId === "r_std")!;
+    expect(std.output).toBe("30/min");
   });
 });
 
