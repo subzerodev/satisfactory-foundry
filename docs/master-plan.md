@@ -287,4 +287,4 @@ process (all-Claude roster, opus implementers, per-phase gates).
 - **Status:** merged to develop 2026-08-05 (`a0ebb29`, 770 tests).
   THREE design rounds (the wrong output formula, then an unguarded
   deref, both caught pre-code). Walk: all four axes verified live.
-  Release PR pending → then Stage 16 SHIPPED.
+  **SHIPPED** — release PR #88 merged to main 2026-08-05.
