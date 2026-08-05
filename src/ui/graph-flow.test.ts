@@ -23,6 +23,8 @@ import {
   globalUnlockedTiers,
   NODE_WIDTH,
   NODE_HEIGHT,
+  RAW_NODE_WIDTH,
+  RAW_NODE_HEIGHT,
 } from "./graph-flow.ts";
 import { computeLinkTransport } from "./transport-plan.ts";
 import type { LinkTransport } from "../state/store.ts";
@@ -83,6 +85,8 @@ const catalog: Catalog = {
       displayName: "Iron Ore",
       isFluid: false,
       stackSize: Fraction.from(100),
+      // Extraction-level (Stage 11 / Phase 1) — the raw-feed derive fixture.
+      isRawResource: true,
     },
     iron_ingot: {
       id: "iron_ingot",
@@ -1113,5 +1117,249 @@ describe("planForLink (#34)", () => {
       globalUnlockedTiers(transportCatalog, stages),
     );
     expect(planForLink(link, transportCatalog, stages)).toEqual(expected);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// graphToFlow — raw-feed derive (Stage 11 / Phase 1, ticket #57).
+// ---------------------------------------------------------------------------
+
+describe("graphToFlow — rawFeeds", () => {
+  // The ingot recipe inputs ore_iron (raw) and outputs iron_ingot; a solved
+  // ingot stage carrying an ore_iron feed lane is the canonical raw-feed case.
+  const solvedIngot = (totalDemand: number) =>
+    stage(
+      "s",
+      "Smelting",
+      "ingot",
+      20,
+      solvedWith({
+        feeds: [
+          { itemId: "ore_iron", totalDemand: Fraction.from(totalDemand) },
+        ],
+      }),
+    );
+
+  it("emits a supply card + edge for an unlinked extraction-level input with the exact totalDemand", () => {
+    const s = solvedIngot(600);
+    const { rawFeeds } = graphToFlow(
+      catalog,
+      { s },
+      ["s"],
+      [],
+      [],
+      { s: { x: 200, y: 100 } },
+      "s",
+    );
+    expect(rawFeeds.nodes).toHaveLength(1);
+    const n = rawFeeds.nodes[0]!;
+    expect(n.id).toBe("raw:s:ore_iron");
+    expect(n.type).toBe("rawFeed");
+    expect(n.data.itemName).toBe("Iron Ore");
+    // The rate is the solve's own totalDemand, formatRate'd — no re-derivation.
+    expect(n.data.rateText).toBe("600/min");
+    expect(n.width).toBe(RAW_NODE_WIDTH);
+    expect(n.height).toBe(RAW_NODE_HEIGHT);
+    // One source handle mirroring stageHandles at the raw dims (LR → right).
+    expect(n.handles).toEqual([
+      {
+        id: "out",
+        type: "source",
+        position: "right",
+        x: RAW_NODE_WIDTH - 3,
+        y: RAW_NODE_HEIGHT / 2 - 3,
+        width: 6,
+        height: 6,
+      },
+    ]);
+    // The edge feeds the stage's `in` handle (target = the stage id).
+    expect(rawFeeds.edges).toHaveLength(1);
+    expect(rawFeeds.edges[0]).toEqual({
+      id: "rawedge:s:ore_iron",
+      source: "raw:s:ore_iron",
+      target: "s",
+      className: "edge-raw",
+    });
+  });
+
+  it("carries the exact non-terminating rate through formatRate", () => {
+    // 100/3 /min — a non-terminating value the derive must NOT float.
+    const s = stage(
+      "s",
+      "Smelting",
+      "ingot",
+      20,
+      solvedWith({
+        feeds: [{ itemId: "ore_iron", totalDemand: Fraction.of(100, 3) }],
+      }),
+    );
+    const { rawFeeds } = graphToFlow(
+      catalog,
+      { s },
+      ["s"],
+      [],
+      [],
+      { s: { x: 0, y: 0 } },
+      "s",
+    );
+    // formatRate falls back to the exact n/d for a non-terminating rate.
+    expect(rawFeeds.nodes[0]!.data.rateText).toBe("100/3/min");
+  });
+
+  it("suppresses the feed when the raw input already has an incoming lane", () => {
+    // A StageLink into s for ore_iron makes the raw input the LANE's story — no
+    // duplicate feed card beside it.
+    const s = solvedIngot(600);
+    const p = stage("p", "Miner", "multi", 1, solvedWith({}));
+    const links: StageLink[] = [
+      { id: "L1", fromStageId: "p", itemId: "ore_iron", toStageId: "s" },
+    ];
+    const { rawFeeds } = graphToFlow(
+      catalog,
+      { s, p },
+      ["p", "s"],
+      links,
+      [],
+      { s: { x: 0, y: 0 }, p: { x: 0, y: 0 } },
+      "s",
+    );
+    expect(rawFeeds.nodes).toHaveLength(0);
+    expect(rawFeeds.edges).toHaveLength(0);
+  });
+
+  it("emits nothing for an unlinked NON-raw (craftable) input", () => {
+    // The plate recipe inputs iron_ingot — a craftable item with no
+    // isRawResource flag → no feed card, even solved + unlinked.
+    const s = stage(
+      "s",
+      "Plating",
+      "plate",
+      10,
+      solvedWith({
+        feeds: [{ itemId: "iron_ingot", totalDemand: Fraction.from(300) }],
+      }),
+    );
+    const { rawFeeds } = graphToFlow(
+      catalog,
+      { s },
+      ["s"],
+      [],
+      [],
+      { s: { x: 0, y: 0 } },
+      "s",
+    );
+    expect(rawFeeds.nodes).toHaveLength(0);
+    expect(rawFeeds.edges).toHaveLength(0);
+  });
+
+  it("emits nothing for a recipe-less or unsolved/invalid stage", () => {
+    const recipeLess = stage("a", "A", null, 1, { status: "idle" });
+    const invalid = stage("b", "B", "ingot", 1, {
+      status: "invalid",
+      reason: "bad-clock",
+      detail: "bad",
+    });
+    const { rawFeeds } = graphToFlow(
+      catalog,
+      { a: recipeLess, b: invalid },
+      ["a", "b"],
+      [],
+      [],
+      { a: { x: 0, y: 0 }, b: { x: 0, y: 0 } },
+      "a",
+    );
+    expect(rawFeeds.nodes).toHaveLength(0);
+    expect(rawFeeds.edges).toHaveLength(0);
+  });
+
+  it("positions the feed LEFT of the stage in LR, ABOVE it in TB, at the fan-out pitch", () => {
+    // twoIn inputs iron_ingot + copper_ingot; neither is raw, so add a fixture
+    // with two raw inputs to exercise the i×54 pitch. Use ore_iron + a second
+    // raw item via a bespoke catalog extension.
+    const twoRaw: CatalogRecipe = {
+      id: "twoRaw",
+      displayName: "Two Raw",
+      machineId: "smelter",
+      isAlternate: false,
+      inputs: [io("ore_iron", 30), io("ore_copper", 30)],
+      outputs: [io("iron_ingot", 30)],
+      primaryOutputId: "iron_ingot",
+    };
+    const cat: Catalog = {
+      ...catalog,
+      items: {
+        ...catalog.items,
+        ore_copper: {
+          id: "ore_copper",
+          displayName: "Copper Ore",
+          isFluid: false,
+          stackSize: Fraction.from(100),
+          isRawResource: true,
+        },
+      },
+      recipes: { ...catalog.recipes, twoRaw },
+    };
+    const s = stage(
+      "s",
+      "Smelting",
+      "twoRaw",
+      1,
+      solvedWith({
+        feeds: [
+          { itemId: "ore_iron", totalDemand: Fraction.from(30) },
+          { itemId: "ore_copper", totalDemand: Fraction.from(30) },
+        ],
+      }),
+    );
+
+    const lr = graphToFlow(
+      cat,
+      { s },
+      ["s"],
+      [],
+      [],
+      { s: { x: 200, y: 100 } },
+      "s",
+      "LR",
+    ).rawFeeds;
+    // LR: x = stage.x − 190; y = stage.y + i×54.
+    expect(lr.nodes[0]!.position).toEqual({ x: 10, y: 100 });
+    expect(lr.nodes[1]!.position).toEqual({ x: 10, y: 154 });
+    expect(lr.nodes[0]!.handles[0]!.position).toBe("right");
+
+    const tb = graphToFlow(
+      cat,
+      { s },
+      ["s"],
+      [],
+      [],
+      { s: { x: 200, y: 100 } },
+      "s",
+      "TB",
+    ).rawFeeds;
+    // TB: x = stage.x; y = stage.y − (90 + i×54).
+    expect(tb.nodes[0]!.position).toEqual({ x: 200, y: 10 });
+    expect(tb.nodes[1]!.position).toEqual({ x: 200, y: -44 });
+    expect(tb.nodes[0]!.handles[0]!.position).toBe("bottom");
+  });
+
+  it("leaves the existing nodes/edges pins untouched (separate-field shape)", () => {
+    // Zero pin churn is a hard requirement: the raw feeds ride in rawFeeds, so
+    // the main nodes/edges arrays are byte-identical to a pre-P1 derive. A
+    // solved ingot stage WOULD emit a raw feed, yet nodes/edges stay 1/0.
+    const s = solvedIngot(600);
+    const { nodes, edges, rawFeeds } = graphToFlow(
+      catalog,
+      { s },
+      ["s"],
+      [],
+      [],
+      { s: { x: 0, y: 0 } },
+      "s",
+    );
+    expect(nodes).toHaveLength(1);
+    expect(edges).toHaveLength(0);
+    // The feed exists — proving the pin-stability is real, not vacuous.
+    expect(rawFeeds.nodes).toHaveLength(1);
   });
 });
