@@ -4,7 +4,7 @@ import { layoutStage } from "../layout/layout.ts";
 import type { LaneLayout, BeltMark } from "../layout/layout.ts";
 import { FOOTPRINTS } from "../layout/footprints.ts";
 import { formatRate } from "./format.ts";
-import { fitScale } from "./svg-scale.ts";
+import { ZoomToggle, useReadableScale } from "./blueprint-zoom.tsx";
 
 /**
  * The blueprint view: a top-down, in-game-scale floor plan of one solved stage,
@@ -86,90 +86,137 @@ export function Blueprint({
   const h = rows * FOUNDATION_TILE + 2 * PAD;
   const viewBox = `${minX} ${minY} ${w} ${h}`;
 
-  // Explicit dm→px scale (Axis 2): the shared floor replaces width="100%"+meet.
-  // fitScale reproduces today's render (its height term is min(h,cap)/h — the
-  // old height attribute — so sub-cap plans keep natural size), then refuses
-  // to shrink a wide 161-machine row below the readability floor — that render
-  // exceeds 960 and scrolls in .bp-scroll.
-  const scale = fitScale(w, h, MAX_SVG_HEIGHT);
+  // Explicit dm→px scale (Axis 2 + P3 Axis C2): the shared floor replaces
+  // width="100%"+meet. At DETAIL the plan opens at natural 1 px/dm (readable);
+  // at FIT the P1 fit/floor scale (its height term is min(h,cap)/h — so sub-cap
+  // plans keep natural size). A wide 161-machine row exceeds 960 and scrolls in
+  // .bp-scroll. The toggle mounts only for floored plans (fit < 1).
+  const { scale, atDetail, showToggle, mode, setMode } = useReadableScale(
+    w,
+    h,
+    MAX_SVG_HEIGHT,
+  );
+
+  // Gutter labels (P3 Axis C1) — one per named lane, positioned at the lane's
+  // rendered y. viewBox minY is NEGATIVE for real stages (the smelter's is
+  // −100), so a bare laneY×scale would misplace every label; the (laneY − minY)
+  // term maps world-dm to gutter-px. Rendered ONLY at DETAIL — at FIT adjacent
+  // lanes sit sub-pixel apart, so names are DETAIL's job and the gutter
+  // collapses. Blueprint-ONLY (ChainBlueprint has no lanes to gutter).
+  const gutterLabels = [
+    ...layout.feedLanes.map((lane, i) => ({
+      key: `fg-${lane.itemId}-${i}`,
+      text: feedLabels[i] ?? lane.itemId,
+      top: (lane.bus.from.y - minY) * scale,
+    })),
+    ...layout.outputLanes.map((lane, j) => ({
+      key: `og-${lane.itemId}-${j}`,
+      text: outputLabels[j] ?? lane.itemId,
+      top: (lane.bus.from.y - minY) * scale,
+    })),
+  ];
 
   return (
     <div className="bp-view">
       {notice}
-      <div className="bp-scroll">
-        <svg
-          className="bp-svg"
-          viewBox={viewBox}
-          width={w * scale}
-          height={h * scale}
-        >
-          {/* z1 — foundation tiles: the cols×rows 8 m grid under everything. */}
-          <g className="bp-foundations">
-            {Array.from({ length: rows }, (_, r) =>
-              Array.from({ length: cols }, (_, c) => (
-                <rect
-                  key={`f-${r}-${c}`}
-                  className="bp-foundation"
-                  x={origin.x + c * FOUNDATION_TILE}
-                  y={origin.y + r * FOUNDATION_TILE}
-                  width={FOUNDATION_TILE}
-                  height={FOUNDATION_TILE}
-                />
-              )),
-            )}
-          </g>
-          {/* z2/z3 — lane buses + junction rects, behind the machines. The spec's
+      {showToggle && <ZoomToggle mode={mode} setMode={setMode} />}
+      {/* Flex row: an HTML gutter column LEFT of and OUTSIDE .bp-scroll, so
+          vertical pan (page scroll) carries the in-flow gutter with the svg;
+          only horizontal pan happens inside .bp-scroll. */}
+      <div className="bp-row">
+        {/* The gutter renders labels only at DETAIL; at FIT it is empty and
+            collapses to zero width (max-content sizing, no padding/border).
+            The absolute labels are out-of-flow and contribute NOTHING to
+            max-content, so in-flow invisible sizer twins give the column the
+            longest name's width. */}
+        <div className="bp-gutter">
+          {atDetail &&
+            gutterLabels.map((g) => (
+              <span
+                key={g.key}
+                className="bp-gutter-label"
+                style={{ top: `${g.top}px` }}
+              >
+                {g.text}
+              </span>
+            ))}
+          {atDetail &&
+            gutterLabels.map((g) => (
+              <span
+                key={`sz-${g.key}`}
+                className="bp-gutter-sizer"
+                aria-hidden="true"
+              >
+                {g.text}
+              </span>
+            ))}
+        </div>
+        <div className="bp-scroll">
+          <svg
+            className="bp-svg"
+            viewBox={viewBox}
+            width={w * scale}
+            height={h * scale}
+          >
+            {/* z1 — foundation tiles: the cols×rows 8 m grid under everything. */}
+            <g className="bp-foundations">
+              {Array.from({ length: rows }, (_, r) =>
+                Array.from({ length: cols }, (_, c) => (
+                  <rect
+                    key={`f-${r}-${c}`}
+                    className="bp-foundation"
+                    x={origin.x + c * FOUNDATION_TILE}
+                    y={origin.y + r * FOUNDATION_TILE}
+                    width={FOUNDATION_TILE}
+                    height={FOUNDATION_TILE}
+                  />
+                )),
+              )}
+            </g>
+            {/* z2/z3 — lane buses + junction rects, behind the machines. The spec's
             load-bearing pin is the z-ORDER (bus → junction → machine → mark), so
             a lane's bus/junctions and its marks are split into two passes: these
             draw under the machine row, the marks (below) draw over it. */}
-          {layout.feedLanes.map((lane, i) => (
-            <BusAndJunctions
-              key={`fb-${lane.itemId}-${i}`}
-              lane={lane}
-              kind={solve.feeds[i]!.kind}
-            />
-          ))}
-          {layout.outputLanes.map((lane, j) => (
-            <BusAndJunctions
-              key={`ob-${lane.itemId}-${j}`}
-              lane={lane}
-              kind={solve.outputs[j]!.kind}
-            />
-          ))}
-          {/* z4 — machine rects + index labels. */}
-          <g className="bp-machines">
-            {layout.machines.map((m, i) => (
-              <g key={`m-${i}`} className="bp-machine">
-                <rect x={m.x} y={m.y} width={m.w} height={m.h} />
-                <text
-                  className="bp-machine-label"
-                  x={m.x + m.w / 2}
-                  y={m.y + m.h / 2}
-                >
-                  {i}
-                </text>
-              </g>
+            {layout.feedLanes.map((lane, i) => (
+              <BusAndJunctions
+                key={`fb-${lane.itemId}-${i}`}
+                lane={lane}
+                kind={solve.feeds[i]!.kind}
+              />
             ))}
-          </g>
-          {/* z5 — belt marks (drop glyphs for feed, breakout glyphs for output),
-            in front of the machines, with their rate labels. */}
-          {layout.feedLanes.map((lane, i) => (
-            <Marks
-              key={`fm-${lane.itemId}-${i}`}
-              lane={lane}
-              label={feedLabels[i] ?? lane.itemId}
-              side="feed"
-            />
-          ))}
-          {layout.outputLanes.map((lane, j) => (
-            <Marks
-              key={`om-${lane.itemId}-${j}`}
-              lane={lane}
-              label={outputLabels[j] ?? lane.itemId}
-              side="output"
-            />
-          ))}
-        </svg>
+            {layout.outputLanes.map((lane, j) => (
+              <BusAndJunctions
+                key={`ob-${lane.itemId}-${j}`}
+                lane={lane}
+                kind={solve.outputs[j]!.kind}
+              />
+            ))}
+            {/* z4 — machine rects + index labels. */}
+            <g className="bp-machines">
+              {layout.machines.map((m, i) => (
+                <g key={`m-${i}`} className="bp-machine">
+                  <rect x={m.x} y={m.y} width={m.w} height={m.h} />
+                  <text
+                    className="bp-machine-label"
+                    x={m.x + m.w / 2}
+                    y={m.y + m.h / 2}
+                  >
+                    {i}
+                  </text>
+                </g>
+              ))}
+            </g>
+            {/* z5 — belt marks (drop glyphs for feed, breakout glyphs for output),
+            in front of the machines, with their rate labels. The lane-NAME text
+            left the SVG for the HTML gutter (P3 Axis C1); marks stay. */}
+            {layout.feedLanes.map((lane, i) => (
+              <Marks key={`fm-${lane.itemId}-${i}`} lane={lane} side="feed" />
+            ))}
+            {layout.outputLanes.map((lane, j) => (
+              <Marks key={`om-${lane.itemId}-${j}`} lane={lane} side="output" />
+            ))}
+          </svg>
+        </div>
       </div>
     </div>
   );
@@ -208,26 +255,11 @@ function BusAndJunctions({ lane, kind }: { lane: LaneLayout; kind: LaneKind }) {
   );
 }
 
-/** Belt marks + rate labels + the lane name (z5 — in front of the machines). */
-function Marks({
-  lane,
-  label,
-  side,
-}: {
-  lane: LaneLayout;
-  label: string;
-  side: "feed" | "output";
-}) {
-  const busY = lane.bus.from.y;
+/** Belt marks + rate labels (z5 — in front of the machines). The lane NAME now
+ *  lives in the HTML gutter (P3 Axis C1), not in the SVG. */
+function Marks({ lane, side }: { lane: LaneLayout; side: "feed" | "output" }) {
   return (
     <g className="bp-marks">
-      <text
-        className="bp-lane-name"
-        x={lane.bus.from.x + 4}
-        y={side === "feed" ? busY - BELT_LANE : busY + BELT_LANE + 8}
-      >
-        {label}
-      </text>
       {lane.marks.map((mk: BeltMark) => (
         <Fragment key={`mk-${mk.index}`}>
           <circle className="bp-mark-glyph" cx={mk.at.x} cy={mk.at.y} r={8} />

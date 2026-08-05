@@ -3,7 +3,7 @@ import type { ChainLayout, ChainSite } from "../layout/layout.ts";
 import type { Catalog } from "../data/types.ts";
 import type { StageNode, StageLink } from "../state/store.ts";
 import { formatRate } from "./format.ts";
-import { fitScale } from "./svg-scale.ts";
+import { ZoomToggle, useReadableScale } from "./blueprint-zoom.tsx";
 import { chainPowerText, stagePowerTextFor } from "./advice.ts";
 import {
   buildChain,
@@ -84,10 +84,16 @@ export function ChainBlueprint({
   const w = chain.bounds.w + 2 * PAD;
   const h = chain.bounds.h + 2 * PAD;
   const viewBox = `${minX} ${minY} ${w} ${h}`;
-  // Same shared dm→px floor as Blueprint, at the chain's own height cap (640):
+  // Same shared dm→px scale as Blueprint, at the chain's own height cap (640):
   // explicit px replaces width="100%"+meet so a wide chain never compresses its
-  // sites to hairlines; a floored chain scrolls inside .bp-scroll.
-  const scale = fitScale(w, h, MAX_SVG_HEIGHT);
+  // sites to hairlines. P3 Axis C2: a floored chain opens at DETAIL (readable)
+  // and scrolls inside .bp-scroll; the toggle mounts only when fit < 1. NO
+  // gutter here — ChainBlueprint has no lanes to label (C1 scope).
+  const { scale, showToggle, mode, setMode } = useReadableScale(
+    w,
+    h,
+    MAX_SVG_HEIGHT,
+  );
 
   const originOf = new Map(chain.sites.map((s) => [s.stageId, s.origin]));
 
@@ -95,10 +101,11 @@ export function ChainBlueprint({
     <div className="bp-view">
       {skippedCount > 0 && (
         <p className="bp-notice">
-          {skippedCount} {skippedCount === 1 ? "stage" : "stages"} not shown —
-          unsolved
+          {skippedCount} {skippedCount === 1 ? "stage" : "stages"} not drawn —
+          no recipe or invalid settings
         </p>
       )}
+      {showToggle && <ZoomToggle mode={mode} setMode={setMode} />}
       <div className="bp-scroll">
         <svg
           className="bp-svg chain-bp-svg"

@@ -9,6 +9,9 @@ import { formatRate } from "./format.ts";
 interface LaneOverridesProps {
   result: StageSolveResult;
   overrides: Selection["overrides"];
+  /** id → displayName (App's catalog-access pattern, threaded like Schematic /
+   *  FindingsPanel) — the per-lane item heading that groups its belt rows. */
+  itemName(id: string): string;
   onOverride(
     side: "feeds" | "outputs",
     itemId: string,
@@ -46,6 +49,7 @@ function rowLabel(
 function LaneRows({
   side,
   itemId,
+  itemName,
   belts,
   labelSide,
   overrides,
@@ -53,6 +57,7 @@ function LaneRows({
 }: {
   side: "feeds" | "outputs";
   itemId: string;
+  itemName: string;
   belts: (FeedBelt | BreakoutBelt)[];
   labelSide: "feed" | "output";
   overrides: Selection["overrides"];
@@ -61,6 +66,9 @@ function LaneRows({
   const cells = overrides[side][itemId] ?? [];
   return (
     <div className="lane-overrides-lane" data-item={itemId}>
+      {/* The item heading (schedule-header idiom) groups this lane's belt rows;
+          it spans the grid via grid-column: 1 / -1 (see app.css). */}
+      <div className="lane-overrides-item">{itemName}</div>
       {belts.map((belt, index) => (
         <div className="override-row" key={index}>
           <span className="override-label">
@@ -84,15 +92,23 @@ function LaneRows({
 export function LaneOverrides({
   result,
   overrides,
+  itemName,
   onOverride,
 }: LaneOverridesProps) {
   return (
     <div className="lane-overrides">
+      {/* Panel heading (drafting-label idiom) + a one-line sub-label answering
+          Michael's "what are these input boxes" field report. */}
+      <div className="lane-overrides-head">BELT LOAD OVERRIDES</div>
+      <p className="lane-overrides-sub">
+        type a rate to override a belt&apos;s load · empty = computed
+      </p>
       {result.feeds.map((lane) => (
         <LaneRows
           key={`feed-${lane.itemId}`}
           side="feeds"
           itemId={lane.itemId}
+          itemName={itemName(lane.itemId)}
           belts={lane.belts}
           labelSide="feed"
           overrides={overrides}
@@ -104,6 +120,7 @@ export function LaneOverrides({
           key={`out-${lane.itemId}`}
           side="outputs"
           itemId={lane.itemId}
+          itemName={itemName(lane.itemId)}
           belts={lane.breakouts}
           labelSide="output"
           overrides={overrides}

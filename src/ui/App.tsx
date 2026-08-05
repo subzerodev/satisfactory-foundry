@@ -459,6 +459,7 @@ export default function App() {
           <LaneOverrides
             result={solve.result}
             overrides={selection.overrides}
+            itemName={itemName}
             onOverride={s.setOverride}
           />
           <FindingsPanel
