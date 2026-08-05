@@ -1,4 +1,4 @@
-# Stage 12 / P2+P3 combined — clarity + views navigation (tickets #65 + #64) — brainstorm v1
+# Stage 12 / P2+P3 combined — clarity + views navigation (tickets #65 + #64) — brainstorm v2
 
 **Goal.** Michael's fix-all-now directive (epic #59 decision 2026-08-05).
 Three fixes: (A) override rows labeled + grouped; (B) one recipe-less
@@ -22,11 +22,13 @@ no lane grouping or explanation.
 1. Override rows (LaneOverrides.tsx:63-79): the lane wrapper carries
    only data-item — NO item heading, NO panel explanation; rows read
    "Feed 1 · 480/min · enters at head" with a bare input.
-2. Blueprint labels (Blueprint.tsx:221-227): feed label y = busY −
-   BELT_LANE (above), output label y = busY + BELT_LANE + 8 (below);
-   the bus rect spans busY ± BELT_LANE/2 — offsets are in dm and the
-   11-user-unit text can still land visually on/near the bus at small
-   scales (Michael's screenshot).
+2. Blueprint labels (Blueprint.tsx:221-227): feed label above, output
+   below its own bus with 7dm clearance AT EVERY SCALE (both offsets
+   and the 11-dm font scale together — r1 adversarial killed the v1
+   "small scales" diagnosis). The REAL mechanism is the P1 doc's own:
+   ADJACENT-lane crowding at LANE_SPACING=60 (layout/layout.ts:77) —
+   a label clears its own lane but lands on its NEIGHBOR when rows
+   stack tight (Michael's "Computer" label under the machine row).
 3. Unsolved message (ChainBlueprint.tsx:98-99): "N stage(s) not shown —
    unsolved" vs the plate's "no recipe" vs findings "No warnings".
 
@@ -42,30 +44,40 @@ LaneOverrides.tsx; CSS reuses existing idioms (no new tokens).**
 
 ## Axis B — one recipe-less vocabulary (#65b)
 
-**Pick: the canonical phrase is "no recipe" (the plate's existing
-word). ChainBlueprint's skip note becomes "N stage(s) without a recipe
-— not drawn"; the findings panel is UNTOUCHED (its "No warnings" is
-about lane findings and is correct — the confusion came from the
-"unsolved" word implying a problem; recorded).**
+**Pick: ChainBlueprint's skip note becomes "N stage(s) not drawn — no
+recipe or invalid settings" (r1 adversarial: SolveState has THREE
+statuses and `invalid` stages HAVE a recipe — the v1 "without a
+recipe" phrase was false for them; this phrase is accurate for
+idle + invalid and calm). The findings panel is UNTOUCHED ("No
+warnings" is about lane findings — correct; the alarm came from the
+word "unsolved", now gone).**
 
 ## Axis C — labels off lanes + initial readable zoom (#64)
 
-**C1 — label gutter.** Blueprint/Combined lane labels move OFF the
-geometry into a LEFT GUTTER: the SVG viewBox gains a fixed-dm gutter
-column (GUTTER_DM, sized to the longest label at the label font);
-lane names render right-aligned in the gutter at their lane's y,
-never over geometry. The halo stays (defense at gutter/lane seams).
-The schematic already labels lanes above-left (its labels are fine —
-untouched).
+**C1 — HTML label gutter (r1 BOTH reviewers — the v1 in-SVG dm gutter
+is dead: it widened vbW and perturbed the frozen fitScale, and its
+dm-scaled labels were sub-pixel at floor zoom anyway). The lane
+labels LEAVE the SVG entirely: a screen-space HTML gutter column sits
+LEFT of .bp-scroll (a flex row: [.bp-gutter][.bp-scroll>svg]), each
+label positioned at its lane's rendered y (laneY_dm × scale, computed
+px), right-aligned, mono 11px SCREEN px — readable at EVERY zoom
+including the floor; the SVG lane-name <text> elements are REMOVED
+(the halo stays only on mark labels). Zero viewBox change → zero
+fitScale coupling → the smelter viewBox/width/height pins DON'T
+churn.** The schematic's screen-space labels are fine — untouched.
 
-**C2 — initial readable zoom + pan.** The bp views open at
-READABLE_PX_PER_DM (target: the P1 walk-verified comfortable scale,
-~0.4-1.0 — exact value derived at implementation from the Computer ×40
-case and pinned) anchored at the head (left edge), inside the existing
-.bp-scroll (pan = native scroll, both axes — no custom pan code). A
-small zoom control (the quiet-mono button idiom): [fit | 1:1]
-toggling between the P1 fit/floor scale and the readable scale. The
-P1 floor remains the zoomed-out bound; deep plans unchanged.
+**C2 — initial readable zoom + pan. THIS SUPERSEDES the P1 frozen
+"no zoom UI" non-goal (named per r1 — justified by Michael's explicit
+"we need to start zoomed in" + "fix all issues now" directives).**
+Open scale = max(fitScale, READABLE_PX_PER_DM) with READABLE = 1.0
+(natural size — making the toggle label honest): small plans open
+exactly as today (fit ≥ 1 → unchanged, the natural-size posture
+preserved), big plans open at 1 px/dm readable detail. The toggle
+(quiet-mono buttons, shown ONLY when fit < 1): [FIT | DETAIL] —
+DETAIL = 1 px/dm, FIT = the P1 fit/floor scale. Pan = native scroll
+in .bp-scroll (both axes; head-anchored passively via scrollLeft 0 —
+stated as passive, r1 nit). The gutter labels reposition with the
+active scale (same px math).
 
 ## Non-goals
 
@@ -76,14 +88,19 @@ P1 floor remains the zoomed-out bound; deep plans unchanged.
 
 ## Test plan sketch
 
-- LaneOverrides SSR: heading + sub-label + per-lane item headings
-  (displayName resolved); rows unchanged otherwise.
+- LaneOverrides SSR: heading + sub-label + per-lane item headings —
+  via the EXISTING App itemName prop pattern (App.tsx:264, already
+  threaded to Schematic/FindingsPanel; r1 — named now, not deferred).
+  The heading spans the lane grid via grid-column: 1 / -1 (one CSS
+  line — the "markup only" claim corrected, r1 nit).
 - ChainBlueprint: the skip note text pinned to the new phrase.
 - svg framing: viewBox includes the gutter; labels' x within the
   gutter (unit-testable from the emitted markup); the zoom toggle
   switches width/height between fit-scale and readable-scale values.
-- Churned pins enumerated (the ChainBlueprint note text; any viewBox
-  pins).
+- Churned pins enumerated: ONLY the ChainBlueprint note text — the
+  HTML gutter changes no viewBox/width/height, and open-scale =
+  max(fit, 1) leaves small-plan pins at today's values (r1 nit
+  resolved by the C1/C2 rework).
 - Both-media walk at Computer ×40 AND Plastic ×161: no label touches
   any lane at either zoom; override panel self-explanatory; the skip
   note reads calm.
@@ -105,3 +122,15 @@ P1 floor remains the zoomed-out bound; deep plans unchanged.
 
 - v1 (2026-08-05): initial — grounded in the fix-all-now directive,
   Michael's two field screenshots, and this session's reads.
+- v2 (2026-08-05): dual-review r1 — BOTH NEEDS_REWORK ([code] 2
+  IMPORTANT + 2 NITs; [adversarial] 4 IMPORTANT + 4 NITs), folded as a
+  REWORK of Axis C: the in-SVG dm gutter died (fitScale perturbation +
+  sub-pixel labels at floor — both reviewers) → HTML screen-space
+  gutter outside the SVG (zero coupling, readable at every zoom, no
+  pin churn); the v1 overlap diagnosis corrected to adjacent-lane
+  crowding (the P1 doc's own mechanism); Axis B's phrase corrected for
+  `invalid` stages ("no recipe or invalid settings"); the P1 "no zoom
+  UI" non-goal SUPERSEDED explicitly (Michael's directive); open
+  scale = max(fit, 1.0) preserves the small-plan natural-size posture
+  and makes the [FIT|DETAIL] labels honest; the itemName prop pattern
+  named; the heading-span CSS acknowledged.
