@@ -181,4 +181,7 @@ process (all-Claude roster, opus implementers, per-phase gates).
 - **Epic:** #53 (milestone 82). P0 views theming + spacing → P1 visible
   raw feeds (behavior; full design loop — source nodes vs feed
   annotations, LR/TB, persistence implications).
-- **Status:** in progress (started 2026-08-05).
+- **Status:** in progress (started 2026-08-05). P0 merged 2026-08-05
+  (3a3feae — views theming: max-content override grid, square chrome,
+  display-face site names, 12px rhythm; #55 sticky title block). P1
+  (visible raw feeds) next.
