@@ -1,4 +1,4 @@
-# Stage 17 — drawn-distance goes two-site; the chain engine retires (ticket #89) — brainstorm v2
+# Stage 17 — drawn-distance goes two-site; the chain engine retires (ticket #89) — brainstorm v3
 
 **Goal.** Michael's #81 decision (2026-08-05, recorded there and on
 the epic trail): the Transport panel's drawn-distance becomes a pure
@@ -73,9 +73,14 @@ positions)` — signature unchanged:
    **The limit behavior, stated honestly (r1 adversarial
    IMPORTANT):** as the canvas delta shrinks toward zero, k grows
    but the scaled separation k×delta converges to the pair's
-   required clearance (leftWidth + CHAIN_GUTTER) — so near-coincident
-   stages read a FLOOR distance (~80 dm for smelter-width sites),
-   NOT a smooth approach to 0; exactly-coincident then snaps to 0.
+   required ORIGIN SEPARATION (leftWidth + CHAIN_GUTTER) — so
+   near-coincident stages read a FLOOR edge-DISTANCE of exactly
+   CHAIN_GUTTER (= 80 dm; the separation minus leftWidth) for an
+   axis-aligned approach, direction-dependent for a diagonal one
+   (k = min(kx, ky)) — NOT a smooth approach to 0;
+   exactly-coincident then snaps to 0. (r2 both reviewers: the pin
+   measures the EDGE distance, not the origin separation — the two
+   differ by leftWidth.)
    This gutter-enforced floor is INHERITED from the old flow (same
    behavior there), and the pins below encode it so nobody expects
    distance→0 continuity.
@@ -109,10 +114,12 @@ positions)` — signature unchanged:
   adversarial nit).
 - The coincident-pair pin (same position → 0 dm, no special-case
   code — it falls out of the total primitive).
-- The FLOOR pin (r1 adversarial): two nearly-coincident stages pin
-  the gutter-enforced floor value (≈ leftWidth + CHAIN_GUTTER —
-  the implementer pins the actual), documenting that the measure
-  does NOT approach 0 smoothly.
+- The FLOOR pin (r1 adversarial, value corrected r2): two nearly-
+  coincident stages on an axis-aligned approach pin the
+  gutter-enforced floor EDGE distance = CHAIN_GUTTER exactly
+  (80 dm — NOT leftWidth + CHAIN_GUTTER, which is the origin
+  separation; the implementer pins the actual), documenting that
+  the measure does NOT approach 0 smoothly.
 - drawnMeters/applyDrawnDistance/isEstimatedLink tests untouched.
 
 ## Non-goals
@@ -182,3 +189,15 @@ positions)` — signature unchanged:
   drawnMeters/applyDrawnDistance contracts absorb fractional dm,
   and the 80 dm A-B continuity is EXACT on the S15 fixture
   (rounding is a no-op there).
+- v3 (2026-08-06): r2 — code APPROVED_WITH_NITS (1), adversarial
+  NEEDS_REWORK (1 IMPORTANT + 1 nit), the SAME finding from both
+  angles, folded: the floor pin's expected value was mislabeled 2×
+  — the pin measures the nearest-EDGE distance (exactly
+  CHAIN_GUTTER = 80 dm on an axis-aligned approach; the
+  leftWidth + CHAIN_GUTTER figure is the ORIGIN separation), and a
+  diagonal approach is direction-dependent (k = min(kx, ky)). Both
+  reviewers verified everything else: the guard deletion (the
+  primitive total, 0 dm natural), the no-origin-term box shape, the
+  _stageOrder underscore exemption, the EXACT 80 dm continuity
+  (ceilTo10(160) a no-op), and the decoupling pin's decisiveness
+  (80 ≠ 240 under old code).
