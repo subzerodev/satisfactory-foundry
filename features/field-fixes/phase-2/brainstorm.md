@@ -1,4 +1,4 @@
-# Stage 12 / P2+P3 combined — clarity + views navigation (tickets #65 + #64) — brainstorm v4
+# Stage 12 / P2+P3 combined — clarity + views navigation (tickets #65 + #64) — brainstorm v5
 
 **Goal.** Michael's fix-all-now directive (epic #59 decision 2026-08-05).
 Three fixes: (A) override rows labeled + grouped; (B) one recipe-less
@@ -73,27 +73,56 @@ DETAIL's job, stated); the SVG lane-name <text> elements are REMOVED
 fitScale coupling → the smelter viewBox/width/height pins DON'T
 churn.** The schematic's screen-space labels are fine — untouched.
 
-**C2 — initial readable zoom + pan. THIS SUPERSEDES the P1 frozen
-"no zoom UI" non-goal (named per r1 — justified by Michael's explicit
-"we need to start zoomed in" + "fix all issues now" directives).**
+**C1 scope (r3 adversarial IMPORTANT): the gutter + the lane-name
+<text> removal are Blueprint-ONLY.** ChainBlueprint renders no lanes
+and no .bp-lane-name text at all (its only text chrome is the
+chain-bp-name site label, ChainBlueprint.tsx:204) — there is nothing
+to gutter; a single left column cannot represent lanes from sites
+stacked in 2D chain space (same-y collisions across sites); and the
+single-site px formula would be wrong there anyway — each site is
+rendered site-local then translated by (originX − fx, originY − fy)
+(ChainBlueprint.tsx:167), so a lane's chain-world y needs the
+per-site translate term the formula omits. The Combined view keeps
+its lane-less site overview.
+
+**C2 — initial readable zoom + pan, in BOTH blueprint views
+(Blueprint AND ChainBlueprint — r3 adversarial: the Combined view
+shares .bp-scroll and restates the same fitScale-at-cap math
+(ChainBlueprint.tsx:90,:106-107), and a floored multi-site chain is
+exactly as unreadable as a floored single stage; Michael's "the
+other views are not readable at all" names it). THIS SUPERSEDES the
+P1 frozen "no zoom UI" non-goal (named per r1 — justified by
+Michael's explicit "we need to start zoomed in" + "fix all issues
+now" directives).**
 Open scale = max(fitScale, READABLE_PX_PER_DM) with READABLE = 1.0
 (natural size — making the toggle label honest): small plans open
 exactly as today (fit ≥ 1 → unchanged, the natural-size posture
 preserved), big plans open at 1 px/dm readable detail. The toggle
-(quiet-mono buttons, shown ONLY when fit < 1): [FIT | DETAIL] —
-DETAIL = 1 px/dm, FIT = the P1 fit/floor scale. Pan = native scroll
-in .bp-scroll (both axes; head-anchored passively via scrollLeft 0 —
-stated as passive, r1 nit; .bp-scroll becomes overflow-x: auto,
-matching the .schematic-scroll mirror it cites and killing the
-latent inner-vertical-scrollbar drift trap — r2 nit). The gutter
-labels reposition with the active scale (same px math).
+(quiet-mono buttons, shown ONLY when fit < 1, per-view presentation
+useState): [FIT | DETAIL] — DETAIL = 1 px/dm, FIT = the P1 fit/floor
+scale. ChainBlueprint gets the toggle WITHOUT a gutter (C1 scope).
+Pan = native scroll (head-anchored passively via scrollLeft 0 —
+stated as passive, r1 nit). **.bp-scroll KEEPS overflow: auto — the
+r2 "→ overflow-x: auto" fold is REVERTED (r3 adversarial IMPORTANT:
+it lands on a class ChainBlueprint shares, unconsidered — and it was
+a literal no-op anyway: per the CSS overflow computed-value rule, a
+lone overflow-x: auto computes overflow-y to auto, identical to
+overflow: auto).** The invariant that actually keeps gutter labels
+aligned is stated instead: .bp-scroll has NO height cap, so the
+explicit-px svg sizes it and the inner vertical scrollbar never
+engages — vertical pan is page scroll, which moves the in-flow
+gutter with it; only horizontal pan happens inside .bp-scroll, and
+the gutter sits to its left, outside the scrolling box, by design.
+The gutter labels reposition with the active scale (same px math).
 
 ## Non-goals
 
 - No wheel-zoom/pinch (native scroll is the navigation; the toggle
   covers the two useful scales); no schematic changes beyond Axis B's
   none; no RF canvas changes; no solver/geometry changes (the gutter
-  is an HTML column outside the SVG — zero viewBox/layout impact).
+  is an HTML column outside the SVG — zero viewBox/layout impact);
+  no Combined-view gutter (C1 scope — ChainBlueprint has no lanes to
+  label; it gets C2's toggle only).
 
 ## Test plan sketch
 
@@ -105,18 +134,22 @@ labels reposition with the active scale (same px math).
 - ChainBlueprint: the skip note text pinned to the new phrase.
 - gutter: label y positions = (laneY − minY) × scale (unit-testable
   from the component's computed positions); the zoom toggle switches
-  svg width/height between fit-scale and 1 px/dm values.
+  svg width/height between fit-scale and 1 px/dm values — in BOTH
+  views (ChainBlueprint toggle asserted with no gutter markup).
 - Pins: the ChainBlueprint note gets a NEW string pin (nothing pins
   the current text — r2 precision); the lane-name <text> removal is
   pin-safe BECAUSE the only label assertions are location-agnostic
   toContain()s that still match the gutter markup (r2 — stated, not
-  assumed); no viewBox/width/height pin churns (HTML gutter + open
-  scale max(fit,1)).
+  assumed); no existing viewBox/width/height pin churns (HTML gutter
+  + open scale max(fit,1): every pinned fixture is a sub-cap fit ≥ 1
+  plan that opens unchanged, both views).
 - Both-media walk at Computer ×40 AND Plastic ×161: at DETAIL no
   label touches any lane or any other label (Plastic ×161 opens at
   DETAIL ≈ 17710px wide — the pinned figure, r2 nit — scrolling
   head-anchored); at FIT the gutter is collapsed (no labels, by
-  design); override panel self-explanatory; the skip note reads calm.
+  design); the Combined view at DETAIL: site chrome readable at
+  1 px/dm, pan via page scroll + horizontal .bp-scroll, NO gutter;
+  override panel self-explanatory; the skip note reads calm.
 
 ## Assumptions ledger
 
@@ -170,3 +203,22 @@ labels reposition with the active scale (same px math).
   framing", the "viewBox includes the gutter" test item, the
   GUTTER_DM ledger entry) rewritten for the HTML-gutter shape; Axis
   A's "markup only" aligned with the grid-column correction.
+- v5 (2026-08-05): r3 verdicts — code-reviewer APPROVED (0);
+  adversarial NEEDS_REWORK (2 IMPORTANT, folded). (1) Axis C scoped:
+  the gutter + lane-name removal are Blueprint-ONLY (ChainBlueprint
+  has no lanes/lane-name text; a single column can't represent
+  2D-stacked sites; the naive formula would omit the per-site
+  translate term originY − fy, ChainBlueprint.tsx:167). (2) The r2
+  ".bp-scroll → overflow-x: auto" fold REVERTED — it landed
+  unconsidered on a class ChainBlueprint shares, and was a literal
+  no-op (CSS computed-value rule: lone overflow-x: auto computes
+  overflow-y to auto); replaced by the stated no-height-cap
+  invariant that actually keeps gutter labels aligned (vertical pan
+  = page scroll; horizontal pan stays inside .bp-scroll, gutter
+  outside it). C2 widened to BOTH blueprint views (same fitScale
+  math, shared .bp-scroll, Michael's "other views not readable" —
+  toggle per-view, no Combined gutter). Held per r3 adversarial: the
+  DETAIL-only gutter trade at FIT (FIT keeps geometry + belt/pipe
+  kind legibility — defensible overview), Axis B across all three
+  SolveState statuses, the minY term, the open-scale formula, the
+  pin-safety claims.
