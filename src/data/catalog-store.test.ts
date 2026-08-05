@@ -21,6 +21,9 @@ function sampleCatalog(): Catalog {
         displayName: "Iron Ore",
         isFluid: false,
         stackSize: Fraction.from(100),
+        // A resource-descriptor item carries the raw flag (Stage 11 / Phase 1);
+        // the round-trip test below asserts it survives serialize/revive.
+        isRawResource: true,
       },
       iron_ingot: {
         id: "iron_ingot",
@@ -93,6 +96,13 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     expect(
       result.catalog.items["ore_iron"]!.stackSize!.eq(Fraction.from(100)),
     ).toBe(true);
+    // isRawResource survives serialize/revive (Stage 11 / Phase 1): it round-
+    // trips through IDB via StoredCatalogItem/serializeItem/reviveItem, so
+    // dropping any one makes the flag silently vanish on the second boot. This
+    // assertion is load-bearing — the flag-less iron_ingot proves the absent
+    // case revives absent, and ore_iron's true proves the set case survives.
+    expect(result.catalog.items["ore_iron"]!.isRawResource).toBe(true);
+    expect(result.catalog.items["iron_ingot"]!.isRawResource).toBeUndefined();
 
     // The source hash is recorded (SHA-256 hex = 64 chars).
     const db = await openDb();

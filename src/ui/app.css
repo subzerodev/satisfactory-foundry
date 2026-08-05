@@ -954,6 +954,34 @@ body {
   color: var(--fg-muted);
 }
 
+/* Raw-feed supply card (Stage 11 P1, ticket #57) — the drafting "supply
+   callout" for an extraction input. A DASHED hairline frame (lighter than the
+   solid 2px stage plate) on the panel ground reads as auxiliary chrome, not a
+   real stage; square corners (radius 0) match the drafting vocabulary. The
+   item name and rate stack in the numeric/mono face; the rate is the muted
+   mid-ink so the item name leads. Colours via existing tokens only. */
+.raw-feed-node {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-family: var(--font-mono-num);
+  background: var(--bg-panel);
+  border: 1px dashed var(--border-soft);
+  border-radius: 0;
+}
+
+.raw-feed-node-item {
+  color: var(--fg);
+}
+
+.raw-feed-node-rate {
+  color: var(--fg-muted);
+}
+
 /* The chain-Σ power line (Stage 6 P2) — a small muted panel, bottom-right. */
 .graph-chain-power {
   /* Corner inset (Stage 10 P1 Axis 1): the power panel renders bottom-right,
@@ -991,6 +1019,17 @@ body {
 .edge-dangling .react-flow__edge-path {
   stroke: var(--notice);
   stroke-dasharray: 4 3;
+}
+
+/* Raw-feed edge (Stage 11 P1, ticket #57) — the dashed hairline from a supply
+   card to its stage. Lighter than the reconciliation lanes: the pipe-dash
+   vocabulary at reduced weight + opacity, muted ink so it reads as auxiliary
+   supply, not a real feed lane. Existing tokens only — no new tokens. */
+.edge-raw .react-flow__edge-path {
+  stroke: var(--fg-muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.55;
 }
 
 /* Dimension text (Axis 2): the edge label reads as a drafting measurement —
