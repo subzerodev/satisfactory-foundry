@@ -800,8 +800,7 @@ body {
 }
 
 /* The top-left canvas panel holds two sibling buttons (add-stage + the
-   flow toggle); RF's Panel sets no display, so this is purely additive.
-   Position classes scope it away from RF's own controls/attribution. */
+   flow toggle); safety of asserting display here: phase-2 brainstorm §Axis 1. */
 .graph-canvas .react-flow__panel.top.left {
   display: flex;
   gap: 8px;
