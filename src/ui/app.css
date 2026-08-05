@@ -794,7 +794,6 @@ body {
 .graph-add-stage {
   font-size: 13px;
   padding: 4px 10px;
-  cursor: pointer;
 }
 
 .graph-canvas-notice {
