@@ -92,9 +92,9 @@ export function beltLabel(
 }
 
 /**
- * A bus segment's hover-tooltip text. The exact string moved verbatim out of
- * the Schematic `<title>` markup (Stage 5 item 1) so the styled tooltip and the
- * unit test share one source of truth. `busCapString` is the already-formatted
+ * A bus segment's hover-tooltip text. The exact string is owned here (Stage 5
+ * item 1) so any styled tooltip and the unit test share one source of truth,
+ * rather than being buried in `<title>` markup. `busCapString` is the already-formatted
  * bus capacity (formatRate) the caller passes; `peakFlow` is the segment's exact
  * span maximum, formatted here.
  */

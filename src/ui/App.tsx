@@ -18,7 +18,6 @@ import { UploadScreen } from "./UploadScreen.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
 import { PlansBar } from "./PlansBar.tsx";
 import { SummaryCards } from "./SummaryCards.tsx";
-import { Schematic } from "./Schematic.tsx";
 import { Blueprint } from "./Blueprint.tsx";
 import { ChainBlueprint } from "./ChainBlueprint.tsx";
 import { LaneOverrides } from "./LaneOverrides.tsx";
@@ -60,23 +59,8 @@ setBundledDocsProvider(async () => {
   }
 });
 
-/** The three solve-facing views (Stage 7 / Phase 3, Axis 2). */
-type View = "schematic" | "blueprint" | "combined";
-
-/** The view the toggle advances to from the current one (schematic → blueprint
- *  → combined → schematic). */
-const VIEW_CYCLE: Record<View, View> = {
-  schematic: "blueprint",
-  blueprint: "combined",
-  combined: "schematic",
-};
-
-/** The button label per target view. */
-const viewLabel: Record<View, string> = {
-  schematic: "Schematic",
-  blueprint: "Blueprint",
-  combined: "Combined",
-};
+/** The two solve-facing views (Stage 13 / #68 — the schematic was removed). */
+type View = "blueprint" | "combined";
 
 /** Stage-global ⊕ per-lane findings, flattened for the panel. */
 function allFindings(result: StageSolveResult): Finding[] {
@@ -164,11 +148,11 @@ export default function App() {
   const selection = activeSelection(s);
   const solve = activeSolve(s);
 
-  // View toggle for the schematic slot (Axis 1): component-local UI state (the
+  // View selection for the plan slot (#68): component-local UI state (the
   // canvasNotice precedent — meaningless headless, so no store field). Default
-  // Schematic keeps the familiar view primary this arc. The "combined" view
+  // Blueprint is the primary view now the schematic is gone. The "combined" view
   // (Stage 7 / Phase 3) ignores the active stage — it shows the whole chain.
-  const [view, setView] = useState<View>("schematic");
+  const [view, setView] = useState<View>("blueprint");
 
   // Theme preference (Stage 5 item 3): a UI preference, initialized from the
   // stored choice ⊕ the OS media query, applied as data-theme on the document
@@ -303,10 +287,6 @@ export default function App() {
     s.links,
   );
 
-  // The 3-way view cycle (schematic → blueprint → combined → schematic) and its
-  // labels (Stage 7 / Phase 3, Axis 2). The button shows the NEXT target.
-  const nextView = VIEW_CYCLE[view];
-
   // Title-block data (Stage 9 / Phase 0) — ordinary selector reads, props down
   // to the pure TitleBlock. TITLE is the active stage's name (the store
   // invariant guarantees activeStageId resolves). SHEET counts stages + links.
@@ -411,18 +391,31 @@ export default function App() {
             itemName={itemName}
             powerText={activePowerText}
           />
-          {/* The view toggle (Axis 1 + Stage 7 P3), labelled with the NEXT view
-              in the schematic → blueprint → combined cycle. It swaps only the
-              schematic slot below; every other solve-facing panel stays. A null
-              recipe can never reach "solved", so selection.recipeId is non-null.
-              "combined" ignores the active stage (whole-chain view). */}
-          <button
-            type="button"
-            className="view-toggle"
-            onClick={() => setView(nextView)}
-          >
-            View: {viewLabel[nextView]}
-          </button>
+          {/* Two tabs naming the CURRENT view (#68) — honest, unlike the old
+              cycle button that named its NEXT destination (the grounded mislabel
+              confusion). The active tab carries the accent; clicking sets the
+              view directly. Same quiet-mono idiom as the FIT|DETAIL toggle. It
+              swaps only the plan slot below; every other solve-facing panel
+              stays. A null recipe can never reach "solved", so selection.recipeId
+              is non-null. "combined" ignores the active stage (whole-chain). */}
+          <div className="view-tabs">
+            <button
+              type="button"
+              className={view === "blueprint" ? "view-tab active" : "view-tab"}
+              aria-pressed={view === "blueprint"}
+              onClick={() => setView("blueprint")}
+            >
+              BLUEPRINT
+            </button>
+            <button
+              type="button"
+              className={view === "combined" ? "view-tab active" : "view-tab"}
+              aria-pressed={view === "combined"}
+              onClick={() => setView("combined")}
+            >
+              COMBINED
+            </button>
+          </div>
           {view === "blueprint" ? (
             <Blueprint
               solve={solve.result}
@@ -437,7 +430,7 @@ export default function App() {
                   `${itemName(lane.itemId)}${lane.kind === "pipe" ? " (pipe)" : ""}`,
               )}
             />
-          ) : view === "combined" ? (
+          ) : (
             <ChainBlueprint
               catalog={catalog}
               stages={s.stages}
@@ -446,14 +439,6 @@ export default function App() {
               positions={s.positions}
               activeStageId={s.activeStageId}
               onSelectStage={s.setActiveStage}
-            />
-          ) : (
-            <Schematic
-              result={solve.result}
-              machineCount={selection.machineCount}
-              tiers={catalog.tiers}
-              unlocked={selection.unlockedTiers}
-              itemName={itemName}
             />
           )}
           <LaneOverrides

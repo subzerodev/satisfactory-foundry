@@ -1,0 +1,122 @@
+# Stage 13 (tickets #68 + #69 + #70) — bidirectionality verification log
+
+Branch: feature/field-r2 (worktree .worktrees/field-r2), cut from develop @ ba35744.
+Contract: features/field-fixes-2/brainstorm.md (v3, FROZEN).
+
+Each distinct new/changed behavior is verified bidirectionally: the new test
+PASSES against the real implementation, then a genuine break of the
+implementation makes that SAME test FAIL (quote-delimited assertion, real
+vitest FAIL line naming the test — not a substring tautology), then restore →
+green. Commands run INSIDE the worktree (never the main repo root — the
+worktree double-count trap).
+
+Suite baseline BEFORE this arc: 31 files / 767 tests passing.
+Suite AFTER this arc:          31 files / 749 tests passing.
+(Net −18: deleted src/ui/layout.test.ts + the schematic-only smoke tests;
+ added the Axis B mark-label pins + clearance geometry test + the Axis C table
+ structural pin.)
+
+===============================================================================
+BEHAVIOR 1 — App default view / no-schematic sweep (#68)
+  Test: smoke.test.tsx > "App view tabs (#68 — blueprint default)" >
+        "boots to the initializing surface — no plan leaf mounted eagerly"
+  Note: App SSR in node renders the initializing path (<p class="boot">…), so
+  the solved block + the two view tabs are NOT reachable headless — the tab
+  markup + its active-marking is a BROWSER-WALK gate (stated honestly in the
+  test + the contract). What IS test-pinned: no bp-svg mounts eagerly, and the
+  schematic surface is gone entirely (no "schematic" anywhere in the boot
+  markup). The break below exercises the schematic sweep.
+-------------------------------------------------------------------------------
+PASS:
+      Tests  1 passed | 54 skipped (55)
+
+BREAK (re-introduce a schematic-shaped marker in App's boot markup):
+  <p className="boot">Loading…</p>  →  <p className="boot">Loading schematic…</p>
+FAIL (genuine, names the test):
+ FAIL  src/ui/smoke.test.tsx > App view tabs (#68 — blueprint default) >
+       boots to the initializing surface — no plan leaf mounted eagerly
+AssertionError: expected '<p class="boot">loading schematic…</p>' not to contain 'schematic'
+Expected: "schematic"
+Received: "<p class="boot">loading schematic…</p>"
+
+RESTORE → green:
+      Tests  1 passed | 54 skipped (55)
+
+===============================================================================
+BEHAVIOR 2 — mark labels lifted off the drawing ink (#69)
+  Tests:
+   (a) smoke.test.tsx > "Blueprint" >
+       "lifts mark labels OFF the lane band: feed y=−44, output y=152 (#69)"
+   (b) Blueprint.geometry.test.ts >
+       "mark-label clearance off the junction ink (#69)" >
+       "feed labels lift ABOVE the junction band (bbox bottom clears busY−20)"
+   (c) same describe >
+       "output labels drop BELOW the junction band (bbox top clears busY+20)"
+  Ground truth (verified vs src/layout/layout.ts + footprints.ts): marks always
+  sit ON busY; junction rects are 40×40 centred on busY → span exactly
+  [busY−20, busY+20]; smelter feed bus y=−20, output bus y=120.
+-------------------------------------------------------------------------------
+PASS:
+      Tests  3 passed | 54 skipped (57)
+
+BREAK (revert the label baselines to the old ON-band offsets):
+  MARK_LABEL_DY = { feed: -24, output: 32 }  →  { feed: 4, output: 4 }
+FAIL (genuine — all three, names each test):
+ FAIL  src/ui/Blueprint.geometry.test.ts > … > feed labels lift ABOVE the junction band (bbox bottom clears busY−20)
+AssertionError: expected { top: -26, bottom: -16 } to deeply equal { top: -54, bottom: -44 }
+ FAIL  src/ui/Blueprint.geometry.test.ts > … > output labels drop BELOW the junction band (bbox top clears busY+20)
+AssertionError: expected { top: 114, bottom: 124 } to deeply equal { top: 142, bottom: 152 }
+ FAIL  src/ui/smoke.test.tsx > Blueprint > lifts mark labels OFF the lane band: feed y=−44, output y=152 (#69)
+AssertionError: expected '<div class="bp-view">…' to contain 'class="bp-mark-label" x="12" y="-44"'
+  (broken SSR emitted y="-16" / y="124" — labels back on the band, crossing the
+   junction rects at [-40,0] and [100,140] visible in the same markup dump.)
+
+RESTORE → green:
+      Tests  3 passed | 54 skipped (57)
+
+===============================================================================
+BEHAVIOR 3 — override panel is one aligned table (#70)
+  Test: smoke.test.tsx > "LaneOverrides" >
+        "wraps ALL lane groups in one table; head + sub sit OUTSIDE it (#70)"
+  Note: CSS column alignment itself is not SSR-assertable — the browser walk
+  owns the visual column check. What IS test-pinned: the STRUCTURE the alignment
+  depends on — the single .lane-overrides-table wrapper, head/sub before it,
+  every lane wrapper inside it.
+-------------------------------------------------------------------------------
+PASS:
+      Tests  1 passed | 54 skipped (55)
+
+BREAK (remove the .lane-overrides-table wrapper — lanes render directly under
+  the panel, as in the pre-#70 zig-zag layout):
+  <div className="lane-overrides-table"> … </div>  →  <> … </>
+FAIL (genuine, names the test):
+ FAIL  src/ui/smoke.test.tsx > LaneOverrides > wraps ALL lane groups in one table; head + sub sit OUTSIDE it (#70)
+AssertionError: expected -1 to be greater than -1
+  (tableAt = indexOf('class="lane-overrides-table"') = -1 once the wrapper is gone.)
+
+RESTORE → green:
+      Tests  1 passed | 54 skipped (55)
+
+===============================================================================
+BEHAVIOR 4 — svg-scale literal-960 rewrite is value-preserving (#68)
+  Test: svg-scale.test.ts > "fitScale — the shared scale floor" >
+        "is width-governed when the fixed reference is the tighter fit"
+  (The pin that binds the 960 reference literally: 960/3000 = 0.32. Dropping the
+   dead LAYOUT import + rewriting the assertion body to 960 must preserve every
+   numeric pin — the pins ARE the value-preservation proof.)
+-------------------------------------------------------------------------------
+PASS:
+      Tests  6 passed (6)
+
+BREAK (change the local REF_W to a wrong value, proving the pin binds the literal):
+  const REF_W = 960;  →  const REF_W = 800;
+FAIL (genuine, names the test):
+ FAIL  src/ui/svg-scale.test.ts > fitScale — the shared scale floor > is width-governed when the fixed reference is the tighter fit
+AssertionError: expected 0.26666666666666666 to be close to 0.32, received difference is 0.053…, but expected 5e-11
+
+RESTORE → green:
+      Tests  6 passed (6)
+
+===============================================================================
+Post-verification: worktree clean (git status empty), full suite green
+(31 files / 749 tests), npm run check clean.

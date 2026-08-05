@@ -90,8 +90,8 @@ function ceilToMultiple(n: number, m: number): number {
 
 /**
  * The x of the boundary AFTER machine `m` (m = 0..N, 0 = row head): the shared
- * belt entry / break-out point, at the start of column `m`'s pitch cell. Mirrors
- * the schematic ui/layout.ts `boundaryX`, with a zero margin.
+ * belt entry / break-out point, at the start of column `m`'s pitch cell (a zero-
+ * margin variant of the classic boundary-x formula).
  */
 function boundaryX(m: number, pitch: number): number {
   return m * pitch;

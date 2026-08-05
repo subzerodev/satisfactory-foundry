@@ -10,8 +10,8 @@ interface FindingsPanelProps {
   itemName(id: string): string;
   /** The FULL fixed tier table (belt + pipe), for the fix-hint lookup. */
   tiers: TierTable;
-  /** Prefix count of unlocked tiers per kind — Schematic's exact prop shape
-   *  (App threads both from the same call site). best-unlocked derives as
+  /** Prefix count of unlocked tiers per kind (App threads tiers + this count
+   *  from the same call site). best-unlocked derives as
    *  tiers[kind][unlocked[kind] − 1]. */
   unlocked: { belt: number; pipe: number };
   /** Plan-wide transport findings (Stage 7 P2) — pre-worded sentences from
@@ -80,7 +80,7 @@ function fixHint(
   if (kind === null) return "";
 
   // best-unlocked = the top currently-unlocked tier for this kind (the COUNT
-  // pair, Schematic's shape): tiers[kind][unlocked[kind] − 1].
+  // pair): tiers[kind][unlocked[kind] − 1].
   const bestUnlocked = tiers[kind][unlocked[kind] - 1];
 
   if (finding.type === "segment-over-capacity") {

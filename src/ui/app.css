@@ -54,12 +54,12 @@
   --accent: #c25a1d; /* the ONE accent; passes 3:1 for display + non-text */
   --accent-strong: #a64a16; /* 4.79:1 */
   --on-accent: #ffffff;
-  --surface-fill: #e5e0d0; /* machine rects (schematic + blueprint) */
+  --surface-fill: #e5e0d0; /* blueprint machine rects */
   --surface-stroke: #9aa2ac;
   --foundation-fill: #e9e4d5;
   --foundation-stroke: #cfc9b8;
   --bus-fill: #c3ccd4; /* blueprint bus ribbon — vellum gray-blue */
-  --junction-fill: #97a2ac; /* junctions + schematic seams */
+  --junction-fill: #97a2ac; /* blueprint junctions */
   --junction-stroke: #77828c;
   --notice: #8a5a2a; /* footprint / warning notices — a passing brown-orange */
   --error-bg: #f3e4e1; /* finding-error panel background — pale red vellum */
@@ -468,112 +468,33 @@ body {
   color: var(--fg-muted);
 }
 
-.schematic,
-.schematic-scroll {
-  position: relative; /* anchor for the absolutely-positioned .tooltip */
-  padding: 12px 0;
-}
-
-.schematic-scroll {
-  overflow-x: auto;
-}
-
-/* Hover tooltip (Stage 5 item 1) — one absolutely-positioned div, cursor-
-   anchored + clamped to the schematic container. pointer-events: none so the
-   tooltip never steals the hover from the line it describes. */
-.tooltip {
-  position: absolute;
-  pointer-events: none;
-  z-index: 5;
-  max-width: 280px;
-  padding: 4px 8px;
-  font-family: var(--font-mono-num);
-  font-size: 11px;
-  line-height: 1.35;
-  color: var(--bg-panel);
-  background: var(--fg);
-  border-radius: 0;
-  white-space: nowrap;
-}
-
-.machine rect {
-  fill: var(--surface-fill);
-  stroke: var(--surface-stroke);
-}
-
-.machine-label {
-  font-size: 10px;
-  fill: var(--fg-muted);
-  text-anchor: middle;
-}
-
-/* Level-of-detail machine band (Stage 12 P1 Axis 1): above N=114 the per-machine
-   tick row becomes one band rect + a count, the drafting break convention. The
-   band reuses the machine rect's surface fill; the count takes the display face
-   (the drawing's own count vocabulary); the significant-machine ticks read as
-   quiet interior boundaries. */
-.machine-band rect {
-  fill: var(--surface-fill);
-  stroke: var(--surface-stroke);
-}
-
-.machine-band-count {
-  font-family: var(--font-display);
-  font-size: 16px;
-  font-weight: 600;
-  fill: var(--fg);
-  text-anchor: middle;
-  dominant-baseline: middle;
-}
-
-.machine-band-mark line {
-  stroke: var(--surface-stroke);
-  stroke-width: 1;
-}
-
-.lane-name {
-  font-size: 11px;
-  fill: var(--fg-muted);
-}
-
-.bus-seg {
-  stroke-width: 6;
-}
-
-.belt-arrow {
-  stroke-width: 2;
-}
-
-/* Pipe lanes (Stage 5 item 4): a desaturated-blue dashed treatment so a fluid
-   lane reads distinctly from a belt lane. The stroke colour stays tier-driven
-   (set inline from colorForCapacity); the class adds the dashed dm rhythm +
-   a slight fade so pipes recede visually from belts. */
-.lane-pipe.bus-seg {
-  stroke-dasharray: 10 5;
-  opacity: 0.85;
-}
-
-.lane-pipe.belt-arrow {
-  stroke-dasharray: 4 3;
-  opacity: 0.85;
-}
-
-.seam {
-  stroke: var(--junction-fill);
-  stroke-dasharray: 3 3;
-}
-
 /* -------------------------------------------------------------------------
    Blueprint view (Stage 4 / Phase 2). A dm-native SVG floor plan — its own
-   container (NOT .schematic-scroll); overflow: visible so mark labels that sit
-   past the 20 dm geometry pad are not clipped (Axis 2 r1 nit).
+   container; overflow: visible so mark labels that sit past the 20 dm geometry
+   pad are not clipped (Axis 2 r1 nit).
    ------------------------------------------------------------------------- */
 
-/* Layout-only (S10 P0): the base rule dresses the box + supplies the pointer;
-   this keeps only the padding + the 13px size it wants (over the base 12px). */
-.view-toggle {
-  padding: 4px 10px;
-  font-size: 13px;
+/* View tabs (#68) — two tabs naming the CURRENT view, replacing the old cycle
+   button. Same quiet-mono idiom as the [FIT | DETAIL] zoom toggle; the active
+   tab carries the accent ink. */
+.view-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.view-tab {
+  padding: 2px 8px;
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+  border: 1px solid var(--border-soft);
+  background: transparent;
+}
+
+.view-tab.active {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* Theme toggle (Stage 5 item 3; re-skinned S9P0) — a quiet mono control that
@@ -676,8 +597,8 @@ body {
   border-color: var(--accent);
 }
 
-/* Scroll wrapper (Stage 12 P1 Axis 2), mirroring .schematic-scroll: a floored
-   wide plan renders past the 960 reference and scrolls here. A NEW wrapper — NOT
+/* Scroll wrapper (Stage 12 P1 Axis 2): a floored wide plan renders past the 960
+   reference and scrolls here. A NEW wrapper — NOT
    .bp-svg, whose overflow: visible is load-bearing for out-of-box mark labels
    and must not be mode-flipped. .bp-scroll keeps overflow: auto and — the
    load-bearing gutter-alignment invariant — NO height cap: the explicit-px svg
@@ -841,12 +762,28 @@ body {
   color: var(--fg-muted);
 }
 
+/* The override table (Axis C / #70): ONE grid for the whole panel, so every
+   label/input across every lane group shares the same two tracks — the input
+   column aligns instead of zig-zagging per-lane. gap + align-items carry over
+   from the dying per-lane grid (they are inert under .lane-overrides-lane's
+   display:contents, so they must live here or the row gap drops and the inputs
+   stretch). The head + sub stay outside this grid by structure. */
+.lane-overrides-table {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 8px;
+  align-items: center;
+}
+
 /* Per-lane item heading (Axis A) — the schedule-header idiom (mono 11px,
-   letter-spaced, uppercase). Spans the lane's max-content×2 grid so it heads
-   both the label and input tracks (the grid dissolves .override-row via
-   display: contents, so a bare cell would sit in one column only). */
+   letter-spaced, uppercase) with the schedule hairline rule under it (#70
+   grooming, the .train-table thead idiom). Spans the table's max-content×2 grid
+   so it heads both tracks (the lane + row both dissolve via display:contents, so
+   a bare cell would sit in one column only). */
 .lane-overrides-item {
   grid-column: 1 / -1;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border-soft);
   font-family: var(--font-mono-num);
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -854,16 +791,12 @@ body {
   color: var(--fg-muted);
 }
 
-/* Per-lane label/input columns (Stage 11 P0): the lane is the grid — a
-   shared max-content track aligns every input without the dead min-width
-   gulf, and max-content never wraps the ~51-char output labels. Rows
-   dissolve into the grid (display: contents); cross-lane track widths may
-   differ (lanes are separate visual groups — accepted). */
+/* The lane wrapper dissolves into the table grid (Axis C / #70): its element +
+   data-item stay (pins + grouping semantics intact), but display:contents hoists
+   its item-heading + rows into the ONE panel grid so the input column aligns
+   across every lane. */
 .lane-overrides-lane {
-  display: grid;
-  grid-template-columns: max-content max-content;
-  gap: 8px;
-  align-items: center;
+  display: contents;
 }
 
 .override-row {
@@ -874,6 +807,15 @@ body {
   font-family: var(--font-mono-num);
   font-size: 11px;
   color: var(--fg-muted);
+}
+
+/* The input column (#70 grooming): a consistent ch-based width, right-aligned in
+   the table's second track — the drawing-schedule column feel, so a short "90"
+   and a long override read down one aligned edge. */
+.lane-overrides-table .override-row input {
+  width: 10ch;
+  justify-self: end;
+  text-align: right;
 }
 
 .findings-panel {
@@ -1566,10 +1508,8 @@ body {
    Token-consistency only: the site/stage labels join the numeric/mono face
    (font-family on SVG <text> applies via CSS), and the foundation grid
    strokes drop to the soft-hairline weight so the floor plan reads on the
-   sheet. Nothing structural. bp-foundation is shared by the schematic and
+   sheet. Nothing structural. bp-foundation is shared by the blueprint and
    combined-chain blueprints, so one selector covers both. */
-.lane-name,
-.machine-label,
 .bp-machine-label,
 .bp-mark-label,
 .chain-bp-power,
