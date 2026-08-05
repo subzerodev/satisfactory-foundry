@@ -762,12 +762,28 @@ body {
   color: var(--fg-muted);
 }
 
+/* The override table (Axis C / #70): ONE grid for the whole panel, so every
+   label/input across every lane group shares the same two tracks — the input
+   column aligns instead of zig-zagging per-lane. gap + align-items carry over
+   from the dying per-lane grid (they are inert under .lane-overrides-lane's
+   display:contents, so they must live here or the row gap drops and the inputs
+   stretch). The head + sub stay outside this grid by structure. */
+.lane-overrides-table {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 8px;
+  align-items: center;
+}
+
 /* Per-lane item heading (Axis A) — the schedule-header idiom (mono 11px,
-   letter-spaced, uppercase). Spans the lane's max-content×2 grid so it heads
-   both the label and input tracks (the grid dissolves .override-row via
-   display: contents, so a bare cell would sit in one column only). */
+   letter-spaced, uppercase) with the schedule hairline rule under it (#70
+   grooming, the .train-table thead idiom). Spans the table's max-content×2 grid
+   so it heads both tracks (the lane + row both dissolve via display:contents, so
+   a bare cell would sit in one column only). */
 .lane-overrides-item {
   grid-column: 1 / -1;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border-soft);
   font-family: var(--font-mono-num);
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -775,16 +791,12 @@ body {
   color: var(--fg-muted);
 }
 
-/* Per-lane label/input columns (Stage 11 P0): the lane is the grid — a
-   shared max-content track aligns every input without the dead min-width
-   gulf, and max-content never wraps the ~51-char output labels. Rows
-   dissolve into the grid (display: contents); cross-lane track widths may
-   differ (lanes are separate visual groups — accepted). */
+/* The lane wrapper dissolves into the table grid (Axis C / #70): its element +
+   data-item stay (pins + grouping semantics intact), but display:contents hoists
+   its item-heading + rows into the ONE panel grid so the input column aligns
+   across every lane. */
 .lane-overrides-lane {
-  display: grid;
-  grid-template-columns: max-content max-content;
-  gap: 8px;
-  align-items: center;
+  display: contents;
 }
 
 .override-row {
@@ -795,6 +807,15 @@ body {
   font-family: var(--font-mono-num);
   font-size: 11px;
   color: var(--fg-muted);
+}
+
+/* The input column (#70 grooming): a consistent ch-based width, right-aligned in
+   the table's second track — the drawing-schedule column feel, so a short "90"
+   and a long override read down one aligned edge. */
+.lane-overrides-table .override-row input {
+  width: 10ch;
+  justify-self: end;
+  text-align: right;
 }
 
 .findings-panel {

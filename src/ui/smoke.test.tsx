@@ -525,6 +525,36 @@ describe("LaneOverrides", () => {
     expect(html).toContain(">Iron Ore</div>");
     expect(html).toContain(">Iron Ingot</div>");
   });
+
+  it("wraps ALL lane groups in one table; head + sub sit OUTSIDE it (#70)", () => {
+    // Axis C hoists the grid to a single inner .lane-overrides-table so the input
+    // column aligns across every lane. Structural pin: the head + sub render
+    // BEFORE the table opens (outside the grid, by structure not span), and every
+    // lane wrapper renders AFTER it (inside the grid). CSS alignment itself is
+    // not SSR-assertable — the browser walk owns the visual column check.
+    const html = renderToStaticMarkup(
+      <LaneOverrides
+        result={workedResult()}
+        overrides={{ feeds: {}, outputs: {} }}
+        itemName={itemName}
+        onOverride={noop}
+      />,
+    );
+    const tableAt = html.indexOf('class="lane-overrides-table"');
+    const headAt = html.indexOf('class="lane-overrides-head"');
+    const subAt = html.indexOf('class="lane-overrides-sub"');
+    const firstLaneAt = html.indexOf('class="lane-overrides-lane"');
+    expect(tableAt).toBeGreaterThan(-1);
+    // Head + sub precede the table wrapper (they are NOT grid items).
+    expect(headAt).toBeGreaterThan(-1);
+    expect(subAt).toBeGreaterThan(-1);
+    expect(headAt).toBeLessThan(tableAt);
+    expect(subAt).toBeLessThan(tableAt);
+    // Every lane wrapper sits inside the table (after its opening tag).
+    expect(firstLaneAt).toBeGreaterThan(tableAt);
+    // All lane wrappers (1 feed ore_iron + 1 output iron_ingot) live in it.
+    expect((html.match(/class="lane-overrides-lane"/g) ?? []).length).toBe(2);
+  });
 });
 
 describe("FindingsPanel", () => {

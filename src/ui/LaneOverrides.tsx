@@ -103,30 +103,37 @@ export function LaneOverrides({
       <p className="lane-overrides-sub">
         type a rate to override a belt&apos;s load · empty = computed
       </p>
-      {result.feeds.map((lane) => (
-        <LaneRows
-          key={`feed-${lane.itemId}`}
-          side="feeds"
-          itemId={lane.itemId}
-          itemName={itemName(lane.itemId)}
-          belts={lane.belts}
-          labelSide="feed"
-          overrides={overrides}
-          onOverride={onOverride}
-        />
-      ))}
-      {result.outputs.map((lane) => (
-        <LaneRows
-          key={`out-${lane.itemId}`}
-          side="outputs"
-          itemId={lane.itemId}
-          itemName={itemName(lane.itemId)}
-          belts={lane.breakouts}
-          labelSide="output"
-          overrides={overrides}
-          onOverride={onOverride}
-        />
-      ))}
+      {/* ONE table carries the grid (Axis C / #70): every lane wrapper dissolves
+          into display:contents, so every label/input across every group shares
+          the SAME two tracks and the input column aligns. The head + sub above
+          stay OUTSIDE this table by structure, not by span — the panel is a flex
+          column, only this inner div is the grid. */}
+      <div className="lane-overrides-table">
+        {result.feeds.map((lane) => (
+          <LaneRows
+            key={`feed-${lane.itemId}`}
+            side="feeds"
+            itemId={lane.itemId}
+            itemName={itemName(lane.itemId)}
+            belts={lane.belts}
+            labelSide="feed"
+            overrides={overrides}
+            onOverride={onOverride}
+          />
+        ))}
+        {result.outputs.map((lane) => (
+          <LaneRows
+            key={`out-${lane.itemId}`}
+            side="outputs"
+            itemId={lane.itemId}
+            itemName={itemName(lane.itemId)}
+            belts={lane.breakouts}
+            labelSide="output"
+            overrides={overrides}
+            onOverride={onOverride}
+          />
+        ))}
+      </div>
     </div>
   );
 }
