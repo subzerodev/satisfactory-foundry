@@ -1,0 +1,85 @@
+R2 verification — Stage 9 / Phase 2 (ticket #46), panels as drawing schedules + arc polish
+============================================================================================
+Branch: feature/drawing-p2 (cut from develop @ d19d084) — worktree .worktrees/drawing-p2
+Posture: BEHAVIOR-FROZEN, CSS-ONLY. All changes are grouped selectors over existing
+markup in src/ui/app.css. Zero DOM changes, zero new tokens, zero logic.
+
+Node-assertable surface — the honest walk-gated verdict
+-------------------------------------------------------
+Nothing in this diff is node-assertable, and this is stated plainly (never fabricated):
+
+  - The change is pure CSS in app.css. The Vitest suite renders component MARKUP
+    (JSDOM / react-dom static markup) and asserts on class names, element counts,
+    and rendered text — it does NOT load app.css or read computed styles. There is
+    no CSS-property assertion surface in the suite to add to.
+  - The design (brainstorm.md v3, Test plan sketch + Assumptions ledger) predicts
+    exactly this: "Zero new node tests expected (pure CSS phase; grouped selectors).
+    Any churned literal pin enumerated (expected zero — no markup change)."
+  - Therefore no new node test is added. The visual result (schedule type, panel
+    dress, SVG label font, foundation stroke weight, focus-visible ring) is verified
+    by the manual both-media walk, recorded below as a checklist — not by an assertion.
+
+Regression pins — churn audit (expected zero, observed zero)
+------------------------------------------------------------
+Full suite before change: 28 files, 707 tests passed. lint clean.
+Full suite after  change: 28 files, 707 tests passed. lint clean.
+Delta: 0 files, 0 tests, 0 churned pins.
+
+The smoke pins that touch surfaces this diff styles all match class names / markup,
+never CSS properties, so a property change cannot churn them:
+  - /bp-foundation"/g === 6         (matches the class token; stroke re-color is invisible to it)
+  - /<g class="bp-machine">/g === 2
+  - /bp-junction"/g === 4
+  - /bp-bus-pipe/g === 1
+  - /legend-swatch/g === 6+2+2
+  - /<rect/g >= 20 , /<input/g === 4
+None assert a computed style; all held at their pinned values.
+
+Drift hunt (pre-implementation, against live worktree source)
+-------------------------------------------------------------
+  - Six container classes exact & present: link-inspector (LinkInspector.tsx:160),
+    findings-panel (FindingsPanel.tsx:138/152/163), summary-cards (SummaryCards.tsx:19),
+    plans-bar (PlansBar.tsx:56), chain-builder (ChainBuilder.tsx:98),
+    alt-compare (AltCompare.tsx:133).
+  - Two real tables only: train-table (LinkInspector.tsx thead/tr/th),
+    alt-compare-table (AltCompare.tsx:137, thead/tr/th). ChainBuilder preview is a
+    <ul class="chain-builder-rows"> (ChainBuilder.tsx:135) — a list, not a table.
+  - All 8 SVG label classes present in source: lane-name, machine-label,
+    bp-machine-label, bp-lane-name, bp-mark-label, chain-bp-name, chain-bp-power,
+    chain-bp-link-label.
+  - Foundation: .bp-foundation is SHARED by the schematic-blueprint and the
+    combined-chain blueprint (ChainBlueprint.tsx:183 renders className="bp-foundation";
+    app.css:605 keys .chain-bp-site.selected .bp-foundation). There is NO separate
+    chain-bp-foundation class — so the design's "bp-foundation and the chain-bp
+    equivalent" collapses to ONE selector (.bp-foundation) that covers both views.
+    This is a simplification, not drift: intent (both foundations to --border-soft)
+    is fully met by the single selector.
+  - Panel headers: only TWO panels carry a title/header element —
+    .link-inspector-title (LinkInspector.tsx:162) and .alt-compare-head
+    (AltCompare.tsx:134). SummaryCards, PlansBar, ChainBuilder, FindingsPanel are
+    control bars / lists with no heading element. The label idiom is applied to the
+    two header classes that exist ("the existing header classes per panel").
+  - No :focus rule exists in app.css today (grep confirmed) — the a11y premise holds;
+    the new :focus-visible rule is disjoint from the .selected canvas outline idioms.
+  - No new tokens: every value maps to an existing token (--font-mono-num, --fg,
+    --border-soft, --accent, --bg-panel, --fg-muted).
+
+Both-media walk checklist (manual — vellum + cyanotype)
+-------------------------------------------------------
+This is the gate the node suite cannot express; run per the design's Test plan sketch:
+  [ ] Train schedule: mono body, UPPERCASE letter-spaced header over a 2px ink rule,
+      soft row separators; right-alignment of numeric cells unchanged.
+  [ ] Alt-compare schedule: same header/rule/separator treatment; left-alignment
+      unchanged; the current row shows an --accent left rule; apply button quiet-mono.
+  [ ] ChainBuilder preview list: mono type, hairline separators, no bullet markers.
+  [ ] Panel dress on all six containers: uniform --bg-panel ground, soft hairline
+      frame, square corners. link-inspector + alt-compare: border softened, radius
+      gone. The other four: now framed.
+  [ ] Panel titles (link-inspector-title, alt-compare-head): letter-spaced mono label.
+  [ ] Panel controls (inputs/selects/buttons in the six panels): quiet-mono look.
+  [ ] SVG views: lane/machine/bp/chain-bp labels in the numeric/mono face;
+      foundation grid strokes at the soft-hairline weight in BOTH media.
+  [ ] Keyboard tab across header + all panels: a crisp 2px --accent focus ring on
+      every button/select/input/link, offset 1px — visible on vellum AND cyanotype.
+  [ ] Full three-view cycle + inspector + builders sweep: no hardcoded-looking color
+      (any such = a bug against the P0 token sweep).
