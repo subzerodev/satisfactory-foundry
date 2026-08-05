@@ -244,4 +244,9 @@ process (all-Claude roster, opus implementers, per-phase gates).
   + halo. Resolves #71 by restoring the helpers' consumer.
 - **Epic:** #73 (milestone 85; children #74 A, #75 B, #76 C).
   Blocked-by Stage 13.
-- **Status:** in progress (started 2026-08-05).
+- **Status:** merged to develop 2026-08-05 (`3d69405`, 751 tests,
+  +1268/−1182 — restore byte-exact vs ba35744 except the label lift).
+  Walk: schematic default, zero text-on-ink at Wire ×28 + Plastic
+  ×161 both themes; Blueprint intact; no Combined. Follow-ups: #77
+  (chain-engine collapse), #78 (pre-existing band index-label
+  crowding). Release PR pending → then Stage 14 SHIPPED.
