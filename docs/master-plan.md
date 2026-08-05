@@ -269,4 +269,4 @@ process (all-Claude roster, opus implementers, per-phase gates).
   Walk: Plastic ×161 clean solve 85 → ZERO label crossings, both
   themes; the nine-pair starving residual pinned exactly; the
   drawn-distance live twin green. #81 (semantics decision) awaits
-  Michael. Release PR pending → then Stage 15 SHIPPED.
+  Michael. **SHIPPED** — release PR #87 merged to main 2026-08-05.
