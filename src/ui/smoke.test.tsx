@@ -314,9 +314,10 @@ describe("Schematic", () => {
   // regress (the geometry pin the contract mandates for Axis C).
   it("puts output lane names below the bus, clear of the seams (#76)", () => {
     // The worked example: feed lane ore_iron, output lane iron_ingot. From the
-    // restored layout, feed track.y = bandY (marginY 16) → name y=28; output
-    // track.y = feed row + laneH 56 = 72, its busY = track.y + 8 = 80, so the
-    // lifted output name baseline is busY + 18 = 98.
+    // restored layout: feed track.y = marginY 16 → name y = 28; the output row
+    // sits below the feed lane + bus + machine row + bus (16 + 56 + 28 + 40 +
+    // 28) → track.y = 168, busY = track.y + 8 = 176, so the lifted output
+    // name baseline is busY + 18 = 194.
     const layout = computeLayout(workedResult(), 20);
     const feedTrack = layout.feeds[0]!;
     const outTrack = layout.outputs[0]!;
@@ -325,11 +326,11 @@ describe("Schematic", () => {
     const feedNameY = feedTrack.y + 12;
     const outNameY = outTrack.busY + 18;
 
-    // Feed name pin — unchanged posture, above its far-below bus.
-    expect(feedNameY).toBe(feedTrack.y + 12);
+    // Literal layout pins — fail if the restored track geometry ever shifts.
+    expect(feedNameY).toBe(28);
+    expect(outNameY).toBe(194);
 
-    // Output name pin — lifted to busY + 18 (= track.y + 26, busY = track.y + 8).
-    expect(outNameY).toBe(outTrack.busY + 18);
+    // Output name model — lifted to busY + 18 (= track.y + 26, busY = y + 8).
     expect(outTrack.busY).toBe(outTrack.y + 8);
     expect(outNameY).toBe(outTrack.y + 26);
 

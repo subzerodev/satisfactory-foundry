@@ -1318,7 +1318,7 @@ body {
   color: var(--error);
 }
 
-/* Measure feed (Stage 7 / Phase 3, Axis 3): the combined-view drawn distance
+/* Measure feed (Stage 7 / Phase 3, Axis 3): the drawn distance
    readout + the estimated-mode "use drawn distance" action. */
 .link-inspector-measure {
   display: flex;

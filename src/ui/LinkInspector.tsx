@@ -134,7 +134,7 @@ export function LinkInspector() {
   // "solve both stages to size the fleet" line.
   const plan = planForLink(link, catalog, stages)!;
 
-  // The combined-view drawn straight-line distance (Stage 7 / Phase 3, Axis 3):
+  // The drawn straight-line distance between the stages (Stage 7 / Phase 3, Axis 3):
   // null when either endpoint is unsolved (not placed in the chain). Estimated-
   // mode links get the "use drawn distance" action; measured links a readout
   // only (a measured time is better information — never downgraded).
@@ -234,7 +234,7 @@ export function LinkInspector() {
         toName={stageName(consumer)}
       />
 
-      {/* Measure feed (Stage 7 / Phase 3, Axis 3): the combined-view drawn
+      {/* Measure feed (Stage 7 / Phase 3, Axis 3): the drawn
           straight-line distance. Estimated-mode links get a "use drawn distance"
           button; measured links a readout only. Absent when either endpoint is
           unsolved (no chain placement). */}
@@ -434,7 +434,7 @@ function TripFields({
 }
 
 // ---------------------------------------------------------------------------
-// Measure feed — the combined-view drawn distance (Stage 7 / Phase 3, Axis 3).
+// Measure feed — the drawn straight-line distance between stage sites (Stage 7 / Phase 3, Axis 3).
 // ---------------------------------------------------------------------------
 
 /**
