@@ -9,12 +9,20 @@ import { LAYOUT } from "./layout.ts";
  * — are each pinned, plus the per-call-site capH parameterization (520 vs 640).
  */
 describe("fitScale — the shared scale floor", () => {
-  it("is height-governed when the cap is the tighter fit (the smelter case)", () => {
-    // Smelter ×2 viewBox 200×280 under cap 520: min(960/200=4.8, 520/280≈1.857)
-    // → the cap governs, 1.857 (above the floor) — today's capped meet scale.
+  it("keeps a sub-cap plan at natural size (the smelter case)", () => {
+    // Smelter ×2 viewBox 200×280 under cap 520: the height term is
+    // min(280,520)/280 = 1 — today's height attribute was min(h,cap), so a
+    // sub-cap plan NEVER enlarges (the boundary review caught cap/vbH
+    // silently rendering it 1.86× today's size).
     const scale = fitScale(200, 280, 520);
-    expect(scale).toBeCloseTo(520 / 280, 10);
+    expect(scale).toBe(1);
     expect(scale).toBeLessThan(LAYOUT.viewW / 200);
+  });
+
+  it("caps a DEEPER-than-cap plan exactly as today's min(h,cap) attribute", () => {
+    // vbH 800 over cap 520: height term = 520/800 = 0.65 — identical to
+    // today's capped meet for cap-hitting plans.
+    expect(fitScale(200, 800, 520)).toBeCloseTo(520 / 800, 10);
   });
 
   it("is width-governed when the fixed reference is the tighter fit", () => {
@@ -38,10 +46,11 @@ describe("fitScale — the shared scale floor", () => {
     expect(100 * MIN_PX_PER_DM).toBe(6);
   });
 
-  it("takes capH per call site: 520 (Blueprint) vs 640 (ChainBlueprint) diverge when height-governed", () => {
-    // Same height-governed viewBox, different caps → different scales.
-    expect(fitScale(200, 280, 520)).toBeCloseTo(520 / 280, 10);
-    expect(fitScale(200, 280, 640)).toBeCloseTo(640 / 280, 10);
-    expect(fitScale(200, 280, 640)).toBeGreaterThan(fitScale(200, 280, 520));
+  it("takes capH per call site: 520 vs 640 diverge for cap-hitting plans", () => {
+    // A 700dm-deep plan hits both caps differently: 520/700 vs 640/700; a
+    // sub-cap plan (280dm) is 1 under either cap (natural size, no enlarge).
+    expect(fitScale(200, 700, 520)).toBeCloseTo(520 / 700, 10);
+    expect(fitScale(200, 700, 640)).toBeCloseTo(640 / 700, 10);
+    expect(fitScale(200, 280, 640)).toBe(1);
   });
 });

@@ -87,8 +87,8 @@ export function Blueprint({
   const viewBox = `${minX} ${minY} ${w} ${h}`;
 
   // Explicit dm→px scale (Axis 2): the shared floor replaces width="100%"+meet.
-  // fitScale reproduces today's effective meet scale (the height cap participates
-  // via capH=MAX_SVG_HEIGHT), then refuses to shrink a wide 161-machine row below
+  // fitScale reproduces today's render (its height term is min(h,cap)/h — the
+  // old height attribute — so sub-cap plans keep natural size), then refuses to shrink a wide 161-machine row below
   // the readability floor — that render exceeds 960 and scrolls in .bp-scroll.
   const scale = fitScale(w, h, MAX_SVG_HEIGHT);
 

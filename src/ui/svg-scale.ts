@@ -31,15 +31,17 @@ export const MIN_PX_PER_DM = 0.06;
 
 /**
  * The dm→px scale for a viewBox of `vbW × vbH` decimeters under a per-call-site
- * height cap `capH` (Blueprint 520, ChainBlueprint 640). `fitScale` is today's
- * effective meet scale INCLUDING the height cap — the fixed reference width and
- * the cap both participate, so a disengaged (height-governed or capped) plan
- * renders pixel-identical to the old meet behaviour. `scale = max(fitScale,
- * MIN_PX_PER_DM)` then lifts only wide plans off the floor. The caller renders
- * explicit `width = vbW * scale`, `height = vbH * scale` — both axes from the
- * one scale, so preserveAspectRatio is no longer needed.
+ * height cap `capH` (Blueprint 520, ChainBlueprint 640). The height term is
+ * `min(vbH, capH) / vbH` — TODAY'S height attribute was `min(h, cap)`, so the
+ * term never exceeds 1 and a sub-cap plan keeps its natural size (the boundary
+ * review caught `capH / vbH` silently ENLARGING every plan shorter than the
+ * cap — the smelter by 1.86×). Disengaged plans thus render as today does,
+ * modulo the enumerated fixed-960 width delta; `scale = max(fit,
+ * MIN_PX_PER_DM)` lifts only unreadably-wide plans off the floor. The caller
+ * renders explicit `width = vbW * scale`, `height = vbH * scale` — both axes
+ * from the one scale, so preserveAspectRatio is no longer needed.
  */
 export function fitScale(vbW: number, vbH: number, capH: number): number {
-  const fit = Math.min(REF_W / vbW, capH / vbH);
+  const fit = Math.min(REF_W / vbW, Math.min(vbH, capH) / vbH);
   return Math.max(fit, MIN_PX_PER_DM);
 }

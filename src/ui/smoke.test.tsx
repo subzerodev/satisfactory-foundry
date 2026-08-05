@@ -384,12 +384,11 @@ describe("Blueprint", () => {
     expect(html).toContain('viewBox="-20 -100 200 280"');
     // Stage 12 P1 Axis 2: width="100%"+meet is REPLACED by explicit dm→px width
     // and height from the shared fitScale (this pin churns deliberately). The
-    // smelter's 200×280 viewBox is HEIGHT-governed under the 520 cap —
-    // fitScale = min(960/200=4.8, 520/280≈1.857) = 1.857 (fit disengaged, above
-    // the 0.06 floor) — so height renders pixel-identical to today's capped meet
-    // (280×1.857=520) and width follows the same scale (200×1.857≈371.43).
-    expect(html).toContain('width="371.42857142857144"');
-    expect(html).toContain('height="520"');
+    // smelter's 200×280 viewBox sits UNDER the 520 cap, so the height term is
+    // min(280,520)/280 = 1 — the sub-cap plan keeps today's natural 1 px/dm
+    // size (the boundary review caught cap/vbH silently enlarging it 1.86×).
+    expect(html).toContain('width="200"');
+    expect(html).toContain('height="280"');
     expect(html).not.toContain('width="100%"');
     expect(html).not.toContain("preserveAspectRatio");
     // 6 foundation tiles (2 cols × 3 rows).
