@@ -1,9 +1,9 @@
 # Correction: restore schematic, remove combined view (Stage 14 arc)
 
 **Started:** 2026-08-05
-**Status:** complete — merged to develop `3d69405`; release PR pending
-**Current phase:** — (arc close)
-**Final PR:** —
+**Status:** SHIPPED 2026-08-05
+**Current phase:** — (arc closed)
+**Final PR:** #79
 **Epic:** #73 (board #21, Stage 14 milestone 85; children #74 A, #75 B, #76 C)
 
 ## Phase status

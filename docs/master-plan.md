@@ -249,4 +249,4 @@ process (all-Claude roster, opus implementers, per-phase gates).
   Walk: schematic default, zero text-on-ink at Wire ×28 + Plastic
   ×161 both themes; Blueprint intact; no Combined. Follow-ups: #77
   (chain-engine collapse), #78 (pre-existing band index-label
-  crowding). Release PR pending → then Stage 14 SHIPPED.
+  crowding). **SHIPPED** — release PR #79 merged to main 2026-08-05.
