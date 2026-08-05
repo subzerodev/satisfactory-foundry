@@ -32,6 +32,7 @@ import App from "./App.tsx";
 import { LaneOverrides } from "./LaneOverrides.tsx";
 import { FindingsPanel } from "./FindingsPanel.tsx";
 import { Legend } from "./Legend.tsx";
+import { TitleBlock } from "./TitleBlock.tsx";
 import { formatRate, segTooltip } from "./format.ts";
 
 const noop = () => {};
@@ -651,6 +652,46 @@ describe("Legend", () => {
   });
 });
 
+describe("TitleBlock (Stage 9 / Phase 0)", () => {
+  it("renders every cell from its props", () => {
+    const html = renderToStaticMarkup(
+      <TitleBlock
+        title="Iron Ingot"
+        sheet="S3 · L2"
+        rev="2026-08-05"
+        power="Σ ≈ 42.0 MW"
+      />,
+    );
+    // Labels + the prop-fed values are all present.
+    expect(html).toContain("Title");
+    expect(html).toContain("Iron Ingot");
+    expect(html).toContain("Sheet");
+    expect(html).toContain("S3 · L2");
+    expect(html).toContain("Rev");
+    expect(html).toContain("2026-08-05");
+    expect(html).toContain("Σ Power");
+    expect(html).toContain("Σ ≈ 42.0 MW");
+  });
+
+  it("carries the static UNITS brag verbatim", () => {
+    const html = renderToStaticMarkup(
+      <TitleBlock title="x" sheet="S1 · L0" rev="2026-08-05" power="—" />,
+    );
+    // UNITS is not a prop — it is the honest, always-true unit statement.
+    expect(html).toContain("Units");
+    expect(html).toContain("/MIN · EXACT ℚ");
+  });
+
+  it('renders the ?? "—" power fallback string as given', () => {
+    // App resolves chainPowerText(...) ?? "—"; TitleBlock renders whatever it
+    // is handed, so the em-dash zero-state must survive to the markup.
+    const html = renderToStaticMarkup(
+      <TitleBlock title="x" sheet="S1 · L0" rev="2026-08-05" power="—" />,
+    );
+    expect(html).toContain('class="title-block-value">—</span>');
+  });
+});
+
 describe("App provenance banner (ticket #9)", () => {
   it("renders the banner with the exact provenance string when source is bundled", () => {
     const html = renderToStaticMarkup(
@@ -800,6 +841,16 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
     // <Handle> needs the RF provider, so it can't be rendered in isolation —
     // the data pin lives in graph-flow.test's node-powerText rows instead).
     expect(html).not.toContain("stage-node-power");
+  });
+
+  it("renders the dimension-tick marker def (Stage 9 P1 Axis 2)", async () => {
+    // The dim-tick <marker> def is canvas chrome the edges' markerEnd references
+    // (RF creates no auto-def for a string marker). It renders inside a hidden
+    // <svg><defs> in GraphCanvas, so the opportunistic SSR reaches it — this
+    // pins its presence; the tick's rendered look is a browser-walk gate.
+    const { GraphCanvas } = await import("./GraphCanvas.tsx");
+    const html = renderToStaticMarkup(<GraphCanvas colorMode="light" />);
+    expect(html).toContain('id="dim-tick"');
   });
 });
 

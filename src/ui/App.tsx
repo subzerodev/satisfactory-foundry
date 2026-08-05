@@ -9,7 +9,7 @@ import type { Selection, SolveState } from "../state/store.ts";
 import type { CatalogSource } from "../data/catalog-store.ts";
 import type { Catalog } from "../data/types.ts";
 import type { Finding, StageSolveResult } from "../core/manifold.ts";
-import { stagePowerTextFor } from "./advice.ts";
+import { stagePowerTextFor, chainPowerText } from "./advice.ts";
 import { computeTransportFindings } from "./graph-flow.ts";
 import { fileToDocsText, fileFromDrop } from "./decode.ts";
 import { resolveInitialTheme } from "./theme.ts";
@@ -28,6 +28,7 @@ import { GraphCanvas } from "./GraphCanvas.tsx";
 import { ChainBuilder } from "./ChainBuilder.tsx";
 import { LinkInspector } from "./LinkInspector.tsx";
 import { AltCompare } from "./AltCompare.tsx";
+import { TitleBlock } from "./TitleBlock.tsx";
 import "./app.css";
 
 // Wire the bundled default catalog once, at module load: fetch the static
@@ -306,11 +307,28 @@ export default function App() {
   // labels (Stage 7 / Phase 3, Axis 2). The button shows the NEXT target.
   const nextView = VIEW_CYCLE[view];
 
+  // Title-block data (Stage 9 / Phase 0) — ordinary selector reads, props down
+  // to the pure TitleBlock. TITLE is the active stage's name (the store
+  // invariant guarantees activeStageId resolves). SHEET counts stages + links.
+  // REV is the client-clock print date (short ISO). Σ POWER reuses advice.ts's
+  // chainPowerText over all stages (the labelled-≈ discipline, ?? "—" like the
+  // Combined footer). No new state — App reads, TitleBlock renders.
+  const activeStage = s.stages[s.activeStageId];
+  const titleName = activeStage?.name ?? "—";
+  const sheetText = `S${s.stageOrder.length} · L${s.links.length}`;
+  const revText = new Date().toISOString().slice(0, 10);
+  const chainPower = chainPowerText(Object.values(s.stages), catalog) ?? "—";
+
   return (
     <div className="app">
       {dropOverlay}
       <header className="app-header">
-        <h1>satisfactory-foundry</h1>
+        {/* The wordmark stays one <h1>; the "/ FICSIT DWG" suffix carries the
+            accent (S9P0). */}
+        <h1 className="wordmark">
+          SATISFACTORY FOUNDRY{" "}
+          <span className="wordmark-suffix">/ FICSIT DWG</span>
+        </h1>
         <BundledBanner source={s.catalogSource} />
         <Legend tiers={catalog.tiers} />
         <input
@@ -318,13 +336,19 @@ export default function App() {
           accept="application/json,.json"
           onChange={handleReupload}
         />
+        {/* The toggle NAMES its destination medium (write-the-destination):
+            "CYANOTYPE" while on vellum, "VELLUM" while on cyanotype. The words
+            ARE the feature; aria-label/title match. */}
         <button
           type="button"
           className="theme-toggle"
-          title={theme === "dark" ? "switch to light" : "switch to dark"}
+          aria-label={
+            theme === "dark" ? "switch to VELLUM" : "switch to CYANOTYPE"
+          }
+          title={theme === "dark" ? "switch to VELLUM" : "switch to CYANOTYPE"}
           onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
         >
-          {theme === "dark" ? "☀" : "☾"}
+          {theme === "dark" ? "VELLUM" : "CYANOTYPE"}
         </button>
       </header>
       {s.uploadError !== null && (
@@ -447,6 +471,14 @@ export default function App() {
           />
         </>
       )}
+      {/* The sheet footer (S9P0) — always rendered on the ready surface, below
+          every view. Pure presentational cells fed by the reads above. */}
+      <TitleBlock
+        title={titleName}
+        sheet={sheetText}
+        rev={revText}
+        power={chainPower}
+      />
     </div>
   );
 }

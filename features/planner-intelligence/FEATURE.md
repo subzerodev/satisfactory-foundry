@@ -2,8 +2,8 @@
 
 **Started:** 2026-08-04
 **Status:** in-progress
-**Current phase:** COMPLETE — all five phases landed; release PR next
-**Final PR:** —
+**Current phase:** SHIPPED — released to main via PR #41 (2026-08-05)
+**Final PR:** #41 (develop → main, merged)
 **Epic:** #36 (board #21, Stage 8 milestone 79)
 
 ## Phase decomposition
@@ -159,4 +159,4 @@ Review-gate highlights: the P4 design took three correctness rounds
 pair refuting a reviewer claim the team lead had relayed unverified);
 the P3 adversarial pass proved the demand model and catalog empirics
 before code; the P2 boundary caught trip edits wiping sharedEnds.
-Release PR: (filled at arc close).
+Release PR: #41 (develop → main, merged 2026-08-05).

@@ -5,12 +5,23 @@ interface LegendProps {
   tiers: TierTable;
 }
 
-function Swatch({ color, label }: { color: string; label: string }) {
+// The swatch is a line-convention RULE sample (S9P0): a short horizontal line
+// in the tier colour, solid for belts / dashed for pipes. The colour rides on
+// `color` (not backgroundColor) so the CSS rule's currentColor border reads it.
+function Swatch({
+  color,
+  label,
+  dashed = false,
+}: {
+  color: string;
+  label: string;
+  dashed?: boolean;
+}) {
   return (
     <span className="legend-entry">
       <span
-        className="legend-swatch"
-        style={{ backgroundColor: color }}
+        className={`legend-swatch${dashed ? " legend-rule-dashed" : ""}`}
+        style={{ color }}
         aria-hidden="true"
       />
       {label}
@@ -33,6 +44,7 @@ export function Legend({ tiers }: LegendProps) {
           key={`pipe-${i}`}
           color={TIER_COLORS.pipe[i] ?? OVERRIDE_COLOR}
           label={`Pipe Mk${i + 1}`}
+          dashed
         />
       ))}
       <Swatch color={OVERRIDE_COLOR} label="override" />

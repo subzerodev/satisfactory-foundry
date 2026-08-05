@@ -1,0 +1,94 @@
+R2 bidirectionality verification — Stage 9 / Phase 0 (ticket #44)
+=================================================================
+
+R2 (a test's assertion actually constrains the production code) is proven per
+NEW production behaviour introduced this phase: each pinning test must (a) PASS
+on the real implementation, (b) FAIL with an exact, on-topic break when the
+target behaviour is inverted/removed — naming the new test, and (c) return
+green on restore. This is a behaviour-FROZEN presentation phase — CSS token
+values are NOT node-testable (the both-media browser walk is that gate), so R2
+covers ONLY the new PRODUCTION behaviour: the pure TitleBlock component.
+
+The breaks below were performed against the real src/ui/TitleBlock.tsx (a
+scratch backup restored between each); the outputs are verbatim, trimmed to the
+FAIL headers + assertion lines.
+
+Node behaviour added this phase
+-------------------------------
+  1. TitleBlock renders each prop into its labelled value cell.
+  2. TitleBlock emits the static UNITS brag "/MIN · EXACT ℚ" (not a prop).
+  3. TitleBlock renders whatever `power` string it is handed, incl. App's
+     `?? "—"` zero-state.
+
+New tests (src/ui/smoke.test.tsx, describe "TitleBlock (Stage 9 / Phase 0)")
+  T-A: "renders every cell from its props"
+  T-B: "carries the static UNITS brag verbatim"
+  T-C: 'renders the ?? "—" power fallback string as given'
+
+App-side (wordmark, toggle label, title-block prop wiring) is NOT separately
+R2'd: it is literal markup with NO node assertion — the sole App render in node
+hits the catalog-initializing path (smoke.test.tsx, sole assert
+not.toContain("bp-svg")), so its gate is the browser walk by design (brainstorm
+assumption #6). The Legend swatch-count pin was PRESERVED unbroken (churn note
+in the boundary report — the dashed modifier is a sibling class deliberately
+NOT containing the "legend-swatch" substring the /legend-swatch/g pin matches).
+
+
+PASS (baseline, real implementation)
+------------------------------------
+  $ npx vitest run src/ui/smoke.test.tsx -t "TitleBlock"
+  → Tests  3 passed | 46 skipped   (T-A, T-B, T-C green)
+  Full suite: npm test → 706 passed (703 baseline + 3 new).
+
+
+EXACT BREAK #1 — behaviour (1): drop {value} from every Cell
+------------------------------------------------------------
+  Edit: <span className="title-block-value"></span>   (omit {value})
+  $ npx vitest run src/ui/smoke.test.tsx -t "TitleBlock"
+  → 3 failed | 46 skipped
+    FAIL … > renders every cell from its props
+      AssertionError: expected '…' to contain 'Iron Ingot'
+    FAIL … > carries the static UNITS brag verbatim
+      AssertionError: expected '…' to contain '/MIN · EXACT ℚ'
+    FAIL … > renders the ?? "—" power fallback string as given
+      AssertionError: expected '…' to contain 'class="title-block-value">—</span>'
+  All three names appear; each break is on-topic (a value no longer renders).
+  Removing the SHARED render path breaks all three, as expected. Restore → green.
+
+
+EXACT BREAK #2 — behaviour (2): change the static UNITS constant
+----------------------------------------------------------------
+  Edit: const UNITS = "/MIN";   (drop "· EXACT ℚ")
+  $ npx vitest run src/ui/smoke.test.tsx -t "TitleBlock"
+  → 1 failed | 2 passed | 46 skipped
+    FAIL … > carries the static UNITS brag verbatim
+      AssertionError: expected '…' to contain '/MIN · EXACT ℚ'
+  ISOLATED: only T-B fails, and it names exactly the UNITS constant. T-A/T-C
+  stay green (they do not depend on UNITS). Restore → green.
+
+
+EXACT BREAK #3 — behaviour (3): ignore the `power` prop (hard-code the cell)
+---------------------------------------------------------------------------
+  Edit: <Cell label="Σ Power" value="N/A" … />   (literal, ignoring {power})
+  $ npx vitest run src/ui/smoke.test.tsx -t "TitleBlock"
+  → 2 failed | 1 passed | 46 skipped
+    FAIL … > renders every cell from its props
+      AssertionError: expected '…' to contain 'Σ ≈ 42.0 MW'
+    FAIL … > renders the ?? "—" power fallback string as given
+      AssertionError: expected '…' to contain 'class="title-block-value">—</span>'
+  On-topic: both failing tests assert the power VALUE (T-A feeds "Σ ≈ 42.0 MW",
+  T-C feeds "—"); both break exactly when `power` is ignored. T-B (UNITS) stays
+  green — the two behaviours are independent. Restore → green.
+
+
+RESTORE + GREEN (final, committed tree)
+---------------------------------------
+  $ npx vitest run src/ui/smoke.test.tsx -t "TitleBlock" → 3 passed | 46 skipped
+  $ npm run check → exit 0 (tsc + eslint + prettier all clean)
+  $ npm test     → exit 0 — Test Files 28 passed (28), Tests 706 passed (706)
+
+R2 CONFIRMED. Each behaviour has at least one test that PASSES on the real code
+and FAILS — named, on-topic — when that specific behaviour is inverted, then
+returns green on restore. Breaks #2 and #3 further show the tests are
+independently targeted (a break in one behaviour does not spuriously fail the
+unrelated test). The committed tree is the PASS state.

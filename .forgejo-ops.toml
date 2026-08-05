@@ -29,3 +29,4 @@ extra = ["epic", "blocked"]    # stage:N labels are generated from [stages]
 "6" = "Stage 6 — Chain-aware helpers"
 "7" = "Stage 7 — Logistics: combined blueprint + transport planning"
 "8" = "Stage 8 — Planner intelligence: hygiene, quick-apply, auto-chain + alt-recipe compare"
+"9" = "Stage 9 — Drawing identity: the FICSIT engineering-drawing UI"

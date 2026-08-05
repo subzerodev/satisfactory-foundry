@@ -15,6 +15,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
+  BackgroundVariant,
   Controls,
   Panel,
   Handle,
@@ -430,6 +431,41 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
 
   return (
     <div className="graph-canvas">
+      {/* Dimension-tick marker def (Stage 9 P1 Axis 2). A short 45° drafting
+          tick at the consumer (target) end of every edge. RF wraps a STRING
+          markerEnd in url('#…') itself (getMarkerId passes strings verbatim;
+          index.mjs:2956) and creates NO auto-def for string markers, so the
+          def must be supplied here as canvas chrome. markerUnits="strokeWidth"
+          scales the tick with the (thin) dimension line; orient="auto" aligns
+          it to the flow direction. Ink for all states — the LINE carries the
+          state colour; the tick is the dimension convention (per-state marker
+          colour is impossible through one shared def). */}
+      <svg
+        width="0"
+        height="0"
+        style={{ position: "absolute" }}
+        aria-hidden="true"
+      >
+        <defs>
+          <marker
+            id="dim-tick"
+            markerWidth="8"
+            markerHeight="8"
+            refX="4"
+            refY="4"
+            markerUnits="strokeWidth"
+            orient="auto"
+          >
+            {/* A 45° stroke through the ref point — the drafting dimension tick. */}
+            <path
+              d="M 1 7 L 7 1"
+              stroke="var(--fg)"
+              strokeWidth="1"
+              fill="none"
+            />
+          </marker>
+        </defs>
+      </svg>
       <ReactFlow
         nodes={nodes}
         edges={derivedEdges}
@@ -438,9 +474,16 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         colorMode={colorMode}
+        // The dimension tick at the consumer end of every edge (Axis 2). BARE
+        // id — RF url()-wraps it; a pre-wrapped url would double-wrap dead.
+        // Merges UNDER each controlled edge ({ ...defaultEdgeOptions, ...edge },
+        // index.mjs:2911), so it never overrides per-edge data.
+        defaultEdgeOptions={{ markerEnd: "dim-tick" }}
         fitView
       >
-        <Background />
+        {/* Graph-paper grid (Axis 4): lined variant, ~24px gap. Pattern colour
+            comes from the --xy-background-pattern-color token per medium. */}
+        <Background variant={BackgroundVariant.Lines} gap={24} />
         <Controls />
         <Panel position="top-left">
           <button className="graph-add-stage" onClick={onAddStage}>
