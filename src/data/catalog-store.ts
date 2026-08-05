@@ -21,8 +21,15 @@ const CATALOG_KEY = "current";
  * 2 → 3 (Stage 7 / Phase 2): items now carry a `stackSize` Fraction | null
  * (parsed from `mStackSize`). Same discard-and-re-parse semantics as the 1→2
  * bump — a version-2 cache is stale, bundled/uploaded users re-parse once.
+ *
+ * 3 → 4 (Stage 12 / P0, #60): items gained the optional `isRawResource` flag
+ * in Stage 11 P1 WITHOUT a bump, on the premise that a stale cache would
+ * self-heal "on the next natural re-parse" — but a healthy bundled cache has
+ * no such trigger, so the raw-feed feature stayed invisible for existing
+ * users (Michael's field report). This bump supersedes that decision and
+ * forces the one re-parse.
  */
-export const CATALOG_PARSER_VERSION = 3;
+export const CATALOG_PARSER_VERSION = 4;
 
 /**
  * JSON-safe CatalogItem: `stackSize` is a toString() string or null. Items

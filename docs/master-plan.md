@@ -184,4 +184,19 @@ process (all-Claude roster, opus implementers, per-phase gates).
 - **Status:** SHIPPED (2026-08-05). P0 (3a3feae — views theming +
   #55 sticky title block) → P1 (055d3dc — visible raw feeds: derived
   supply cards, ground-truth isRawResource classification, 741 tests).
-  Release: develop → main PR at arc close.
+  Release: PR #58 (develop → main, merged 2026-08-05).
+
+## Stage 12 — Field fixes: catalog refresh, views at scale, clarity
+
+- **Goal:** Michael's field report on the deployed Stage 11 build:
+  (1) the raw-feed cards never appeared for cached users — the S11P1
+  no-bump decision assumed a re-parse trigger that doesn't exist;
+  (2) the Blueprint/Schematic/Combined views are unreadable at real
+  scale (161 machines): label/lane overlap, dash-noise; (3) the
+  per-belt override inputs are unlabeled; (4) the unsolved-stage
+  wording is inconsistent across surfaces.
+- **Epic:** #59 (milestone 83). P0 catalog version bump (#60, fix) →
+  P1 views at scale (full design loop) → P2 clarity pass.
+- **Status:** in progress (started 2026-08-05). P0 merged 2026-08-05
+  (version bump 3→4; heal walk-proven: a forced-v3 cache re-parses and
+  the supply cards appear).

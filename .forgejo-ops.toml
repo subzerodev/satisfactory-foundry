@@ -32,3 +32,4 @@ extra = ["epic", "blocked"]    # stage:N labels are generated from [stages]
 "9" = "Stage 9 — Drawing identity: the FICSIT engineering-drawing UI"
 "10" = "Stage 10 — Canvas ergonomics + theming stragglers"
 "11" = "Stage 11 — Views join the drawing + visible raw feeds"
+"12" = "Stage 12 — Field fixes: catalog refresh, views at scale, clarity"

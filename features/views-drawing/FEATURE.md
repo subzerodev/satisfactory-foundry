@@ -3,7 +3,7 @@
 **Started:** 2026-08-05
 **Status:** complete — both phases merged; release PR at close
 **Current phase:** — (arc closed 2026-08-05)
-**Final PR:** develop → main (see epic #53 close audit)
+**Final PR:** #58 (develop → main, merged 2026-08-05)
 **Epic:** #53 (board #21, Stage 11 milestone 82)
 
 ## Phase decomposition
