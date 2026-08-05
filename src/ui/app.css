@@ -507,6 +507,30 @@ body {
   text-anchor: middle;
 }
 
+/* Level-of-detail machine band (Stage 12 P1 Axis 1): above N=114 the per-machine
+   tick row becomes one band rect + a count, the drafting break convention. The
+   band reuses the machine rect's surface fill; the count takes the display face
+   (the drawing's own count vocabulary); the significant-machine ticks read as
+   quiet interior boundaries. */
+.machine-band rect {
+  fill: var(--surface-fill);
+  stroke: var(--surface-stroke);
+}
+
+.machine-band-count {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  fill: var(--fg);
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.machine-band-mark line {
+  stroke: var(--surface-stroke);
+  stroke-width: 1;
+}
+
 .lane-name {
   font-size: 11px;
   fill: var(--fg-muted);
@@ -581,9 +605,20 @@ body {
   padding: 12px 0;
 }
 
+/* Scroll wrapper (Stage 12 P1 Axis 2), mirroring .schematic-scroll: a floored
+   wide plan renders past the 960 reference and scrolls here. A NEW wrapper — NOT
+   .bp-svg, whose overflow: visible is load-bearing for out-of-box mark labels
+   and must not be mode-flipped. */
+.bp-scroll {
+  overflow: auto;
+}
+
 .bp-svg {
   overflow: visible;
   display: block;
+  /* Explicit px width (Axis 2) left-aligns a narrower-than-wrapper plan; this
+     restores the centering xMidYMid meet used to give it. */
+  margin-inline: auto;
 }
 
 .bp-notice {
@@ -632,9 +667,20 @@ body {
   dominant-baseline: middle;
 }
 
+/* Label halo (Stage 12 P1 Axis 2): lane names + rate labels sit at fixed dm
+   offsets and, when rows are tight, overlap adjacent dashed pipe lanes (Michael's
+   "Heavy Oil Residue" case). paint-order: stroke draws a --bg halo UNDER the
+   glyphs — the drafting convention for text over linework. Stroke width is in
+   viewBox (dm) units, matched to the ~11 dm font size, so it scales with the
+   plan. The feed-above/output-below asymmetry (Blueprint.tsx Marks) is KEPT —
+   the halo resolves label-on-lane, not label placement. */
 .bp-lane-name {
   font-size: 11px;
   fill: var(--fg-muted);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3;
+  stroke-linejoin: round;
 }
 
 .bp-mark-glyph {
@@ -646,6 +692,10 @@ body {
 .bp-mark-label {
   font-size: 10px;
   fill: var(--fg);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3;
+  stroke-linejoin: round;
 }
 
 /* Combined multi-stage blueprint (Stage 7 / Phase 3, Axis 2). Reuses the bp-*

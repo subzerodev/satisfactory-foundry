@@ -1,4 +1,4 @@
-# Stage 12 / Phase 1 — views at scale: readable at 161 machines (ticket #62) — brainstorm v9 (FROZEN)
+# Stage 12 / Phase 1 — views at scale: readable at 161 machines (ticket #62) — brainstorm v10 (FROZEN)
 
 **Goal.** Michael's field case: a 161-machine Plastic stage renders the
 Schematic as dash-noise, the Blueprint with lane-name/pipe-lane text
@@ -270,3 +270,16 @@ walk-tuned if residual touch remains.
   the prompt states the decided design declaratively; this doc keeps
   its transcript. Probes (a) band-vs-pitch-floor and (b) the
   scale-floor parameterization both CLEARED on grounding. FROZEN.
+- v10 (2026-08-05, at the BOUNDARY gate): both boundary reviewers
+  converged on a HIGH the six design rounds missed — the v9 formula's
+  height term `capH/vbH` ENLARGES every sub-cap plan (the smelter
+  1.86× today; ChainBlueprint chains up to 640/h, untested), because
+  today's height attribute is `min(h, cap)`, not the cap constant.
+  The "capH per site" wording was ambiguous between the constant and
+  the effective capped height. CORRECTED: the height term is
+  `min(vbH, capH) / vbH` (never above 1) — sub-cap plans keep natural
+  size, cap-hitting plans identical, the width delta stays the only
+  enumerated disengaged change, the 161 floor path unaffected.
+  Implementation + tests + the churned pin fixed in the same commit;
+  the "height-governed identical" claim now reads: sub-cap → natural
+  size (identical), cap-hitting → identical, with no enlargement case.
