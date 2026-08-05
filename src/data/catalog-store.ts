@@ -36,6 +36,11 @@ interface StoredCatalogItem {
   displayName: string;
   isFluid: boolean;
   stackSize: string | null;
+  // Mirrors CatalogItem.isRawResource — ALSO optional (a required stored field
+  // would tsc-clash reviving undefined). Without it in all three enumerating
+  // functions the flag silently vanishes on the second boot (a cache hit), so
+  // the raw-feed cards would disappear (Stage 11 / Phase 1, ticket #57).
+  isRawResource?: boolean;
 }
 /** JSON-safe RecipeIO — the Fraction is serialized via toString(). */
 interface StoredRecipeIO {
@@ -202,6 +207,9 @@ function serializeItem(item: CatalogItem): StoredCatalogItem {
     isFluid: item.isFluid,
     // null stays null; a Fraction stringifies exactly (StoredRecipe precedent).
     stackSize: item.stackSize === null ? null : item.stackSize.toString(),
+    // Only emit when set (the MachinePower optional-bounds idiom above): a
+    // flag-less item stays flag-less through storage, reviving as non-raw.
+    ...(item.isRawResource ? { isRawResource: true } : {}),
   };
 }
 
@@ -276,6 +284,9 @@ function reviveItem(item: StoredCatalogItem): CatalogItem {
     displayName: item.displayName,
     isFluid: item.isFluid,
     stackSize: item.stackSize === null ? null : parseRational(item.stackSize),
+    // Revive the flag only when stored true (keeps the field absent otherwise,
+    // matching the in-memory optional shape the === true consumer expects).
+    ...(item.isRawResource ? { isRawResource: true } : {}),
   };
 }
 

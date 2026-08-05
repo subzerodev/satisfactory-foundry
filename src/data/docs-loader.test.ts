@@ -100,13 +100,43 @@ describe("parseDocsJson — items + machines + shape (spec row 1)", () => {
     }
     expect(cat.items["water"]!.isFluid).toBe(true);
     expect(cat.items["stone"]!.isFluid).toBe(false);
-    // Items carry id + displayName + isFluid + stackSize (no power).
+    // A resource-descriptor item (Water) carries the isRawResource flag on top
+    // of the base fields (Stage 11 / Phase 1); an item-descriptor item does not.
     expect(Object.keys(cat.items["water"]!).sort()).toEqual([
+      "displayName",
+      "id",
+      "isFluid",
+      "isRawResource",
+      "stackSize",
+    ]);
+    // An item-descriptor item omits the flag entirely (absent ⇒ non-raw).
+    expect(Object.keys(cat.items["iron_ingot"]!).sort()).toEqual([
       "displayName",
       "id",
       "isFluid",
       "stackSize",
     ]);
+  });
+
+  it("flags isRawResource true for FGResourceDescriptor items, absent for every other descriptor class (spec row 1)", () => {
+    const cat = parseDocsJson(DOCS_FRAGMENT);
+    // Resource descriptors (extraction-level by the game's own declaration).
+    expect(cat.items["ore_iron"]!.isRawResource).toBe(true);
+    expect(cat.items["stone"]!.isRawResource).toBe(true);
+    // Water — a RESOURCE descriptor AND a byproduct of the Wet Concrete recipe
+    // in this very fragment — IS raw. This is the case that killed the
+    // all-outputs recipe-set heuristic (r2 fold): the game says extraction, so
+    // the byproduct role is irrelevant. Read directly from the ground truth.
+    expect(cat.items["water"]!.isRawResource).toBe(true);
+    // Item descriptors (craftable / intermediate) carry no flag → non-raw.
+    // Concrete is the Wet Concrete recipe's product — a made item, not raw
+    // (the item-descriptor analogue of Heavy Oil Residue, the case that killed
+    // the primary-only recipe-set heuristic).
+    expect(cat.items["iron_ingot"]!.isRawResource).toBeUndefined();
+    expect(cat.items["concrete"]!.isRawResource).toBeUndefined();
+    // Biomass (Wood) is its own descriptor class, not a resource → non-raw,
+    // so no spurious feed cards for burnable inputs.
+    expect(cat.items["wood"]!.isRawResource).toBeUndefined();
   });
 
   it("extracts machines with id + displayName + power (no power fields → zero-draw)", () => {
