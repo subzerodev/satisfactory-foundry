@@ -1700,8 +1700,8 @@ export function createAppStore(storage?: StateStorage) {
             });
           },
 
-          // Pure read: loadPlanFile already migrates a v1 row to v2 in memory,
-          // so the export is what a LOAD would see (the honest v2 form). Returns
+          // Pure read: loadPlanFile already migrates an older row to the latest
+          // format in memory, so the export is what a LOAD would see. Returns
           // null on missing/corrupt; no enqueue (writes nothing, sets no error)
           // and no DOM — App does the Blob/anchor download. (Frozen Axis 3.)
           async exportPlan(id: string): Promise<string | null> {
