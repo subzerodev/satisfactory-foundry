@@ -148,4 +148,6 @@ process (all-Claude roster, opus implementers, per-phase gates).
 - **Epic:** #43 (milestone 80). Phases: P0 tokens + type + sheet chrome
   → P1 canvas (plates, dimension lines, stamps) → P2 panels + schedules
   + both-mode polish walks.
-- **Status:** in progress (started 2026-08-05).
+- **Status: SHIPPED 2026-08-05** — all three phases Done (#44 #45
+  #46); 707/707 tests; behavior-frozen throughout; released via the
+  Stage 9 PR.

@@ -3,6 +3,17 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 9 complete: the full drawing identity
+
+> Hey Michael — the last surfaces joined the drawing. The train and
+> recipe-comparison tables are proper schedules now (mono figures under
+> ruled, letter-spaced headers), every panel sits on the sheet in a
+> square soft-ink frame, the floor-plan labels use the instrument font,
+> and keyboard focus gets a clear orange ring in both papers. That's the
+> whole identity you approved, shipped end to end: vellum and cyanotype,
+> title block to inspection stamps. The planner finally looks like what
+> it is — a FICSIT engineering document.
+
 ## 2026-08-05 — Stage 9, Phase 1: the canvas joins the drawing
 
 > Hey Michael — the graph itself now speaks the language. Stages are

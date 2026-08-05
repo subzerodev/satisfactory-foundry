@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-05
 **Status:** in-progress
-**Current phase:** Phase 2 (panels + schedules + polish) — design next
+**Current phase:** SHIPPED — all three phases landed; released via the Stage 9 PR
 **Final PR:** —
 **Epic:** #43 (board #21, Stage 9 milestone 80)
 
@@ -53,9 +53,29 @@ Behavior-frozen arc: presentation only; 703-test suite stays green
 
 ### Phase 2 — panels + schedules
 
-- **Status:** design next
+- **Status:** complete (merged --no-ff to develop 2026-08-05; 707/707;
+  one-round design convergence; boundary adversarial caught the boxed
+  close glyph (folded, then simplified to the :not() form);
+  both-media walk verified schedules/panels/SVG labels/focus ring +
+  the frameless close; ticket #46 Done)
+
+## Final report
+
+Stage 9 gave the app its first designed identity in three
+behavior-frozen phases (703→707 tests, zero logic changes): P0 tokens
++ type + sheet chrome, P1 the canvas as a drawing, P2 panels as
+schedules. Gate highlights: the concept orange failed its own contrast
+gate at P0 design review (superseded to computed #C25A1D); P1's marker
+and rotation mechanics were settled against installed RF source before
+code; P2's boundary caught the boxed close glyph. Release PR recorded
+at arc close.
 
 ## Decisions log
+
+- 2026-08-05 (P2 landed): one grouped schedule treatment + ONE
+  grouped six-panel dress + the :not() close exclusion; SVG labels in
+  --font-mono-num; the single :focus-visible rule is the app's focus
+  treatment.
 
 - 2026-08-05 (P1 landed): the canvas re-skin is CSS + two canvas-level
   props only (defaultEdgeOptions markerEnd "dim-tick" bare id + the one
