@@ -1,4 +1,10 @@
-# Stage 14 combined — restore schematic, remove combined, labels off the ink (tickets #74 + #75 + #76) — brainstorm v3
+# Stage 14 combined — restore schematic, remove combined, labels off the ink (tickets #74 + #75 + #76) — brainstorm v3 — FROZEN 2026-08-05
+
+> **FROZEN.** Correctness: r1 both NEEDS_REWORK (converged partition
+> BLOCKER, folded v2); r2 APPROVED + APPROVED_WITH_NITS (folded v3).
+> Simplify: APPROVED_WITH_NITS (1 LOW — the chain-engine deferral,
+> recorded in ledger #2 + ticket #77). This is the implementation
+> contract for tickets #74 + #75 + #76 (+ closes #71 by restore).
 
 **Goal.** Michael's correction (2026-08-05, verbatim): "no you removed
 the wrong one i liked the first view and dont want this combined one".
@@ -188,7 +194,12 @@ posture; halo both.**
    state §2): the DELETE set is exactly {chainConnectors,
    ChainConnector, chainTransportPower, ChainPowerFooter,
    isVehicleModeLink, deriveChainView}; everything reachable from
-   drawnDistanceDm stays. Re-confirmed by grep at implementation
+   drawnDistanceDm stays. DELIBERATE DEFERRAL (simplify LOW): the
+   kept buildChain/layoutChain engine is heavier than its one
+   surviving consumer needs — retained here as proven surface
+   (collapsing it is a behavior-touching refactor of the kept
+   LinkInspector values, out of this corrective arc's scope);
+   tracked as ticket #77. Re-confirmed by grep at implementation
    after the component deletion. Restore-side signature drift
    (itemName/beltLabel/segTooltip/store selectors vs today's
    shapes) is the implementer's mandatory pre-impl drift hunt
