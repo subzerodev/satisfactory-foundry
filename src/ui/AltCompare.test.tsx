@@ -241,7 +241,7 @@ describe("swapPayloadFor", () => {
 describe("AltCompare SSR smoke", () => {
   it("renders nothing headless (store catalog initializing in node)", () => {
     // The component reads the app-wide singleton store, which boots
-    // catalog-initializing in node → the catalog gate returns null. A crash here
+    // catalog "initializing" in node → the catalog gate returns null. A crash here
     // would fail the wiring; the visual render is the browser-walk gate.
     const html = renderToStaticMarkup(<AltCompare />);
     expect(html).toBe("");

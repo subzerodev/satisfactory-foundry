@@ -104,7 +104,7 @@ export function altCompareModel(
  *  the arc's integer rule. */
 export function swapPayloadFor(
   stageId: string,
-  candidate: { id: string } & Parameters<typeof swapMachineCountFor>[0],
+  candidate: Parameters<typeof swapMachineCountFor>[0],
   rate: Fraction,
 ): SwapPayload {
   return {
