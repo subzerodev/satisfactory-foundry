@@ -218,3 +218,9 @@ layout.ts.**
   analysis), band pitch cannot clamp below 8 for any N, #81
   satisfies the follow-on rule. FROZEN on the simplify disposition
   (recorded next).
+- v3-final (2026-08-05): simplify pass APPROVED (0 findings) — every
+  probed shape confirmed minimal (the three-stage pin is the minimum
+  that expresses the coupling; the priority tier is forced by the
+  findability invariant; the layout-layer field beats component
+  computation; scope actively shed). FROZEN — full proceed condition
+  met.
