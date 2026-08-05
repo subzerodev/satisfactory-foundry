@@ -1,4 +1,10 @@
-# Stage 13 combined — remove schematic, blueprint overlap, override table (tickets #68 + #69 + #70) — brainstorm v3
+# Stage 13 combined — remove schematic, blueprint overlap, override table (tickets #68 + #69 + #70) — brainstorm v3 — FROZEN 2026-08-05
+
+> **FROZEN.** Correctness: r1 both NEEDS_REWORK (converged IMPORTANT,
+> folded v2); r2 both APPROVED_WITH_NITS (shared nit, folded v3).
+> Simplify: APPROVED (0 findings — every probed shape confirmed the
+> forced minimum). This is the implementation contract for tickets
+> #68 + #69 + #70.
 
 **Goal.** Michael's field report on the Stage 12 build (2026-08-05,
 verbatim): "remove schematic view its not working also blueprint still
