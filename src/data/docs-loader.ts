@@ -64,6 +64,12 @@ export function parseDocsJson(raw: unknown): Catalog {
     const classes = Array.isArray(g.Classes) ? g.Classes : [];
 
     if (NATIVE_ITEM_REGEX.test(nativeClass)) {
+      // Extraction-level items are the game's own FGResourceDescriptor group
+      // (Stage 11 / Phase 1, ticket #57) — the raw-feed display derive reads
+      // this flag. Set per GROUP: nativeClass is stable across the group's
+      // Classes, so the class check is once, not per item. Absent (⇒ non-raw)
+      // for every other descriptor class, matching the optional field default.
+      const isRawGroup = /FGResourceDescriptor/.test(nativeClass);
       for (const cls of classes) {
         const c = cls as Record<string, unknown>;
         if (typeof c.ClassName !== "string") continue;
@@ -76,6 +82,9 @@ export function parseDocsJson(raw: unknown): Catalog {
           displayName: (c.mDisplayName as string | undefined) ?? id,
           isFluid,
           stackSize: parseStackSize(c.mStackSize),
+          // Only stamped true — a false would bloat every item literal; the
+          // consumer's `=== true` read treats absent as non-raw.
+          ...(isRawGroup ? { isRawResource: true } : {}),
         };
       }
     } else if (NATIVE_BUILDING_REGEX.test(nativeClass)) {

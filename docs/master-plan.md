@@ -166,4 +166,22 @@ process (all-Claude roster, opus implementers, per-phase gates).
   (f7ab3ec — CSS resize seam, per-plan LR/TB direction, plan-file v5
   with the userPlaced flag, 728 tests) → P2 (5a86002 — measured spacing
   pass: panel insets, canvas button gap, tier-chip separation).
+  Release: PR #52 (develop → main, merged 2026-08-05).
+
+## Stage 11 — Views join the drawing + visible raw feeds
+
+- **Goal:** Michael's 2026-08-05 round-2 feedback on the live Stage 10
+  build: (1) the Schematic / Blueprint / Combined views get the full
+  drawing treatment — theming + spacing inside the SVGs, which S9P2
+  Axis 3 explicitly deferred "unless a walk demands it" (it has);
+  (2) raw extraction feeds (Crude Oil, Copper Ore, …) become VISIBLE in
+  the chain flow — the builder correctly stops at raw leaves, but the
+  graph draws nothing for them, so a one-craft-step branch looks
+  rootless next to a multi-step one.
+- **Epic:** #53 (milestone 82). P0 views theming + spacing → P1 visible
+  raw feeds (behavior; full design loop — source nodes vs feed
+  annotations, LR/TB, persistence implications).
+- **Status:** SHIPPED (2026-08-05). P0 (3a3feae — views theming +
+  #55 sticky title block) → P1 (055d3dc — visible raw feeds: derived
+  supply cards, ground-truth isRawResource classification, 741 tests).
   Release: develop → main PR at arc close.

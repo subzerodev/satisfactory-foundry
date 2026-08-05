@@ -13,6 +13,19 @@ export interface CatalogItem {
    * not a guessed number — solid-vehicle math is then unavailable rather than
    * wrong). The transport solver reads this as the `stackSize` input. */
   stackSize: Fraction | null;
+  /**
+   * true when the game's own Docs.json declares this item under
+   * `FGResourceDescriptor` — an extraction-level resource (ores, Coal, Crude
+   * Oil, Water, …). OPTIONAL with absent ⇒ non-raw: a required field would
+   * TS2741-break the ~7 test fixtures that enumerate CatalogItem literals, and
+   * the sole consumer reads `?.isRawResource === true` (truthiness-safe), so
+   * optional is behaviourally identical (Stage 11 / Phase 1, ticket #57).
+   * Ground truth, not recipe inference — both recipe-set heuristics died
+   * misclassifying byproduct-only items (Heavy Oil Residue) and byproduct
+   * resources (Water). The docs-loader sets it only for FGResourceDescriptor
+   * groups; the raw-feed display derive is its only reader.
+   */
+  isRawResource?: boolean;
 }
 
 /**

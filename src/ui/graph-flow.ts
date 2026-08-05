@@ -41,6 +41,16 @@ export const NODE_WIDTH = 220;
 export const NODE_HEIGHT = 96;
 
 /**
+ * Raw-feed supply-card footprint (Stage 11 / Phase 1, ticket #57). Independent
+ * of NODE_WIDTH/HEIGHT so a future stage-size change never silently misaligns
+ * the feeds. BOTH are set as the RF node objects' width/height so fitView and
+ * the direction-switch re-frame include feed nodes in the bounding box (a
+ * zero-extent node would mis-frame the chart).
+ */
+export const RAW_NODE_WIDTH = 150;
+export const RAW_NODE_HEIGHT = 44;
+
+/**
  * The data a StageNode card renders. `recipeName` is null for a recipe-less
  * stage (the ＋stage default) → the card shows a "no recipe" placeholder;
  * `machineCount` is still carried (the card blanks it as a display choice, r3),
@@ -106,9 +116,44 @@ export interface FlowEdge {
   data: { state: EdgeState };
 }
 
+/**
+ * A derived raw-feed supply node (Stage 11 / Phase 1, ticket #57) — display-only
+ * chrome, never stored/placed/persisted. `width`/`height` carry the raw-card
+ * footprint (RAW_NODE_*), so fitView frames feeds. One `source` handle mirrors
+ * the stageHandles geometry at the raw dims (right in LR, bottom in TB). `data`
+ * carries the pre-formatted card lines — the derive owns all formatting so the
+ * card component stays a thin renderer.
+ */
+export interface RawFlowNode {
+  id: string;
+  type: "rawFeed";
+  position: { x: number; y: number };
+  width: number;
+  height: number;
+  handles: FlowHandle[];
+  data: { itemName: string; rateText: string };
+}
+
+/** A derived raw-feed edge (Stage 11 / Phase 1): the dashed hairline from a
+ *  supply card to its consuming stage's `in` handle. `className` "edge-raw"
+ *  drives the lighter-than-lane styling; no state (raw feeds never reconcile). */
+export interface RawFlowEdge {
+  id: string;
+  source: string;
+  target: string;
+  className: string;
+}
+
 export interface FlowGraph {
   nodes: FlowNode[];
   edges: FlowEdge[];
+  /**
+   * Raw-feed supply nodes + edges (Stage 11 / Phase 1) — a SEPARATE field, NOT
+   * appended to `nodes`/`edges`, so every existing graph-flow/store pin (node
+   * counts, edge sets) stays byte-stable. GraphCanvas concatenates these at the
+   * `<ReactFlow nodes={...}>` prop OUTSIDE the useState/merge machinery.
+   */
+  rawFeeds: { nodes: RawFlowNode[]; edges: RawFlowEdge[] };
 }
 
 // ---------------------------------------------------------------------------
@@ -450,6 +495,121 @@ function powerTextOf(catalog: Catalog, stage: StageNode): string | null {
 }
 
 /**
+ * The single `source` handle a raw-feed supply card carries (Stage 11 / Phase
+ * 1) — the stageHandles source-side geometry transposed to the raw dims. LR
+ * puts it on the right edge (feeding the stage to its right), TB on the bottom
+ * (feeding the stage below). Only a source handle: feed cards emit, never
+ * receive (their handles accept no connections — isConnectable false at render).
+ */
+function rawFeedHandle(direction: FlowDirection): FlowHandle {
+  if (direction === "TB") {
+    return {
+      id: "out",
+      type: "source",
+      position: "bottom",
+      x: RAW_NODE_WIDTH / 2 - HANDLE_SIZE / 2,
+      y: RAW_NODE_HEIGHT - HANDLE_SIZE / 2,
+      width: HANDLE_SIZE,
+      height: HANDLE_SIZE,
+    };
+  }
+  return {
+    id: "out",
+    type: "source",
+    position: "right",
+    x: RAW_NODE_WIDTH - HANDLE_SIZE / 2,
+    y: RAW_NODE_HEIGHT / 2 - HANDLE_SIZE / 2,
+    width: HANDLE_SIZE,
+    height: HANDLE_SIZE,
+  };
+}
+
+/**
+ * Derive the display-only raw-feed supply nodes + edges for the whole graph
+ * (Stage 11 / Phase 1, ticket #57). For each SOLVED stage, each recipe input
+ * item that (1) the game declares extraction-level (`isRawResource === true`)
+ * and (2) has NO incoming StageLink for that item emits one supply card + one
+ * dashed edge to the stage's `in` handle. The rate is the solve's own number —
+ * `feeds.find(...).totalDemand` (the store's :547-551 lookup) — no re-derivation.
+ * Unsolved / recipe-less / invalid stages emit nothing (manifold data only
+ * exists on a solved stage). Positions are DERIVED from the consuming stage's
+ * live position each render, so feeds follow drags + direction switches for free.
+ */
+function deriveRawFeeds(
+  catalog: Catalog,
+  stages: Record<string, StageNode>,
+  stageOrder: string[],
+  links: StageLink[],
+  positions: Record<string, { x: number; y: number }>,
+  flowDirection: FlowDirection,
+): { nodes: RawFlowNode[]; edges: RawFlowEdge[] } {
+  const nodes: RawFlowNode[] = [];
+  const edges: RawFlowEdge[] = [];
+
+  for (const stageId of stageOrder) {
+    const stage = stages[stageId];
+    // Only SOLVED stages carry the feeds the rate is read from; a recipe-less /
+    // unsolved / invalid stage has no manifold data → no feed cards.
+    if (stage === undefined || stage.solve.status !== "solved") continue;
+    const recipeId = stage.selection.recipeId;
+    if (recipeId === null) continue;
+    const recipe = catalog.recipes[recipeId];
+    if (recipe === undefined) continue;
+
+    const feeds = stage.solve.result.feeds;
+    const pos = positions[stageId] ?? { ...FALLBACK_POSITION };
+
+    // The stage's i-th qualifying raw input — i drives the fan-out pitch.
+    let i = 0;
+    for (const input of recipe.inputs) {
+      const itemId = input.itemId;
+      // Condition 1: the game's own extraction-level declaration.
+      if (catalog.items[itemId]?.isRawResource !== true) continue;
+      // Condition 2: no incoming lane for this item (a linked-but-under-supplied
+      // lane is the LANE's story — a feed card beside it would conflict).
+      const linked = links.some(
+        (l) => l.toStageId === stageId && l.itemId === itemId,
+      );
+      if (linked) continue;
+
+      // The rate: the solve's own totalDemand (the store's feeds lookup). A
+      // qualifying input with no matching feed lane is skipped (no rate to show).
+      const feed = feeds.find((f) => f.itemId === itemId);
+      if (feed === undefined) continue;
+
+      const itemName = catalog.items[itemId]?.displayName ?? itemId;
+      const rateText = `${formatRate(feed.totalDemand)}/min`;
+
+      // Position derived from the consuming stage: LR to the left, TB above.
+      // 54px pitch clears the 44px card; −190 in LR clears the 220-wide stage.
+      const position =
+        flowDirection === "TB"
+          ? { x: pos.x, y: pos.y - (90 + i * 54) }
+          : { x: pos.x - 190, y: pos.y + i * 54 };
+
+      nodes.push({
+        id: `raw:${stageId}:${itemId}`,
+        type: "rawFeed",
+        position,
+        width: RAW_NODE_WIDTH,
+        height: RAW_NODE_HEIGHT,
+        handles: [rawFeedHandle(flowDirection)],
+        data: { itemName, rateText },
+      });
+      edges.push({
+        id: `rawedge:${stageId}:${itemId}`,
+        source: `raw:${stageId}:${itemId}`,
+        target: stageId,
+        className: "edge-raw",
+      });
+      i++;
+    }
+  }
+
+  return { nodes, edges };
+}
+
+/**
  * Project the store graph slice to React Flow's { nodes, edges }. Node ids are
  * stage ids in `stageOrder` (stable canvas ordering); edge ids are link ids.
  * `activeStageId` sets exactly one node's `selected`. `flowDirection` (Stage 10 /
@@ -517,7 +677,18 @@ export function graphToFlow(
     };
   });
 
-  return { nodes, edges };
+  // Raw-feed supply cards (Stage 11 / Phase 1) — why a separate field: see
+  // FlowGraph.rawFeeds.
+  const rawFeeds = deriveRawFeeds(
+    catalog,
+    stages,
+    stageOrder,
+    links,
+    positions,
+    flowDirection,
+  );
+
+  return { nodes, edges, rawFeeds };
 }
 
 /**

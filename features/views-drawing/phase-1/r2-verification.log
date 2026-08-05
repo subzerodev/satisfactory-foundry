@@ -1,0 +1,106 @@
+Stage 11 / Phase 1 — bidirectionality verification log (ticket #57)
+====================================================================
+
+Each distinct behavior is verified bidirectionally: PASS with the real code
+present, then a genuine vitest FAIL after reverting/breaking JUST that code
+(the FAIL names the new test), then green restored. Gates run singly with
+exit codes read individually (npm run check exit 0, npm test exit 0). All
+probes reverted to the committed state — `git status` clean between + after.
+
+--------------------------------------------------------------------------
+Behavior 1a — classification flag (docs-loader → CatalogItem.isRawResource)
+--------------------------------------------------------------------------
+Code:  src/data/docs-loader.ts — isRawGroup = /FGResourceDescriptor/.test(nativeClass)
+Test:  src/data/docs-loader.test.ts — "flags isRawResource true for
+       FGResourceDescriptor items, absent for every other descriptor class"
+       (+ the Water key-set pin in "extracts items across …").
+
+PASS (code present):
+  npx vitest run src/data/docs-loader.test.ts  →  Tests 28 passed (28)
+
+BREAK: isRawGroup replaced with `false` (never stamp the flag).
+FAIL (genuine, names the new test):
+     × extracts items across FGResourceDescriptor/FGItemDescriptor/Biomass with correct isFluid
+     × flags isRawResource true for FGResourceDescriptor items, absent for every other descriptor class (spec row 1)
+      Tests  2 failed | 26 passed (28)
+
+RESTORE: isRawGroup = /FGResourceDescriptor/.test(nativeClass) → green.
+
+--------------------------------------------------------------------------
+Behavior 1b — round-trip (serializeItem/reviveItem thread the flag through IDB)
+--------------------------------------------------------------------------
+Code:  src/data/catalog-store.ts — serializeItem spreads
+       ...(item.isRawResource ? { isRawResource: true } : {})  (reviveItem mirror)
+Test:  src/data/catalog-store.test.ts — "save → load returns a hit …" now asserts
+       isRawResource survives (ore_iron true, iron_ingot undefined).
+
+PASS (code present):
+  npx vitest run src/data/catalog-store.test.ts  →  Tests 10 passed (10)
+
+BREAK: serializeItem's flag spread removed (flag dropped at serialize).
+FAIL (genuine, names the new assertion):
+     × save → load returns a hit with Fraction-equal catalog + records a hash
+    104|     expect(result.catalog.items["ore_iron"]!.isRawResource).toBe(true);
+      Tests  1 failed | 9 passed (10)
+
+RESTORE: serializeItem flag spread returned → green. (The existing round-trip
+asserted only stackSize and would pass with the flag absent — the new
+assertion is load-bearing, as the FAIL proves.)
+
+--------------------------------------------------------------------------
+Behavior 2 — rawFeeds derive (graphToFlow.deriveRawFeeds)
+--------------------------------------------------------------------------
+Code:  src/ui/graph-flow.ts — deriveRawFeeds emits a supply node + edge per
+       solved stage's unlinked isRawResource input, with totalDemand + position.
+Test:  src/ui/graph-flow.test.ts — "graphToFlow — rawFeeds" describe (emit,
+       exact rate, non-terminating rate, suppress-when-linked, craftable-none,
+       recipe-less/unsolved-none, LR/TB positions+handles, ids, pin-stability).
+
+PASS (code present):
+  npx vitest run src/ui/graph-flow.test.ts  →  Tests 45 passed (45)
+
+BREAK: deriveRawFeeds early-returns empty ({ nodes: [], edges: [] }).
+FAIL (genuine, names the new tests):
+     × emits a supply card + edge for an unlinked extraction-level input with the exact totalDemand
+     × carries the exact non-terminating rate through formatRate
+     × positions the feed LEFT of the stage in LR, ABOVE it in TB, at the fan-out pitch
+     × leaves the existing nodes/edges pins untouched (separate-field shape)
+      Tests  4 failed | 41 passed (45)
+
+RESTORE: early return removed → green. (The suppress/craftable-none/recipe-less
+tests stay green under the break — they assert ZERO feeds, which the empty
+return also yields — so they are NOT vacuous: the emit/rate/position/pin-
+stability tests are the ones that require real emission, and they FAIL.)
+
+--------------------------------------------------------------------------
+Behavior 3 — commit-loop guard (commitNodeChange raw: id skip)
+--------------------------------------------------------------------------
+Code:  src/ui/GraphCanvas.tsx — commitNodeChange:
+       if ("id" in c && c.id.startsWith("raw:")) return;
+Test:  src/ui/GraphCanvas.test.ts — "commitNodeChange — raw-feed non-interactivity"
+       (raw: position/select reach neither setter; stage id still does).
+
+PASS (code present):
+  npx vitest run src/ui/GraphCanvas.test.ts  →  Tests 4 passed (4)
+
+BREAK: the raw: id skip line removed.
+FAIL (genuine, names the new tests):
+     × drops a drag-END position change for a raw: id (reaches setStagePosition never)
+     × drops a select change for a raw: id (reaches setActiveStage never)
+      Tests  2 failed | 2 passed (4)
+
+RESTORE: raw: id skip returned → green. (The two "guard is not vacuous"
+tests — stage id DOES commit — stay green under the break, confirming the
+break isolates exactly the raw: guard and nothing else. This is the r6
+correctness re-check's restored F2 mechanism: RF's node flags stop change
+GENERATION, but the loop iterates the RAW changes array, so this skip is the
+only app-level boundary guard and the only thing making the test meaningful.)
+
+--------------------------------------------------------------------------
+Final gates (worktree, run singly)
+--------------------------------------------------------------------------
+npm run check  →  exit 0 (tsc -b + eslint + prettier all clean)
+npm test       →  Test Files 29 passed (29) · Tests 741 passed (741) · exit 0
+  (baseline before this arc: 28 files / 728 tests — +1 file, +13 tests, zero
+   churn to existing pins; the Water key-set pin was UPDATED as a direct
+   consequence of the spec's Water-IS-raw requirement, not a churn.)

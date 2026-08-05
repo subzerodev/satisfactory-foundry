@@ -17,6 +17,7 @@ import { Fraction } from "../core/fraction.ts";
 import type { Finding, StageSolveResult } from "../core/manifold.ts";
 import type { CatalogRecipe, CatalogMachine } from "../data/types.ts";
 import type { Selection, SolveState } from "../state/store.ts";
+import { RawFeedNode } from "./GraphCanvas.tsx";
 import { solveStage } from "../core/manifold.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import { FIXTURE_TIERS, WORKED_INPUT, workedResult } from "./fixtures.ts";
@@ -854,6 +855,41 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
     const { GraphCanvas } = await import("./GraphCanvas.tsx");
     const html = renderToStaticMarkup(<GraphCanvas colorMode="light" />);
     expect(html).toContain('id="dim-tick"');
+  });
+
+  it("renders the raw-feed supply card class through the canvas RF12 SSR path (Stage 11 P1)", async () => {
+    // The raw-feed cards (ticket #57) ride at the same RF `nodes` prop the
+    // canvas uses (concatenated outside the merge), rendered by the SAME custom
+    // RawFeedNode the canvas registers under nodeTypes "rawFeed". RF's server
+    // snapshot reads the store's INITIAL state (zustand's getInitialState), so
+    // GraphCanvas SSR always shows the default Stage 1 and can't be seeded post-
+    // boot — so this pins the card's SSR markup via the real component through
+    // the real RF nodes-prop path, exactly as the canvas drives it. The rate/
+    // suppression logic is covered at graph-flow.test's rawFeeds derive; the
+    // card's rendered look is a browser-walk gate.
+    const { ReactFlow } = await import("@xyflow/react");
+    await import("@xyflow/react/dist/style.css");
+    const html = renderToStaticMarkup(
+      <ReactFlow
+        nodes={[
+          {
+            id: "raw:s1:ore_iron",
+            type: "rawFeed",
+            position: { x: 0, y: 0 },
+            draggable: false,
+            selectable: false,
+            deletable: false,
+            data: { itemName: "Iron Ore", rateText: "600/min" },
+          },
+        ]}
+        edges={[]}
+        nodeTypes={{ rawFeed: RawFeedNode }}
+      />,
+    );
+    expect(html).toContain("raw-feed-node");
+    // The card carries the item name + the exact demand (formatRate idiom).
+    expect(html).toContain("Iron Ore");
+    expect(html).toContain("600/min");
   });
 });
 
