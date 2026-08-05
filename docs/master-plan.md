@@ -162,6 +162,8 @@ process (all-Claude roster, opus implementers, per-phase gates).
 - **Epic:** #48 (milestone 81). P0 theming stragglers (fix, #49) → P1
   resizable canvas + flow direction (behavior, #51; plan-file v5) → P2
   spacing pass (#50, added from live feedback).
-- **Status:** in progress (started 2026-08-05). P0 merged 2026-08-05;
-  P1 merged 2026-08-05 (f7ab3ec — CSS resize seam, per-plan LR/TB
-  direction, plan-file v5 with the userPlaced flag, 728 tests). P2 next.
+- **Status:** SHIPPED (2026-08-05). P0 (base control rules) → P1
+  (f7ab3ec — CSS resize seam, per-plan LR/TB direction, plan-file v5
+  with the userPlaced flag, 728 tests) → P2 (5a86002 — measured spacing
+  pass: panel insets, canvas button gap, tier-chip separation).
+  Release: develop → main PR at arc close.

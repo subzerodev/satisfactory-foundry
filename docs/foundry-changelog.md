@@ -3,6 +3,19 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 10 complete: breathing room
+
+> Hey Michael — your spacing note, measured and fixed. The panels that
+> got their frames in the drawing pass had text sitting right against
+> the rules — they all breathe now with the same inset the inspector
+> always had. The ＋ stage and FLOW buttons were touching; they have a
+> proper gap. And the Mk conveyor/pipe chips were so close their borders
+> merged — they read as separate buttons now. I went over every other
+> surface with a ruler too (header, legend, title block, tables) and
+> they were already right, so nothing else moved. That closes Stage 10 —
+> if a spot still feels cramped to you, name it and it gets fixed on
+> this ticket's tail.
+
 ## 2026-08-05 — Stage 10, Phase 1: bigger canvas, your choice of flow
 
 > Hey Michael — the graph area is now much taller by default, and you

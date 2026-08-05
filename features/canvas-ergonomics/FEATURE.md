@@ -1,9 +1,9 @@
 # Canvas ergonomics + theming stragglers (Stage 10 arc)
 
 **Started:** 2026-08-05
-**Status:** in-progress
-**Current phase:** Phase 2 (spacing pass, #50) — next
-**Final PR:** —
+**Status:** complete — all three phases merged; release PR at close
+**Current phase:** — (arc closed 2026-08-05)
+**Final PR:** develop → main (see epic #48 close audit)
 **Epic:** #48 (board #21, Stage 10 milestone 81)
 
 ## Phase decomposition
@@ -34,8 +34,25 @@
   native grip drag itself is browser-UA machinery synthetic events can't
   drive — Michael's first real drag is the last evidence; fallback
   recorded in the frozen spec.
-- P2 (#50): spacing pass — Michael's live feedback, runs last (audits
-  the post-P1 layout).
+- P2 (#50): complete (merged 2026-08-05, 5a86002). A measured
+  computed-gap audit found three defects — the four S9P2-framed panels
+  flush at 1px, the canvas buttons touching at 0px, tier chips merged
+  at 2px — fixed at 12px/8px/6px per the app's existing rhythm.
+  Correctness converged first round; both boundary reviews APPROVED
+  with zero findings; both-media walk re-measured every fix site
+  (13px insets, 8px gap, 6px chips) plus the clean-list spot-checks.
+
+## Final report
+
+Stage 10 arc: three phases, all live feedback from Michael on the
+shipped Stage 9 identity. P0 inverted control theming to base element
+rules (the :where() specificity trap caught in review). P1 delivered
+the resizable canvas (pure CSS seam over RF's ResizeObserver) and the
+per-plan LR/TB flow direction (plan-file v5 with the userPlaced flag —
+the save→load pinning hole caught by adversarial review pre-impl;
+728 tests). P2 fixed the measured spacing defects. Every phase: design
+to convergence, simplify dispositioned, isolated worktree, boundary
+dual-review, both-media walk, trunk-verified merge. Suite 706 → 728.
 
 ## Decisions log
 
@@ -54,6 +71,3 @@
 - 2026-08-05: Arc started from Michael's live feedback; decomposition
   on epic #48.
 
-## Final report
-
-—
