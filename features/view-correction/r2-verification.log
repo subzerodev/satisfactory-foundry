@@ -1,0 +1,101 @@
+# Stage 14 — r2 bidirectionality verification log
+
+Arc: view-correction (tickets #74 restore schematic + #75 remove Combined +
+#76 output lane name off the bus). Worktree: `.worktrees/view-corr`, branch
+`feature/view-correction`, cut from develop @ dac0ee4.
+
+Each distinct behavior is verified in BOTH directions: PASS at HEAD → an exact
+break → a genuine `vitest`/`tsc` FAIL naming the gating test → restore → green.
+Every break was executed and its failure observed before logging (not asserted
+from reasoning). Assertions are quote-delimited from the actual tool output.
+
+Baseline (develop tip dac0ee4): 749 tests / 31 files.
+After this arc: 751 tests / 31 files.
+`npm run check` clean; `npm test` → "Tests  751 passed (751)".
+
+---
+
+## Behavior 1 — output lane name lifted below the bus, clear of the seams (#76)
+
+Gate: `src/ui/smoke.test.tsx` → describe "Schematic" → it "puts output lane
+names below the bus, clear of the seams (#76)". The test reads the restored
+layout's real geometry (`computeLayout(workedResult(), 20)`): output
+`track.busY = 176`, seam band `busY ± 6` = [170, 182], lifted output name
+baseline `busY + 18 = 194`. It pins the SVG `class="lane-name" x="4" y="194"`
+and the geometry gate `nameBandTop (194−11=183) > seamBandBottom (182)` — the
+~1px clearance.
+
+- PASS at HEAD: `Tests  1 passed | 60 skipped (61)`.
+- BREAK: in `Schematic.tsx`, revert the output lift back to the garble baseline —
+  `y={side === "output" ? track.busY + 18 : track.y + 12}` → `y={track.y + 12}`.
+- FAIL observed:
+  > `× puts output lane names below the bus, clear of the seams (#76)`
+  > `AssertionError: expected '<div class="schematic">…' to contain 'class="lane-name" x="4" y="194"'`
+  > `Received: … <text class="lane-name" x="4" y="180">Iron Ingot</text> …`
+  (with the lift removed the output name renders at y="180" = track.y+12, NOT the
+  lifted y="194"; the seam-clearance geometry pin would also break since the name
+  band would then straddle the bus.)
+- RESTORE + green: `Tests  1 passed | 60 skipped (61)`.
+
+## Behavior 2 — Combined view removed, compile-gated (#75)
+
+Gate: the deletion of `chainConnectors` / `chainTransportPower` /
+`ChainConnector` / `ChainPowerFooter` / `isVehicleModeLink` / `deriveChainView`
+from the codebase. Any live reference to a deleted export fails `tsc -b` (the
+`check` command's first stage). This is the true gate — the removal is enforced
+by the type checker, not by a string sweep.
+
+- PASS at HEAD: `npm run check` clean (`tsc -b && eslint . && prettier --check`).
+- BREAK: re-add `chainConnectors` to the import list in `chain-view.test.ts`.
+- FAIL observed:
+  > `src/ui/chain-view.test.ts(18,3): error TS2305: Module '"./chain-view.ts"' has no exported member 'chainConnectors'.`
+  > `src/ui/chain-view.test.ts(18,3): error TS6133: 'chainConnectors' is declared but its value is never read.`
+- RESTORE + green: `tsc -b` clean.
+
+Supporting: the App boot test's `not.toContain("chain-bp")` / `not.toContain(
+"COMBINED")` guards the initializing SSR surface. NOTE (honest scope): App SSR
+renders only `<p class="boot">Loading…</p>` in node (catalog "initializing"), so
+the solved block + view tabs are NOT SSR-reachable — verified by dumping the SSR
+markup. The tab-default + active-marking is therefore a browser-walk gate (as the
+contract states: "SSR markup if reachable; otherwise pin the tabs' presence …").
+The compile gate above is the enforceable removal proof.
+
+## Behavior 3 — schematic restored + rendering (default view #74)
+
+Gate: `src/ui/smoke.test.tsx` → describe "Schematic" (the restored render suite:
+worked-example rect count, over-capacity seg-error, lane-pipe class, band N=161,
+tick row N=114) + `src/ui/layout.test.ts` (the restored pure-geometry suite).
+These prove the restored `Schematic.tsx` + `layout.ts` mount and render.
+
+- PASS at HEAD: `Tests  78 passed (78)` (smoke + layout together).
+- BREAK: in `Schematic.tsx`, rename the per-machine group class
+  `className="machine"` → `className="mchn-BROKEN"`.
+- FAIL observed (the N=114 tick-row test pins `class="machine"` count = 114):
+  > `× below the threshold (N=114): the full tick row, no band (Axis 1)`
+  > `AssertionError: expected +0 to be 114 // Object.is equality`
+- RESTORE + green: `Tests  1 passed | 60 skipped (61)`.
+
+## Behavior 4 — output-name halo (#76 defense-in-depth)
+
+The `.lane-name` paint-order halo (`paint-order: stroke; stroke: var(--bg);
+stroke-width: 3; stroke-linejoin: round`) mirrors `.bp-mark-label`. This is a
+CSS presentation concern with no SSR-observable output (renderToStaticMarkup
+does not resolve stylesheet cascade), so it is NOT vitest-pinned — its
+correctness is a browser-walk gate (the collision scan the contract mandates at
+Wire ×28 + Plastic ×161, both themes). Logged here for completeness: no break /
+FAIL cycle applies to an un-pinned CSS rule. Its presence is confirmed by
+`grep "paint-order" src/ui/app.css` under the `.lane-name` selector.
+
+---
+
+## Summary
+
+| Behavior | Gate | Break → FAIL verified | Restored green |
+|---|---|---|---|
+| Output name lift (#76) | smoke Schematic geometry pin | ✓ `expected … to contain 'y="194"'` | ✓ |
+| Combined removal (#75) | tsc export gate | ✓ `TS2305 no exported member` | ✓ |
+| Schematic restored (#74) | smoke Schematic + layout.test | ✓ `expected +0 to be 114` | ✓ |
+| Halo (#76) | CSS / browser walk | n/a (un-pinned CSS) | — |
+
+Every executable behavior gate was broken, its genuine FAIL observed, then
+restored to green. Final: `npm run check` clean, `npm test` → 751 passed.

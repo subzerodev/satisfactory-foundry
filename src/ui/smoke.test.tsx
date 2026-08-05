@@ -27,6 +27,8 @@ import { UploadScreen } from "./UploadScreen.tsx";
 import { PlansBar } from "./PlansBar.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
 import { SummaryCards } from "./SummaryCards.tsx";
+import { Schematic } from "./Schematic.tsx";
+import { computeLayout } from "./layout.ts";
 import { Blueprint } from "./Blueprint.tsx";
 import App from "./App.tsx";
 import { LaneOverrides } from "./LaneOverrides.tsx";
@@ -177,6 +179,181 @@ describe("SummaryCards", () => {
       />,
     );
     expect(html).not.toContain("summary-card-power");
+  });
+});
+
+describe("Schematic", () => {
+  it("renders the worked example: enough rects, no native <title> tooltips", () => {
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={workedResult()}
+        machineCount={20}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    expect((html.match(/<rect/g) ?? []).length).toBeGreaterThanOrEqual(20);
+    // Stage 5 item 1: the native <title> tooltips are gone — the styled hover
+    // div carries the text now, so no <title> element remains in the markup.
+    // (The tooltip text itself is pinned at the segTooltip/beltLabel level: the
+    // beltLabel "Feed 2 …" string at format.test.ts:54-56, and the segTooltip
+    // strings in the describe below.)
+    expect(html).not.toContain("<title>");
+  });
+
+  it("marks a segment implicated by an over-capacity finding", () => {
+    const base = workedResult();
+    const doctored: StageSolveResult = {
+      ...base,
+      feeds: base.feeds.map((lane, i) =>
+        i === 0
+          ? {
+              ...lane,
+              findings: [
+                {
+                  type: "segment-over-capacity",
+                  itemId: lane.itemId,
+                  fromMachine: 1,
+                  toMachine: 16,
+                  peakFlow: Fraction.from(480),
+                  busCapacity: Fraction.from(480),
+                },
+              ],
+            }
+          : lane,
+      ),
+    };
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={doctored}
+        machineCount={20}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    expect(html).toContain("seg-error");
+  });
+
+  it("classes a pipe lane's bus segments with lane-pipe (Stage 5 item 4)", () => {
+    // A fluid recipe fixture: one pipe feed at 150/min through the real solver,
+    // so the pipe kind flows to the schematic lane. The distinct treatment is a
+    // CSS class (.lane-pipe) — pin its presence in the markup.
+    const result = solveStage({
+      machineCount: 4,
+      clockPercent: Fraction.from(100),
+      capacities: FIXTURE_TIERS,
+      feeds: [
+        {
+          itemId: "water",
+          kind: "pipe" as const,
+          perMachineRate: Fraction.from(150),
+        },
+      ],
+      outputs: [
+        {
+          itemId: "iron_ingot",
+          kind: "belt" as const,
+          perMachineRate: Fraction.from(30),
+        },
+      ],
+    });
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={result}
+        machineCount={4}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    expect(html).toContain("lane-pipe");
+  });
+
+  it("band mode (N=161): ONE band + ×161, and NOT 161 machine ticks (Axis 1)", () => {
+    const result = solveStage({ ...WORKED_INPUT, machineCount: 161 });
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={result}
+        machineCount={161}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    // The break convention: one band group carrying the count, no per-machine
+    // tick groups (the noise the band replaces).
+    expect((html.match(/class="machine-band"/g) ?? []).length).toBe(1);
+    expect(html).toContain("×161");
+    expect(html).not.toContain('class="machine"');
+  });
+
+  it("below the threshold (N=114): the full tick row, no band (Axis 1)", () => {
+    const result = solveStage({ ...WORKED_INPUT, machineCount: 114 });
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={result}
+        machineCount={114}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    // At/below N=114 today's rendering is unchanged: per-machine tick groups, no
+    // band, no count glyph.
+    expect(html).not.toContain("machine-band");
+    expect(html).not.toContain("×114");
+    expect((html.match(/class="machine"/g) ?? []).length).toBe(114);
+  });
+
+  // Output lane names sit BELOW their bus, feed names above theirs (#76). The
+  // output name baseline lifts to busY + 18 so its bbox band clears the seam
+  // band busY ± 6; feed names stay at track.y + 12. Pinned against the restored
+  // layout's known track geometry so the ~1px seam clearance can't silently
+  // regress (the geometry pin the contract mandates for Axis C).
+  it("puts output lane names below the bus, clear of the seams (#76)", () => {
+    // The worked example: feed lane ore_iron, output lane iron_ingot. From the
+    // restored layout: feed track.y = marginY 16 → name y = 28; the output row
+    // sits below the feed lane + bus + machine row + bus (16 + 56 + 28 + 40 +
+    // 28) → track.y = 168, busY = track.y + 8 = 176, so the lifted output
+    // name baseline is busY + 18 = 194.
+    const layout = computeLayout(workedResult(), 20);
+    const feedTrack = layout.feeds[0]!;
+    const outTrack = layout.outputs[0]!;
+
+    // The bus/name model this asserts against (mirrors Schematic.tsx):
+    const feedNameY = feedTrack.y + 12;
+    const outNameY = outTrack.busY + 18;
+
+    // Literal layout pins — fail if the restored track geometry ever shifts.
+    expect(feedNameY).toBe(28);
+    expect(outNameY).toBe(194);
+
+    // Output name model — lifted to busY + 18 (= track.y + 26, busY = y + 8).
+    expect(outTrack.busY).toBe(outTrack.y + 8);
+    expect(outNameY).toBe(outTrack.y + 26);
+
+    // The geometry gate: the output name's bbox band [baseline−11, baseline]
+    // (11px ascender) must clear the seam band [busY−6, busY+6]. The name band
+    // is [busY+7, busY+18]; its top (busY+7) sits 1px below the seam bottom
+    // (busY+6) — the ~1px clearance the contract protects.
+    const nameBandTop = outNameY - 11;
+    const seamBandBottom = outTrack.busY + 6;
+    expect(nameBandTop).toBeGreaterThan(seamBandBottom);
+
+    // The lifted name renders at the pinned baseline in the actual SVG.
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={workedResult()}
+        machineCount={20}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    expect(html).toContain(`class="lane-name" x="4" y="${outNameY}"`);
+    expect(html).toContain(`class="lane-name" x="4" y="${feedNameY}"`);
   });
 });
 
@@ -469,20 +646,23 @@ describe("Blueprint", () => {
   });
 });
 
-describe("App view tabs (#68 — blueprint default)", () => {
+describe("App view tabs (#74 — schematic default)", () => {
   it("boots to the initializing surface — no plan leaf mounted eagerly", () => {
     // App SSR renders the store's default path (catalog initializing in node),
     // so the solved block + view tabs are not reachable headless — the tab
     // markup + its active-marking is a browser-walk gate. What IS pinned here:
     // App never eagerly mounts a plan leaf (bp-svg absent) because the whole
     // solved block is gated behind status "solved", which the unsolved SSR path
-    // does not reach. The default view is component-local useState("blueprint")
-    // — no schematic View member survives. A crash here would fail the wiring.
+    // does not reach. The default view is component-local useState("schematic")
+    // — the schematic is back and first (#74). A crash here would fail the
+    // wiring. bp-svg-absence is view-independent (the SSR gate), so it holds
+    // regardless of which view defaults.
     const html = renderToStaticMarkup(<App />);
     expect(html).not.toContain("bp-svg");
-    // The schematic surface is gone entirely (#68) — no schematic leaf, no
-    // "schematic" View member, nothing schematic-shaped reachable from App.
-    expect(html.toLowerCase()).not.toContain("schematic");
+    // The Combined view is gone (#75) — no ChainBlueprint leaf, no chain-bp
+    // markup, no COMBINED tab reachable from App.
+    expect(html).not.toContain("chain-bp");
+    expect(html).not.toContain("COMBINED");
   });
 });
 
