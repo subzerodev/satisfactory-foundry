@@ -139,6 +139,7 @@ export function AltCompare() {
           <tr>
             <th>recipe</th>
             <th>machines</th>
+            <th>output</th>
             <th>power</th>
             <th>raw draw</th>
             <th />
@@ -160,6 +161,7 @@ export function AltCompare() {
                 )}
               </td>
               <td>{row.machines}</td>
+              <td>{row.output}</td>
               <td>{row.power}</td>
               <td>{row.rawDraw}</td>
               <td>

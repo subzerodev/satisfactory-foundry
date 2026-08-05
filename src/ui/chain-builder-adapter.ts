@@ -140,6 +140,12 @@ export interface CandidateRow {
   isCurrent: boolean;
   /** Total machine count across the candidate's whole subtree (Σ, exact). */
   machines: string;
+  /** The candidate's actual produced rate of the compared item — the PRIMARY
+   *  stage's exact, ceil-overshooting `outputRate` ("N/min"), or "—" when the
+   *  candidate is self-consuming and gets demoted to raw (no stage for itemId).
+   *  Sourced from the stage, NOT machines × perMinute — `machines` is the whole
+   *  subtree Σ, so recomputing would be wrong for any multi-stage candidate. */
+  output: string;
   /** Total power draw across the subtree — the S6 display discipline (exact at
    *  100% clock; a "(varies …)" suffix when any machine is variable-power). */
   power: string;
@@ -274,11 +280,22 @@ export function candidateRowsFor(
       (sum, s) => sum + s.machineCount,
       0n,
     );
+    // The compared item's own produced rate = its PRIMARY stage's outputRate
+    // (exact, ceil-overshooting). Guarded: a self-consuming candidate (one
+    // listing its own primary output among its inputs) passes candidacy but is
+    // demoted to raw by proposeChain's cycle guard, leaving NO stage for itemId
+    // — the file's never-throw idiom degrades it to "—" rather than deref-throw.
+    const primaryStage = proposal.stages.find((s) => s.itemId === itemId);
+    const output =
+      primaryStage === undefined
+        ? "—"
+        : formatRate(primaryStage.outputRate) + "/min";
     return {
       recipeId: candidate.id,
       recipeName: candidate.displayName,
       isCurrent: candidate.id === currentRecipeId,
       machines: machines.toString(),
+      output,
       power: subtreePowerText(proposal, catalog),
       rawDraw: itemRateDot(proposal.rawInputs, catalog),
       byproducts:

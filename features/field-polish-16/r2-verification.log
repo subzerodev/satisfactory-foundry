@@ -56,3 +56,47 @@ Tests: `src/ui/smoke.test.tsx` › Schematic ›
 
 The break exactly reproduces Michael's report ("numbers arent in the middle …
 hard to see where the feed out is") — labels sitting ON the boundary line.
+
+---
+
+## Axis C — #83 the compare OUTPUT column
+
+Fix: `src/ui/chain-builder-adapter.ts` — `CandidateRow` gains `output: string`,
+computed in `candidateRowsFor` (:256-289) with the GUARDED lookup
+`const primaryStage = proposal.stages.find(s => s.itemId === itemId); output =
+primaryStage === undefined ? "—" : formatRate(primaryStage.outputRate)+"/min"`.
+`src/ui/AltCompare.tsx` — OUTPUT header + cell between MACHINES and POWER
+(RECIPE | MACHINES | OUTPUT | POWER | RAW DRAW | apply).
+Tests (`src/ui/chain-builder-adapter.test.ts`):
+  (1) ceil-overshoot / current-row actual: "pins each candidate's OUTPUT as its
+      own actual produced rate, incl. the current row + a ceil-overshoot (#83)"
+  (2) multi-stage: "MULTI-STAGE OUTPUT is the PRIMARY stage's rate, NOT machines
+      × perMinute (#83, the v1-formula-catcher)"
+  (4) self-consume: "SELF-CONSUMING candidate: OUTPUT is '—' WITHOUT throwing
+      (#83, the v2-deref-catcher)"
+  SSR: `src/ui/AltCompare.test.tsx` › "renders the OUTPUT header + per-row output
+      cell (#83)" (header column order + a "<td>120/min</td>" cell; renders the
+      real component by stubbing zustand's SSR seam api.getInitialState, since
+      its server snapshot is the initial state — setState can't drive an SSR
+      pass, the frozen-singleton reason the suite's other SSR test asserts "").
+
+- PASS: fix in → adapter+AltCompare 34 passed.
+- BREAK 1 (v1 WRONG formula `machines × perMinute`): reverted the guarded
+  `output` to `formatRate(Fraction.from(machines).mul(perMinute))+"/min"`. BOTH
+  the multi-stage and self-consume pins FAILED:
+  > (2) `AssertionError: expected '60/min' to be '30/min'` — the subtree Σ (2
+  >     machines) × 30/min = 60, exactly the multi-stage bug the primary-stage
+  >     rate (30/min) avoids.
+  > (4) `AssertionError: expected '0/min' to be '—'` — 0 machines (demoted) × 60
+  >     = 0/min, also wrong (should be the "—" dash).
+- BREAK 2 (v2 UNGUARDED deref, guard removed): reverted to
+  `formatRate(proposal.stages.find(s => s.itemId === itemId)!.outputRate)+"/min"`.
+  The self-consume pin FAILED:
+  > (4) `expected [Function] to not throw an error but 'TypeError: Cannot read
+  >     properties of undefined (reading 'outputRate')' was thrown` — the
+  >     self-consuming candidate is demoted to raw (no stage for itemId), so the
+  >     unguarded `.find(...)!` TypeErrors inside the render, exactly the v2 bug.
+- RESTORE (guarded lookup back) → 34 passed.
+
+The overshoot pin also proves the uniform-actuals decision (v1's "current row
+shows R exactly" was dropped): R=100, both current + alt show 120/min, not 100.
