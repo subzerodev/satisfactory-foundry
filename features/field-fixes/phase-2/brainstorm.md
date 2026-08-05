@@ -1,4 +1,4 @@
-# Stage 12 / P2+P3 combined — clarity + views navigation (tickets #65 + #64) — brainstorm v2
+# Stage 12 / P2+P3 combined — clarity + views navigation (tickets #65 + #64) — brainstorm v3
 
 **Goal.** Michael's fix-all-now directive (epic #59 decision 2026-08-05).
 Three fixes: (A) override rows labeled + grouped; (B) one recipe-less
@@ -60,8 +60,12 @@ dm-scaled labels were sub-pixel at floor zoom anyway). The lane
 labels LEAVE the SVG entirely: a screen-space HTML gutter column sits
 LEFT of .bp-scroll (a flex row: [.bp-gutter][.bp-scroll>svg]), each
 label positioned at its lane's rendered y (laneY_dm × scale, computed
-px), right-aligned, mono 11px SCREEN px — readable at EVERY zoom
-including the floor; the SVG lane-name <text> elements are REMOVED
+px), right-aligned, mono 11px SCREEN px — and rendered ONLY at DETAIL
+zoom (r2 adversarial IMPORTANT: at floor zoom adjacent lanes sit
+60dm × 0.06 = 3.6px apart in the gutter while labels are 11px tall —
+label-on-label crowding, the on-lane problem's twin; at FIT the
+gutter collapses and the view is the geometry overview — names are
+DETAIL's job, stated); the SVG lane-name <text> elements are REMOVED
 (the halo stays only on mark labels). Zero viewBox change → zero
 fitScale coupling → the smelter viewBox/width/height pins DON'T
 churn.** The schematic's screen-space labels are fine — untouched.
@@ -76,8 +80,10 @@ preserved), big plans open at 1 px/dm readable detail. The toggle
 (quiet-mono buttons, shown ONLY when fit < 1): [FIT | DETAIL] —
 DETAIL = 1 px/dm, FIT = the P1 fit/floor scale. Pan = native scroll
 in .bp-scroll (both axes; head-anchored passively via scrollLeft 0 —
-stated as passive, r1 nit). The gutter labels reposition with the
-active scale (same px math).
+stated as passive, r1 nit; .bp-scroll becomes overflow-x: auto,
+matching the .schematic-scroll mirror it cites and killing the
+latent inner-vertical-scrollbar drift trap — r2 nit). The gutter
+labels reposition with the active scale (same px math).
 
 ## Non-goals
 
@@ -101,9 +107,11 @@ active scale (same px math).
   HTML gutter changes no viewBox/width/height, and open-scale =
   max(fit, 1) leaves small-plan pins at today's values (r1 nit
   resolved by the C1/C2 rework).
-- Both-media walk at Computer ×40 AND Plastic ×161: no label touches
-  any lane at either zoom; override panel self-explanatory; the skip
-  note reads calm.
+- Both-media walk at Computer ×40 AND Plastic ×161: at DETAIL no
+  label touches any lane or any other label (Plastic ×161 opens at
+  DETAIL ≈ 17710px wide — the pinned figure, r2 nit — scrolling
+  head-anchored); at FIT the gutter is collapsed (no labels, by
+  design); override panel self-explanatory; the skip note reads calm.
 
 ## Assumptions ledger
 
@@ -134,3 +142,12 @@ active scale (same px math).
   scale = max(fit, 1.0) preserves the small-plan natural-size posture
   and makes the [FIT|DETAIL] labels honest; the itemName prop pattern
   named; the heading-span CSS acknowledged.
+- v3 (2026-08-05): r2 adversarial NEEDS_REWORK (1 IMPORTANT + 2 nits,
+  folded): gutter labels render ONLY at DETAIL (the floor-zoom
+  label-on-label crowding twin — 3.6px lane pitch vs 11px labels —
+  is resolved by making names DETAIL's job; FIT is the geometry
+  overview with the gutter collapsed); .bp-scroll → overflow-x: auto
+  (the mirror it cites; kills the inner-scrollbar drift trap); the
+  DETAIL-mode Plastic ×161 width (~17710px) pinned in the walk.
+  Confirmed held: the Axis B phrase across all three SolveState
+  statuses, Axis A implementability, the C2 toggle logic coherence.
