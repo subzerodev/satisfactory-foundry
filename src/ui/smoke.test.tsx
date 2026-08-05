@@ -280,6 +280,28 @@ describe("Blueprint", () => {
     expect(html).not.toContain("footprint unknown");
   });
 
+  it("lifts mark labels OFF the lane band: feed y=−44, output y=152 (#69)", () => {
+    // The rate labels moved off the drawing ink (#69). Marks sit ON the bus
+    // (mk.at.y === busY): the smelter's feed bus is y=−20, output bus y=120. The
+    // label baseline lifts by MARK_LABEL_DY — feed −24 → y=−44, output +32 →
+    // y=152 — clear of the ±20 junction rects. x stays at.x+12 (head mark → 12).
+    const result = smelterSolve();
+    const { feedLabels, outputLabels } = smelterLabels(result);
+    const html = renderToStaticMarkup(
+      <Blueprint
+        solve={result}
+        machineId="smelter_mk1"
+        machineCount={2}
+        feedLabels={feedLabels}
+        outputLabels={outputLabels}
+      />,
+    );
+    // The feed head mark's rate label sits at the lifted feed baseline.
+    expect(html).toContain('class="bp-mark-label" x="12" y="-44"');
+    // The output head breakout's rate label sits at the mirrored output baseline.
+    expect(html).toContain('class="bp-mark-label" x="12" y="152"');
+  });
+
   it("renders lane-name labels in the HTML gutter, not in the SVG (Axis C1)", () => {
     // The lane NAMES left the SVG for the screen-space HTML gutter (P3 Axis C1);
     // the in-SVG <text class="bp-lane-name"> elements are gone. The smelter is a
