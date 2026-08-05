@@ -1,0 +1,100 @@
+R2 VERIFICATION LOG — Stage 9 / Phase 1 (ticket #45): the canvas as a drawing
+================================================================================
+
+Honesty posture
+---------------
+This is a BEHAVIOR-FROZEN presentation phase. Its implementation surface is CSS
+(app.css re-clothing + --xy-* chrome tokens) plus two canvas-level React Flow
+props (defaultEdgeOptions marker, Background lines variant) and one hidden
+<marker> def. That surface is overwhelmingly WALK-GATED: the plate look,
+dimension ticks, stamp rotation, grid, and re-skinned controls are validated by
+the both-media browser walk, not by node tests. Node-testable surface is
+therefore MINIMAL — the log below records exactly what IS assertable in node and
+records the walk as the gate for everything else. Nothing here is fabricated.
+
+Zero-churn confirmation
+-----------------------
+- Pre-change baseline: 706 tests green, `npm run check` clean.
+- Post-change: 707 tests green, `npm run check` clean.
+- The +1 is the single new marker-def presence row (below). ZERO pre-existing
+  pins churned — enumerated cause: the phase makes NO DOM/markup change to
+  StageNode and NO graphToFlow/edge-data/label-string change.
+  - graph-flow.test's edge-label pins (`.label` strings, `.data.state`) assert
+    graphToFlow OUTPUT — untouched (behavior-frozen).
+  - The smoke SSR row's markup pins (`stage-node`, `Stage 1`, `no recipe`,
+    `graph-add-stage`, NOT `stage-node-power`) read DOM text/classes — unchanged
+    (uppercase is CSS text-transform; it does not alter emitted DOM text).
+
+Node-testable surface (what got a test)
+---------------------------------------
+The dim-tick <marker> def renders inside a hidden <svg><defs> in GraphCanvas.
+The suite already carries an OPPORTUNISTIC GraphCanvas SSR row (smoke.test.tsx,
+"GraphCanvas SSR (opportunistic bonus — Stage 3 P2)") that renders GraphCanvas
+via renderToStaticMarkup in node. That SSR reaches the defs block, so the
+marker's PRESENCE is node-assertable:
+
+  smoke.test.tsx :: "renders the dimension-tick marker def (Stage 9 P1 Axis 2)"
+    expect(html).toContain('id="dim-tick"')
+
+Note vs. the dispatch brief: the brief anticipated GraphCanvas might be
+smoke-EXCLUDED (no SSR row possible). In the live suite GraphCanvas IS rendered
+by the opportunistic SSR bonus row, so the def IS reachable and the brief's
+PRIMARY instruction (add one smoke row pinning the marker defs presence IF
+reachable by SSR) applies. The def's rendered LOOK (45° tick, size, ink colour)
+remains walk-gated — only its presence is pinned.
+
+Walk-gated surface (the browser walk is the gate)
+-------------------------------------------------
+Everything below is CSS/chrome with no node-observable assertion; the both-media
+(vellum + cyanotype) browser walk calibrates it:
+- Axis 1 machine plates: square 2px-ink border, --bg-panel fill, name bar
+  (display face, letter-spaced, uppercased, hairline rule), mono-num data lines,
+  selection/solve-invalid/solve-idle tints.
+- Axis 2 dimension edges: ink dim-tick at consumer end (orient/scale), per-state
+  line colours (ok ink 1px, under stamp-red, over muted, dangling notice-dashed),
+  dimension-text labels (mono-num, ink, near-transparent sheet box).
+- Axis 3 inspection stamps: under-supply rotated -2° stamp (red box + red
+  uppercase text, coincident rect/text fill-box centres — r2-proven, comment in
+  app.css); dangling un-rotated notice-box + ink-text note. Contrast spot-checks
+  in both media.
+- Axis 4 RF chrome: --xy-* overrides per medium (grid line, edge stroke +
+  selected, label colour/bg, controls bg/hover/color/border, attribution);
+  lined Background @ gap 24. NO minimap (none exists — not added).
+
+Drift-hunt result (RF 12.11.2, installed source)
+------------------------------------------------
+All cited internals verified present + verbatim:
+- defaultEdgeOptions merges UNDER controlled edges:
+  react dist/esm/index.mjs:2911  `edge = defaultEdgeOptions ? { ...defaultEdgeOptions, ...edge } : edge;`
+- string markerEnd passed verbatim, RF url()-wraps itself:
+  system dist/esm/index.mjs:1461-1466 getMarkerId (string → returns marker);
+  react dist/esm/index.mjs:2956 `url('#${getMarkerId(edge.markerEnd, rfId)}')`
+- string markers get NO auto-def:
+  system dist/esm/index.mjs:1474+ createMarkerIds (`typeof marker === 'object'` only)
+- EdgeText <g> holds <rect.react-flow__edge-textbg> + <text.react-flow__edge-text>;
+  the <g> carries the inline translate; rect built symmetrically around the text
+  bbox (x:-padX, width:bbox+2·padX): react dist/esm/index.mjs:2512.
+- Background variant lines + gap real props; BackgroundVariant exported:
+  react dist/esm/index.mjs:4409-4419, :4423 (defaults), :5128 (export).
+- All --xy-* override names present as var(--xy-…, default) chains in
+  dist/style.css (edge-stroke :139/-selected :181, edge-label :49-50,
+  attribution :318, controls-button-* :42-46 + hover :500-505, background
+  pattern :391/:397/:403).
+- GraphCanvas.tsx anchors: EDGE_CLASS :167-172, ReactFlow props + Background
+  :433-460, colorMode forwarding :440.
+No drift. No adapter/shim code introduced.
+
+Deviations
+----------
+- Background variant supplied as `BackgroundVariant.Lines` (the enum), not the
+  raw string "lines": TS types the prop as `BackgroundVariant | undefined`, so
+  the raw string fails tsc. The design explicitly permits either form ("import
+  BackgroundVariant or the string per RF's prop type"). No behavior difference.
+
+What's left for the both-media walk
+-----------------------------------
+The entire visual calibration (all four axes above), plus: the walk-gated
+re-addition of a markerStart tick IF the single end reads unfinished; the
+two-defs-per-state fallback IF the ink-only tick reads wrong on a state line;
+the rotation drop IF the -2° stamp reads gimmicky live. All parked, none built
+speculatively.
