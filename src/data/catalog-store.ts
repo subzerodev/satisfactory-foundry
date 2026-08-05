@@ -230,7 +230,11 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
   ) {
     throw new Error("catalog-store: corrupted stored catalog shape.");
   }
-  const recipes: Catalog["recipes"] = {};
+  // Null-prototype containers (#28): a structured-clone round-trip through IDB
+  // yields plain-proto objects, so the revive rebuild re-nulls each map on the
+  // way back in — matching the parse-boundary seed so lookups stay prototype-
+  // safe. Record typing unchanged.
+  const recipes: Catalog["recipes"] = Object.create(null);
   for (const [id, r] of Object.entries(data.recipes)) {
     recipes[id] = {
       id: r.id,
@@ -242,7 +246,7 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
       primaryOutputId: r.primaryOutputId,
     };
   }
-  const machines: Catalog["machines"] = {};
+  const machines: Catalog["machines"] = Object.create(null);
   for (const [id, m] of Object.entries(data.machines)) {
     machines[id] = {
       id: m.id,
@@ -250,7 +254,7 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
       power: revivePower(m.power),
     };
   }
-  const items: Catalog["items"] = {};
+  const items: Catalog["items"] = Object.create(null);
   for (const [id, it] of Object.entries(data.items)) {
     items[id] = reviveItem(it);
   }

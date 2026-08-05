@@ -5,9 +5,11 @@ import { resetDbCache } from "../data/db.ts";
 import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
-import type { PlanFileV1, PlanFileV2, PlanFileV3 } from "../data/plan-store.ts";
+import type { PlanFileV1, PlanFileV2, PlanFileV4 } from "../data/plan-store.ts";
 import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
 import type { StageLink } from "./store.ts";
+import { proposeChain } from "../core/chain-builder.ts";
+import type { ChainProposal } from "../core/chain-builder.ts";
 import { applyDrawnDistance } from "../ui/chain-view.ts";
 import type { StateStorage } from "zustand/middleware";
 
@@ -1678,6 +1680,81 @@ describe("stage graph — reconciliation math + cadence (Stage 3 P1)", () => {
   });
 });
 
+describe("setStageMachineCount — per-stage write (Stage 8 P1, the apply affordance)", () => {
+  // A producer→consumer chain where the CONSUMER (b) is the active stage, so
+  // writing the producer (a) exercises the non-active path. ingot_iron and
+  // iron_plate are both 30/min per machine (duration 2, amount 1).
+  async function chain(nProducer: number, mConsumer: number) {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT_CHAIN);
+    const a = store.getState().stageOrder[0]!;
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setMachineCount(nProducer);
+    store.getState().addStage();
+    const b = store.getState().stageOrder[1]!;
+    store.getState().setActiveStage(b); // consumer is the ACTIVE stage
+    store.getState().selectRecipe("iron_plate");
+    store.getState().setMachineCount(mConsumer);
+    store
+      .getState()
+      .addLink({ fromStageId: a, itemId: "iron_ingot", toStageId: b });
+    return { store, a, b };
+  }
+
+  it("writes a NON-active stage's machineCount + re-derives, active stage untouched", async () => {
+    const { store, a, b } = await chain(1, 2); // producer=30, consumer=60 → short 30
+    const beforeActive = store.getState().stages[b]!;
+    expect(store.getState().reconciliation).toHaveLength(1);
+    expect(store.getState().reconciliation[0]!.type).toBe("under-supply");
+
+    // Apply the match count to the PRODUCER (non-active). Its solve re-derives
+    // to 60/min, closing the shortfall.
+    store.getState().setStageMachineCount(a, 2);
+    const s = store.getState();
+
+    // The producer's selection took the write and re-derived.
+    expect(s.stages[a]!.selection.machineCount).toBe(2);
+    // The shortfall is gone (supply now matches demand).
+    expect(s.reconciliation).toEqual([]);
+
+    // The active stage (b) is UNTOUCHED — cursor, selection, and solve identity
+    // all preserved (the mirror never followed the non-active write).
+    expect(s.activeStageId).toBe(b);
+    expect(s.stages[b]!.selection).toBe(beforeActive.selection);
+    expect(s.stages[b]!.solve).toBe(beforeActive.solve);
+    expect(s.selection).toBe(s.stages[b]!.selection); // top-level mirror stays b
+  });
+
+  it("is a no-op for an unknown stage id", async () => {
+    const { store, a, b } = await chain(1, 2);
+    const beforeA = store.getState().stages[a]!;
+    const beforeB = store.getState().stages[b]!;
+    const keysBefore = Object.keys(store.getState().stages).sort();
+    store.getState().setStageMachineCount("no-such-stage", 99);
+    const s = store.getState();
+    // No stage touched, and no phantom stage created (the guard returns {}
+    // before any derive/mirror — never a stray stages["no-such-stage"]).
+    expect(s.stages[a]).toBe(beforeA);
+    expect(s.stages[b]).toBe(beforeB);
+    expect(Object.keys(s.stages).sort()).toEqual(keysBefore);
+    expect(s.reconciliation).toHaveLength(1);
+    expect(s.reconciliation[0]!.type).toBe("under-supply");
+  });
+
+  it("delegates for the active stage — setStageMachineCount(active) matches setMachineCount", async () => {
+    // The active-path delegation proof: writing the active stage via the new
+    // action lands the same solve the active setter does. (The existing
+    // setMachineCount tests pin the active behavior unchanged; this pins that
+    // the generalized action IS that behavior when stageId === activeStageId.)
+    const { store, b } = await chain(1, 2);
+    store.getState().setStageMachineCount(b, 3);
+    const viaStage = store.getState().stages[b]!.solve;
+    expect(store.getState().stages[b]!.selection.machineCount).toBe(3);
+    // The active mirror follows (b IS active).
+    expect(store.getState().solve).toBe(viaStage);
+  });
+});
+
 describe("stage graph — tiers-global + multi-stage re-upload (Stage 3 P1)", () => {
   it("setUnlockedTiers writes ALL stages and re-derives every one", async () => {
     const store = createAppStore(makeStorageStub().storage);
@@ -2134,7 +2211,7 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     expect(store.getState().links).toHaveLength(linksBefore);
   });
 
-  it("renaming a v1 row persists it as v3 (save-over model)", async () => {
+  it("renaming a v1 row persists it as v4 (save-over model)", async () => {
     const store = await chainStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2158,9 +2235,9 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     await db.put("plans", v1, "v1-id");
 
     await store.getState().renamePlan("v1-id", "NewName");
-    // The stored row is now v3, renamed, single "Stage 1" stage.
-    const raw = (await db.get<PlanFileV3>("plans", "v1-id"))!;
-    expect(raw.format_version).toBe(3);
+    // The stored row is now v4, renamed, single "Stage 1" stage.
+    const raw = (await db.get<PlanFileV4>("plans", "v1-id"))!;
+    expect(raw.format_version).toBe(4);
     expect(raw.name).toBe("NewName");
     expect(raw.stages[0]!.name).toBe("Stage 1");
     // createdAt carried verbatim through the migration + rename.
@@ -2179,7 +2256,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     return store;
   }
 
-  it("exportPlan returns the stored v3 JSON verbatim (re-parses to the saved file)", async () => {
+  it("exportPlan returns the stored v4 JSON verbatim (re-parses to the saved file)", async () => {
     const store = await readyStore();
     store.getState().selectRecipe("ingot_iron");
     store.getState().setClockPercentText("37.5");
@@ -2188,13 +2265,13 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
 
     const json = await store.getState().exportPlan(id);
     expect(json).not.toBeNull();
-    const parsed = JSON.parse(json!) as PlanFileV3;
-    expect(parsed.format_version).toBe(3);
+    const parsed = JSON.parse(json!) as PlanFileV4;
+    expect(parsed.format_version).toBe(4);
     expect(parsed.name).toBe("Exported");
     expect(parsed.stages[0]!.selection.recipeId).toBe("ingot_iron");
     expect(parsed.stages[0]!.selection.clockPercentText).toBe("37.5");
     // Pretty-printed (2-space indent), matching JSON.stringify(plan, null, 2).
-    expect(json).toContain('\n  "format_version": 3');
+    expect(json).toContain('\n  "format_version": 4');
   });
 
   it("exportPlan on a missing id returns null (no throw)", async () => {
@@ -2202,7 +2279,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     expect(await store.getState().exportPlan("does-not-exist")).toBeNull();
   });
 
-  it("exportPlan emits the MIGRATED v3 form for a stored v1 row", async () => {
+  it("exportPlan emits the MIGRATED v4 form for a stored v1 row", async () => {
     const store = await readyStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2226,9 +2303,9 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     await db.put("plans", v1, "legacy-id");
 
     const json = await store.getState().exportPlan("legacy-id");
-    const parsed = JSON.parse(json!) as PlanFileV3;
-    // The export is what a LOAD would see: v3, one "Stage 1" stage, createdAt kept.
-    expect(parsed.format_version).toBe(3);
+    const parsed = JSON.parse(json!) as PlanFileV4;
+    // The export is what a LOAD would see: v4, one "Stage 1" stage, createdAt kept.
+    expect(parsed.format_version).toBe(4);
     expect(parsed.name).toBe("LegacyPlan");
     expect(parsed.stages[0]!.name).toBe("Stage 1");
     expect(parsed.createdAt).toBe("2026-01-01T00:00:00.000Z");
@@ -2424,5 +2501,305 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     await store.getState().savePlanAs("Recovered");
     expect(store.getState().planError).toBeNull();
     expect(store.getState().plans!.map((p) => p.name)).toEqual(["Recovered"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyChainProposal (Stage 8 / Phase 3, ticket #39): the additive bulk apply.
+// ---------------------------------------------------------------------------
+
+describe("applyChainProposal (Stage 8 / Phase 3)", () => {
+  /** A store on the two-recipe chain catalog (ore→ingot, ingot→plate). */
+  async function chainCatalogStore() {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT_CHAIN);
+    return store;
+  }
+
+  /** proposeChain against the store's catalog (no excluded machines here). */
+  function propose(
+    store: ReturnType<typeof createAppStore>,
+    target: string,
+    rate: number,
+  ): ChainProposal {
+    const s = store.getState();
+    if (s.catalog.status !== "ready") throw new Error("catalog not ready");
+    return proposeChain(
+      target,
+      Fraction.from(rate),
+      Object.values(s.catalog.catalog.recipes),
+      [],
+    );
+  }
+
+  it("appends fresh stages/links, sizes machines, seeds names + tiers, focuses target", async () => {
+    const store = await chainCatalogStore();
+    // Start with one edited default stage to prove existing state is untouched.
+    store.getState().setUnlockedTiers({ belt: 2, pipe: 1 });
+    store.getState().selectRecipe("ingot_iron");
+    const existingId = store.getState().activeStageId;
+    const existingBefore = store.getState().stages[existingId]!;
+    const orderBefore = [...store.getState().stageOrder];
+    const seqBefore = store.getState().placementSeq;
+
+    // iron_plate @ 60/min → plate stage (2 machines) + ingot stage (2 machines).
+    const proposal = propose(store, "iron_plate", 60);
+    store.getState().applyChainProposal(proposal);
+    const s = store.getState();
+
+    // Existing stage untouched (same id, same selection object contents).
+    expect(s.stages[existingId]).toBeDefined();
+    expect(s.stages[existingId]!.selection.recipeId).toBe(
+      existingBefore.selection.recipeId,
+    );
+    expect(s.stageOrder.slice(0, orderBefore.length)).toEqual(orderBefore);
+
+    // Two proposed stages appended (fresh ids, not the existing one).
+    const appended = s.stageOrder.slice(orderBefore.length);
+    expect(appended).toHaveLength(2);
+    expect(appended).not.toContain(existingId);
+
+    // Names come from recipe display names; counts from the proposal.
+    const byName = new Map(
+      appended.map((id) => [s.stages[id]!.name, s.stages[id]!]),
+    );
+    expect([...byName.keys()].sort()).toEqual(["Iron Ingot", "Iron Plate"]);
+    expect(byName.get("Iron Plate")!.selection.machineCount).toBe(2);
+    expect(byName.get("Iron Ingot")!.selection.machineCount).toBe(2);
+    // clock "100", empty overrides.
+    expect(byName.get("Iron Plate")!.selection.clockPercentText).toBe("100");
+    expect(byName.get("Iron Plate")!.selection.overrides).toEqual({
+      feeds: {},
+      outputs: {},
+    });
+    // Tiers seeded from the ACTIVE stage (belt:2, not the full default table).
+    expect(byName.get("Iron Ingot")!.selection.unlockedTiers).toEqual({
+      belt: 2,
+      pipe: 1,
+    });
+
+    // One new link ingot→plate; monotonic positions never reused.
+    expect(s.links).toHaveLength(1);
+    expect(s.placementSeq).toBe(seqBefore + 2);
+
+    // The target (iron_plate) stage is active.
+    expect(s.stages[s.activeStageId]!.name).toBe("Iron Plate");
+  });
+
+  it("all links arrive ok-or-surplus after derive — never short", async () => {
+    const store = await chainCatalogStore();
+    const proposal = propose(store, "iron_plate", 60);
+    store.getState().applyChainProposal(proposal);
+    const s = store.getState();
+    // The built chain is self-consistent by construction (ceil'd consumption).
+    expect(s.reconciliation.some((f) => f.type === "under-supply")).toBe(false);
+    // The ingot→plate link is exact (2×30 supply = 2×30 demand): no finding.
+    expect(s.reconciliation).toHaveLength(0);
+  });
+
+  it("empty proposal is a no-op", async () => {
+    const store = await chainCatalogStore();
+    store.getState().selectRecipe("iron_plate");
+    const before = store.getState();
+    const orderBefore = [...before.stageOrder];
+    const seqBefore = before.placementSeq;
+    const activeBefore = before.activeStageId;
+
+    const empty: ChainProposal = {
+      stages: [],
+      links: [],
+      rawInputs: [],
+      byproducts: [],
+    };
+    store.getState().applyChainProposal(empty);
+    const s = store.getState();
+    expect(s.stageOrder).toEqual(orderBefore);
+    expect(s.placementSeq).toBe(seqBefore);
+    expect(s.activeStageId).toBe(activeBefore);
+    expect(s.links).toEqual([]);
+  });
+
+  it("a target that is itself raw yields an empty proposal → no-op", async () => {
+    const store = await chainCatalogStore();
+    const orderBefore = [...store.getState().stageOrder];
+    // ore_iron has no producer → the proposal is all-raw (no stages).
+    const proposal = propose(store, "ore_iron", 120);
+    expect(proposal.stages).toEqual([]);
+    store.getState().applyChainProposal(proposal);
+    expect(store.getState().stageOrder).toEqual(orderBefore);
+  });
+
+  it("throws (never truncates) when a machine count exceeds MAX_SAFE_INTEGER", async () => {
+    const store = await chainCatalogStore();
+    // A hand-built proposal with a bigint count past the safe-integer boundary.
+    const huge: ChainProposal = {
+      stages: [
+        {
+          itemId: "iron_plate",
+          recipeId: "iron_plate",
+          machineCount: BigInt(Number.MAX_SAFE_INTEGER) + 1n,
+          outputRate: Fraction.from(1),
+        },
+      ],
+      links: [],
+      rawInputs: [],
+      byproducts: [],
+    };
+    expect(() => store.getState().applyChainProposal(huge)).toThrow(
+      /exceeds Number.MAX_SAFE_INTEGER/,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyRecipeSwap (Stage 8 / Phase 4, ticket #40): the alt-recipe apply — ONE
+// atomic write of recipe + resized count + cleared overrides, on a NAMED stage.
+// ---------------------------------------------------------------------------
+
+// A catalog with a STANDARD (ingot_iron, 30/min) and an ALTERNATE
+// (alternate_pure_iron_ingot, 65/min from ore+water) producer of iron_ingot, so
+// a swap between two real recipes is observable. The alternate ClassName's
+// `Alternate_` marks isAlternate at parse.
+const DOCS_TEXT_SWAP = JSON.stringify([
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGResourceDescriptor'",
+    Classes: [
+      {
+        ClassName: "Desc_OreIron_C",
+        mDisplayName: "Iron Ore",
+        mForm: "RF_SOLID",
+      },
+      { ClassName: "Desc_Water_C", mDisplayName: "Water", mForm: "RF_LIQUID" },
+    ],
+  },
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGItemDescriptor'",
+    Classes: [
+      {
+        ClassName: "Desc_IronIngot_C",
+        mDisplayName: "Iron Ingot",
+        mForm: "RF_SOLID",
+      },
+    ],
+  },
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'",
+    Classes: [
+      { ClassName: "Build_SmelterMk1_C", mDisplayName: "Smelter" },
+      { ClassName: "Build_FoundryMk1_C", mDisplayName: "Foundry" },
+    ],
+  },
+  {
+    NativeClass: "/Script/CoreUObject.Class'/Script/FactoryGame.FGRecipe'",
+    Classes: [
+      {
+        ClassName: "Recipe_IngotIron_C",
+        mDisplayName: "Iron Ingot",
+        mIngredients:
+          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_OreIron_C\"',Amount=1))",
+        mProduct:
+          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_IronIngot_C\"',Amount=1))",
+        mManufactoringDuration: "2",
+        mProducedIn: "/Game/Path/Build_SmelterMk1_C",
+      },
+      {
+        // isAlternate via the `Alternate_` ClassName token. 13 ore + 6 water over
+        // 12s → per-machine 65 ingot / 30 water(fluid), a distinct rate.
+        ClassName: "Recipe_Alternate_PureIronIngot_C",
+        mDisplayName: "Alternate: Pure Iron Ingot",
+        mIngredients:
+          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_OreIron_C\"',Amount=7),(ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Water_C\"',Amount=4000))",
+        mProduct:
+          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_IronIngot_C\"',Amount=13))",
+        mManufactoringDuration: "12",
+        mProducedIn: "/Game/Path/Build_FoundryMk1_C",
+      },
+    ],
+  },
+]);
+
+describe("applyRecipeSwap (Stage 8 / Phase 4)", () => {
+  async function swapStore() {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT_SWAP);
+    return store;
+  }
+
+  it("writes recipeId + machineCount together and re-derives (atomic)", async () => {
+    const store = await swapStore();
+    const id = store.getState().activeStageId;
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setMachineCount(4);
+    // Sanity: the standard recipe is solved at 4 machines.
+    expect(store.getState().stages[id]!.selection.recipeId).toBe("ingot_iron");
+    expect(store.getState().solve.status).toBe("solved");
+
+    store.getState().applyRecipeSwap(id, "alternate_pure_iron_ingot", 2);
+    const s = store.getState();
+    // BOTH landed in ONE write — recipe and count, no intermediate state.
+    expect(s.stages[id]!.selection.recipeId).toBe("alternate_pure_iron_ingot");
+    expect(s.stages[id]!.selection.machineCount).toBe(2);
+    // Re-derived against the new recipe (solved, mirror followed since active).
+    expect(s.stages[id]!.solve.status).toBe("solved");
+    expect(s.solve).toBe(s.stages[id]!.solve);
+  });
+
+  it("clears lane overrides; preserves clock + tiers (selectRecipe posture)", async () => {
+    const store = await swapStore();
+    const id = store.getState().activeStageId;
+    store.getState().setUnlockedTiers({ belt: 3, pipe: 1 });
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setClockPercentText("150");
+    store.getState().setMachineCount(4);
+    // Seed a lane override addressing the OLD recipe's item.
+    store.getState().setOverride("feeds", "ore_iron", 0, "90");
+    expect(store.getState().selection.overrides.feeds.ore_iron).toBeDefined();
+
+    store.getState().applyRecipeSwap(id, "alternate_pure_iron_ingot", 3);
+    const sel = store.getState().stages[id]!.selection;
+    // Overrides cleared (they lane-addressed the OLD recipe).
+    expect(sel.overrides).toEqual({ feeds: {}, outputs: {} });
+    // Clock + tiers preserved across the swap (rode the spread).
+    expect(sel.clockPercentText).toBe("150");
+    expect(sel.unlockedTiers).toEqual({ belt: 3, pipe: 1 });
+  });
+
+  it("is a no-op for an unknown stage id (never a phantom stage)", async () => {
+    const store = await swapStore();
+    const id = store.getState().activeStageId;
+    store.getState().selectRecipe("ingot_iron");
+    const before = store.getState().stages[id]!;
+    const keysBefore = Object.keys(store.getState().stages).sort();
+
+    store.getState().applyRecipeSwap("no-such-stage", "ingot_iron", 5);
+    const s = store.getState();
+    expect(s.stages[id]).toBe(before);
+    expect(Object.keys(s.stages).sort()).toEqual(keysBefore);
+    expect(s.stages["no-such-stage"]).toBeUndefined();
+  });
+
+  it("swapping a NON-active stage does not steal the cursor", async () => {
+    const store = await swapStore();
+    const a = store.getState().stageOrder[0]!;
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setMachineCount(4);
+    store.getState().addStage();
+    const b = store.getState().stageOrder[1]!;
+    store.getState().setActiveStage(b); // b is active
+    const beforeActive = store.getState().stages[b]!;
+
+    // Swap the NON-active stage a.
+    store.getState().applyRecipeSwap(a, "alternate_pure_iron_ingot", 2);
+    const s = store.getState();
+    // a took the write.
+    expect(s.stages[a]!.selection.recipeId).toBe("alternate_pure_iron_ingot");
+    expect(s.stages[a]!.selection.machineCount).toBe(2);
+    // b (active) is UNTOUCHED — cursor + mirror never followed the a write.
+    expect(s.activeStageId).toBe(b);
+    expect(s.stages[b]!.selection).toBe(beforeActive.selection);
+    expect(s.selection).toBe(s.stages[b]!.selection);
   });
 });

@@ -19,6 +19,7 @@ import { solveStage } from "../core/manifold.ts";
 import type { StageSolveResult } from "../core/manifold.ts";
 import { reconcileLinks } from "../core/reconcile.ts";
 import type { LinkInput, LinkFinding } from "../core/reconcile.ts";
+import type { ChainProposal } from "../core/chain-builder.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
 import type { Catalog } from "../data/types.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
@@ -34,7 +35,7 @@ import {
   deletePlan as deletePlanFile,
   validatePlanFile,
 } from "../data/plan-store.ts";
-import type { PlanFileV3, PlanListEntry } from "../data/plan-store.ts";
+import type { PlanFileV4, PlanListEntry } from "../data/plan-store.ts";
 
 // ---------------------------------------------------------------------------
 // State shape (frozen brainstorm Axis 2)
@@ -93,25 +94,43 @@ export interface StageNode {
  * surfaced). MODE-DISCRIMINATED (the P1 Cargo/DroneTripInput discipline: illegal
  * states are unrepresentable, not runtime-guarded):
  *
- * - belt/pipe: trip-less continuous;
- * - the four road modes + train: `trip` is one-way meters (estimated) or a
- *   measured round-trip in seconds. The road four hand a TripInput to
- *   vehicleFleet (which doubles + docks internally); TRAIN routes to
- *   trainOptions with a derive-built roundTripSeconds (Assumption #6);
+ * - belt: trip-less continuous;
+ * - pipe: trip-less continuous + an optional `deratePercentText` (S8P2 — a
+ *   user-supplied sloshing derate, raw text, (0,100] at derive time; belt has
+ *   none — sloshing is a pipeline phenomenon);
+ * - the four road modes: `trip` is one-way meters (estimated) or a measured
+ *   round-trip in seconds, handed to vehicleFleet (which doubles + docks);
+ * - train: the same `trip` shape as the road four (routed to trainOptions with a
+ *   derive-built roundTripSeconds, Assumption #6) + an optional `sharedEnds`
+ *   (S8P2 — a per-end station-power override; a flagged end is billed elsewhere,
+ *   so its `50 + 50c` is excluded from THIS link's station MW). The absent-or-
+ *   true idiom: a key present is literally `true`, absent means "not shared";
  * - drone: `fuel` + a trip whose distance is ROUND-TRIP flight meters (the P1
  *   DroneTripInput arm names). The measured arm's optional flightMetersText is
  *   the battery-cost add-on; the estimated arm's flightMetersText IS the input.
  *
  * The units trap (one-way vs round-trip) is enforced by field NAMES per arm, not
- * a prose warning; `fuel` cannot exist on a road link, etc.
+ * a prose warning; `fuel` cannot exist on a road link, `sharedEnds` only on
+ * train, `deratePercentText` only on pipe — illegal pairings are unrepresentable.
  */
 export type LinkTransport =
-  | { mode: "belt" | "pipe" }
+  | { mode: "belt" }
+  | { mode: "pipe"; deratePercentText?: string }
   | {
-      mode: "truck" | "tractor" | "explorer" | "fluid-truck" | "train";
+      mode: "truck" | "tractor" | "explorer" | "fluid-truck";
       trip:
         | { kind: "measured"; roundTripSecondsText: string }
         | { kind: "estimated"; distanceText: string };
+    }
+  | {
+      mode: "train";
+      trip:
+        | { kind: "measured"; roundTripSecondsText: string }
+        | { kind: "estimated"; distanceText: string };
+      /** Ends whose station set is billed elsewhere (excluded from station MW).
+       *  Absent-or-true: a present key is literally `true`; `from` is the
+       *  producer end, `to` the consumer end (the StageLink's own direction). */
+      sharedEnds?: { from?: true; to?: true };
     }
   | {
       mode: "drone";
@@ -218,6 +237,21 @@ export interface Actions {
   uploadDocsText(text: string): Promise<void>;
   selectRecipe(recipeId: string | null): void;
   setMachineCount(n: number): void;
+  /** Set a NAMED stage's machine count + re-derive (the active mirror is
+   *  preserved unless that stage is active). The apply affordance's writer —
+   *  targets the under-supplied link's PRODUCER, which is often not active. */
+  setStageMachineCount(stageId: string, n: number): void;
+  /** Swap a NAMED stage's recipe AND resize its machine count in ONE atomic
+   *  write + re-derive (Stage 8 / Phase 4, the alt-recipe apply). No existing
+   *  action writes recipeId + machineCount together; a two-step
+   *  selectRecipe-then-count would derive an intermediate wrong-sized state.
+   *  Clears lane overrides (they address the OLD recipe's items — selectRecipe's
+   *  posture); preserves clock + tiers. Unknown stageId is a no-op. */
+  applyRecipeSwap(
+    stageId: string,
+    recipeId: string,
+    machineCount: number,
+  ): void;
   setClockPercentText(text: string): void;
   setUnlockedTiers(t: { belt: number; pipe: number }): void;
   setOverride(
@@ -244,6 +278,14 @@ export interface Actions {
   /** Open the LinkInspector for a link (null closes it). */
   selectLink(linkId: string | null): void;
   setStagePosition(id: string, pos: { x: number; y: number }): void;
+  /**
+   * Apply an auto-chain proposal (Stage 8 / Phase 3): APPEND its stages/links to
+   * the current graph with fresh uuids, then derive + reconcile + mirror. The
+   * proposal's target stage becomes active. Existing stages/links are untouched
+   * (append-only, collision-free by construction — all new links are between
+   * fresh ids). An empty proposal (no stages) is a no-op.
+   */
+  applyChainProposal(proposal: ChainProposal): void;
   refreshPlans(): Promise<void>;
   savePlanAs(name: string): Promise<void>;
   loadPlan(id: string): Promise<void>;
@@ -477,15 +519,34 @@ function recomputeReconciliation(slice: GraphSlice): GraphSlice {
 }
 
 /**
- * Write a new selection into the ACTIVE stage, re-derive that stage, mirror it
- * up, and recompute reconciliation. The single-stage-mutation path used by the
- * six v1 setters + loadPlan.
+ * Write a new selection into a NAMED stage, re-derive that stage, mirror the
+ * ACTIVE stage up, and recompute reconciliation. The single-stage-mutation path
+ * used by the six v1 setters + loadPlan (active-keyed, via applyActiveSelection)
+ * and by setStageMachineCount (any stage — the apply affordance's producer).
+ *
+ * mirrorActive stays ACTIVE-keyed by design: the top-level mirror always tracks
+ * the active stage, never the mutated one — writing a non-active producer must
+ * not steal the active mirror (frozen S8P1 proof). When stageId === activeStageId
+ * the two coincide, which is exactly the active-setter case.
  */
-function applyActiveSelection(slice: GraphSlice, next: Selection): GraphSlice {
-  const active = slice.stages[slice.activeStageId]!;
-  const stage = deriveStage(slice.catalog, { ...active, selection: next });
+function applyStageSelection(
+  slice: GraphSlice,
+  stageId: string,
+  next: Selection,
+): GraphSlice {
+  const target = slice.stages[stageId]!;
+  const stage = deriveStage(slice.catalog, { ...target, selection: next });
   const stages = { ...slice.stages, [stage.id]: stage };
   return recomputeReconciliation(mirrorActive({ ...slice, stages }));
+}
+
+/**
+ * Write a new selection into the ACTIVE stage, re-derive that stage, mirror it
+ * up, and recompute reconciliation. The single-stage-mutation path used by the
+ * six v1 setters + loadPlan — the activeStageId case of applyStageSelection.
+ */
+function applyActiveSelection(slice: GraphSlice, next: Selection): GraphSlice {
+  return applyStageSelection(slice, slice.activeStageId, next);
 }
 
 /**
@@ -512,7 +573,7 @@ function deriveAllStages(
 }
 
 /**
- * Whole-graph replacement from a loaded `PlanFileV3` (Stage 3 / Phase 3, frozen
+ * Whole-graph replacement from a loaded `PlanFileV4` (Stage 3 / Phase 3, frozen
  * Axis 4). Builds a fresh graph — new stage/link uuids — and applies the frozen
  * load treatments per stage:
  *
@@ -535,7 +596,7 @@ function deriveAllStages(
  */
 function rebuildFromPlan(
   slice: GraphSlice,
-  plan: PlanFileV3,
+  plan: PlanFileV4,
 ): GraphSlice & { placementSeq: number } {
   const { catalog } = slice;
   // Current global tiers (the active mirror holds the canonical global value).
@@ -590,6 +651,122 @@ function rebuildFromPlan(
   return {
     ...deriveAllStages(rebuilt, (sel) => sel),
     placementSeq: plan.stages.length,
+  };
+}
+
+/**
+ * Narrow a proposed stage's bigint machineCount to a Selection's safe-integer
+ * number, THROWING (never truncating) past MAX_SAFE_INTEGER — the manifold
+ * `toIndex` precedent. An implausibly-large proposal is a hard error, not a
+ * silently-corrupted plan.
+ */
+function machineCountToNumber(count: bigint): number {
+  if (count > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError(
+      `applyChainProposal: machine count ${count} exceeds ` +
+        "Number.MAX_SAFE_INTEGER; proposal is implausibly large.",
+    );
+  }
+  return Number(count);
+}
+
+/**
+ * Apply an auto-chain proposal (Stage 8 / Phase 3, frozen Axis 5) by APPENDING
+ * its stages/links to the current graph — the rebuildFromPlan composition, made
+ * additive. Each proposed stage gets a fresh uuid, a name from its recipe's
+ * display name, a consecutive placementSlot, and a Selection seeded from the
+ * ACTIVE stage's tiers (the tiers-global invariant — addStage's own rule) with
+ * clock "100" + empty overrides. Links map the proposal's item keys to the fresh
+ * uuids (StageLink.itemId === fromItemId). Then ONE deriveAllStages +
+ * reconciliation + mirrorActive; the proposal's target stage becomes active.
+ *
+ * Append-only ⇒ collision-free: every new link is between fresh ids, so no
+ * `(toStageId, itemId)` clash with an existing link is possible, and one stage
+ * per proposed item forbids duplicate lanes internally. An empty proposal (no
+ * stages) is a no-op — returns the slice unchanged with its placementSeq.
+ */
+function applyProposalToSlice(
+  slice: GraphSlice,
+  placementSeq: number,
+  proposal: ChainProposal,
+): GraphSlice & { placementSeq: number } {
+  if (proposal.stages.length === 0) {
+    return { ...slice, placementSeq };
+  }
+  const { catalog } = slice;
+  const recipeDisplayName = (recipeId: string): string =>
+    catalog.status === "ready"
+      ? (catalog.catalog.recipes[recipeId]?.displayName ?? recipeId)
+      : recipeId;
+  // Tiers seed from the active stage (the canonical global tiers value).
+  const globalTiers = slice.selection.unlockedTiers;
+
+  // Fresh uuid per proposed item, keyed by item id (links resolve through this).
+  const idByItem = new Map<string, string>();
+  for (const stage of proposal.stages) {
+    idByItem.set(stage.itemId, crypto.randomUUID());
+  }
+
+  const stages: Record<string, StageNode> = { ...slice.stages };
+  const stageOrder = [...slice.stageOrder];
+  const positions: Record<string, { x: number; y: number }> = {
+    ...slice.positions,
+  };
+  let seq = placementSeq;
+  for (const stage of proposal.stages) {
+    const id = idByItem.get(stage.itemId)!;
+    const selection: Selection = {
+      recipeId: stage.recipeId,
+      machineCount: machineCountToNumber(stage.machineCount),
+      clockPercentText: "100",
+      unlockedTiers: { ...globalTiers },
+      overrides: { feeds: {}, outputs: {} },
+    };
+    stages[id] = {
+      id,
+      name: recipeDisplayName(stage.recipeId),
+      selection,
+      solve: { status: "idle" },
+    };
+    stageOrder.push(id);
+    // Consecutive monotonic slots — never reused, so no collision handling.
+    positions[id] = placementSlot(seq);
+    seq += 1;
+  }
+
+  // Links: item keys → fresh stage uuids. Both ends are proposed items (raw
+  // leaves emit no link), so both ids resolve. StageLink.itemId === fromItemId.
+  const newLinks: StageLink[] = proposal.links.map((l) => ({
+    id: crypto.randomUUID(),
+    fromStageId: idByItem.get(l.fromItemId)!,
+    toStageId: idByItem.get(l.toItemId)!,
+    itemId: l.fromItemId,
+  }));
+
+  // Target stage becomes active (focus lands on the user's intent). The proposal
+  // doesn't carry the target id, but the target is the unique produced item that
+  // no link consumes: every other produced item is in the closure ONLY because
+  // some stage consumes it (so it appears as a link's fromItemId), while the
+  // target is the sole sink. The `?? stages[0]` fallback is belt-and-braces for
+  // a degenerate single-stage proposal with no links.
+  const consumedItems = new Set(proposal.links.map((l) => l.fromItemId));
+  const targetStage =
+    proposal.stages.find((s) => !consumedItems.has(s.itemId)) ??
+    proposal.stages[0]!;
+  const activeStageId = idByItem.get(targetStage.itemId)!;
+
+  const appended: GraphSlice = {
+    ...slice,
+    stages,
+    stageOrder,
+    positions,
+    links: [...slice.links, ...newLinks],
+    activeStageId,
+    selectedLinkId: null,
+  };
+  return {
+    ...deriveAllStages(appended, (sel) => sel),
+    placementSeq: seq,
   };
 }
 
@@ -954,6 +1131,45 @@ export function createAppStore(storage?: StateStorage) {
             );
           },
 
+          setStageMachineCount(stageId: string, n: number) {
+            set((s) => {
+              const stage = s.stages[stageId];
+              if (stage === undefined) return {};
+              // Write the NAMED stage's machineCount (not the active mirror) so
+              // an edge-driven apply mutates the producer without stealing the
+              // cursor. applyStageSelection re-mirrors the ACTIVE stage.
+              return applyStageSelection(s, stageId, {
+                ...stage.selection,
+                machineCount: n,
+              });
+            });
+          },
+
+          applyRecipeSwap(
+            stageId: string,
+            recipeId: string,
+            machineCount: number,
+          ) {
+            set((s) => {
+              const stage = s.stages[stageId];
+              if (stage === undefined) return {};
+              // ONE atomic write of the full composed selection: recipe +
+              // resized count together (a two-step selectRecipe-then-count would
+              // derive an intermediate wrong-sized state). Overrides clear per
+              // selectRecipe's posture — they lane-address the OLD recipe's
+              // items. clockPercentText + unlockedTiers ride the spread. Written
+              // to the NAMED stage (not the active mirror) so a table-row Apply
+              // on a non-active stage does not steal the cursor
+              // (setStageMachineCount precedent).
+              return applyStageSelection(s, stageId, {
+                ...stage.selection,
+                recipeId,
+                machineCount,
+                overrides: { feeds: {}, outputs: {} },
+              });
+            });
+          },
+
           setClockPercentText(text: string) {
             set((s) =>
               applyActiveSelection(s, {
@@ -1195,6 +1411,14 @@ export function createAppStore(storage?: StateStorage) {
             });
           },
 
+          applyChainProposal(proposal: ChainProposal) {
+            // Append the proposed stages/links (fresh uuids), derive + reconcile
+            // + mirror, and focus the target stage. Additive rebuildFromPlan
+            // idiom; empty proposal is a no-op. Threads placementSeq through the
+            // helper so the monotonic counter stays never-reused.
+            set((s) => applyProposalToSlice(s, s.placementSeq, proposal));
+          },
+
           // --- Plan lifecycle (frozen Axis 3) --------------------------------
           // All five enqueue on planOpChain via `enqueue`; each op body is total
           // (own catch-into-planError, always resolves) and composes plan-store
@@ -1253,8 +1477,8 @@ export function createAppStore(storage?: StateStorage) {
                 }));
                 if (match) {
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV3 = {
-                    format_version: 3,
+                  const plan: PlanFileV4 = {
+                    format_version: 4,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
@@ -1263,8 +1487,8 @@ export function createAppStore(storage?: StateStorage) {
                   };
                   await savePlanFile(plan, match.id);
                 } else {
-                  const plan: PlanFileV3 = {
-                    format_version: 3,
+                  const plan: PlanFileV4 = {
+                    format_version: 4,
                     name: trimmed,
                     createdAt: now,
                     updatedAt: now,
@@ -1326,10 +1550,10 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                // loadPlanFile returns v3 (migrating older rows), so this spread
-                // widens to v3 — renaming an older row rewrites it as v3,
-                // consistent with the save-over model (any write persists v3).
-                const renamed: PlanFileV3 = {
+                // loadPlanFile returns v4 (migrating older rows), so this spread
+                // widens to v4 — renaming an older row rewrites it as v4,
+                // consistent with the save-over model (any write persists v4).
+                const renamed: PlanFileV4 = {
                   ...plan,
                   name: trimmed,
                   updatedAt: new Date().toISOString(),
@@ -1399,7 +1623,7 @@ export function createAppStore(storage?: StateStorage) {
                   // Overwrite the existing row: keep ITS createdAt (a foreign
                   // payload's timestamp is untrusted), stamp updatedAt now.
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV3 = {
+                  const plan: PlanFileV4 = {
                     ...file,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
@@ -1409,7 +1633,7 @@ export function createAppStore(storage?: StateStorage) {
                 } else {
                   // New row: createdAt now (savePlanAs precedent — new names get
                   // now, never the untrusted foreign timestamp).
-                  const plan: PlanFileV3 = {
+                  const plan: PlanFileV4 = {
                     ...file,
                     name: trimmed,
                     createdAt: now,

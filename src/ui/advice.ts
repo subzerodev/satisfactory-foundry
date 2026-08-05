@@ -174,11 +174,14 @@ function stagePowerOf(
   if (stage.solve.status !== "solved") return null;
   const recipeId = stage.selection.recipeId;
   if (recipeId === null) return null;
+  // Object.hasOwn, not `=== undefined`: a recipeId like "constructor" would
+  // otherwise resolve to Object.prototype's method under bracket access.
+  // Redundant-by-design since the maps went null-proto (#28) — kept as
+  // belt-and-braces (a static Object.* call, null-proto-safe).
   if (!Object.hasOwn(catalog.recipes, recipeId)) return null;
   const recipe = catalog.recipes[recipeId];
   if (recipe === undefined) return null;
-  // Object.hasOwn, not `=== undefined`: a machineId like "constructor" would
-  // otherwise resolve to Object.prototype's method under bracket access.
+  // Null-proto-safe belt-and-braces (#28); see the recipes guard above.
   if (!Object.hasOwn(catalog.machines, recipe.machineId)) return null;
   const machine = catalog.machines[recipe.machineId];
   if (machine === undefined) return null;

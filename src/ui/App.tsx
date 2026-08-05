@@ -25,7 +25,9 @@ import { LaneOverrides } from "./LaneOverrides.tsx";
 import { FindingsPanel } from "./FindingsPanel.tsx";
 import { Legend } from "./Legend.tsx";
 import { GraphCanvas } from "./GraphCanvas.tsx";
+import { ChainBuilder } from "./ChainBuilder.tsx";
 import { LinkInspector } from "./LinkInspector.tsx";
+import { AltCompare } from "./AltCompare.tsx";
 import "./app.css";
 
 // Wire the bundled default catalog once, at module load: fetch the static
@@ -292,13 +294,12 @@ export default function App() {
   const activePowerText = activeStagePowerText(catalog, selection, solve);
 
   // Plan-wide transport findings (Stage 7 P2): the unsustainable-train case
-  // across all links, pre-worded. unlockedTiers is plan-global (any stage's copy
-  // is canonical); the active selection holds it.
+  // across all links, pre-worded. The plan-global unlocked tiers are resolved
+  // inside planForLink (any stage's copy is canonical) — no longer threaded.
   const transportFindings = computeTransportFindings(
     catalog,
     s.stages,
     s.links,
-    selection.unlockedTiers,
   );
 
   // The 3-way view cycle (schematic → blueprint → combined → schematic) and its
@@ -333,6 +334,10 @@ export default function App() {
           header and the v1 surface. Clicking a node switches the whole lower
           surface to that stage via the activeStageId mirror. */}
       <GraphCanvas colorMode={theme} />
+      {/* Build-chain panel (Stage 8 / Phase 3): target + rate → preview → apply,
+          appending proposed stages/links into the graph above. Self-gates on a
+          ready catalog (renders nothing otherwise). */}
+      <ChainBuilder />
       {/* The LinkInspector self-gates on selectedLinkId (null → renders nothing),
           so it sits unconditionally below the canvas (Stage 7 P2). */}
       <LinkInspector />
@@ -347,6 +352,11 @@ export default function App() {
         onTiers={s.setUnlockedTiers}
         onClearOverrides={s.clearOverrides}
       />
+      {/* Alternate-recipe comparison (Stage 8 / Phase 4): the compare block for
+          the active stage's recipe, next to the Recipe select. Self-gates on a
+          solved stage whose primary item has ≥2 candidate producers (renders
+          nothing otherwise). */}
+      <AltCompare />
       <PlansBar
         plans={s.plans}
         planError={s.planError}
@@ -410,6 +420,8 @@ export default function App() {
               stageOrder={s.stageOrder}
               links={s.links}
               positions={s.positions}
+              activeStageId={s.activeStageId}
+              onSelectStage={s.setActiveStage}
             />
           ) : (
             <Schematic

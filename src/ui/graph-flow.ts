@@ -15,6 +15,7 @@
 import { formatRate } from "./format.ts";
 import { suggestSupply, stagePowerTextFor } from "./advice.ts";
 import { computeLinkTransport } from "./transport-plan.ts";
+import type { TransportPlan } from "./transport-plan.ts";
 import {
   edgeChip,
   unsustainableTrainRow,
@@ -207,7 +208,7 @@ function recipeNameOf(catalog: Catalog, stage: StageNode): string | null {
  * consumer (which changes the wording). Null when the producer is unsolved /
  * lacks the output lane — then the edge shows its base under-supply label.
  */
-interface SupplySuggestion {
+export interface SupplySuggestion {
   machines: number;
   fanOut: boolean;
 }
@@ -271,7 +272,7 @@ function edgeLabelFor(
  * The sibling demand is read UNIFORMLY from each consumer's totalDemand (the
  * same source mapLinkInputs reads), so all siblings agree by construction.
  */
-function supplySuggestionFor(
+export function supplySuggestionFor(
   producerId: string,
   itemId: string,
   stages: Record<string, StageNode>,
@@ -346,11 +347,43 @@ export function globalUnlockedTiers(
 }
 
 /**
+ * The fleet plan for one link (#34): the shared resolve preamble the five
+ * transport surfaces each hand-rolled, folded to one home beside
+ * linkRequiredRate + globalUnlockedTiers. Resolves the link's required rate,
+ * the flowing item, and the plan-global tiers, then defers to the five-arg
+ * computeLinkTransport.
+ *
+ * Returns null EXACTLY when the item is missing from the catalog — nothing
+ * else. An unsolved rate flows THROUGH as computeLinkTransport's
+ * `{ kind: "unsolved" }` plan (null-on-unsolved would erase the inspector's
+ * "solve both stages to size the fleet" line), and a belt / absent-transport
+ * link resolves via computeLinkTransport's belt default (null-on-belt would
+ * erase the inspector's belt fleet lines). The five call sites keep their OWN
+ * pre-filters (chip belt-skip, findings train-only, power belt/pipe-skip,
+ * LinkInspector's early returns) — this folds the RESOLUTION, not the
+ * per-surface filtering.
+ */
+export function planForLink(
+  link: StageLink,
+  catalog: Catalog,
+  stages: Record<string, StageNode>,
+): TransportPlan | null {
+  const item = catalog.items[link.itemId];
+  if (item === undefined) return null;
+  return computeLinkTransport(
+    linkRequiredRate(link, stages),
+    link.transport,
+    item,
+    catalog.tiers,
+    globalUnlockedTiers(catalog, stages),
+  );
+}
+
+/**
  * The transport chip suffix for one link's edge label ("· 3 trucks", "≈" when
  * estimated), or "" when the link is belt-mode / unsolved / errored — the belt
- * case renders exactly as today. Resolves the link's required rate + the
- * flowing item's stackSize + the plan tiers, then defers to the pure
- * computeLinkTransport / edgeChip helpers.
+ * case renders exactly as today. Belt-skips per-surface, then defers to the
+ * shared planForLink resolver + the pure edgeChip helper.
  */
 function transportChipFor(
   link: StageLink,
@@ -361,16 +394,8 @@ function transportChipFor(
   if (link.transport === undefined || link.transport.mode === "belt") {
     return "";
   }
-  const item = catalog.items[link.itemId];
-  if (item === undefined) return "";
-  const rate = linkRequiredRate(link, stages);
-  const plan = computeLinkTransport(
-    rate,
-    link.transport,
-    item,
-    catalog.tiers,
-    globalUnlockedTiers(catalog, stages),
-  );
+  const plan = planForLink(link, catalog, stages);
+  if (plan === null) return ""; // item missing from the catalog
   const chip = edgeChip(plan);
   return chip === null ? "" : ` ${chip}`;
 }
@@ -470,23 +495,25 @@ export function computeTransportFindings(
   catalog: Catalog,
   stages: Record<string, StageNode>,
   links: StageLink[],
-  unlockedTiers: { belt: number; pipe: number },
 ): string[] {
   const findings: string[] = [];
   for (const link of links) {
+    // Pre-filters stay per-surface: the cheap train-only skip before the call
+    // (a non-train link is never a finding), and the rate-null skip below
+    // (solved-only fleet math). rate is also a downstream input to the
+    // sustainability row/text, so it is resolved here rather than folded away.
     if (link.transport?.mode !== "train") continue;
     const rate = linkRequiredRate(link, stages);
     if (rate === null) continue; // unsolved → no fleet math (solved-only)
-    const item = catalog.items[link.itemId];
-    if (item === undefined) continue;
-    const plan = computeLinkTransport(
-      rate,
-      link.transport,
-      item,
-      catalog.tiers,
-      unlockedTiers,
-    );
-    if (plan.kind !== "train") continue; // an errored config is not a finding
+    // #34: the resolve preamble folds to the shared planForLink. Its internal
+    // globalUnlockedTiers equals the plan-global tiers this surface previously
+    // threaded (stamped identically over every stage; the tiers value is never
+    // consulted with zero stages, where no links exist to reach here). null
+    // (missing item) is not a finding; the post-call kind check drops an
+    // errored config (the rate-null skip already excluded the unsolved plan).
+    const plan = planForLink(link, catalog, stages);
+    if (plan === null || plan.kind !== "train") continue;
+    const item = catalog.items[link.itemId]!; // non-null: planForLink resolved
     const row = unsustainableTrainRow(rate, plan.options);
     if (row === null) continue; // sustainable at some consist size
     findings.push(unsustainableTrainText(item.displayName, rate, row));

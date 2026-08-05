@@ -27,8 +27,7 @@ import { FOOTPRINTS } from "../layout/footprints.ts";
 import type { Catalog } from "../data/types.ts";
 import type { StageNode, StageLink, LinkTransport } from "../state/store.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
-import { linkRequiredRate, globalUnlockedTiers } from "./graph-flow.ts";
-import { computeLinkTransport } from "./transport-plan.ts";
+import { planForLink } from "./graph-flow.ts";
 import type { TransportPlan } from "./transport-plan.ts";
 import { edgeChip } from "./transport-text.ts";
 
@@ -260,15 +259,10 @@ function linkChip(
   stages: Record<string, StageNode>,
 ): string {
   if (link.transport === undefined || link.transport.mode === "belt") return "";
-  const item = catalog.items[link.itemId];
-  if (item === undefined) return "";
-  const plan = computeLinkTransport(
-    linkRequiredRate(link, stages),
-    link.transport,
-    item,
-    catalog.tiers,
-    globalUnlockedTiers(catalog, stages),
-  );
+  // #34: the resolve preamble folds to the shared planForLink; the belt-skip
+  // pre-filter above stays. Null (missing item) chips nothing, matching today.
+  const plan = planForLink(link, catalog, stages);
+  if (plan === null) return "";
   const chip = edgeChip(plan);
   return chip === null ? "" : ` ${chip}`;
 }
@@ -362,19 +356,13 @@ export function chainTransportPower(
 ): ChainPowerFooter {
   let transportMw = Fraction.from(0);
   let hasTrain = false;
-  const unlocked = globalUnlockedTiers(catalog, stages);
   for (const link of links) {
     const mode = link.transport?.mode ?? "belt";
     if (mode === "belt" || mode === "pipe") continue; // no stations → 0
-    const item = catalog.items[link.itemId];
-    if (item === undefined) continue;
-    const plan = computeLinkTransport(
-      linkRequiredRate(link, stages),
-      link.transport,
-      item,
-      catalog.tiers,
-      unlocked,
-    );
+    // #34: the resolve preamble folds to the shared planForLink; the belt/pipe
+    // skip pre-filter above stays. Null (missing item) contributes nothing.
+    const plan = planForLink(link, catalog, stages);
+    if (plan === null) continue;
     if (plan.kind === "train") hasTrain = true; // omitted from the sum, noted
     transportMw = transportMw.add(planPowerMw(plan));
   }

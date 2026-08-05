@@ -15,10 +15,16 @@ import type {
   LinkTransport,
   TransportMode,
   StageLink,
+  StageNode,
 } from "../state/store.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
+import type { LinkFinding } from "../core/reconcile.ts";
 import { formatRate } from "./format.ts";
-import { linkRequiredRate, globalUnlockedTiers } from "./graph-flow.ts";
+import {
+  linkRequiredRate,
+  planForLink,
+  supplySuggestionFor,
+} from "./graph-flow.ts";
 import {
   drawnDistanceDm,
   drawnMeters,
@@ -29,6 +35,7 @@ import { computeLinkTransport, legalModesFor } from "./transport-plan.ts";
 import {
   MODE_LABEL,
   caveatFor,
+  pipeCaveat,
   continuousLine,
   vehicleLine,
   vehicleStationLine,
@@ -38,6 +45,7 @@ import {
   trainRows,
   trainBeltFeedFootnote,
   trainEstimatedNote,
+  trainSharedEndsFootnote,
   TRAIN_PLATFORM_FOOTNOTE,
 } from "./transport-text.ts";
 
@@ -97,7 +105,9 @@ export function LinkInspector() {
   const catalog = useAppStore((s) =>
     s.catalog.status === "ready" ? s.catalog.catalog : null,
   );
+  const reconciliation = useAppStore((s) => s.reconciliation);
   const setLinkTransport = useAppStore((s) => s.setLinkTransport);
+  const setStageMachineCount = useAppStore((s) => s.setStageMachineCount);
   const selectLink = useAppStore((s) => s.selectLink);
 
   if (selectedLinkId === null || catalog === null) return null;
@@ -117,13 +127,12 @@ export function LinkInspector() {
   // a repeated `link.transport` property access on its own).
   const transport = link.transport;
 
-  const plan = computeLinkTransport(
-    rate,
-    transport,
-    item,
-    catalog.tiers,
-    globalUnlockedTiers(catalog, stages),
-  );
+  // #34: the resolve preamble folds to planForLink. planForLink returns null
+  // ONLY for a missing item, which the early-return at the top already excluded,
+  // so the plan is non-null here (the `!`). An unsolved rate flows through as
+  // computeLinkTransport's { kind: "unsolved" } plan, preserving the rendered
+  // "solve both stages to size the fleet" line.
+  const plan = planForLink(link, catalog, stages)!;
 
   // The combined-view drawn straight-line distance (Stage 7 / Phase 3, Axis 3):
   // null when either endpoint is unsolved (not placed in the chain). Estimated-
@@ -141,6 +150,11 @@ export function LinkInspector() {
     links,
     positions,
   );
+
+  // Apply affordance (Stage 8 / Phase 1): the one-click match for an
+  // under-supplied link. The presence rule + payload live in the pure
+  // applyBlockFor helper (tested directly); null for matched/over/unsolved.
+  const applyBlock = applyBlockFor(link, reconciliation, stages, links);
 
   return (
     <div className="link-inspector">
@@ -188,9 +202,37 @@ export function LinkInspector() {
         />
       )}
 
+      {/* Pipe derate (S8P2): an optional (0,100] percentage the pipe fleet math
+          applies. Empty ⇒ the key is stripped (never stored as ""), so plans
+          stay clean. Only rendered for pipe mode. */}
+      {transport?.mode === "pipe" && (
+        <PipeDerateField
+          transport={transport}
+          onChange={(t) => setLinkTransport(link.id, t)}
+        />
+      )}
+
+      {/* Train shared-end overrides (S8P2): flag an end whose station set is
+          billed elsewhere, excluding its 50+50c from this link's station MW.
+          Unchecked ⇒ the key is stripped; all-unchecked ⇒ sharedEnds itself is
+          stripped. Ends are named by the link's stage names. Train mode only. */}
+      {transport?.mode === "train" && (
+        <TrainSharedEndsFields
+          transport={transport}
+          fromName={stageName(producer)}
+          toName={stageName(consumer)}
+          onChange={(t) => setLinkTransport(link.id, t)}
+        />
+      )}
+
       {/* Results (solved-only). An unsolved link shows the mode select but no
-          fleet math; an errored config shows its message. */}
-      <Results plan={plan} />
+          fleet math; an errored config shows its message. The stage names feed
+          the train shared-end asymmetry footnote (S8P2). */}
+      <Results
+        plan={plan}
+        fromName={stageName(producer)}
+        toName={stageName(consumer)}
+      />
 
       {/* Measure feed (Stage 7 / Phase 3, Axis 3): the combined-view drawn
           straight-line distance. Estimated-mode links get a "use drawn distance"
@@ -207,9 +249,89 @@ export function LinkInspector() {
         />
       )}
 
-      {caveatFor(mode) !== null && (
-        <p className="link-inspector-caveat">{caveatFor(mode)}</p>
+      {/* Apply affordance (Stage 8 / Phase 1, Axis 1): the match-demand button
+          for an under-supplied link with a solved producer. Renders ONLY when a
+          suggestion exists (matched/over/unsolved links: no block). Applying
+          sets the producer to ×N and re-derives; the block then disappears (the
+          finding clears) — idempotent by construction. The MeasureFeed idiom. */}
+      {applyBlock !== null && (
+        <SupplyApply
+          shortfall={applyBlock.shortfall}
+          machines={applyBlock.machines}
+          total={applyBlock.total}
+          producerName={applyBlock.producerName}
+          onApply={() =>
+            setStageMachineCount(link.fromStageId, applyBlock.machines)
+          }
+        />
       )}
+
+      {/* Pipe's caveat is plan-dependent (S8P2 — a derate replaces the static
+          nominal-ceiling line); other modes keep the fixed caveatFor sentence.
+          The continuous plan (pipe → { kind: "continuous" }) carries the parsed
+          derate; a parse-errored pipe config renders the static caveat (the
+          error already shows above via Results). */}
+      {caveatText(mode, plan) !== null && (
+        <p className="link-inspector-caveat">{caveatText(mode, plan)}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The caveat sentence for a link: pipe routes through the plan-aware
+ * {@link pipeCaveat} (a derate replaces the static line) when the plan resolved
+ * to a continuous result; every other mode keeps the static {@link caveatFor}.
+ * A pipe whose config errored (no continuous plan) falls back to the static
+ * pipe caveat — the derate error is surfaced by Results, not the caveat line.
+ */
+function caveatText(
+  mode: TransportMode,
+  plan: ReturnType<typeof computeLinkTransport>,
+): string | null {
+  if (mode === "pipe" && plan.kind === "continuous") {
+    return pipeCaveat(plan);
+  }
+  return caveatFor(mode);
+}
+
+// ---------------------------------------------------------------------------
+// Supply apply — the under-supply match-demand action (Stage 8 / Phase 1).
+// ---------------------------------------------------------------------------
+
+/**
+ * The under-supply readout + the "apply ×N to <producer>" action. Names the
+ * producer and states the shortfall; the ×N is the fan-out-aggregated match
+ * count (supplySuggestionFor). "×N total" when the producer fans the item out
+ * to more than one consumer (the frozen fan-out wording, mirroring the edge
+ * label). Mounted only for under-supplied links with a solved producer.
+ */
+function SupplyApply({
+  shortfall,
+  machines,
+  total,
+  producerName,
+  onApply,
+}: {
+  shortfall: string;
+  machines: number;
+  total: boolean;
+  producerName: string;
+  onApply: () => void;
+}) {
+  return (
+    <div className="link-inspector-supply">
+      <p className="link-inspector-supply-readout">
+        supply short {shortfall}/min
+      </p>
+      <button
+        type="button"
+        className="link-inspector-supply-apply"
+        onClick={onApply}
+      >
+        apply ×{machines}
+        {total ? " total" : ""} to {producerName}
+      </button>
     </div>
   );
 }
@@ -353,7 +475,15 @@ function MeasureFeed({
 // Results — the fleet lines / train table / errors, dispatched by plan kind.
 // ---------------------------------------------------------------------------
 
-function Results({ plan }: { plan: ReturnType<typeof computeLinkTransport> }) {
+function Results({
+  plan,
+  fromName,
+  toName,
+}: {
+  plan: ReturnType<typeof computeLinkTransport>;
+  fromName: string;
+  toName: string;
+}) {
   switch (plan.kind) {
     case "unsolved":
       return (
@@ -381,17 +511,22 @@ function Results({ plan }: { plan: ReturnType<typeof computeLinkTransport> }) {
         </div>
       );
     case "train":
-      return <TrainTable plan={plan} />;
+      return <TrainTable plan={plan} fromName={fromName} toName={toName} />;
   }
 }
 
 function TrainTable({
   plan,
+  fromName,
+  toName,
 }: {
   plan: Extract<ReturnType<typeof computeLinkTransport>, { kind: "train" }>;
+  fromName: string;
+  toName: string;
 }) {
   const rows = trainRows(plan);
   const estimatedNote = trainEstimatedNote(plan);
+  const sharedNote = trainSharedEndsFootnote(plan, fromName, toName);
   return (
     <div className="link-inspector-train">
       <table className="train-table">
@@ -418,11 +553,111 @@ function TrainTable({
       </table>
       <p className="train-footnote">{TRAIN_PLATFORM_FOOTNOTE}</p>
       <p className="train-footnote">{trainBeltFeedFootnote(plan)}</p>
+      {sharedNote !== null && <p className="train-footnote">{sharedNote}</p>}
       {estimatedNote !== null && (
         <p className="train-footnote">{estimatedNote}</p>
       )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Pipe derate field (S8P2) — an optional (0,100] percentage, empty ⇒ stripped.
+// ---------------------------------------------------------------------------
+
+function PipeDerateField({
+  transport,
+  onChange,
+}: {
+  transport: Extract<LinkTransport, { mode: "pipe" }>;
+  onChange: (t: LinkTransport) => void;
+}) {
+  return (
+    <label className="link-inspector-field link-inspector-derate">
+      derate %{" "}
+      <input
+        type="text"
+        inputMode="decimal"
+        value={transport.deratePercentText ?? ""}
+        onChange={(e) => onChange(setPipeDerate(e.target.value))}
+      />
+    </label>
+  );
+}
+
+/** Build the next pipe config from a derate-field edit: empty text STRIPS the
+ *  key (the optional-field idiom — never store "" ), any other text carries it
+ *  raw (validity is a derive-time concern, the clock-text precedent). */
+export function setPipeDerate(text: string): LinkTransport {
+  return text === ""
+    ? { mode: "pipe" }
+    : { mode: "pipe", deratePercentText: text };
+}
+
+// ---------------------------------------------------------------------------
+// Train shared-end overrides (S8P2) — two checkboxes, absent-or-true stripping.
+// ---------------------------------------------------------------------------
+
+function TrainSharedEndsFields({
+  transport,
+  fromName,
+  toName,
+  onChange,
+}: {
+  transport: Extract<LinkTransport, { mode: "train" }>;
+  fromName: string;
+  toName: string;
+  onChange: (t: LinkTransport) => void;
+}) {
+  const shared = transport.sharedEnds;
+  return (
+    <div className="link-inspector-shared-ends">
+      <label>
+        <input
+          type="checkbox"
+          checked={shared?.from === true}
+          onChange={(e) =>
+            onChange(setSharedEnd(transport, "from", e.target.checked))
+          }
+        />{" "}
+        station at {fromName} is shared
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={shared?.to === true}
+          onChange={(e) =>
+            onChange(setSharedEnd(transport, "to", e.target.checked))
+          }
+        />{" "}
+        station at {toName} is shared
+      </label>
+    </div>
+  );
+}
+
+/**
+ * Build the next train config from a shared-end checkbox toggle (S8P2). The
+ * absent-or-true idiom, applied at the write: checking sets the key to `true`;
+ * UNCHECKING strips it; when the last flagged end is stripped, the whole
+ * `sharedEnds` field is dropped (never a persisted `{}`), so an all-off train
+ * config is byte-identical to today's (no override).
+ */
+export function setSharedEnd(
+  transport: Extract<LinkTransport, { mode: "train" }>,
+  end: "from" | "to",
+  shared: boolean,
+): LinkTransport {
+  const next: { from?: true; to?: true } = { ...transport.sharedEnds };
+  if (shared) {
+    next[end] = true;
+  } else {
+    delete next[end];
+  }
+  // trainWithTrip is the single train-arm assembly point: passing undefined
+  // when no flag survives keeps an all-off config byte-identical to today's
+  // (no key, no empty {}); the trip carries verbatim.
+  return trainWithTrip(transport.trip, next.from || next.to ? next : undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -433,7 +668,17 @@ function TrainTable({
  *  by the discriminant, matching the call-site narrowing exactly. */
 type TripTransport = Exclude<LinkTransport, { mode: "belt" | "pipe" }>;
 
-function toEstimated(t: TripTransport): LinkTransport {
+/** Rebuild a train config around a new trip, carrying `sharedEnds` through —
+ *  a trip edit must not wipe the per-end override (boundary-review fold). */
+function trainWithTrip(
+  trip: Extract<LinkTransport, { mode: "train" }>["trip"],
+  sharedEnds: { from?: true; to?: true } | undefined,
+): LinkTransport {
+  const base: LinkTransport = { mode: "train", trip };
+  return sharedEnds !== undefined ? { ...base, sharedEnds } : base;
+}
+
+export function toEstimated(t: TripTransport): LinkTransport {
   if (t.mode === "drone") {
     return {
       mode: "drone",
@@ -441,10 +686,12 @@ function toEstimated(t: TripTransport): LinkTransport {
       trip: { kind: "estimated", flightMetersText: "" },
     };
   }
-  return { mode: t.mode, trip: { kind: "estimated", distanceText: "" } };
+  const trip = { kind: "estimated", distanceText: "" } as const;
+  if (t.mode === "train") return trainWithTrip(trip, t.sharedEnds);
+  return { mode: t.mode, trip };
 }
 
-function toMeasured(t: TripTransport): LinkTransport {
+export function toMeasured(t: TripTransport): LinkTransport {
   if (t.mode === "drone") {
     return {
       mode: "drone",
@@ -452,7 +699,9 @@ function toMeasured(t: TripTransport): LinkTransport {
       trip: { kind: "measured", roundTripSecondsText: "" },
     };
   }
-  return { mode: t.mode, trip: { kind: "measured", roundTripSecondsText: "" } };
+  const trip = { kind: "measured", roundTripSecondsText: "" } as const;
+  if (t.mode === "train") return trainWithTrip(trip, t.sharedEnds);
+  return { mode: t.mode, trip };
 }
 
 function estimatedText(t: TripTransport): string {
@@ -460,7 +709,10 @@ function estimatedText(t: TripTransport): string {
   return t.mode === "drone" ? t.trip.flightMetersText : t.trip.distanceText;
 }
 
-function setEstimatedText(t: TripTransport, text: string): LinkTransport {
+export function setEstimatedText(
+  t: TripTransport,
+  text: string,
+): LinkTransport {
   if (t.mode === "drone") {
     return {
       mode: "drone",
@@ -468,14 +720,19 @@ function setEstimatedText(t: TripTransport, text: string): LinkTransport {
       trip: { kind: "estimated", flightMetersText: text },
     };
   }
-  return { mode: t.mode, trip: { kind: "estimated", distanceText: text } };
+  const trip = { kind: "estimated", distanceText: text } as const;
+  if (t.mode === "train") return trainWithTrip(trip, t.sharedEnds);
+  return { mode: t.mode, trip };
 }
 
 function measuredSecondsText(t: TripTransport): string {
   return t.trip.kind === "measured" ? t.trip.roundTripSecondsText : "";
 }
 
-function setMeasuredSeconds(t: TripTransport, text: string): LinkTransport {
+export function setMeasuredSeconds(
+  t: TripTransport,
+  text: string,
+): LinkTransport {
   if (t.mode === "drone") {
     const existingMeters =
       t.trip.kind === "measured" ? t.trip.flightMetersText : undefined;
@@ -491,10 +748,9 @@ function setMeasuredSeconds(t: TripTransport, text: string): LinkTransport {
       },
     };
   }
-  return {
-    mode: t.mode,
-    trip: { kind: "measured", roundTripSecondsText: text },
-  };
+  const trip = { kind: "measured", roundTripSecondsText: text } as const;
+  if (t.mode === "train") return trainWithTrip(trip, t.sharedEnds);
+  return { mode: t.mode, trip };
 }
 
 function droneMeasuredMeters(t: TripTransport): string {
@@ -512,6 +768,56 @@ function setDroneMeasuredMeters(t: TripTransport, text: string): LinkTransport {
       roundTripSecondsText: t.trip.roundTripSecondsText,
       ...(text !== "" ? { flightMetersText: text } : {}),
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Apply affordance — the pure presence-rule + payload for the supply block.
+// ---------------------------------------------------------------------------
+
+/** The rendered fields of the under-supply apply block: the shortfall readout,
+ *  the match-demand count, whether the producer fans out (the "total" wording),
+ *  and the producer's display name. */
+export interface ApplyBlock {
+  shortfall: string;
+  machines: number;
+  total: boolean;
+  producerName: string;
+}
+
+/**
+ * The apply block for a link, or null when it must not render (Stage 8 / Phase
+ * 1, Axis 1). Gated on BOTH the SAME linkId-keyed under-supply finding the edge
+ * label reads (no new detection math) AND a non-null supplySuggestionFor (solved
+ * producer with an output lane). The ×N + fan-out wording come from the SAME
+ * supplySuggestionFor data the edge label renders — one source, no drift. Null
+ * for matched/over-supplied/unsolved links; idempotent by construction (once the
+ * apply covers demand the finding clears, so this returns null on the next
+ * render). Pure over the passed slice — no store, no DOM (tested directly).
+ */
+export function applyBlockFor(
+  link: StageLink,
+  reconciliation: LinkFinding[],
+  stages: Record<string, StageNode>,
+  links: StageLink[],
+): ApplyBlock | null {
+  const finding = reconciliation.find(
+    (f): f is Extract<LinkFinding, { type: "under-supply" }> =>
+      f.linkId === link.id && f.type === "under-supply",
+  );
+  if (finding === undefined) return null;
+  const suggestion = supplySuggestionFor(
+    link.fromStageId,
+    link.itemId,
+    stages,
+    links,
+  );
+  if (suggestion === null) return null;
+  return {
+    shortfall: formatRate(finding.shortfall),
+    machines: suggestion.machines,
+    total: suggestion.fanOut,
+    producerName: stageName(stages[link.fromStageId]),
   };
 }
 

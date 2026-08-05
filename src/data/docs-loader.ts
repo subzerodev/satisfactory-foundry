@@ -49,8 +49,12 @@ export function parseDocsJson(raw: unknown): Catalog {
     throw new DocsParseError("Docs.json root must be an array.");
   }
 
-  const items: Record<string, CatalogItem> = {};
-  const machines: Record<string, CatalogMachine> = {};
+  // Null-prototype containers (#28): bracket access on these can never resolve
+  // an Object.prototype member, so an id that collides with a prototype key
+  // (e.g. a "constructor" descriptor) misses cleanly at every lookup site. The
+  // Record<string, T> typing is unchanged.
+  const items: Record<string, CatalogItem> = Object.create(null);
+  const machines: Record<string, CatalogMachine> = Object.create(null);
   const recipesRaw: RawRecipe[] = [];
 
   for (const group of raw) {
@@ -107,7 +111,8 @@ export function parseDocsJson(raw: unknown): Catalog {
     }
   }
 
-  const recipes: Record<string, CatalogRecipe> = {};
+  // Null-prototype container (#28) — see the items/machines seeds above.
+  const recipes: Record<string, CatalogRecipe> = Object.create(null);
   for (const r of recipesRaw) {
     const id = normalizeClassName(r.className, "Recipe_");
     const machineId = extractMachineId(r.producedIn);

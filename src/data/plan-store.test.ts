@@ -9,8 +9,14 @@ import {
   deletePlan,
   migrateV1,
   migrateV2,
+  migrateV3,
 } from "./plan-store.ts";
-import type { PlanFileV1, PlanFileV2, PlanFileV3 } from "./plan-store.ts";
+import type {
+  PlanFileV1,
+  PlanFileV2,
+  PlanFileV3,
+  PlanFileV4,
+} from "./plan-store.ts";
 
 // A canonical selection with a fractional clock text + override strings, to
 // prove the exact user-input text round-trips (no float coercion anywhere).
@@ -65,6 +71,26 @@ function samplePlanV3(overrides?: Partial<PlanFileV3>): PlanFileV3 {
   };
 }
 
+/** A well-formed v4 file (the CURRENT save shape): v3 + the S8P2 transport
+ *  extensions (pipe deratePercentText, train sharedEnds) legal in the config. */
+function samplePlanV4(overrides?: Partial<PlanFileV4>): PlanFileV4 {
+  return {
+    format_version: 4,
+    name: "My Plan",
+    createdAt: "2026-08-03T00:00:00.000Z",
+    updatedAt: "2026-08-03T00:00:00.000Z",
+    stages: [
+      {
+        name: "Stage 1",
+        selection: sampleSelection(),
+        position: { x: 40, y: 40 },
+      },
+    ],
+    links: [],
+    ...overrides,
+  };
+}
+
 /** A well-formed v1 file (the legacy shape, written via raw db.put). */
 function samplePlanV1(overrides?: Partial<PlanFileV1>): PlanFileV1 {
   return {
@@ -97,13 +123,13 @@ describe("plan-store — environment", () => {
   });
 });
 
-describe("plan-store — save/load/delete round-trip (v3)", () => {
+describe("plan-store — save/load/delete round-trip (v4)", () => {
   it("save → load returns the exact plan, fractional clock + override strings intact", async () => {
     const id = crypto.randomUUID();
-    await savePlan(samplePlanV3(), id);
+    await savePlan(samplePlanV4(), id);
     const loaded = await loadPlan(id);
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(3);
+    expect(loaded!.format_version).toBe(4);
     expect(loaded!.stages[0]!.selection.clockPercentText).toBe("37.5");
     expect(loaded!.stages[0]!.selection.overrides.feeds.ore_iron).toEqual([
       "480",
@@ -119,7 +145,7 @@ describe("plan-store — save/load/delete round-trip (v3)", () => {
 
   it("round-trips a multi-stage graph with index-encoded links", async () => {
     const id = crypto.randomUUID();
-    const plan = samplePlanV3({
+    const plan = samplePlanV4({
       stages: [
         { name: "A", selection: sampleSelection(), position: { x: 0, y: 0 } },
         { name: "B", selection: sampleSelection(), position: { x: 260, y: 0 } },
@@ -142,7 +168,7 @@ describe("plan-store — save/load/delete round-trip (v3)", () => {
 
   it("round-trips per-link transport verbatim (raw user text intact)", async () => {
     const id = crypto.randomUUID();
-    const plan = samplePlanV3({
+    const plan = samplePlanV4({
       stages: [
         { name: "A", selection: sampleSelection() },
         { name: "B", selection: sampleSelection() },
@@ -201,7 +227,7 @@ describe("plan-store — save/load/delete round-trip (v3)", () => {
 
   it("deletePlan removes the row; a later load → null", async () => {
     const id = crypto.randomUUID();
-    await savePlan(samplePlanV3(), id);
+    await savePlan(samplePlanV4(), id);
     await deletePlan(id);
     expect(await loadPlan(id)).toBeNull();
   });
@@ -210,15 +236,15 @@ describe("plan-store — save/load/delete round-trip (v3)", () => {
 describe("plan-store — listPlans", () => {
   it("sorts by updatedAt descending", async () => {
     await savePlan(
-      samplePlanV3({ name: "old", updatedAt: "2026-01-01T00:00:00.000Z" }),
+      samplePlanV4({ name: "old", updatedAt: "2026-01-01T00:00:00.000Z" }),
       "id-old",
     );
     await savePlan(
-      samplePlanV3({ name: "new", updatedAt: "2026-12-31T00:00:00.000Z" }),
+      samplePlanV4({ name: "new", updatedAt: "2026-12-31T00:00:00.000Z" }),
       "id-new",
     );
     await savePlan(
-      samplePlanV3({ name: "mid", updatedAt: "2026-06-15T00:00:00.000Z" }),
+      samplePlanV4({ name: "mid", updatedAt: "2026-06-15T00:00:00.000Z" }),
       "id-mid",
     );
     const list = await listPlans();
@@ -226,10 +252,10 @@ describe("plan-store — listPlans", () => {
     expect(list[0]).toMatchObject({ id: "id-new", name: "new" });
   });
 
-  it("lists a legacy v1 row alongside v3 rows (both loadable)", async () => {
+  it("lists a legacy v1 row alongside v4 rows (both loadable)", async () => {
     await savePlan(
-      samplePlanV3({ name: "v3", updatedAt: "2026-06-15T00:00:00.000Z" }),
-      "id-v3",
+      samplePlanV4({ name: "v4", updatedAt: "2026-06-15T00:00:00.000Z" }),
+      "id-v4",
     );
     const db = await (await import("./db.ts")).openDb();
     await db.put(
@@ -238,11 +264,11 @@ describe("plan-store — listPlans", () => {
       "id-v1",
     );
     const list = await listPlans();
-    expect(list.map((e) => e.name)).toEqual(["v1", "v3"]);
+    expect(list.map((e) => e.name)).toEqual(["v1", "v4"]);
   });
 
   it("skips a corrupt row (never crashes) but keeps valid ones", async () => {
-    await savePlan(samplePlanV3({ name: "good" }), "id-good");
+    await savePlan(samplePlanV4({ name: "good" }), "id-good");
     // A foreign / corrupt row written directly under the plans store.
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", { garbage: true }, "id-bad");
@@ -282,8 +308,8 @@ describe("plan-store — isPlanFileV2 accept/reject", () => {
     expect(loaded!.stages[0]!.selection.machineCount).toBeNull();
   });
 
-  it("rejects an unknown format_version (neither 1/2/3 → corrupt)", async () => {
-    await putRaw({ ...samplePlanV3(), format_version: 4 });
+  it("rejects an unknown format_version (neither 1/2/3/4 → corrupt)", async () => {
+    await putRaw({ ...samplePlanV3(), format_version: 5 });
     expect(await loadPlan("id")).toBeNull();
   });
 
@@ -432,12 +458,12 @@ describe("plan-store — migrateV1", () => {
     expect(v2.name).toBe("Legacy Plan");
   });
 
-  it("loadPlan migrates a stored v1 row transparently (returns v3)", async () => {
+  it("loadPlan migrates a stored v1 row transparently (returns v4)", async () => {
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", samplePlanV1(), "id");
     const loaded = await loadPlan("id");
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(3);
+    expect(loaded!.format_version).toBe(4);
     expect(loaded!.stages[0]!.name).toBe("Stage 1");
     expect(loaded!.stages[0]!.selection.clockPercentText).toBe("37.5");
   });
@@ -487,6 +513,172 @@ describe("plan-store — migrateV2 (v2 → v3)", () => {
     expect(v3.stages).toBe(v2.stages);
     expect(v3.links).toEqual([{ from: 0, to: 1, itemId: "iron_ingot" }]);
     expect(v3.links[0]!.transport).toBeUndefined();
+  });
+});
+
+describe("plan-store — migrateV3 (v3 → v4, identity on links)", () => {
+  it("flips only the header; stages + links + timestamps carry verbatim", () => {
+    const v3 = samplePlanV3({
+      createdAt: "2020-01-01T00:00:00.000Z",
+      updatedAt: "2021-02-03T04:05:06.000Z",
+      stages: [
+        { name: "A", selection: sampleSelection() },
+        { name: "B", selection: sampleSelection() },
+      ],
+      links: [
+        {
+          from: 0,
+          to: 1,
+          itemId: "iron_ingot",
+          transport: {
+            mode: "train",
+            trip: { kind: "estimated", distanceText: "1200" },
+          },
+        },
+      ],
+    });
+    const v4 = migrateV3(v3);
+    expect(v4.format_version).toBe(4);
+    expect(v4.createdAt).toBe("2020-01-01T00:00:00.000Z");
+    expect(v4.updatedAt).toBe("2021-02-03T04:05:06.000Z");
+    expect(v4.stages).toBe(v3.stages);
+    // The new S8P2 fields are absent by construction (a v3 link never had them).
+    expect(v4.links).toEqual(v3.links);
+    expect(v4.links[0]!.transport).toEqual({
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "1200" },
+    });
+  });
+
+  it("a stored v3 row still loads (migrated to v4) through loadPlan", async () => {
+    const db = await (await import("./db.ts")).openDb();
+    await db.put("plans", samplePlanV3({ name: "legacy-v3" }), "id");
+    const loaded = await loadPlan("id");
+    expect(loaded).not.toBeNull();
+    expect(loaded!.format_version).toBe(4);
+    expect(loaded!.name).toBe("legacy-v3");
+  });
+});
+
+describe("plan-store — isPlanFileV4 transport accept/reject (S8P2 extensions)", () => {
+  async function putRaw(value: unknown): Promise<void> {
+    const db = await (await import("./db.ts")).openDb();
+    await db.put("plans", value, "id");
+  }
+
+  // A v4 file (format_version 4) carrying ONE link with the given transport —
+  // the ONLY path that exercises the strict v4 field validation (a v3 file would
+  // route through the lenient v3 validator + migrateV3 instead).
+  function v4WithTransport(transport: unknown): unknown {
+    return samplePlanV4({
+      stages: [
+        { name: "A", selection: sampleSelection() },
+        { name: "B", selection: sampleSelection() },
+      ],
+      links: [{ from: 0, to: 1, itemId: "iron_ingot", transport } as never],
+    });
+  }
+
+  it("accepts a pipe with a valid (0,100] deratePercentText", async () => {
+    await putRaw(v4WithTransport({ mode: "pipe", deratePercentText: "80" }));
+    expect(await loadPlan("id")).not.toBeNull();
+  });
+
+  it("accepts a bare pipe (no derate) and a bare belt", async () => {
+    await putRaw(v4WithTransport({ mode: "pipe" }));
+    expect(await loadPlan("id")).not.toBeNull();
+    await putRaw(v4WithTransport({ mode: "belt" }));
+    expect(await loadPlan("id")).not.toBeNull();
+  });
+
+  it("accepts a train with a valid absent-or-true sharedEnds", async () => {
+    await putRaw(
+      v4WithTransport({
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "1200" },
+        sharedEnds: { from: true },
+      }),
+    );
+    expect(await loadPlan("id")).not.toBeNull();
+    await putRaw(
+      v4WithTransport({
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "1200" },
+        sharedEnds: { from: true, to: true },
+      }),
+    );
+    expect(await loadPlan("id")).not.toBeNull();
+  });
+
+  it("accepts a train with BOTH fields absent (identical to today)", async () => {
+    await putRaw(
+      v4WithTransport({
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "1200" },
+      }),
+    );
+    expect(await loadPlan("id")).not.toBeNull();
+  });
+
+  it.each([
+    ["0", "0 out of (0,100]"],
+    ["-1", "negative"],
+    ["100.1", ">100 boost"],
+    ["150", ">100 boost"],
+    ["abc", "unparseable"],
+  ])("rejects a pipe derate %j (%s)", async (derate) => {
+    await putRaw(v4WithTransport({ mode: "pipe", deratePercentText: derate }));
+    expect(await loadPlan("id")).toBeNull();
+  });
+
+  it("rejects a deratePercentText on a NON-pipe arm (belt / train / road)", async () => {
+    await putRaw(v4WithTransport({ mode: "belt", deratePercentText: "80" }));
+    expect(await loadPlan("id")).toBeNull();
+    await putRaw(
+      v4WithTransport({
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "1200" },
+        deratePercentText: "80",
+      }),
+    );
+    expect(await loadPlan("id")).toBeNull();
+    await putRaw(
+      v4WithTransport({
+        mode: "truck",
+        trip: { kind: "estimated", distanceText: "500" },
+        deratePercentText: "80",
+      }),
+    );
+    expect(await loadPlan("id")).toBeNull();
+  });
+
+  it.each([
+    [{ from: false }, "false is not the absent-or-true idiom"],
+    [{ to: "yes" }, "a non-true value"],
+    [{ from: 1 }, "a truthy non-true value"],
+  ])("rejects a sharedEnds with %o (%s)", async (sharedEnds, _why) => {
+    void _why;
+    await putRaw(
+      v4WithTransport({
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "1200" },
+        sharedEnds,
+      }),
+    );
+    expect(await loadPlan("id")).toBeNull();
+  });
+
+  it("rejects a sharedEnds on a NON-train arm (pipe / road)", async () => {
+    await putRaw(v4WithTransport({ mode: "pipe", sharedEnds: { from: true } }));
+    expect(await loadPlan("id")).toBeNull();
+    await putRaw(
+      v4WithTransport({
+        mode: "truck",
+        trip: { kind: "estimated", distanceText: "500" },
+        sharedEnds: { from: true },
+      }),
+    );
+    expect(await loadPlan("id")).toBeNull();
   });
 });
 

@@ -221,6 +221,25 @@ describe("catalog cache — source provenance (ticket #9)", () => {
   });
 });
 
+describe("catalog cache — null-prototype maps survive revive (#28)", () => {
+  it("revived items/machines/recipes maps have a null prototype", async () => {
+    // Structured-clone through IDB yields plain-proto objects; reviveCatalog
+    // rebuilds each of the three maps as Object.create(null), so the loaded
+    // catalog is prototype-safe again — matching the parse-boundary seed.
+    await saveCatalog("raw docs text", sampleCatalog());
+    const result = await loadCatalog();
+    expect(result.status).toBe("hit");
+    if (result.status !== "hit") return;
+    expect(Object.getPrototypeOf(result.catalog.items)).toBeNull();
+    expect(Object.getPrototypeOf(result.catalog.machines)).toBeNull();
+    expect(Object.getPrototypeOf(result.catalog.recipes)).toBeNull();
+    // A prototype-member id misses cleanly on the revived maps (belt-and-braces).
+    expect(result.catalog.recipes["constructor"]).toBeUndefined();
+    expect(result.catalog.machines["constructor"]).toBeUndefined();
+    expect(result.catalog.items["constructor"]).toBeUndefined();
+  });
+});
+
 /** The JSON-safe shape saveCatalog would write for `sampleCatalog()`, used to
  *  seed a legacy row directly (bypassing saveCatalog's source write). */
 function serializedSample() {

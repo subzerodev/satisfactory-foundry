@@ -1,0 +1,102 @@
+R2 BIDIRECTIONALITY VERIFICATION — Stage 8 / Phase 4 (ticket #40)
+alternate-recipe comparison
+================================================================
+
+Method: for each distinct NEW behavior, deliberately break the
+implementation, run the pinning test(s), confirm they FAIL for the right
+reason (not a compile error, not an unrelated failure), then RESTORE the
+implementation and confirm GREEN. A test that stays green under a genuine
+break is a false pin and is reported as such. No genuine FAIL (a real
+implementation defect) was found; every break was an intentional mutation
+that the tests correctly caught.
+
+Baseline: 673 tests (pre-P4) → 703 tests (post-P4). All 703 green;
+`npm run check` clean. Trunk verified against the worktree only (the
+vitest-worktree-double-count memo: this log's counts are the worktree
+suite).
+
+----------------------------------------------------------------------
+Behavior 1 — core: override consult selects the named recipe
+  (chain-builder.ts selectProducer, override branch)
+  BREAK: removed the entire override-consult block (overrides.get +
+         validated named lookup) so selectProducer always runs the
+         default policy.
+  RESULT: PASS (break caught). 4 tests failed genuinely:
+    × selects the NAMED alternate for the target, bypassing isAlternate
+    × overrides an item deep in the closure; unoverridden items default
+    × respects a machine-excluded recipe when it is the override target
+    × still demotes a CYCLING override recipe to RAW
+  Note: the "invalid override IGNORED" and "absent-overrides byte-
+  identical" tests correctly STAYED GREEN under this break — they assert
+  default-policy behavior, which the break does not alter. That is the
+  right bidirectional signal (they pin the fallback, not the consult).
+  RESTORE → 7/7 override tests green.
+
+----------------------------------------------------------------------
+Behavior 2 — core: an invalid (non-primary) override is ignored
+  (selectProducer override validation: named.primaryOutputId === itemId)
+  BREAK: removed the `&& named.primaryOutputId === itemId` guard, so a
+         non-primary override is wrongly accepted.
+  RESULT: PASS (break caught). 1 test failed genuinely:
+    × IGNORES an override whose recipe does NOT primary-produce the item
+  RESTORE → 7/7 override tests green.
+
+----------------------------------------------------------------------
+Behavior 3 — store: applyRecipeSwap clears lane overrides atomically
+  (store.ts applyRecipeSwap payload: overrides: { feeds:{}, outputs:{} })
+  BREAK: dropped the overrides-clear line from the composed selection, so
+         a swap carries the OLD recipe's lane overrides forward.
+  RESULT: PASS (break caught). 1 test failed genuinely:
+    × clears lane overrides; preserves clock + tiers (selectRecipe posture)
+  Note: the atomic-write, unknown-stageId no-op, and non-active-cursor
+  tests stayed green (the break only affects overrides), correctly
+  isolating the pin.
+  RESTORE → 4/4 applyRecipeSwap tests green.
+
+----------------------------------------------------------------------
+Behavior 4 — adapter: candidate enumeration lists default-first
+  (chain-builder-adapter.ts candidateRecipesFor sort)
+  BREAK: sorted by recipe id ONLY, ignoring the isAlternate group key, so
+         alternates can precede the default candidate.
+  RESULT: PASS (break caught). 2 tests failed genuinely:
+    × lists default (non-alternate) first, then alternates ascending (synthetic)
+    × surfaces exactly 5 candidates: default + Iron Alloy/Basic/Leached/
+      Pure Iron (bundled Iron Ingot — the default no longer leads)
+  RESTORE → enumeration tests green.
+
+----------------------------------------------------------------------
+Behavior 5 — adapter: variable-power flag propagates to the row
+  (chain-builder-adapter.ts subtreePower: if (power.variable) variable = true)
+  BREAK: never set the variable flag, so a variable-power subtree renders
+         without the "(varies …)" suffix.
+  RESULT: PASS (break caught). 1 test failed genuinely:
+    × propagates the variable-power flag with the varies suffix
+  RESTORE → metric tests green.
+
+----------------------------------------------------------------------
+Behavior 6 — UI: presence gate hides the block for <2 candidates
+  (AltCompare.tsx altCompareModel: if (candidates.length < 2) return null)
+  BREAK: removed the <2-candidate gate, so the model builds even when
+         nothing is comparable.
+  RESULT: PASS (break caught). 1 test failed genuinely:
+    × returns null when the primary item has fewer than 2 candidates
+  RESTORE → presence-gate tests green.
+
+----------------------------------------------------------------------
+Behavior 7 — UI/adapter: apply resize ceils at the compared rate
+  (chain-builder-adapter.ts swapMachineCountFor: rate.ceilDiv(perMinute))
+  BREAK: floorDiv instead of ceilDiv, so a non-exact resize under-produces.
+  RESULT: PASS (break caught). 2 tests failed genuinely (one per layer):
+    × ceilDivs the compared rate by the candidate's primary perMinute (adapter)
+    × ceils the apply count at the compared rate (over-produce, never short) (UI)
+  The two-layer catch confirms both the adapter helper and the UI payload
+  builder pin the ceil independently.
+  RESTORE → ceil tests green.
+
+----------------------------------------------------------------------
+SUMMARY
+  7 distinct new behaviors, 7 breaks, 7 PASS (all breaks caught by ≥1
+  genuinely-failing test). No false pins. No genuine FAIL (no real defect
+  surfaced). All restores confirmed byte-clean (git working tree returned
+  to the committed state; grep for R2-BREAK residue → NO RESIDUE).
+  Final: 703/703 green, `npm run check` clean.

@@ -3,6 +3,71 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 8 complete: alternate-recipe comparison
+
+> Hey Michael — the last piece of the planner-intelligence arc. When a
+> stage's item has alternate recipes, a comparison table now appears next
+> to the recipe picker: every way to make that item, side by side, with
+> what each REALLY costs — not just the one machine, but the whole
+> upstream job down to raw ore: total machines, total power, and the raw
+> resources per minute. Iron Ingot shows all five ways (plain smelting,
+> Iron Alloy, Basic, Leached, Pure Iron) with honestly different
+> trade-offs. Hit apply on a row and the stage swaps to that recipe,
+> resized so it keeps making at least what it made before — your wires
+> then show you what upstream needs adjusting, and the chain builder or
+> the one-click apply can fix it. No "best" badge anywhere: they're your
+> trade-offs to make. That's the whole Stage 8 wishlist shipped.
+
+## 2026-08-05 — Stage 8, Phase 3: the auto-chain builder
+
+> Hey Michael — the big one landed. There's a "Build chain" box under the
+> graph now: pick a target item, type a rate, hit Propose — and the
+> planner designs the whole factory for you. Heavy Modular Frame at
+> 10/min? It comes back with the full 12-stage chain — Smelters ×51,
+> Constructors for rods, screws, plates, the works — plus a summary of
+> the raw ores you'll need to mine (and any byproducts). Nothing touches
+> your graph until you hit Apply; then it lands as ordinary stages and
+> wires you can edit like anything hand-built, with every wire green on
+> arrival (it sizes machines so nothing runs short, rounding up whole
+> machines). It sticks to standard recipes and stops at raw resources —
+> comparing alternate recipes is the next (and last) piece of this arc.
+
+## 2026-08-04 — Stage 8, Phase 2: transport fine-tuning knobs
+
+> Hey Michael — two honesty knobs for transport links. Pipes: the game's
+> pipe ratings are best-case numbers (manifolds slosh), so a pipe link now
+> has a "derate %" field — type 50 and the planner sizes the run for half
+> the nominal flow, showing "2 pipes sustain 300/min each" with a label
+> that says it's YOUR assumption, not a game constant. Leave it empty and
+> nothing changes. Trains: if one end of a route shares an existing
+> station (say, an unload-only stop at your main hub), tick "station at
+> <name> is shared" and that end's power drops out of the station MW
+> column — the tonnage math doesn't move, only whose ledger the power sits
+> on. Your saved plans upgraded silently and load exactly as before.
+> Next: the big one — the auto-chain builder.
+
+## 2026-08-04 — Stage 8, Phase 1: one click instead of retyping
+
+> Hey Michael — two small quality-of-life wins. When a wire says
+> "short 600/min · ×30 covers it", click the link and there's now an
+> actual button: "apply ×30 to Smelters" — one click sets the machine
+> count and the wire flips to ok. It knows about fan-out too, so
+> applying never shorts a sibling. And on the Combined floor plan you
+> can now click any site to make it the active stage — the panels
+> below switch to editing it, the outline follows, and you never leave
+> the overview. Next: the transport fine-tuning knobs, then the big
+> one — the auto-chain builder.
+
+## 2026-08-04 — Stage 8, Phase 0: under-the-hood housekeeping
+
+> Hey Michael — nothing to see this time, and that's the point. Two
+> internal clean-ups landed: the game-data lookups are now bulletproof
+> against a weird edge case (an item literally named "constructor"
+> could have confused JavaScript's plumbing), and five copies of the
+> same transport-resolving code became one. Everything works exactly
+> as before — flag anything odd if you spot it. Next up: the one-click
+> apply button and clicking sites on the combined floor plan.
+
 ## 2026-08-04 — Stage 7 complete: the whole chain on one floor plan
 
 > Hey Michael — the last piece of the logistics arc is in. Flip the

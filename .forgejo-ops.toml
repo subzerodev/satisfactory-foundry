@@ -28,3 +28,4 @@ extra = ["epic", "blocked"]    # stage:N labels are generated from [stages]
 "5" = "Stage 5 — Polish round"
 "6" = "Stage 6 — Chain-aware helpers"
 "7" = "Stage 7 — Logistics: combined blueprint + transport planning"
+"8" = "Stage 8 — Planner intelligence: hygiene, quick-apply, auto-chain + alt-recipe compare"

@@ -190,6 +190,52 @@ body {
   gap: 6px;
 }
 
+/* Build-chain panel (Stage 8 / Phase 3). */
+.chain-builder {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.chain-builder-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.chain-builder-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chain-builder-error {
+  margin: 8px 0 0;
+  color: var(--error);
+}
+
+.chain-builder-preview {
+  margin-top: 8px;
+}
+
+.chain-builder-rows {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.chain-builder-raw,
+.chain-builder-byproducts,
+.chain-builder-empty {
+  margin: 4px 0 0;
+  color: var(--fg-muted);
+}
+
+.chain-builder-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .tier-controls {
   display: flex;
   align-items: center;
@@ -423,6 +469,14 @@ body {
 .chain-bp-power {
   font-size: 10px;
   fill: var(--fg-muted);
+}
+
+/* Site focus (Stage 8 / Phase 1, Axis 3): the active site's foundation bbox
+   gets the accent outline — the stage-node `.selected` idiom, applied to the
+   site's foundation tiles (the SVG surface the click targets). */
+.chain-bp-site.selected .bp-foundation {
+  stroke: var(--accent);
+  stroke-width: 2;
 }
 
 /* Inter-site connectors: solid for belt/pipe, dashed for vehicle modes (a
@@ -762,6 +816,21 @@ body {
   font-style: italic;
 }
 
+/* Apply affordance (Stage 8 / Phase 1, Axis 1): the under-supply match-demand
+   readout + the "apply ×N to <producer>" action — the MeasureFeed idiom. */
+.link-inspector-supply {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.link-inspector-supply-readout {
+  margin: 0;
+  color: var(--error);
+  font-size: 13px;
+}
+
 .train-table {
   border-collapse: collapse;
   font-size: 13px;
@@ -782,4 +851,43 @@ body {
 
 .findings-transport {
   margin-top: 8px;
+}
+
+/* Alternate-recipe comparison (Stage 8 / Phase 4) — the trainOptions idiom. */
+.alt-compare {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px;
+  margin: 12px 0;
+}
+
+.alt-compare-head {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.alt-compare-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: 100%;
+}
+
+.alt-compare-table th,
+.alt-compare-table td {
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  text-align: left;
+}
+
+.alt-compare-current {
+  font-weight: 600;
+}
+
+.alt-compare-mark {
+  color: var(--fg-muted);
+}
+
+.alt-compare-byproducts {
+  color: var(--fg-muted);
+  font-size: 12px;
 }
