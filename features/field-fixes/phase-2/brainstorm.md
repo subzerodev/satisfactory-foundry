@@ -39,8 +39,9 @@ drafting label idiom: "BELT LOAD OVERRIDES" with a one-line sub-label
 "type a rate to override a belt's load · empty = computed"; (2) each
 .lane-overrides-lane gains an item heading (the catalog displayName,
 mono 11px letter-spaced uppercase — the schedule-header idiom) so
-"Feed 1" rows group under their item. Markup additions only in
-LaneOverrides.tsx; CSS reuses existing idioms (no new tokens).**
+"Feed 1" rows group under their item. Markup additions in LaneOverrides.tsx + one CSS line (the heading
+spans the lane grid via grid-column: 1 / -1); idioms reused, no new
+tokens.**
 
 ## Axis B — one recipe-less vocabulary (#65b)
 
@@ -92,7 +93,7 @@ labels reposition with the active scale (same px math).
 - No wheel-zoom/pinch (native scroll is the navigation; the toggle
   covers the two useful scales); no schematic changes beyond Axis B's
   none; no RF canvas changes; no solver/geometry changes (the gutter
-  is viewBox framing, not layout math).
+  is an HTML column outside the SVG — zero viewBox/layout impact).
 
 ## Test plan sketch
 
@@ -102,9 +103,9 @@ labels reposition with the active scale (same px math).
   The heading spans the lane grid via grid-column: 1 / -1 (one CSS
   line — the "markup only" claim corrected, r1 nit).
 - ChainBlueprint: the skip note text pinned to the new phrase.
-- svg framing: viewBox includes the gutter; labels' x within the
-  gutter (unit-testable from the emitted markup); the zoom toggle
-  switches width/height between fit-scale and readable-scale values.
+- gutter: label y positions = (laneY − minY) × scale (unit-testable
+  from the component's computed positions); the zoom toggle switches
+  svg width/height between fit-scale and 1 px/dm values.
 - Pins: the ChainBlueprint note gets a NEW string pin (nothing pins
   the current text — r2 precision); the lane-name <text> removal is
   pin-safe BECAUSE the only label assertions are location-agnostic
@@ -125,8 +126,8 @@ labels reposition with the active scale (same px math).
 2. The catalog displayName is reachable in LaneOverrides (it receives
    itemId; catalog access pattern to verify at implementation — the
    parent panel has the catalog).
-3. GUTTER_DM sizing needs the longest realistic item name at the label
-   font — computed at implementation, walk-verified.
+3. The gutter column width sizes to the longest item name at 11px
+   screen mono (CSS max-content — no dm constant needed).
 4. The zoom toggle is presentation-only state (component useState —
    not store, not persisted).
 
@@ -164,3 +165,8 @@ labels reposition with the active scale (same px math).
   Axis B phrase, the P1 supersession, the crowding re-diagnosis, the
   open-scale formula incl. the fit<1 toggle gate at the smelter, the
   itemName pattern, the grid-column heading span.
+- v4b (2026-08-05): stale-residue sweep before r3 — the three lines
+  still describing the dead in-SVG gutter (non-goals "viewBox
+  framing", the "viewBox includes the gutter" test item, the
+  GUTTER_DM ledger entry) rewritten for the HTML-gutter shape; Axis
+  A's "markup only" aligned with the grid-column correction.
