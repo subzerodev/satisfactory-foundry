@@ -192,6 +192,12 @@ primary stage's `outputRate` — no recomputation.**
    candidateRowsFor at chain-builder-adapter.ts:256-289; the output
    field lives on CandidateRow; the source is the primary
    ProposedStage.outputRate.
+3b. PROVENANCE (r3 adversarial advisory): the Apply button remains
+   live on a "—" (self-consuming, demoted) row — a PRE-EXISTING
+   AltCompare property (rows get apply payloads regardless;
+   candidateRecipesFor never filtered self-consumers; the row's
+   other columns already degrade the same way). Unchanged by this
+   arc; if ever deemed a UX trap it gets its OWN ticket.
 4. catalog.machines[machineId].displayName VERIFIED
    (src/data/types.ts:38-42); provenance corrected (r1 nit):
    graph-flow.ts:491 delegates power to advice.ts — the direct
@@ -237,3 +243,7 @@ primary stage's `outputRate` — no recomputation.**
   pin-safe). The clock≠100 observation recorded as a PRE-EXISTING
   compare-convention property shared with the MACHINES column, out
   of this arc's scope.
+- v3-r3 (2026-08-05): r3 pair CONVERGED — code-reviewer APPROVED
+  (0), adversarial APPROVED (0 + 1 advisory, folded as ledger #3b:
+  the live-Apply-on-dashed-row provenance recorded as pre-existing
+  and out of scope). Correctness converged after 3 rounds.
