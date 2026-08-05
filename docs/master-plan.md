@@ -206,4 +206,4 @@ process (all-Claude roster, opus implementers, per-phase gates).
   skip-note wording, Blueprint lane-name gutter (DETAIL-only,
   sizer-twin width — a boundary-caught CSS intrinsic-sizing bug),
   [FIT|DETAIL] toggle in both blueprint views opening floored plans
-  at DETAIL. 767 tests. Release PR pending → then Stage 12 SHIPPED.
+  at DETAIL. 767 tests. **SHIPPED** — release PR #66 merged to main 2026-08-05.
