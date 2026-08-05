@@ -1,9 +1,9 @@
 # Field fixes round 2: remove schematic, blueprint overlap, override table (Stage 13 arc)
 
 **Started:** 2026-08-05
-**Status:** complete — merged to develop `bafae8c`; release PR pending
-**Current phase:** — (arc close)
-**Final PR:** —
+**Status:** SHIPPED 2026-08-05
+**Current phase:** — (arc closed)
+**Final PR:** #72
 **Epic:** #67 (board #21, Stage 13 milestone 84; children #68 A, #69 B, #70 C)
 
 ## Phase status

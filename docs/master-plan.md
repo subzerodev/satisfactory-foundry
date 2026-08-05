@@ -225,4 +225,5 @@ process (all-Claude roster, opus implementers, per-phase gates).
 - **Status:** merged to develop 2026-08-05 (`bafae8c`, 749 tests,
   +421/−1150 — the schematic surface deleted whole). Walk: the #69
   collision scan 35 → ZERO at both zooms/themes; 66 override inputs
-  one aligned column. Release PR pending → then Stage 13 SHIPPED.
+  one aligned column. **SHIPPED** — release PR #72 merged to main
+  2026-08-05. Follow-up: #71 (test-only format helpers adjudication).
