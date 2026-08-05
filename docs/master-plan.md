@@ -135,3 +135,17 @@ process (all-Claude roster, opus implementers, per-phase gates).
   #38 #39 #40); 703/703 tests; released to main via PR #41; full gate
   per phase (dual-review + simplify at design and boundary, browser
   walks, R2 logs).
+
+## Stage 9 — Drawing identity: the FICSIT engineering-drawing UI
+
+- **Goal:** the app's first designed visual identity (approved on #42):
+  a FICSIT drafting document — vellum sheet (light) and a true cyanotype
+  blueprint (dark; the theme toggle is a medium change), Big Shoulders
+  display + IBM Plex Mono numbers, title-block chrome carrying real plan
+  data, dimension-line edges, inspection-stamp findings, a
+  line-conventions legend. Behavior-frozen: presentation only, the test
+  suite stays green.
+- **Epic:** #43 (milestone 80). Phases: P0 tokens + type + sheet chrome
+  → P1 canvas (plates, dimension lines, stamps) → P2 panels + schedules
+  + both-mode polish walks.
+- **Status:** in progress (started 2026-08-05).
