@@ -3,6 +3,21 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 14: your first view is back, the combined one is gone
+
+> Hey Michael — my mistake, corrected. The lane view you liked is
+> restored exactly as it was and opens first again; the combined
+> multi-factory view is the one that's gone now. (The old button
+> labelling caused the mix-up — it named the view you'd switch TO,
+> so the view you told me to remove was wearing the other one's
+> name. The honest tabs from last round make that impossible now:
+> SCHEMATIC | BLUEPRINT, showing where you are.) One genuine fix
+> rode along: in the restored view, the output lane names used to
+> sit right on their belt line — that was your very first "Cable"
+> screenshot — and they now sit just below it, clear of the line,
+> with the same halo the blueprint labels got. Everything else about
+> the view is untouched.
+
 ## 2026-08-05 — Stage 13: schematic removed, last overlaps gone, tidy override table
 
 > Hey Michael — all three of tonight's reports are done. The schematic

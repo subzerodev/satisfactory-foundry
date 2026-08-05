@@ -54,12 +54,12 @@
   --accent: #c25a1d; /* the ONE accent; passes 3:1 for display + non-text */
   --accent-strong: #a64a16; /* 4.79:1 */
   --on-accent: #ffffff;
-  --surface-fill: #e5e0d0; /* blueprint machine rects */
+  --surface-fill: #e5e0d0; /* machine rects (schematic + blueprint) */
   --surface-stroke: #9aa2ac;
   --foundation-fill: #e9e4d5;
   --foundation-stroke: #cfc9b8;
   --bus-fill: #c3ccd4; /* blueprint bus ribbon — vellum gray-blue */
-  --junction-fill: #97a2ac; /* blueprint junctions */
+  --junction-fill: #97a2ac; /* junctions + schematic seams */
   --junction-stroke: #77828c;
   --notice: #8a5a2a; /* footprint / warning notices — a passing brown-orange */
   --error-bg: #f3e4e1; /* finding-error panel background — pale red vellum */
@@ -469,12 +469,122 @@ body {
 }
 
 /* -------------------------------------------------------------------------
+   Schematic view (Stage 5 / Phase 1; restored #74). The bus-and-lane manifold
+   diagram — its own container so the absolutely-positioned hover tooltip has a
+   positioning context.
+   ------------------------------------------------------------------------- */
+
+.schematic,
+.schematic-scroll {
+  position: relative; /* anchor for the absolutely-positioned .tooltip */
+  padding: 12px 0;
+}
+
+.schematic-scroll {
+  overflow-x: auto;
+}
+
+/* Hover tooltip (Stage 5 item 1) — one absolutely-positioned div, cursor-
+   anchored + clamped to the schematic container. pointer-events: none so the
+   tooltip never steals the hover from the line it describes. */
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+  max-width: 280px;
+  padding: 4px 8px;
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--bg-panel);
+  background: var(--fg);
+  border-radius: 0;
+  white-space: nowrap;
+}
+
+.machine rect {
+  fill: var(--surface-fill);
+  stroke: var(--surface-stroke);
+}
+
+.machine-label {
+  font-size: 10px;
+  fill: var(--fg-muted);
+  text-anchor: middle;
+}
+
+/* Level-of-detail machine band (Stage 12 P1 Axis 1): above N=114 the per-machine
+   tick row becomes one band rect + a count, the drafting break convention. The
+   band reuses the machine rect's surface fill; the count takes the display face
+   (the drawing's own count vocabulary); the significant-machine ticks read as
+   quiet interior boundaries. */
+.machine-band rect {
+  fill: var(--surface-fill);
+  stroke: var(--surface-stroke);
+}
+
+.machine-band-count {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  fill: var(--fg);
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.machine-band-mark line {
+  stroke: var(--surface-stroke);
+  stroke-width: 1;
+}
+
+/* Lane names (Stage 5) with the S12 label halo (#76): output names now sit just
+   below their bus, so paint-order: stroke draws a --bg halo UNDER the glyphs —
+   the same drafting convention .bp-mark-label uses for text over linework, in
+   screen-px SVG context. Defends the ~1px seam-band margin + any belt-arrow
+   glyph the name sits near. */
+.lane-name {
+  font-size: 11px;
+  fill: var(--fg-muted);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.bus-seg {
+  stroke-width: 6;
+}
+
+.belt-arrow {
+  stroke-width: 2;
+}
+
+/* Pipe lanes (Stage 5 item 4): a desaturated-blue dashed treatment so a fluid
+   lane reads distinctly from a belt lane. The stroke colour stays tier-driven
+   (set inline from colorForCapacity); the class adds the dashed dm rhythm +
+   a slight fade so pipes recede visually from belts. */
+.lane-pipe.bus-seg {
+  stroke-dasharray: 10 5;
+  opacity: 0.85;
+}
+
+.lane-pipe.belt-arrow {
+  stroke-dasharray: 4 3;
+  opacity: 0.85;
+}
+
+.seam {
+  stroke: var(--junction-fill);
+  stroke-dasharray: 3 3;
+}
+
+/* -------------------------------------------------------------------------
    Blueprint view (Stage 4 / Phase 2). A dm-native SVG floor plan — its own
    container; overflow: visible so mark labels that sit past the 20 dm geometry
    pad are not clipped (Axis 2 r1 nit).
    ------------------------------------------------------------------------- */
 
-/* View tabs (#68) — two tabs naming the CURRENT view, replacing the old cycle
+/* View tabs (#74) — two tabs naming the CURRENT view, replacing the old cycle
    button. Same quiet-mono idiom as the [FIT | DETAIL] zoom toggle; the active
    tab carries the accent ink. */
 .view-tabs {
@@ -683,57 +793,6 @@ body {
   stroke: var(--bg);
   stroke-width: 3;
   stroke-linejoin: round;
-}
-
-/* Combined multi-stage blueprint (Stage 7 / Phase 3, Axis 2). Reuses the bp-*
-   foundation/machine styling per site; the chain-bp-* classes add the site
-   chrome + inter-site connectors + the power footer. */
-/* Site names take the display face (Stage 11 P0) — echoing the stage
-   plates' name treatment, scaled to the floor plan. */
-.chain-bp-name {
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  fill: var(--fg);
-}
-
-.chain-bp-power {
-  font-size: 10px;
-  fill: var(--fg-muted);
-}
-
-/* Site focus (Stage 8 / Phase 1, Axis 3): the active site's foundation bbox
-   gets the accent outline — the stage-node `.selected` idiom, applied to the
-   site's foundation tiles (the SVG surface the click targets). */
-.chain-bp-site.selected .bp-foundation {
-  stroke: var(--accent);
-  stroke-width: 2;
-}
-
-/* Inter-site connectors: solid for belt/pipe, dashed for vehicle modes (a
-   mode-class visual only — no pathfinding). */
-.chain-bp-link {
-  stroke: var(--accent-strong);
-  stroke-width: 2;
-  fill: none;
-}
-
-.chain-bp-link-dashed {
-  stroke-dasharray: 8 5;
-}
-
-.chain-bp-link-label {
-  font-size: 11px;
-  fill: var(--fg);
-  text-anchor: middle;
-}
-
-.chain-bp-footer {
-  margin: 8px 0 0;
-  font-family: var(--font-mono-num);
-  font-size: 11px;
-  color: var(--fg-muted);
 }
 
 .lane-overrides {
@@ -1259,7 +1318,7 @@ body {
   color: var(--error);
 }
 
-/* Measure feed (Stage 7 / Phase 3, Axis 3): the combined-view drawn distance
+/* Measure feed (Stage 7 / Phase 3, Axis 3): the drawn distance
    readout + the estimated-mode "use drawn distance" action. */
 .link-inspector-measure {
   display: flex;
@@ -1505,15 +1564,14 @@ body {
    still stands on its own frameless rule above. */
 
 /* --- Axis 3: SVG refinements ---------------------------------------------
-   Token-consistency only: the site/stage labels join the numeric/mono face
-   (font-family on SVG <text> applies via CSS), and the foundation grid
+   Token-consistency only: the schematic/blueprint labels join the numeric/mono
+   face (font-family on SVG <text> applies via CSS), and the foundation grid
    strokes drop to the soft-hairline weight so the floor plan reads on the
-   sheet. Nothing structural. bp-foundation is shared by the blueprint and
-   combined-chain blueprints, so one selector covers both. */
+   sheet. Nothing structural. */
+.lane-name,
+.machine-label,
 .bp-machine-label,
-.bp-mark-label,
-.chain-bp-power,
-.chain-bp-link-label {
+.bp-mark-label {
   font-family: var(--font-mono-num);
 }
 

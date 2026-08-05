@@ -225,4 +225,28 @@ process (all-Claude roster, opus implementers, per-phase gates).
 - **Status:** merged to develop 2026-08-05 (`bafae8c`, 749 tests,
   +421/−1150 — the schematic surface deleted whole). Walk: the #69
   collision scan 35 → ZERO at both zooms/themes; 66 override inputs
-  one aligned column. Release PR pending → then Stage 13 SHIPPED.
+  one aligned column. **SHIPPED** — release PR #72 merged to main
+  2026-08-05. Follow-up: #71 (test-only format helpers adjudication).
+
+## Stage 14 — Correction: restore schematic, remove combined view
+
+- **Goal:** Michael's correction (2026-08-05, verbatim): "no you
+  removed the wrong one i liked the first view and dont want this
+  combined one". Root cause: the pre-S13 next-view toggle labelling
+  meant his "remove schematic view" (spoken on the Combined view
+  under a "View: Schematic" button) named COMBINED; S13 deleted the
+  real schematic. Correct: (A) restore the schematic from ba35744,
+  first + default, tabs [SCHEMATIC | BLUEPRINT]; (B) remove
+  ChainBlueprint + its exclusive chain-view/layoutChain machinery
+  (LinkInspector's transport surface and Blueprint's shared scale/
+  zoom machinery stay); (C) fix the restored schematic's output-lane
+  name-on-bus garble (bus y+8 vs name y+12 — his "Cable" screenshot)
+  + halo. Resolves #71 by restoring the helpers' consumer.
+- **Epic:** #73 (milestone 85; children #74 A, #75 B, #76 C).
+  Blocked-by Stage 13.
+- **Status:** merged to develop 2026-08-05 (`3d69405`, 751 tests,
+  +1268/−1182 — restore byte-exact vs ba35744 except the label lift).
+  Walk: schematic default, zero text-on-ink at Wire ×28 + Plastic
+  ×161 both themes; Blueprint intact; no Combined. Follow-ups: #77
+  (chain-engine collapse), #78 (pre-existing band index-label
+  crowding). Release PR pending → then Stage 14 SHIPPED.
