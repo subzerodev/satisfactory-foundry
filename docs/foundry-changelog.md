@@ -3,6 +3,20 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-06 — Stage 17: the distance readout stops lying about unrelated moves
+
+> Hey Michael — the Transport panel's drawn distance is now honest
+> about what it measures: just the two stages the belt actually
+> connects. Before, it was computed from a layout of the whole
+> chain, so dragging some totally unrelated stage across the canvas
+> could silently change the number on a link it had nothing to do
+> with. Now you can rearrange everything else freely and the
+> readout only moves when you move one of the two endpoints. Two
+> stages sitting on top of each other read 0 m, and nearly-touching
+> stages get a sensible minimum gap instead of a made-up spread.
+> Nothing else about the panel changed — same belts, same modes,
+> same "optimistic straight line" honesty tag.
+
 ## 2026-08-05 — Stage 16: honest numbers everywhere
 
 > Hey Michael — all four of your latest reports are done. The big one:
