@@ -1,27 +1,74 @@
+/* Identity type (Stage 9 / Phase 0). Self-hosted latin-subset woff2 in
+   public/fonts/ (BASE_URL-relative so a subpath deploy still resolves);
+   font-display: swap so text paints in the fallback stack immediately and
+   swaps when the face arrives. Big Shoulders is the condensed drafting
+   display face (600 base + 700 emphasis); IBM Plex Mono carries tabular
+   numerics (400 body + 500 label). Prose keeps the system stack below. */
+@font-face {
+  font-family: "Big Shoulders";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./fonts/big-shoulders-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Big Shoulders";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/big-shoulders-700.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/ibm-plex-mono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/ibm-plex-mono-500.woff2") format("woff2");
+}
+
+/* The VELLUM medium (Stage 9 / Phase 0). The existing semantic vars keep
+   their NAMES — ~890 lines of CSS + every SVG surface read them — and get
+   the drawing's values: warm paper (--bg), ink (--fg), a passing brown-orange
+   accent. The accent is #C25A1D (3.62:1 on vellum — the r1 correction; the
+   #42 concept's #E8722D failed the 3:1 gate and survives ONLY as a fill under
+   light text, never as display type or a border). */
 :root {
-  --fg: #1c1c1c;
-  --fg-muted: #5a5a5a;
-  --bg: #fbfbfb;
-  --bg-panel: #ffffff;
-  --border: #d8d8d8;
-  --error: #d92b2b;
+  --fg: #24384a; /* ink */
+  --fg-muted: #4a5d6e;
+  --bg: #ede9dc; /* the sheet */
+  --bg-panel: #f2efe4; /* panels sit ON the sheet — a lighter vellum */
+  --border: #24384a; /* frame + emphasis lines: ink hairline */
+  --border-soft: #c9c3b2; /* faint interior panel separations */
+  --error: #b3382c; /* stamp red (4.91:1 on vellum) */
 
   /* Accent + SVG-surface colours, migrated out of hardcoded hexes (Stage 5
      item 3) so the dark block can override them. Tier fill colours (colors.ts
      TIER_COLORS) deliberately stay data-driven — they read on both themes. */
-  --accent: #4f9dde;
-  --accent-strong: #2d6fb0;
+  --accent: #c25a1d; /* the ONE accent; passes 3:1 for display + non-text */
+  --accent-strong: #a64a16; /* 4.79:1 */
   --on-accent: #ffffff;
-  --surface-fill: #eef1f4; /* machine rects (schematic + blueprint) */
-  --surface-stroke: #b8c0c8;
-  --foundation-fill: #f4f6f8;
-  --foundation-stroke: #dde2e6;
-  --bus-fill: #cfd8e0; /* blueprint bus ribbon */
-  --junction-fill: #9aa2aa; /* junctions + schematic seams */
-  --junction-stroke: #7c848c;
-  --notice: #8a5a00; /* footprint / warning notices */
-  --error-bg: #fff4f4; /* finding-error panel background */
+  --surface-fill: #e5e0d0; /* machine rects (schematic + blueprint) */
+  --surface-stroke: #9aa2ac;
+  --foundation-fill: #e9e4d5;
+  --foundation-stroke: #cfc9b8;
+  --bus-fill: #c3ccd4; /* blueprint bus ribbon — vellum gray-blue */
+  --junction-fill: #97a2ac; /* junctions + schematic seams */
+  --junction-stroke: #77828c;
+  --notice: #8a5a2a; /* footprint / warning notices — a passing brown-orange */
+  --error-bg: #f3e4e1; /* finding-error panel background — pale red vellum */
   --on-error: #ffffff; /* text on an --error fill (badge) */
+
+  /* Type faces (Stage 9 / Phase 0). Display + numeric are the identity faces
+     above; prose stays the zero-byte native system stack ("quiet sans"). */
+  --font-display: "Big Shoulders", "Arial Narrow", sans-serif;
+  --font-mono-num: "IBM Plex Mono", ui-monospace, Menlo, monospace;
 
   font-family:
     system-ui,
@@ -37,50 +84,52 @@
    :root:not([data-theme]) (the pinned cascade guard) so an explicit choice
    always wins regardless of cascade order. */
 :root[data-theme="dark"] {
-  --fg: #e6e6e6;
-  --fg-muted: #9aa0a6;
-  --bg: #16181c;
-  --bg-panel: #22262c;
-  --border: #3a3f46;
-  --error: #ff6b6b;
+  --fg: #e8f1f8; /* light ink on cyanotype (9.92:1) */
+  --fg-muted: #a8c4dc; /* 6.26:1 */
+  --bg: #123c63; /* the cyanotype ground */
+  --bg-panel: #17466f;
+  --border: #d9e8f5; /* frame + emphasis lines: pale blue-white */
+  --border-soft: #2a5580; /* faint interior separations */
+  --error: #ff8073; /* stamp red on blue (4.64:1) */
 
-  --accent: #5aa9e6;
-  --accent-strong: #7cc0f5;
+  --accent: #f5913e; /* the ONE accent, un-superseded (4.86:1) */
+  --accent-strong: #ffab63;
   --on-accent: #10151a;
-  --surface-fill: #2c323a;
-  --surface-stroke: #454c55;
-  --foundation-fill: #262b31;
-  --foundation-stroke: #3a4048;
-  --bus-fill: #3a4650;
-  --junction-fill: #6b737c;
-  --junction-stroke: #868e97;
-  --notice: #d9a441;
-  --error-bg: #3a2323;
-  --on-error: #16181c;
+  --surface-fill: #1c4f7c;
+  --surface-stroke: #356a99;
+  --foundation-fill: #164267;
+  --foundation-stroke: #2a5580;
+  --bus-fill: #2f5c86;
+  --junction-fill: #6f92b4;
+  --junction-stroke: #8fabc8;
+  --notice: #f0b46a;
+  --error-bg: #3a2b2b;
+  --on-error: #10151a;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --fg: #e6e6e6;
-    --fg-muted: #9aa0a6;
-    --bg: #16181c;
-    --bg-panel: #22262c;
-    --border: #3a3f46;
-    --error: #ff6b6b;
+    --fg: #e8f1f8;
+    --fg-muted: #a8c4dc;
+    --bg: #123c63;
+    --bg-panel: #17466f;
+    --border: #d9e8f5;
+    --border-soft: #2a5580;
+    --error: #ff8073;
 
-    --accent: #5aa9e6;
-    --accent-strong: #7cc0f5;
+    --accent: #f5913e;
+    --accent-strong: #ffab63;
     --on-accent: #10151a;
-    --surface-fill: #2c323a;
-    --surface-stroke: #454c55;
-    --foundation-fill: #262b31;
-    --foundation-stroke: #3a4048;
-    --bus-fill: #3a4650;
-    --junction-fill: #6b737c;
-    --junction-stroke: #868e97;
-    --notice: #d9a441;
-    --error-bg: #3a2323;
-    --on-error: #16181c;
+    --surface-fill: #1c4f7c;
+    --surface-stroke: #356a99;
+    --foundation-fill: #164267;
+    --foundation-stroke: #2a5580;
+    --bus-fill: #2f5c86;
+    --junction-fill: #6f92b4;
+    --junction-stroke: #8fabc8;
+    --notice: #f0b46a;
+    --error-bg: #3a2b2b;
+    --on-error: #10151a;
   }
 }
 
@@ -90,10 +139,18 @@ body {
   background: var(--bg);
 }
 
+/* The drawing sheet (Stage 9 / Phase 0). The double-line drafting frame is
+   ONE border plus an inset outline: the 1px ink border is the outer rule, and
+   outline-offset: -4px pulls a 1px outline 4px inward, leaving a 3px ink gap
+   between the two lines (4px offset − 1px outline). The existing 16px padding
+   stays as the content inset, sitting inside both lines — no new DOM. */
 .app {
   max-width: 1024px;
   margin: 0 auto;
   padding: 16px;
+  border: 1px solid var(--border);
+  outline: 1px solid var(--border);
+  outline-offset: -4px;
 }
 
 .app-header {
@@ -102,6 +159,24 @@ body {
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
+}
+
+/* The wordmark (Stage 9 / Phase 0): "SATISFACTORY FOUNDRY / FICSIT DWG" in the
+   condensed drafting display face, letter-spaced like stencilled title text.
+   The suffix span carries the accent; it stays one <h1>. */
+.wordmark {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.9rem;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+.wordmark-suffix {
+  color: var(--accent);
 }
 
 .boot,
@@ -155,7 +230,8 @@ body {
   align-items: center;
   gap: 12px;
   padding: 12px 0;
-  border-bottom: 1px solid var(--border);
+  /* interior row separation (S9P0): the faint soft rule, not the ink frame */
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .plans-bar {
@@ -164,7 +240,7 @@ body {
   align-items: center;
   gap: 12px;
   padding: 12px 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .plans-save,
@@ -193,7 +269,7 @@ body {
 /* Build-chain panel (Stage 8 / Phase 3). */
 .chain-builder {
   padding: 12px 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .chain-builder-controls {
@@ -375,16 +451,29 @@ body {
   border-radius: 4px;
 }
 
-/* Theme toggle (Stage 5 item 3) — the ☾/☀ header control. */
+/* Theme toggle (Stage 5 item 3; re-skinned S9P0) — a quiet mono control that
+   NAMES its destination medium ("CYANOTYPE" on vellum, "VELLUM" on cyanotype).
+   The words are the feature now, so the glyphs are gone. */
 .theme-toggle {
   padding: 4px 10px;
-  font-size: 15px;
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
   line-height: 1;
   cursor: pointer;
-  color: var(--fg);
-  border: 1px solid var(--border);
-  background: var(--bg-panel);
-  border-radius: 4px;
+  color: var(--fg-muted);
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  border-radius: 0;
+}
+
+/* The header re-upload control (S9P0) — a quiet mono control matching the
+   toggle. Scoped to the header so the upload-screen input is untouched. */
+.app-header input[type="file"] {
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  color: var(--fg-muted);
 }
 
 .bp-view {
@@ -551,6 +640,10 @@ body {
   color: var(--fg-muted);
 }
 
+/* The line-conventions key (Stage 9 / Phase 0). Same component + props; the
+   Mk chips become short RULE samples — a solid rule per belt tier in its
+   TIER_COLOR, a dashed rule for pipes (the drawing's line grammar). Labels
+   move to the mono numeric face. */
 .legend {
   display: flex;
   flex-wrap: wrap;
@@ -560,16 +653,28 @@ body {
 .legend-entry {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  gap: 5px;
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--fg-muted);
 }
 
+/* A rule sample: a short horizontal line in the tier colour. The colour is an
+   inline style (TIER_COLORS, data-driven); solid is the default belt rule and
+   the dashed modifier is the pipe convention. */
 .legend-swatch {
   display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  border: 1px solid var(--border);
+  width: 22px;
+  height: 0;
+  border-top: 2px solid currentColor;
+}
+
+/* Modifier name deliberately does NOT contain the "legend-swatch" substring —
+   the smoke count pin matches /legend-swatch/g, so a "legend-swatch--dashed"
+   would double-count the pipe rules. Kept as a sibling class. */
+.legend-rule-dashed {
+  border-top-style: dashed;
 }
 
 /* -------------------------------------------------------------------------
@@ -890,4 +995,60 @@ body {
 .alt-compare-byproducts {
   color: var(--fg-muted);
   font-size: 12px;
+}
+
+/* -------------------------------------------------------------------------
+   Title block (Stage 9 / Phase 0). The sheet footer — a bordered cell strip
+   in the mono numeric face, each cell a tiny letter-spaced label over its
+   value (the drafting title-block shape). Frame is the ink --border.
+   ------------------------------------------------------------------------- */
+
+.title-block {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  font-family: var(--font-mono-num);
+}
+
+.title-block-cell {
+  flex: 1 1 auto;
+  min-width: 96px;
+  padding: 6px 10px;
+  /* interior cell divider — every cell but the first carries a soft left rule */
+  border-left: 1px solid var(--border-soft);
+}
+
+.title-block-cell:first-child {
+  border-left: none;
+}
+
+.title-block-label {
+  display: block;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.title-block-value {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--fg);
+}
+
+/* TITLE = the active stage name, in the display face, larger. */
+.title-block-title .title-block-value {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 18px;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+}
+
+/* Σ POWER value carries the accent. */
+.title-block-power .title-block-value {
+  color: var(--accent);
 }
