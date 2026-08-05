@@ -207,3 +207,19 @@ process (all-Claude roster, opus implementers, per-phase gates).
   sizer-twin width — a boundary-caught CSS intrinsic-sizing bug),
   [FIT|DETAIL] toggle in both blueprint views opening floored plans
   at DETAIL. 767 tests. **SHIPPED** — release PR #66 merged to main 2026-08-05.
+
+## Stage 13 — Field fixes round 2: remove schematic, blueprint overlap, override table
+
+- **Goal:** Michael's field report on the Stage 12 build (2026-08-05,
+  verbatim): "remove schematic view its not working also blueprint
+  still has overlapping issues and the belt load stuff is not aligned
+  at all and needs to be better displayed". Three items: (A) DELETE
+  the schematic view (user directive) + stop the view switcher
+  presenting the NEXT view's name as the current one (his screenshot
+  shows the schematic under a "View: Blueprint" button); (B) grounded
+  Blueprint overlap audit (rate marks vs machines/marks/grid) + fix
+  what's real; (C) the override panel becomes one aligned table
+  (per-lane grids can't share columns today).
+- **Epic:** #67 (milestone 84; children #68 A, #69 B, #70 C).
+  Combined cycle per the S12 P2+P3 precedent. Blocked-by Stage 12.
+- **Status:** in progress (started 2026-08-05).
