@@ -451,7 +451,7 @@ body {
   gap: 2px;
   padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 0;
   background: var(--bg-panel);
 }
 
@@ -471,7 +471,7 @@ body {
 .schematic,
 .schematic-scroll {
   position: relative; /* anchor for the absolutely-positioned .tooltip */
-  padding: 8px 0;
+  padding: 12px 0;
 }
 
 .schematic-scroll {
@@ -487,11 +487,12 @@ body {
   z-index: 5;
   max-width: 280px;
   padding: 4px 8px;
+  font-family: var(--font-mono-num);
   font-size: 11px;
   line-height: 1.35;
   color: var(--bg-panel);
   background: var(--fg);
-  border-radius: 4px;
+  border-radius: 0;
   white-space: nowrap;
 }
 
@@ -577,7 +578,7 @@ body {
 }
 
 .bp-view {
-  padding: 8px 0;
+  padding: 12px 0;
 }
 
 .bp-svg {
@@ -588,7 +589,8 @@ body {
 .bp-notice {
   margin: 0 0 8px;
   color: var(--notice);
-  font-size: 0.85rem;
+  font-family: var(--font-mono-num);
+  font-size: 11px;
 }
 
 .bp-foundation {
@@ -649,9 +651,13 @@ body {
 /* Combined multi-stage blueprint (Stage 7 / Phase 3, Axis 2). Reuses the bp-*
    foundation/machine styling per site; the chain-bp-* classes add the site
    chrome + inter-site connectors + the power footer. */
+/* Site names take the display face (Stage 11 P0) — echoing the stage
+   plates' name treatment, scaled to the floor plan. */
 .chain-bp-name {
-  font-size: 12px;
+  font-family: var(--font-display);
+  font-size: 13px;
   font-weight: 600;
+  letter-spacing: 0.02em;
   fill: var(--fg);
 }
 
@@ -688,7 +694,8 @@ body {
 
 .chain-bp-footer {
   margin: 8px 0 0;
-  font-size: 0.85rem;
+  font-family: var(--font-mono-num);
+  font-size: 11px;
   color: var(--fg-muted);
 }
 
@@ -699,14 +706,26 @@ body {
   padding: 12px 0;
 }
 
-.override-row {
-  display: flex;
-  align-items: center;
+/* Per-lane label/input columns (Stage 11 P0): the lane is the grid — a
+   shared max-content track aligns every input without the dead min-width
+   gulf, and max-content never wraps the ~51-char output labels. Rows
+   dissolve into the grid (display: contents); cross-lane track widths may
+   differ (lanes are separate visual groups — accepted). */
+.lane-overrides-lane {
+  display: grid;
+  grid-template-columns: max-content max-content;
   gap: 8px;
+  align-items: center;
+}
+
+.override-row {
+  display: contents;
 }
 
 .override-label {
-  min-width: 320px;
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  color: var(--fg-muted);
 }
 
 .findings-panel {
@@ -819,7 +838,7 @@ body {
   color: var(--error);
   background: var(--bg-panel);
   border: 1px solid var(--error);
-  border-radius: 4px;
+  border-radius: 0;
 }
 
 /* Machine plate (Stage 9 P1 Axis 1). The stage card reads as a bordered ink
@@ -946,7 +965,7 @@ body {
   color: var(--fg-muted);
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 0;
 }
 
 /* Edge reconciliation styling — dimension lines (Stage 9 P1 Axis 2/3). The
@@ -1209,11 +1228,20 @@ body {
    value (the drafting title-block shape). Frame is the ink --border.
    ------------------------------------------------------------------------- */
 
+/* Sticky sheet corner (Stage 11 / #55, Michael's call): the title block
+   pins to the viewport bottom while the sheet scrolls — a real drawing's
+   corner block is always in view. Opaque ground so panels never bleed
+   through; z-index 6 clears the tooltip (5), stays under the drop
+   overlay (100); the ink border doubles as the sticky seam. */
 .title-block {
   display: flex;
   flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
   margin-top: 16px;
   border: 1px solid var(--border);
+  background: var(--bg);
   font-family: var(--font-mono-num);
 }
 
@@ -1358,7 +1386,6 @@ body {
 .bp-machine-label,
 .bp-lane-name,
 .bp-mark-label,
-.chain-bp-name,
 .chain-bp-power,
 .chain-bp-link-label {
   font-family: var(--font-mono-num);
