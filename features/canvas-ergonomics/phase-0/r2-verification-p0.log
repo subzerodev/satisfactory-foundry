@@ -71,7 +71,7 @@ Specificity re-score (the :where() closure + exceptions winning)
                               strips the base box; input reads as an inline edit.
       .theme-toggle           (0,1,0) > base — own full dress wins.
       .app-header input[type="file"] (0,2,1) > base — outranks comfortably.
-      .react-flow__controls-button   (0,1,0) > base — RF chrome wins; base only
+      .react-flow__controls-button   RF-injected rule (RF stylesheet) + our --xy-* overrides win; base only
                               contributes inert font/radius (accepted, per design).
   - Accepted leaks (stated in design, matching the RF note): the base's inert props
     (border-radius:0 / padding / font-family / font-size) leak onto the frameless
