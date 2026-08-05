@@ -3,6 +3,21 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 8 complete: alternate-recipe comparison
+
+> Hey Michael — the last piece of the planner-intelligence arc. When a
+> stage's item has alternate recipes, a comparison table now appears next
+> to the recipe picker: every way to make that item, side by side, with
+> what each REALLY costs — not just the one machine, but the whole
+> upstream job down to raw ore: total machines, total power, and the raw
+> resources per minute. Iron Ingot shows all five ways (plain smelting,
+> Iron Alloy, Basic, Leached, Pure Iron) with honestly different
+> trade-offs. Hit apply on a row and the stage swaps to that recipe,
+> resized so it keeps making at least what it made before — your wires
+> then show you what upstream needs adjusting, and the chain builder or
+> the one-click apply can fix it. No "best" badge anywhere: they're your
+> trade-offs to make. That's the whole Stage 8 wishlist shipped.
+
 ## 2026-08-05 — Stage 8, Phase 3: the auto-chain builder
 
 > Hey Michael — the big one landed. There's a "Build chain" box under the

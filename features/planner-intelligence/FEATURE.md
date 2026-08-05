@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-04
 **Status:** in-progress
-**Current phase:** Phase 4 (alt-recipe compare, #40) — design next
+**Current phase:** COMPLETE — all five phases landed; release PR next
 **Final PR:** —
 **Epic:** #36 (board #21, Stage 8 milestone 79)
 
@@ -74,12 +74,29 @@ Excluded by directive: vehicle catalog admission; sharing/PWA.
   short links, target active, ordinarily editable; ticket #39 Done)
 - **Ticket:** #39 (Done, closed)
 
-### Phase 4 — deferred design
+### Phase 4 — alt-recipe comparison (#40)
 
-- **Ticket:** #40
+- **Status:** complete (merged --no-ff to develop 2026-08-05; 703/703
+  tests; THREE correctness rounds at design — the applyRecipeSwap
+  atomicity Major resolved, two fold-hygiene defects caught by the pair
+  and corrected against the catalog — + simplify all-affirming;
+  boundary APPROVED_WITH_NITS×2 (nits folded); diff-simplify's
+  one-loop-power-bounds fold landed; browser walk zero defects — Iron
+  Ingot's five candidates compared live, atomic swap + same-output
+  swap-back verified; ticket #40 Done)
+- **Ticket:** #40 (Done, closed)
 
 ## Decisions log
 
+- 2026-08-05 (P4 landed): proposeChain's override map is the ONE
+  comparison engine (consulted before default selection, guard
+  preserved, empty default byte-identical); candidacy lifts isAlternate
+  but keeps the converter/packager exclusion; rows are absolute
+  subtree costs at the stage's primary-lane totalOutput (no deltas, no
+  ranking); applyRecipeSwap is the atomic recipe+count write (overrides
+  cleared per selectRecipe's posture, cursor never stolen); upstream is
+  never rebuilt on swap (reconciliation + the P1/P3 tools are the
+  repair path).
 - 2026-08-05 (P3 landed): proposeChain is the pure-core builder (own
   narrow BuilderRecipe types; excludedMachineIds as data — normalized
   `converter`/`packager` resolved by the ui adapter); one stage per
@@ -118,4 +135,28 @@ Excluded by directive: vehicle catalog admission; sharing/PWA.
 
 ## Final report
 
-—
+Stage 8 shipped Michael's full 2026-08-04 batch ("all of these next
+except the vehicle parser or sharing — one plan") as five gated phases
+over two days, 567 → 703 tests (+136), every phase through the full
+gate (design dual-review to convergence + simplify, opus implementation
+in an isolated worktree, boundary dual-review + diff-simplify, browser
+walk, trunk-verified merge):
+
+- **P0** hygiene: null-prototype catalog maps; the planForLink resolver
+  (five sites folded).
+- **P1** interaction polish: one-click supply apply; combined-view site
+  focus.
+- **P2** transport refinements: plan-file v4; per-end train-station
+  sharedEnds; the honest pipe derate.
+- **P3** the auto-chain builder: proposeChain (pure, exact,
+  deterministic, catalog-verified acyclic) + additive apply + the Build
+  chain panel.
+- **P4** alt-recipe comparison: the override seam, absolute subtree
+  cost rows, atomic applyRecipeSwap.
+
+Review-gate highlights: the P4 design took three correctness rounds
+(a real write-path Major + two fold-hygiene catches — including the
+pair refuting a reviewer claim the team lead had relayed unverified);
+the P3 adversarial pass proved the demand model and catalog empirics
+before code; the P2 boundary caught trip edits wiping sharedEnds.
+Release PR: (filled at arc close).
