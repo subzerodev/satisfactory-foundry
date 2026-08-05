@@ -1,4 +1,4 @@
-# Stage 12 / P2+P3 combined — clarity + views navigation (tickets #65 + #64) — brainstorm v3
+# Stage 12 / P2+P3 combined — clarity + views navigation (tickets #65 + #64) — brainstorm v4
 
 **Goal.** Michael's fix-all-now directive (epic #59 decision 2026-08-05).
 Three fixes: (A) override rows labeled + grouped; (B) one recipe-less
@@ -59,8 +59,10 @@ is dead: it widened vbW and perturbed the frozen fitScale, and its
 dm-scaled labels were sub-pixel at floor zoom anyway). The lane
 labels LEAVE the SVG entirely: a screen-space HTML gutter column sits
 LEFT of .bp-scroll (a flex row: [.bp-gutter][.bp-scroll>svg]), each
-label positioned at its lane's rendered y (laneY_dm × scale, computed
-px), right-aligned, mono 11px SCREEN px — and rendered ONLY at DETAIL
+label positioned at its lane's rendered y — `(laneY_dm − viewBoxMinY)
+× scale` px (r2 code-reviewer IMPORTANT: the viewBox origin is
+NEGATIVE for every real stage, the smelter's minY is −100 — bare
+laneY×scale would misplace every label), right-aligned, mono 11px SCREEN px — and rendered ONLY at DETAIL
 zoom (r2 adversarial IMPORTANT: at floor zoom adjacent lanes sit
 60dm × 0.06 = 3.6px apart in the gutter while labels are 11px tall —
 label-on-label crowding, the on-lane problem's twin; at FIT the
@@ -103,10 +105,12 @@ labels reposition with the active scale (same px math).
 - svg framing: viewBox includes the gutter; labels' x within the
   gutter (unit-testable from the emitted markup); the zoom toggle
   switches width/height between fit-scale and readable-scale values.
-- Churned pins enumerated: ONLY the ChainBlueprint note text — the
-  HTML gutter changes no viewBox/width/height, and open-scale =
-  max(fit, 1) leaves small-plan pins at today's values (r1 nit
-  resolved by the C1/C2 rework).
+- Pins: the ChainBlueprint note gets a NEW string pin (nothing pins
+  the current text — r2 precision); the lane-name <text> removal is
+  pin-safe BECAUSE the only label assertions are location-agnostic
+  toContain()s that still match the gutter markup (r2 — stated, not
+  assumed); no viewBox/width/height pin churns (HTML gutter + open
+  scale max(fit,1)).
 - Both-media walk at Computer ×40 AND Plastic ×161: at DETAIL no
   label touches any lane or any other label (Plastic ×161 opens at
   DETAIL ≈ 17710px wide — the pinned figure, r2 nit — scrolling
@@ -151,3 +155,12 @@ labels reposition with the active scale (same px math).
   DETAIL-mode Plastic ×161 width (~17710px) pinned in the walk.
   Confirmed held: the Axis B phrase across all three SolveState
   statuses, Axis A implementability, the C2 toggle logic coherence.
+- v4 (2026-08-05): r2 code-reviewer NEEDS_REWORK (1 IMPORTANT + 2
+  nits, folded): the gutter px formula gains the viewBox-origin term
+  ((laneY − minY) × scale — bare laneY×scale would misplace every
+  label; the smelter's minY is −100); the pin-safety of the lane-name
+  text removal stated with its reason (location-agnostic toContain);
+  the skip-note pin reclassified NEW-not-churned. Confirmed held: the
+  Axis B phrase, the P1 supersession, the crowding re-diagnosis, the
+  open-scale formula incl. the fit<1 toggle gate at the smelter, the
+  itemName pattern, the grid-column heading span.
