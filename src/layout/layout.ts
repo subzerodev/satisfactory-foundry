@@ -75,10 +75,8 @@ export interface StageLayout {
 const BELT_LANE = 20;
 /** Perpendicular spacing between successive bus lanes. */
 const LANE_SPACING = 60;
-/** Foundation tile edge (8 m). Bounding box inflates to a multiple of this.
- *  Exported for the two-site drawn-distance measure (chain-view.ts), which
- *  scales each endpoint's foundation bbox into world dm. */
-export const FOUNDATION_TILE = 80;
+/** Foundation tile edge (8 m). Bounding box inflates to a multiple of this. */
+const FOUNDATION_TILE = 80;
 
 /** Snap up to the next multiple of 10 (the 1 m build grid). */
 function ceilTo10(n: number): number {
@@ -280,10 +278,9 @@ function buildJunctions(
 /**
  * The per-axis gutter (one foundation tile, 80 dm) that must separate two
  * sites' foundation bboxes: `requiredScaleForPair` returns the scale that clears
- * this on at least one axis. Exported so the two-site measure can pin the
- * near-coincident FLOOR (edge distance = CHAIN_GUTTER on an axis-aligned pair).
+ * this on at least one axis.
  */
-export const CHAIN_GUTTER = FOUNDATION_TILE;
+const CHAIN_GUTTER = FOUNDATION_TILE;
 
 /** The scale floor: even a tightly-arranged pair never scales BELOW this
  *  (keeps a degenerate/near-coincident arrangement from collapsing to nothing,
