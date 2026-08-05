@@ -677,9 +677,8 @@ export function graphToFlow(
     };
   });
 
-  // Raw-feed supply cards (Stage 11 / Phase 1) ride in a SEPARATE field so the
-  // nodes/edges pins above stay byte-stable; GraphCanvas concatenates them at
-  // the RF prop outside the useState/merge.
+  // Raw-feed supply cards (Stage 11 / Phase 1) — why a separate field: see
+  // FlowGraph.rawFeeds.
   const rawFeeds = deriveRawFeeds(
     catalog,
     stages,

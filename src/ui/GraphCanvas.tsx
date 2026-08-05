@@ -504,9 +504,7 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
       const next = applyNodeChanges(allowed, nodesRef.current);
       setNodes(next as StageFlowNode[]);
 
-      // Commit a drag-END position / selection once per change. The raw: skip
-      // + drag-END/select commit live in commitNodeChange (a pure helper so the
-      // invariant is node-testable); the loop stays the RAW changes array.
+      // Commits per change — see commitNodeChange's doc for the raw: guard.
       for (const c of changes) {
         commitNodeChange(c, { setStagePosition, setActiveStage });
       }
