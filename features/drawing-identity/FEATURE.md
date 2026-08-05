@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-05
 **Status:** in-progress
-**Current phase:** Phase 0 (tokens + type + sheet chrome) — design next
+**Current phase:** Phase 1 (canvas: plates, dimension lines, stamps) — design next
 **Final PR:** —
 **Epic:** #43 (board #21, Stage 9 milestone 80)
 
@@ -35,10 +35,25 @@ Behavior-frozen arc: presentation only; 703-test suite stays green
 
 ### Phase 0 — tokens + type + sheet chrome
 
+- **Status:** complete (merged --no-ff to develop 2026-08-05; 706/706
+  tests; design gate caught the concept orange failing its own 3:1
+  contrast gate (superseded to computed #C25A1D) + folded the token set
+  eight→three; boundary adversarial APPROVED with recomputed hexes +
+  live suite run; diff-simplify APPROVED clean; both-media walk
+  verified tokens/fonts/frame/legend/title-block live; ticket #44 Done)
+
+### Phase 1 — canvas
+
 - **Status:** design next
 
 ## Decisions log
 
+- 2026-08-05 (P0 landed): the existing token names are the identity's
+  API (re-valued in place, never renamed); vellum accent is #C25A1D
+  (the computed supersession — #E8722D fill-only); three new tokens
+  only (--border-soft + two font vars); fonts self-hosted woff2;
+  RF --xy-* chrome deliberately stock until P1 re-skins it; the
+  toggle names its destination medium.
 - 2026-08-05: Arc started; direction decision on #42; decomposition on
   epic #43.
 

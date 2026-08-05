@@ -3,6 +3,22 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 9, Phase 0: the drawing-sheet look begins
+
+> Hey Michael — the app started dressing for the job. It now wears the
+> engineering-drawing identity you picked: warm vellum drafting paper in
+> light mode, and dark mode is a true cyanotype blueprint — the toggle
+> even names where it's taking you (it says CYANOTYPE on paper, VELLUM
+> on blueprint). The header is the sheet's top strip with the new
+> wordmark and the legend redrawn as line conventions (solid rules for
+> belts, dashed for pipes), the whole app sits inside a double ink
+> frame, and the bottom-right has a real title block: what you're
+> working on, sheet stats, today's date, "/MIN · EXACT Q", and the
+> chain's total power. Fonts ship with the app — nothing phones home.
+> The graph canvas itself still wears its old colors; that's next phase,
+> when nodes become machine plates and problems become inspection
+> stamps.
+
 ## 2026-08-05 — Stage 8 complete: alternate-recipe comparison
 
 > Hey Michael — the last piece of the planner-intelligence arc. When a
