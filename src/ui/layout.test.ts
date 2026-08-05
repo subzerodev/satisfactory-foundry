@@ -174,6 +174,98 @@ describe("computeLayout — band significant set (N=161)", () => {
     expect(layout.significant).toContain(148);
     expect(layout.significant).toContain(149);
   });
+
+  // --- Axis B (#78): the labeled subset of the significant set. ------------
+  it("labels every finding-referenced machine (priority tier always kept)", () => {
+    const layout = computeLayout(solveStage(starving), 161);
+    // 148 + 149 are the finding-referenced pair — both must carry a label even
+    // though they sit one index (8px) apart (findability beats aesthetics).
+    expect(layout.labeledSignificant).toContain(148);
+    expect(layout.labeledSignificant).toContain(149);
+  });
+
+  it("labeledSignificant is a subset of significant", () => {
+    const layout = computeLayout(solveStage(starving), 161);
+    const sig = new Set(layout.significant);
+    expect(layout.labeledSignificant.every((m) => sig.has(m))).toBe(true);
+  });
+
+  // The finding-referenced (priority) tier for THIS fixture: the starve names
+  // 148 (partial) + 149 (starvedFrom), and every over-capacity feed segment
+  // names its from/to bound as a finding too — so the priority tier is the full
+  // set below, ALL force-labeled. (This is larger than the {148,149} pair the
+  // frozen contract sketched; see the r2 log — the design is unchanged, only the
+  // expected literal moved to the real solve's finding set.)
+  const PRIORITY = new Set([
+    2, 17, 18, 33, 34, 49, 50, 65, 66, 81, 82, 97, 98, 113, 114, 129, 130, 145,
+    148, 149, 161,
+  ]);
+
+  it("keeps non-priority labels ≥ 3 indices apart at band pitch (no crowding)", () => {
+    const layout = computeLayout(solveStage(starving), 161);
+    // pitch is the clamped 8 in band mode; labelPitch/pitch = 20/8 = 2.5 → the
+    // greedy rule keeps kept labels ≥ 3 indices apart. The ONLY permitted closer
+    // pairs are priority-priority (both force-kept — the disclosed findability
+    // residual); every pair involving a GREEDY-kept label must clear 3 indices.
+    const kept = layout.labeledSignificant;
+    for (let i = 1; i < kept.length; i++) {
+      const a = kept[i - 1]!;
+      const b = kept[i]!;
+      if (PRIORITY.has(a) && PRIORITY.has(b)) continue; // disclosed residual
+      expect(b - a).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("pins the labeled subset for N=161 (21 labels vs 33 significant ticks)", () => {
+    const layout = computeLayout(solveStage(starving), 161);
+    // The priority tier saturates this dense fixture, so greedy fill adds
+    // nothing new: the labeled subset IS the finding-referenced set. Thinning is
+    // still real (21 labels < 33 ticks) — the elided 12 are the non-finding
+    // significant boundaries (1, 16, 32, … the segment/entry ticks) that crowd
+    // against a neighbouring priority label.
+    expect(layout.labeledSignificant).toEqual([
+      2, 17, 18, 33, 34, 49, 50, 65, 66, 81, 82, 97, 98, 113, 114, 129, 130,
+      145, 148, 149, 161,
+    ]);
+    // Strictly fewer labels than ticks — the thinning is real.
+    expect(layout.labeledSignificant.length).toBeLessThan(
+      layout.significant.length,
+    );
+    // The {148,149} priority pair is present by design (the disclosed residual).
+    expect(layout.labeledSignificant).toContain(148);
+    expect(layout.labeledSignificant).toContain(149);
+    // A non-finding boundary that crowds a priority label IS thinned out: 146 is
+    // a segment bound (non-priority) 2 indices from priority 148 → dropped.
+    expect(layout.significant).toContain(146);
+    expect(layout.labeledSignificant).not.toContain(146);
+  });
+
+  // A NO-finding band fixture (plain worked input at N=161): the priority tier
+  // is empty, so this isolates the GREEDY fill — the crowding source is the
+  // consecutive significant PAIRS (16/17, 32/33, …) at the 8px band pitch.
+  it("greedy-fills a no-finding band: drops the crowding second-of-pair, keeps ≥ 3 apart", () => {
+    const layout = computeLayout(solveStage(stage(161)), 161);
+    expect(layout.band).toBe(true);
+    // significant carries the pairs (16,17), (32,33), … (160,161).
+    expect(layout.significant).toContain(16);
+    expect(layout.significant).toContain(17);
+    // Greedy keeps the first of each pair, drops the second (8px < 20px pitch):
+    expect(layout.labeledSignificant).toEqual([
+      1, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160,
+    ]);
+    // Every kept label is ≥ 3 indices apart (no priority tier to except).
+    const kept = layout.labeledSignificant;
+    for (let i = 1; i < kept.length; i++) {
+      expect(kept[i]! - kept[i - 1]!).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("labeledSignificant is empty below the band threshold", () => {
+    // band=false ⇒ no significant subset, no labels.
+    expect(
+      computeLayout(solveStage(stage(114)), 114).labeledSignificant,
+    ).toEqual([]);
+  });
 });
 
 describe("computeLayout — degenerate", () => {

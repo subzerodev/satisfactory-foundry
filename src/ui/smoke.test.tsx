@@ -289,6 +289,49 @@ describe("Schematic", () => {
     expect(html).not.toContain('class="machine"');
   });
 
+  it("band mode (#78): renders MORE ticks than index labels on the dense fixture", () => {
+    // A starving 161-machine feed (belt 0 under-capped to 50/min) — the same
+    // fixture the layout unit tests pin: its significant set is dense (33
+    // members incl. the {148,149} finding pair), so label thinning must drop
+    // some. Every significant index keeps its boundary tick; only the thinned
+    // subset carries a label ⇒ ticks strictly outnumber labels in the band.
+    const result = solveStage({
+      machineCount: 161,
+      clockPercent: Fraction.from(100),
+      capacities: FIXTURE_TIERS,
+      feeds: [
+        {
+          itemId: "ore_iron",
+          kind: "belt" as const,
+          perMachineRate: Fraction.from(30),
+          overrides: [Fraction.from(50)],
+        },
+      ],
+      outputs: [
+        {
+          itemId: "iron_ingot",
+          kind: "belt" as const,
+          perMachineRate: Fraction.from(30),
+        },
+      ],
+    });
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={result}
+        machineCount={161}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    // Count boundary-tick groups vs index-label texts within the band.
+    const ticks = (html.match(/class="machine-band-mark"/g) ?? []).length;
+    const labels = (html.match(/class="machine-label"/g) ?? []).length;
+    expect(ticks).toBeGreaterThan(0);
+    expect(labels).toBeGreaterThan(0);
+    expect(ticks).toBeGreaterThan(labels);
+  });
+
   it("below the threshold (N=114): the full tick row, no band (Axis 1)", () => {
     const result = solveStage({ ...WORKED_INPUT, machineCount: 114 });
     const html = renderToStaticMarkup(
