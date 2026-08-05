@@ -1,4 +1,4 @@
-# Stage 14 combined — restore schematic, remove combined, labels off the ink (tickets #74 + #75 + #76) — brainstorm v2
+# Stage 14 combined — restore schematic, remove combined, labels off the ink (tickets #74 + #75 + #76) — brainstorm v3
 
 **Goal.** Michael's correction (2026-08-05, verbatim): "no you removed
 the wrong one i liked the first view and dont want this combined one".
@@ -90,7 +90,9 @@ deleted the real schematic he liked.
   stays; its `not.toContain("schematic")` line (smoke.test.tsx:485)
   is REMOVED (r1 nit made explicit: it was the S13 deletion-sweep
   pin, semantically backwards in a schematic-default world even
-  though the SSR boot path would let it pass).
+  though the SSR boot path would let it pass) — its adjacent
+  :483-484 comments ("the schematic surface is gone entirely")
+  are swept in the same edit (r2 nit).
 - svg-scale.ts UNTOUCHED (keeps local REF_W = 960; the restored
   ui/layout.ts LAYOUT simply is no longer imported by it — no
   re-coupling).
@@ -160,8 +162,12 @@ posture; halo both.**
   the name bbox band clears busY ± 6 (seams) on output lanes; the
   feed-lane y pin unchanged at y + 12.
 - chain-view.test.ts: kept-export tests survive; deleted-export
-  tests go with their exports; store.test.ts applyDrawnDistance
-  untouched.
+  tests go with their exports — AND the shared fixtures chainAt
+  (:121), site (:108), solvedConsumer (:55), stage (:76) become
+  unused once those blocks go (their only remaining consumers are
+  the deleted describes), which noUnusedLocals turns into a hard
+  tsc failure — delete the four fixtures with the blocks (r2
+  adversarial LOW). store.test.ts applyDrawnDistance untouched.
 - Deleted-surface sweep: zero references to ChainBlueprint/
   layoutChain/chain-bp classes outside intentional comments.
 - Bidirectionality log per changed behavior (default view/tabs,
@@ -221,3 +227,15 @@ posture; halo both.**
   ba35744 restore point, the svg-scale non-recoupling, the
   default/tab flip (no view-union coupling anywhere), the +18 lift's
   internal arithmetic with the non-optional geometry pin.
+- v3 (2026-08-05): r2 pair CONVERGED — code-reviewer APPROVED (0),
+  adversarial APPROVED_WITH_NITS (2 LOW + 1 nit), folded: the
+  chain-view.test.ts shared fixtures (chainAt/site/solvedConsumer/
+  stage) die with the deleted describes (noUnusedLocals would fail
+  the check otherwise); the stale smoke.test :483-484 comments swept
+  with the removed assertion. The unreachable-source LOW is
+  DISCHARGED as already-mitigated: the geometry numbers were
+  re-read first-hand from ba35744 by the team lead (recorded in
+  grounded state §3) and the non-optional geometry pin protects the
+  ~1px seam margin. Both reviewers confirmed the corrected partition
+  exact in both directions, the CSS surgery complete (the only two
+  mixed selectors are the named ones), and loop-done.
