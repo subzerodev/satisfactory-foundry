@@ -1,4 +1,12 @@
-# Stage 16 combined — field polish (tickets #83 + #84 + #85 + #86) — brainstorm v3
+# Stage 16 combined — field polish (tickets #83 + #84 + #85 + #86) — brainstorm v3 — FROZEN 2026-08-05
+
+> **FROZEN.** Correctness: 3 rounds (r1 killed the wrong output
+> formula; r2 caught the unguarded deref; r3 both APPROVED).
+> Simplify: APPROVED (1 advisory on write-up density — REJECTED
+> with rationale: the divergence-refutation prose is converged-audit
+> provenance, not design surface). Implementation contract for
+> tickets #83 + #84 + #85 + #86. (Cite note: the adapter lives at
+> src/ui/chain-builder-adapter.ts.)
 
 **Goal.** Michael's two field reports (2026-08-05, verbatim): "this
 doesnt say the output per min also we can add more to the tiles like
