@@ -1,9 +1,16 @@
-# Stage 15 combined — chain-engine disposition + band label declutter (tickets #77 + #78) — brainstorm v2
+# Stage 15 combined — chain-engine disposition + band label declutter (tickets #77 + #78) — brainstorm v3 — FROZEN 2026-08-05
+
+> **FROZEN.** Correctness: r1 folded (converged Axis B IMPORTANTs);
+> r2 BOTH APPROVED_WITH_NITS (citation-precision nits, folded in
+> this version). Simplify disposition recorded in the revision
+> history. Implementation contract for tickets #77 + #78.
 
 **Goal.** Michael's call-up (2026-08-05, verbatim): "ok work on that
 77 and 78".
 
-*Cites: view files = src/ui/…; engine = src/layout/layout.ts.*
+*Cites: ui/layout.ts = src/ui/layout.ts (schematic geometry);
+layout/layout.ts = src/layout/layout.ts (the engine) — same-named
+files, prefix per this legend (r2 nit folded).*
 
 ## Already settled — do NOT re-litigate
 
@@ -41,8 +48,10 @@
    rendered band pitch is ALWAYS the clamped minPitch = 8px (the
    unfloored 5.7 only decides band mode, layout.ts:210-214) — and
    the real crowding source is CONSECUTIVE significant indices: the
-   pinned N=161 set (layout.test.ts:161-168) is triples
-   {16,17,18}, {32,33,34}, … at 1-index = 8px spacing vs ~12px
+   pinned N=161 set (ui/layout.test.ts:161-168) — an opening pair
+   {1,2}, triples {16,17,18} … {144,145,146}, the finding pair
+   {148,149} (gap at 147), and the boundary pair {160,161} (r2:
+   not uniformly triples) — has consecutive members at 8px spacing vs ~12px
    two-digit width at the 10px mono label font (app.css:511) — the
    85 measured crossings. The band's ×N count text
    (Schematic.tsx:198-200, y = top+24 — a different row from the
@@ -133,17 +142,21 @@ layout.ts.**
   chain-view/layout tests untouched and green.
 - #78: pure unit tests on the subset rule — priority machines always
   present; greedy spacing ≥ labelPitch/pitch indices apart;
-  dense-breakout fixture (significance every 3 at floored pitch)
-  yields zero adjacent-label crossings by construction ((kept gap)
-  × pitch ≥ 20 > 12px two-digit width; a 3-digit 18px label at
-  exactly 20px spacing clears by 2px — stated, the walk scan gates
-  the visual); band=false ⇒ labeledSignificant empty; SSR pin that
+  the dense fixture yields zero adjacent-label crossings among
+  GREEDY-KEPT labels by construction (band pitch 8 ⇒ minimum kept
+  gap 3 indices = 24px center-to-center; text-anchor middle ⇒
+  inner-edge clearance 24 − 9 − 9 = 6px at the 18px three-digit
+  worst case — r2 corrected margin); band=false ⇒ labeledSignificant empty; SSR pin that
   the band renders MORE ticks than labels on the dense fixture.
 - Bidirectionality log per behavior —
   features/followups-15/r2-verification.log.
 - Both-media walk (Wire ×28 + Plastic ×161, both themes): the
   collision scan INCLUDING machine-label×machine-label returns ZERO
-  on the schematic; ticks visibly intact at thinned positions;
+  on the schematic EXCEPT the disclosed priority-priority residual —
+  on this fixture exactly the {148,149} finding pair (both
+  force-kept 8px apart, ~10px overlap BY DESIGN; r2 adversarial
+  INFO) — the walk asserts the crossing set is exactly that pair,
+  distinguishing the accepted residual from any greedy regression; ticks visibly intact at thinned positions;
   LinkInspector drawn-distance readout unchanged on a saved
   multi-stage plan (the value pin's live twin).
 
@@ -190,3 +203,18 @@ layout.ts.**
   K-coupling claim (the adversarial constructed the 80dm→240dm
   numeric case, folded into the pin's test plan) and the zero
   external consumers of the three de-export candidates.
+- v3 (2026-08-05): r2 BOTH APPROVED_WITH_NITS — CONVERGED; nits
+  folded: the same-named-file cite legend hardened (ui/ vs layout/
+  prefixes); the test-plan margin corrected to the real by-
+  construction guarantee (24px center-to-center, 6px inner-edge
+  clearance under text-anchor middle — not the generic 20px/2px);
+  the pinned-set characterization made exact (pair {1,2}, triples,
+  the {148,149} finding pair, the {160,161} tail); the walk
+  criterion adjusted per the r2 adversarial INFO — the {148,149}
+  priority-priority overlap manifests BY DESIGN on the walk fixture,
+  so the scan asserts the crossing set is exactly that pair. r2 also
+  verified: the seeded rule closes the 146-vs-148 case and every
+  attempted new counterexample (incl. text-anchor-middle half-width
+  analysis), band pitch cannot clamp below 8 for any N, #81
+  satisfies the follow-on rule. FROZEN on the simplify disposition
+  (recorded next).
