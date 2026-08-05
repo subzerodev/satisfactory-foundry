@@ -151,3 +151,14 @@ process (all-Claude roster, opus implementers, per-phase gates).
 - **Status: SHIPPED 2026-08-05** — all three phases Done (#44 #45
   #46); 707/707 tests; behavior-frozen throughout; released via the
   Stage 9 PR.
+
+## Stage 10 — Canvas ergonomics + theming stragglers
+
+- **Goal:** Michael's feedback on the live Stage 9 identity: controls
+  outside the P2 panel groups (Recipe select, stage inputs, view
+  toggle, inspector trip fields) join the medium; the graph area grows
+  and becomes user-resizable; a flow-direction option lands
+  (left-to-right vs top-to-bottom — handles + auto-placement).
+- **Epic:** #48 (milestone 81). P0 theming stragglers (fix) → P1
+  resizable canvas + flow direction (behavior; full design loop).
+- **Status:** in progress (started 2026-08-05).
