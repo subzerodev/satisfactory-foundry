@@ -1,0 +1,69 @@
+# Stage 12 / Phase 1 — bidirectionality verification log
+# Per distinct behavior: PASS (test passes on the new code) / BREAK (mutate
+# source → the test must fail) / genuine-FAIL confirmation / RESTORE (revert
+# mutation → green again). Proves each test binds to the behavior it names,
+# not to an incidental string.
+
+## Pre-implementation drift hunt
+No drift. All spec-cited locations verified against live source:
+- layout.ts:17-29 LAYOUT/USABLE (USABLE=912), pitch clamp :128-134 — match.
+- Schematic.tsx:197 svg width, :220-234 machine tick row + labelStep — match.
+- Blueprint.tsx:43 MAX_SVG_HEIGHT=520, :79-101 viewBox + width="100%"+meet — match.
+- ChainBlueprint.tsx:37 MAX_SVG_HEIGHT=640, :81-104 same shape — match.
+- app.css :471-479 .schematic-scroll (overflow-x:auto), :580-587 .bp-view/.bp-svg
+  (.bp-svg overflow:visible, load-bearing) — match.
+- smoke.test.tsx:348-351 viewBox + width="100%" + preserveAspectRatio="xMidYMid meet" — match.
+- manifold.ts Finding starved-machines shape (partial.machine / starvedFrom /
+  starvedTo), segment-over-capacity (fromMachine/toMachine) — match; format.ts:120-128
+  and Schematic segmentErrored:43-61 are the finding-index consumers — match.
+- tokens --bg (:45,:111,:151), --font-display (:70) present in app.css — match.
+Threshold arithmetic re-derived at the clamp: floor(912/N) < 8 ⇔ N > 114.
+  N=114 → floor(8.0)=8 (not <8) band=false; N=115 → floor(7.93)=7<8 band=true.
+
+## Bidirectionality (PASS on new code → BREAK under mutation → RESTORE green)
+
+Behavior 1 — band threshold is the clamp's own floor (bandMode, N=114/115).
+  PASS: layout.test.ts "false at N=114, true at N=115" green.
+  BREAK: mutate `< LAYOUT.minPitch` → `<=` → N=114 now bands → 2 tests FAIL
+    (the threshold test + "significant set empty below threshold").
+  RESTORE: revert → 17 passed.
+
+Behavior 2 — significant set includes finding-referenced interior machines.
+  PASS: "exact set-union …" + "includes finding-referenced interior machines"
+    green; 148 (partial.machine) & 149 (starvedFrom) present, at NO boundary.
+  BREAK: delete the starved-machines union members from noteFinding → both the
+    exact-set and interior-machine tests FAIL (148/149 vanish).
+  RESTORE: revert → 17 passed.
+
+Behavior 3 — Schematic band SSR (ONE band + ×161, NOT 161 ticks).
+  PASS: smoke "band mode (N=161)" green.
+  BREAK: force `layout.band ?` → `false ?` → N=161 renders ticks → band test FAIL.
+  RESTORE: revert → 53 passed.
+
+Behavior 4 — scale floor clamps a very wide plan to MIN_PX_PER_DM.
+  PASS: svg-scale "clamps to MIN_PX_PER_DM …" green.
+  BREAK: drop `Math.max(fit, MIN_PX_PER_DM)` → `fit` → wide plan falls below
+    0.06 → floor test FAIL.
+  RESTORE: revert → 5 passed.
+
+Behavior 5 — Blueprint svg attributes churned to explicit px (the enumerated pin).
+  PASS: smoke "renders the Smelter ×2 floor plan" green on explicit width/height.
+  BREAK: revert `width={w*scale}` → `width="100%"` → the explicit-px pin FAILs.
+  RESTORE: revert → 53 passed.
+
+## Churned pins (enumerated)
+Exactly ONE pre-existing pin churned, as the spec predicted:
+- smoke.test.tsx "renders the Smelter ×2 floor plan": width="100%" +
+  preserveAspectRatio="xMidYMid meet" → explicit width="371.42857142857144"
+  height="520" (+ negative assertions on the removed attrs). No other existing
+  pin moved (band gated above N=114; all small-N layout/schematic pins green).
+
+## Suite count
+Before: 741 passed (29 files). After: 752 passed (30 files) — +11:
+  layout.test.ts +4 (threshold false/true+layout, empty-set, exact set-union,
+    interior finding machines), svg-scale.test.ts +5 (new file), smoke +2
+    (band N=161, full-row N=114). Net churn to the smelter pin counts within its
+    existing single test.
+
+## Gates
+`npm run check` exit 0 (tsc + eslint + prettier). `npm test` exit 0 (752 passed).

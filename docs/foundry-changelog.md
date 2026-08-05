@@ -3,6 +3,20 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 12, Phase 1: the views can handle your real factory
+
+> Hey Michael — the three views now hold up at your 161-machine scale.
+> The schematic stopped drawing 161 tiny ticks: it draws one solid
+> machine band with "×161" and marks only the spots that matter — where
+> belts enter, where outputs break out, and any machine a warning names
+> — each with its number so "machine 20" is findable. The blueprint and
+> combined views stopped squashing themselves to fit: below a
+> readability limit they keep their size and scroll instead, and the
+> lane names got a paper-colored halo so they never sit illegibly on a
+> pipe again. Small factories look exactly as before. Still to come:
+> clearer labels on the override boxes and one consistent message for
+> a stage with no recipe.
+
 ## 2026-08-05 — Stage 12, Phase 0: the supply cards actually show up now
 
 > Hey Michael — you were right, and the miss was mine: the supply cards

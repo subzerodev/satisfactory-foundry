@@ -8,7 +8,7 @@ import type {
 } from "../core/manifold.ts";
 import type { TierTable } from "../data/types.ts";
 import { computeLayout } from "./layout.ts";
-import type { LaneTrack } from "./layout.ts";
+import type { LaneTrack, SchematicLayout } from "./layout.ts";
 import { beltLabel, formatRate, segTooltip } from "./format.ts";
 import { colorForCapacity, ERROR_COLOR } from "./colors.ts";
 
@@ -153,6 +153,58 @@ function LaneG({
   );
 }
 
+/**
+ * The level-of-detail machine band (Stage 12 P1 Axis 1). Above N=114 the pitch
+ * floors to 6px ticks that read as dash-noise, so a real drawing draws a break
+ * convention + a count instead of 161 identical ticks: ONE continuous band rect
+ * spanning the machine row, a centered `×N` in the display face, and individual
+ * boundary ticks + index labels kept ONLY at the significant machines (feed
+ * entries, output breakouts, segment bounds, finding-referenced machines — the
+ * complete set the textual layer can name). Everything else is elided by the
+ * break convention.
+ */
+function MachineBand({
+  machines,
+  significant,
+  pitch,
+  top,
+}: {
+  machines: SchematicLayout["machines"];
+  significant: number[];
+  pitch: number;
+  top: number;
+}) {
+  const first = machines[0]!;
+  const last = machines[machines.length - 1]!;
+  const bandX = first.x;
+  // The row spans every machine's footprint: last machine's left edge + its own
+  // (pitch − 2) rect width, mirroring the per-tick rendering it replaces.
+  const bandW = last.x + Math.max(pitch - 2, 1) - bandX;
+  const marks = new Set(significant);
+  const xOf = (index: number) => machines[index - 1]!.x;
+  return (
+    <g className="machine-band">
+      <rect x={bandX} y={top} width={bandW} height={40} />
+      <text className="machine-band-count" x={bandX + bandW / 2} y={top + 24}>
+        ×{machines.length}
+      </text>
+      {[...marks]
+        .sort((a, b) => a - b)
+        .map((index) => (
+          <g key={`sig-${index}`} className="machine-band-mark">
+            {/* A boundary tick at the significant machine's left edge + its
+                index label, so every textually-referenced machine stays
+                locatable in the band. */}
+            <line x1={xOf(index)} x2={xOf(index)} y1={top} y2={top + 40} />
+            <text className="machine-label" x={xOf(index)} y={top + 52}>
+              {index}
+            </text>
+          </g>
+        ))}
+    </g>
+  );
+}
+
 export function Schematic({
   result,
   machineCount,
@@ -217,21 +269,30 @@ export function Schematic({
             />
           );
         })}
-        {layout.machines.map((m) => (
-          <g key={`m-${m.index}`} className="machine">
-            <rect
-              x={m.x}
-              y={machineTopY}
-              width={Math.max(layout.pitch - 2, 1)}
-              height={40}
-            />
-            {m.labeled && (
-              <text className="machine-label" x={m.x} y={machineTopY + 52}>
-                {m.index}
-              </text>
-            )}
-          </g>
-        ))}
+        {layout.band ? (
+          <MachineBand
+            machines={layout.machines}
+            significant={layout.significant}
+            pitch={layout.pitch}
+            top={machineTopY}
+          />
+        ) : (
+          layout.machines.map((m) => (
+            <g key={`m-${m.index}`} className="machine">
+              <rect
+                x={m.x}
+                y={machineTopY}
+                width={Math.max(layout.pitch - 2, 1)}
+                height={40}
+              />
+              {m.labeled && (
+                <text className="machine-label" x={m.x} y={machineTopY + 52}>
+                  {m.index}
+                </text>
+              )}
+            </g>
+          ))
+        )}
         {result.outputs.map((lane, j) => {
           const busCap = tiers[lane.kind][unlocked[lane.kind] - 1]!;
           return (

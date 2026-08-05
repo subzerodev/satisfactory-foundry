@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Fraction } from "../core/fraction.ts";
 import { solveStage } from "../core/manifold.ts";
 import type { StageInput } from "../core/manifold.ts";
-import { computeLayout, LAYOUT } from "./layout.ts";
+import { bandMode, computeLayout, LAYOUT } from "./layout.ts";
 import { FIXTURE_TIERS, WORKED_INPUT, workedResult } from "./fixtures.ts";
 
 function stage(machineCount: number): StageInput {
@@ -114,6 +114,65 @@ describe("computeLayout — compression", () => {
     const layout = computeLayout(solveStage(stage(2000)), 2000);
     expect(layout.scrolled).toBe(true);
     expect(layout.width).toBe(LAYOUT.marginX * 2 + LAYOUT.minPitch * 2000);
+  });
+});
+
+describe("bandMode — the LOD threshold (Stage 12 P1 Axis 1)", () => {
+  it("is the pitch clamp's own floor: false at N=114, true at N=115", () => {
+    // USABLE/minPitch = 912/8 = 114. floor(912/114)=8 (not floored) → readable
+    // ticks; floor(912/115)=7 (<8, clamp floors) → band. The boundary is exact.
+    expect(bandMode(114)).toBe(false);
+    expect(bandMode(115)).toBe(true);
+    // The layout carries the same decision.
+    expect(computeLayout(solveStage(stage(114)), 114).band).toBe(false);
+    expect(computeLayout(solveStage(stage(115)), 115).band).toBe(true);
+  });
+
+  it("leaves the significant set empty below the threshold", () => {
+    // Off = the full per-machine tick row renders, so no significant subset.
+    expect(computeLayout(solveStage(stage(114)), 114).significant).toEqual([]);
+  });
+});
+
+describe("computeLayout — band significant set (N=161)", () => {
+  // A starving 161-machine feed (belt 0 under-capped to 50/min) so the union
+  // spans EVERY significant kind: feed entries, output breakouts, each segment's
+  // bounds, AND finding-referenced machines — the starve names machine 148
+  // (partial) and 149 (starvedFrom), interior indices at NO segment/entry
+  // boundary, proving the finding union member is included (the r1 HIGH: a
+  // finding must keep "machine 148" locatable in the band).
+  const starving: StageInput = {
+    machineCount: 161,
+    clockPercent: Fraction.from(100),
+    capacities: FIXTURE_TIERS,
+    feeds: [
+      {
+        itemId: "ore_iron",
+        kind: "belt",
+        perMachineRate: Fraction.from(30),
+        overrides: [Fraction.from(50)],
+      },
+    ],
+    outputs: [
+      { itemId: "iron_ingot", kind: "belt", perMachineRate: Fraction.from(30) },
+    ],
+  };
+
+  it("is the exact set-union of entries, breakouts, segment bounds, finding machines — nothing else", () => {
+    const layout = computeLayout(solveStage(starving), 161);
+    expect(layout.band).toBe(true);
+    expect(layout.significant).toEqual([
+      1, 2, 16, 17, 18, 32, 33, 34, 48, 49, 50, 64, 65, 66, 80, 81, 82, 96, 97,
+      98, 112, 113, 114, 128, 129, 130, 144, 145, 146, 148, 149, 160, 161,
+    ]);
+  });
+
+  it("includes finding-referenced interior machines absent from any boundary", () => {
+    const layout = computeLayout(solveStage(starving), 161);
+    // 148 (partial.machine) and 149 (starvedFrom) are NOT segment bounds, feed
+    // entries, or output breakouts — they enter the set ONLY via the finding.
+    expect(layout.significant).toContain(148);
+    expect(layout.significant).toContain(149);
   });
 });
 
