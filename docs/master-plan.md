@@ -196,8 +196,14 @@ process (all-Claude roster, opus implementers, per-phase gates).
   per-belt override inputs are unlabeled; (4) the unsolved-stage
   wording is inconsistent across surfaces.
 - **Epic:** #59 (milestone 83). P0 catalog version bump (#60, fix) →
-  P1 views at scale (full design loop) → P2 clarity pass.
-- **Status:** in progress (started 2026-08-05). P0 merged + released
-  early (PR #61). P1 merged 2026-08-05 (LOD band + scale floor; the
+  P1 views at scale (#62, full design loop) → P2+P3 combined clarity +
+  navigation (#65 + #64, per Michael's "fix all issues now" — the
+  re-evaluate-before-P3 gate dropped by epic decision).
+- **Status:** all phases merged (started + finished 2026-08-05). P0
+  merged + released early (PR #61). P1 merged + released (PR #63; the
   boundary gate caught a sub-cap enlargement the six design rounds
-  missed). P2 (clarity) next.
+  missed). P2+P3 merged `93298d2`: override-panel headings, calm
+  skip-note wording, Blueprint lane-name gutter (DETAIL-only,
+  sizer-twin width — a boundary-caught CSS intrinsic-sizing bug),
+  [FIT|DETAIL] toggle in both blueprint views opening floored plans
+  at DETAIL. 767 tests. Release PR pending → then Stage 12 SHIPPED.
