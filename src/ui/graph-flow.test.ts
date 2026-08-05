@@ -384,6 +384,72 @@ describe("graphToFlow — nodes", () => {
     expect(nodes[0]!.data.recipeName).toBeNull();
   });
 
+  // --- machineName (#84): the tile names the building ------------------------
+
+  it("machineName resolves the machine displayName (#84)", () => {
+    // A catalog whose smelter carries a displayName → the tile reads that, not
+    // the raw machineId. Mirrors the base fixture but populates machines.
+    const withMachine: Catalog = {
+      ...catalog,
+      machines: {
+        smelter: {
+          id: "smelter",
+          displayName: "Smelter",
+          power: {
+            mw: Fraction.from(4),
+            variable: false,
+            exponent: Fraction.from(1),
+          },
+        },
+      },
+    };
+    const a = stage("a", "Smelting", "ingot", 20, solvedWith({}));
+    const { nodes } = graphToFlow(
+      withMachine,
+      { a },
+      ["a"],
+      [],
+      [],
+      { a: { x: 0, y: 0 } },
+      "a",
+    );
+    expect(nodes[0]!.data.machineName).toBe("Smelter");
+  });
+
+  it("machineName falls back to the raw machineId when off the machine table (#84)", () => {
+    // The base `catalog` has machines: {} → the ingot recipe's machineId
+    // ("smelter") is off-table. Per machineNameFor's precedent (the Blueprint's
+    // "footprint unknown" path proves this reachable), the fallback is the raw
+    // id string — never null under a non-null recipeName.
+    const a = stage("a", "Smelting", "ingot", 20, solvedWith({}));
+    const { nodes } = graphToFlow(
+      catalog,
+      { a },
+      ["a"],
+      [],
+      [],
+      { a: { x: 0, y: 0 } },
+      "a",
+    );
+    expect(nodes[0]!.data.recipeName).toBe("Iron Ingot"); // recipe resolved
+    expect(nodes[0]!.data.machineName).toBe("smelter"); // machineId, not null
+  });
+
+  it("machineName is null for a recipe-less stage (same nullability as recipeName) (#84)", () => {
+    const a = stage("a", "A", null, 1, { status: "idle" });
+    const { nodes } = graphToFlow(
+      catalog,
+      { a },
+      ["a"],
+      [],
+      [],
+      { a: { x: 0, y: 0 } },
+      "a",
+    );
+    expect(nodes[0]!.data.recipeName).toBeNull();
+    expect(nodes[0]!.data.machineName).toBeNull();
+  });
+
   it("falls back to a stable origin when a stage has no position entry", () => {
     const a = stage("a", "A", "ingot", 1, solvedWith({}));
     const { nodes } = graphToFlow(catalog, { a }, ["a"], [], [], {}, "a");

@@ -1,9 +1,9 @@
 # Follow-ups: chain-engine disposition + band label declutter (Stage 15 arc)
 
 **Started:** 2026-08-05
-**Status:** complete — merged to develop `02490dc`; release PR pending
-**Current phase:** — (arc close)
-**Final PR:** —
+**Status:** SHIPPED 2026-08-05
+**Current phase:** — (arc closed)
+**Final PR:** #87
 **Epic:** #80 (board #21, Stage 15 milestone 86; children #77 + #78)
 
 ## Phase status

@@ -61,6 +61,13 @@ export const RAW_NODE_HEIGHT = 44;
 export interface StageNodeData {
   name: string;
   recipeName: string | null;
+  /** The producing machine's display name, or its raw id when the recipe's
+   *  machineId is off the catalog's machine table (the Blueprint's
+   *  "footprint unknown" path proves that reachable). Null ONLY when the stage
+   *  is recipe-less — same nullability as recipeName, so a non-null recipeName
+   *  always carries a non-null machineName (the tile never renders "×N " bare).
+   */
+  machineName: string | null;
   machineCount: number;
   solveStatus: SolveState["status"];
   findingCount: number;
@@ -279,6 +286,20 @@ function recipeNameOf(catalog: Catalog, stage: StageNode): string | null {
   const id = stage.selection.recipeId;
   if (id === null) return null;
   return catalog.recipes[id]?.displayName ?? null;
+}
+
+/** The producing machine's display name for the tile, or null under the SAME
+ *  conditions recipeNameOf returns null (no recipeId, or a dangling id) — so
+ *  machineName and recipeName share nullability and the tile never shows a bare
+ *  "×N ". For a resolved recipe whose machineId is off the catalog's machine
+ *  table (reachable — the Blueprint's "footprint unknown" path), fall back to
+ *  the raw machineId string per machineNameFor's precedent, never null. */
+function machineNameOf(catalog: Catalog, stage: StageNode): string | null {
+  const id = stage.selection.recipeId;
+  if (id === null) return null;
+  const recipe = catalog.recipes[id];
+  if (recipe === undefined) return null;
+  return catalog.machines[recipe.machineId]?.displayName ?? recipe.machineId;
 }
 
 /**
@@ -642,6 +663,7 @@ export function graphToFlow(
         data: {
           name: stage.name,
           recipeName: recipeNameOf(catalog, stage),
+          machineName: machineNameOf(catalog, stage),
           machineCount: stage.selection.machineCount,
           solveStatus: stage.solve.status,
           findingCount: findingCountFor(id, links, reconciliation),

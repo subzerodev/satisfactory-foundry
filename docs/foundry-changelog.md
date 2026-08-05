@@ -3,6 +3,22 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-05 — Stage 16: honest numbers everywhere
+
+> Hey Michael — all four of your latest reports are done. The big one:
+> you were right that the blueprint contradicted the words — it turned
+> out the drawing was numbering machines starting at 0 while
+> everything else counts from 1, so every "breaks out after machine
+> 12" mark looked one machine early. The numbers are fixed, and the
+> mark now sits exactly at the right edge of the machine labeled 12.
+> The schematic's little numbers now sit centered under their
+> machines instead of straddling the lines, so you can tell at a
+> glance which machine a number names. The recipe compare table got
+> an OUTPUT column showing what each option actually produces per
+> minute (they differ slightly because machine counts round up). And
+> the canvas tiles now name the building: "×65 Refinery", "×81
+> Smelter" — no more bare ×65.
+
 ## 2026-08-05 — Stage 15: the big-factory number row is readable + internal tidy-up
 
 > Hey Michael — two follow-ups from earlier tonight are done. On very

@@ -1,0 +1,137 @@
+# Stage 16 — bidirectionality verification log (tickets #83 #84 #85 #86)
+
+Discipline per axis: PASS (fix in, test green) → real break (revert the fix,
+verify the test genuinely FAILS naming the wrong value) → restore (fix back,
+green). Quoted assertion text is the verbatim failure the broken code produced.
+
+Baseline (fix-free trunk, worktree): 759 tests / 31 files green; `npm run check`
+green.
+
+---
+
+## Axis A — #85 Blueprint machine numbers 1-based
+
+Fix: `src/ui/Blueprint.tsx:204` `{i}` → `{i + 1}`.
+Test: `src/ui/smoke.test.tsx` › Blueprint › "labels machine rects 1-based
+(1..N), not 0-based (#85)" — asserts the two rendered `bp-machine-label` texts
+equal `["1", "2"]` on the real Smelter ×2 solve.
+
+- PASS: fix in → `Tests  1 passed`.
+- BREAK: reverted `{i + 1}` → `{i}`; test FAILED:
+  > `AssertionError: expected [ '0', '1' ] to deeply equal [ '1', '2' ]`
+  The break reproduces exactly Michael's report — a 0-based label makes the
+  first rect wear "0" and the "after machine m" mark read one rect early.
+- RESTORE: fix back → `Tests  1 passed`.
+
+Drift-hunt (assumption #2): grepped every `*.test.*` for a 0-based blueprint
+label content pin (`bp-machine-label`, `>0</text>`) — NONE exists (the only
+`machine-label` matches are the schematic band-mark COUNT in smoke.test.tsx).
+The new pin is additive, not a flipped existing pin. Verified.
+
+---
+
+## Axis B — #86 schematic numbers centered
+
+Fix: `src/ui/Schematic.tsx` — non-band label x `m.x` → `m.x + layout.pitch/2`
+(:307); band significant label x `xOf(index)` → `xOf(index) + pitch/2` (:215).
+Boundary TICKS unchanged (line x1/x2 still at `xOf(index)` / `m.x`).
+Tests: `src/ui/smoke.test.tsx` › Schematic ›
+  (i)  "centers non-band machine labels under the cell (m.x + pitch/2) (#86)"
+  (ii) "band mode: label centers at xOf + pitch/2 while the tick stays at xOf (#86)"
+
+- PASS: fix in → `Tests  2 passed`. All S15 layout thinning pins (nine-pair
+  residual, labeled subsets, ticks>labels) still green (`layout.test.ts` +
+  smoke #78 pin) — the +pitch/2 shift is constant, so label-to-label distances
+  are unchanged.
+- BREAK: reverted BOTH x expressions back to `m.x` / `xOf(index)`; both pins
+  FAILED:
+  > (i)  `expected '…' to contain '<text class="machine-label" x="46.5" y="'`
+  >      (broken markup rendered the label at bare `x="24"` — the cell's left
+  >      edge / boundary, N=20 pitch=45 so center is 24+22.5=46.5)
+  > (ii) `expected '…' to contain '<text class="machine-label" x="36" y="'`
+  >      (broken markup rendered the first band label at bare `x="32"` — on its
+  >      boundary tick; band pitch=8 so center is 32+4=36, and the tick line
+  >      `x1="32" x2="32"` stays put either way, proving tick ≠ label)
+- RESTORE: fix back → `Tests  2 passed`.
+
+The break exactly reproduces Michael's report ("numbers arent in the middle …
+hard to see where the feed out is") — labels sitting ON the boundary line.
+
+---
+
+## Axis C — #83 the compare OUTPUT column
+
+Fix: `src/ui/chain-builder-adapter.ts` — `CandidateRow` gains `output: string`,
+computed in `candidateRowsFor` (:256-289) with the GUARDED lookup
+`const primaryStage = proposal.stages.find(s => s.itemId === itemId); output =
+primaryStage === undefined ? "—" : formatRate(primaryStage.outputRate)+"/min"`.
+`src/ui/AltCompare.tsx` — OUTPUT header + cell between MACHINES and POWER
+(RECIPE | MACHINES | OUTPUT | POWER | RAW DRAW | apply).
+Tests (`src/ui/chain-builder-adapter.test.ts`):
+  (1) ceil-overshoot / current-row actual: "pins each candidate's OUTPUT as its
+      own actual produced rate, incl. the current row + a ceil-overshoot (#83)"
+  (2) multi-stage: "MULTI-STAGE OUTPUT is the PRIMARY stage's rate, NOT machines
+      × perMinute (#83, the v1-formula-catcher)"
+  (4) self-consume: "SELF-CONSUMING candidate: OUTPUT is '—' WITHOUT throwing
+      (#83, the v2-deref-catcher)"
+  SSR: `src/ui/AltCompare.test.tsx` › "renders the OUTPUT header + per-row output
+      cell (#83)" (header column order + a "<td>120/min</td>" cell; renders the
+      real component by stubbing zustand's SSR seam api.getInitialState, since
+      its server snapshot is the initial state — setState can't drive an SSR
+      pass, the frozen-singleton reason the suite's other SSR test asserts "").
+
+- PASS: fix in → adapter+AltCompare 34 passed.
+- BREAK 1 (v1 WRONG formula `machines × perMinute`): reverted the guarded
+  `output` to `formatRate(Fraction.from(machines).mul(perMinute))+"/min"`. BOTH
+  the multi-stage and self-consume pins FAILED:
+  > (2) `AssertionError: expected '60/min' to be '30/min'` — the subtree Σ (2
+  >     machines) × 30/min = 60, exactly the multi-stage bug the primary-stage
+  >     rate (30/min) avoids.
+  > (4) `AssertionError: expected '0/min' to be '—'` — 0 machines (demoted) × 60
+  >     = 0/min, also wrong (should be the "—" dash).
+- BREAK 2 (v2 UNGUARDED deref, guard removed): reverted to
+  `formatRate(proposal.stages.find(s => s.itemId === itemId)!.outputRate)+"/min"`.
+  The self-consume pin FAILED:
+  > (4) `expected [Function] to not throw an error but 'TypeError: Cannot read
+  >     properties of undefined (reading 'outputRate')' was thrown` — the
+  >     self-consuming candidate is demoted to raw (no stage for itemId), so the
+  >     unguarded `.find(...)!` TypeErrors inside the render, exactly the v2 bug.
+- RESTORE (guarded lookup back) → 34 passed.
+
+The overshoot pin also proves the uniform-actuals decision (v1's "current row
+shows R exactly" was dropped): R=100, both current + alt show 120/min, not 100.
+
+---
+
+## Axis D — #84 tiles name the building
+
+Fix: `src/ui/graph-flow.ts` — `StageNodeData` gains `machineName: string | null`
+(:64-70); a `machineNameOf` helper beside `recipeNameOf` (:284-...) returns null
+under the SAME conditions as recipeNameOf (no recipeId / dangling id) else
+`catalog.machines[recipe.machineId]?.displayName ?? recipe.machineId` (the raw-id
+fallback), wired into the node `data` (:645). `src/ui/GraphCanvas.tsx` — the
+machines span renders `×{machineCount} {machineName}` (:154-160, gated on
+recipeName as before).
+Tests:
+  data (`src/ui/graph-flow.test.ts`):
+    - "machineName resolves the machine displayName (#84)"
+    - "machineName falls back to the raw machineId when off the machine table (#84)"
+    - "machineName is null for a recipe-less stage … (#84)"
+  render (`src/ui/smoke.test.tsx` › GraphCanvas SSR):
+    - "names the building on the tile: ×N MachineName (#84)" — RF12 SSR through
+      the real GraphCanvas (getInitialState seam stubbed with a 20-Smelter
+      Iron-Ingot stage) asserts `<span class="stage-node-machines">×20
+      Smelter</span>`.
+
+- PASS: fix in → graph-flow 48 passed; the #84 SSR pin passes.
+- BREAK 1 (GraphCanvas drops the name → bare `×{machineCount}`): the SSR pin
+  FAILED:
+  > `expected '…' to contain '<span class="stage-node-machines">×20 Smelter</span>'`
+  > (rendered `<span class="stage-node-machines">×20</span>` — recipe line still
+  > "Iron Ingot", so the recipe resolved; only the name was dropped).
+- BREAK 2 (machineNameOf returns null instead of the raw-id fallback): the
+  off-table fallback data pin FAILED:
+  > `AssertionError: expected null to be 'smelter'`
+  > (the resolved recipe's off-table machineId no longer falls back — the exact
+  > dangling-"×N " risk the fallback idiom prevents).
+- RESTORE (both) → graph-flow 48 + the #84 SSR pin green.
