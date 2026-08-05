@@ -1,0 +1,96 @@
+# Stage 17 (ticket #89) — bidirectionality verification log
+
+Two-site drawn-distance measure + chain-engine retirement. Each pinned behavior
+is verified BIDIRECTIONALLY: PASS with the real code → deliberately break the
+load-bearing term → observe the naming test genuinely FAIL → restore → green.
+
+Target files: src/ui/chain-view.ts (implementation),
+src/ui/chain-view.test.ts (the four pins).
+
+Run inside the worktree: `npx vitest run src/ui/chain-view.test.ts` (11 its).
+(Repo-root `npm test` double-counts worktree tests — the memory note; the
+worktree-local run is the trunk-true view.)
+
+---
+
+## PASS (baseline)
+
+    npx vitest run src/ui/chain-view.test.ts
+    Test Files  1 passed (1)
+    Tests  11 passed (11)
+
+All four #89 pins green with the real implementation:
+  - A↔B is IDENTICAL regardless of a third stage C (decoupling)   → 80 dm
+  - reads the exact (fractional) nearest-edge distance for a pair → 40√10 ≈ 126.49 dm
+  - reads 0 dm for coincident endpoints (total primitive)         → 0 dm
+  - floors the near-coincident axis-aligned edge distance at CHAIN_GUTTER → 80 dm
+
+---
+
+## Behavior 1 — DECOUPLING (moving a third stage cannot change A↔B)
+
+BREAK: reintroduce a C-dependent term — max the pair k against every OTHER
+solved stage's pair with endpoint A (the retired global-K coupling, in miniature):
+
+    let k = requiredScaleForPair(posA, layoutA, posB, layoutB);
+    for (const [id, s] of Object.entries(stages)) {
+      if (id === link.fromStageId || id === link.toStageId) continue;
+      if (s.solve.status !== "solved") continue;
+      const other = siteFor(catalog, s);
+      const posOther = positions[id] ?? { x: 0, y: 0 };
+      k = Math.max(k, requiredScaleForPair(posA, layoutA, posOther, other));
+    }
+
+FAIL (genuine) — the decoupling pin fails, and with the EXACT old-coupling value:
+
+    × A↔B is IDENTICAL regardless of a third stage C (decoupling)
+    AssertionError: expected 240 to be close to 80, received difference is 160
+    Test Files  1 failed (1)
+    Tests  1 failed | 10 passed (11)
+
+The C=(50,5) position drives k=3.2, stretching A↔B to 240 dm — the pin catches
+exactly the coupling the two-site rewrite removes. Decisive (240 ≠ 80).
+
+RESTORE → green:
+
+    Test Files  1 passed (1)
+    Tests  11 passed (11)
+
+---
+
+## Behavior 2 — FLOOR (near-coincident axis-aligned edge distance = CHAIN_GUTTER)
+
+BREAK: drop the pairwise k (use k = 1) — no gutter scaling:
+
+    const k = 1;
+
+FAIL (genuine) — the floor pin fails; the k-scaling is also load-bearing for the
+decoupling and exact-pair pins, which collapse too:
+
+    × A↔B is IDENTICAL regardless of a third stage C (decoupling)
+      AssertionError: expected 20 to be close to 80
+    × reads the exact (fractional) nearest-edge distance for a known pair
+      AssertionError: expected 44.72... to be close to 126.49...
+    × floors the near-coincident axis-aligned edge distance at CHAIN_GUTTER (80 dm)
+      AssertionError: expected 1 to be close to 80, received difference is 79
+    Test Files  1 failed (1)
+    Tests  3 failed | 8 passed (11)
+
+The floor pin reads 1 dm (the raw 1-px canvas delta, unscaled) instead of the
+80 dm gutter floor — the pairwise k is exactly what enforces the floor. Decisive.
+
+RESTORE → green:
+
+    npx vitest run src/ui/chain-view.test.ts src/layout/layout.test.ts
+    Test Files  2 passed (2)
+    Tests  37 passed (37)
+
+---
+
+## Conclusion
+
+Both target behaviors verified bidirectionally — each pin FAILS when its
+load-bearing term is removed (naming the exact test + the wrong value), PASSES
+when restored. The k-scaling term proved load-bearing for three of the four pins
+(decoupling, exact-pair, floor); the coincident-0 pin falls out of the total
+primitive independently. No pin is vacuous.

@@ -1,9 +1,9 @@
 # Field polish: rates, names, honest numbers (Stage 16 arc)
 
 **Started:** 2026-08-05
-**Status:** complete — merged to develop `a0ebb29`; release PR pending
-**Current phase:** — (arc close)
-**Final PR:** —
+**Status:** SHIPPED 2026-08-05
+**Current phase:** — (arc closed)
+**Final PR:** #88
 **Epic:** #82 (board #21, Stage 16 milestone 87; children #83 #84 #85 #86)
 
 ## Phase status

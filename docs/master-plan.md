@@ -287,4 +287,27 @@ process (all-Claude roster, opus implementers, per-phase gates).
 - **Status:** merged to develop 2026-08-05 (`a0ebb29`, 770 tests).
   THREE design rounds (the wrong output formula, then an unguarded
   deref, both caught pre-code). Walk: all four axes verified live.
-  Release PR pending → then Stage 16 SHIPPED.
+  **SHIPPED** — release PR #88 merged to main 2026-08-05.
+
+## Stage 17 — Drawn-distance goes two-site; the chain engine retires
+
+- **Goal:** Michael's #81 decision: the Transport drawn-distance
+  measures only the two endpoint stages (pairwise
+  requiredScaleForPair — total, no coincident special case, no chain
+  rounding); moving an unrelated stage no longer changes it. The
+  chain-layout engine (layoutChain, fanCoincident, the K loop, the
+  chain types, buildChain) and its tests retire; the S15 coupling
+  pin flips to a decoupling pin. Supersedes the S15 keep on #77.
+- **Ticket:** #89 (milestone 88). The last build item under the
+  clear-the-board directive. Blocked-by Stage 16.
+- **Status:** merged to develop 2026-08-06 (`9c6c178`, net −285
+  lines, 764 tests). Design: brainstorm v3 FROZEN after THREE
+  correctness rounds (false coincident-guard premise, siteWorldBox
+  mischaracterization, floor 2× mislabel — all caught pre-code);
+  simplify folded the stale-comment rewrite into the retirement.
+  Implementation: zero drift; four pins (decoupling 80dm==80dm both
+  C positions, pair 40√10, coincident 0dm natural, floor =
+  CHAIN_GUTTER 80dm edge distance). Boundary: r1 APPROVED+APPROVED
+  first-round; diff-simplify 2 nits (orphaned exports) folded; r2
+  fold pair APPROVED+APPROVED. Walk: unrelated-stage move left the
+  readout at 22 m, endpoint move changed it 22→51 m, both themes.
