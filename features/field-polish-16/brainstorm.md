@@ -1,4 +1,4 @@
-# Stage 16 combined — field polish (tickets #83 + #84 + #85 + #86) — brainstorm v2
+# Stage 16 combined — field polish (tickets #83 + #84 + #85 + #86) — brainstorm v3
 
 **Goal.** Michael's two field reports (2026-08-05, verbatim): "this
 doesnt say the output per min also we can add more to the tiles like
@@ -89,15 +89,31 @@ at boundaries.**
 
 **Pick (r1-corrected): a per-row OUTPUT column sourced from the
 primary stage's `outputRate` — no recomputation.**
-- `CandidateRow` gains `output: string` =
-  formatRate(proposal.stages.find(s => s.itemId === itemId)
-  .outputRate) + "/min", computed inside candidateRowsFor
-  (chain-builder-adapter.ts:256-289) where the proposal is in scope
-  — the exact, per-candidate ceil-overshooting produced rate,
-  correct for single- AND multi-stage candidates (the r1 BLOCKER:
-  `machines` is the subtree Σ, so v1's machines × perMinute was
-  nonsense for multi-stage; PreviewRow.outputRate at :98 is the
-  in-repo precedent for this exact pass-through).
+- `CandidateRow` gains `output: string`, computed inside
+  candidateRowsFor (chain-builder-adapter.ts:256-289) with a
+  GUARDED lookup (r2 BOTH reviewers, the converged IMPORTANT/MAJOR:
+  a SELF-CONSUMING candidate — one listing its own primary output
+  among its inputs — passes candidateRecipesFor's filter but is
+  demoted to RAW by proposeChain's cycle guard, chain-builder.ts:
+  207-213, leaving NO stage for itemId; an unguarded
+  .find(...).outputRate would TypeError inside the render):
+  `const primaryStage = proposal.stages.find(s => s.itemId ===
+  itemId); output = primaryStage === undefined ? "—" :
+  formatRate(primaryStage.outputRate) + "/min"` — the file's
+  never-throw idiom (subtreePower skips, swapMachineCountFor
+  floors, machineNameFor falls back). The rate itself is the exact,
+  per-candidate ceil-overshooting produced rate, correct for
+  single- AND multi-stage candidates (the r1 BLOCKER: `machines`
+  is the subtree Σ; PreviewRow.outputRate at :98 is the
+  pass-through precedent). r2 adversarial REFUTED its own
+  divergence attacks: ProposedStage.outputRate is always the
+  100%-clock count × primary perMinute (chain-builder.ts:295), and
+  the proposal's root count equals swapMachineCountFor's ceilDiv —
+  the displayed OUTPUT cannot diverge from the post-apply machine
+  count. (Noted, out of scope: stages running at clock ≠ 100 have a
+  PRE-EXISTING compare/apply 100%-clock convention shared by the
+  MACHINES column — the OUTPUT column is internally consistent with
+  it.)
 - Every row — INCLUDING the current one — shows its candidate's
   ACTUAL produced rate uniformly (v1's "current row shows R
   exactly" claim DROPPED, r1: the current recipe's own ceil can
@@ -148,8 +164,10 @@ primary stage's `outputRate` — no recomputation.**
   chain-builder-adapter.test.ts:411-419) pins output = the PRIMARY
   stage's outputRate, NOT machines × perMinute — the test that
   would have caught the v1 formula (r1); (3) the current row pins
-  its own actual rate. SSR pin of the OUTPUT header + a row
-  value.
+  its own actual rate; (4) a SELF-CONSUMING candidate (demoted to
+  raw — no stage for itemId) pins output "—" without throwing —
+  the test that would have caught the v2 unguarded deref (r2).
+  SSR pin of the OUTPUT header + a row value.
 - D: graph-flow unit — machineName resolves the displayName, null
   when recipe-less; SSR/node pin "×65 Refinery" on the walk fixture
   (or the store-test fixture equivalent).
@@ -204,3 +222,18 @@ primary stage's `outputRate` — no recomputation.**
   reviewers verified Axes A + B fully sound (nothing consumes the
   0-based blueprint label; the +pitch/2 shift touches no pin; the
   N=161 band edge stays in-bounds at 1308 < 1310 < 1336).
+- v3 (2026-08-05): r2 BOTH NEEDS_REWORK, CONVERGED on the unguarded
+  deref ([code] 1 IMPORTANT; [adversarial] 1 MAJOR): the v2
+  .find(...).outputRate would TypeError for a self-consuming
+  candidate (candidateRecipesFor doesn't filter self-consumers;
+  proposeChain demotes them to raw, emitting no stage for itemId) —
+  the codebase's only unguarded deref against the adapter's
+  never-throw idiom. FOLDED: guarded lookup with a "—" fallback + a
+  bug-exposing self-consume test. r2 adversarial refuted its own
+  divergence attacks (outputRate is 100%-clock count × perMinute;
+  proposal root count ≡ swapMachineCountFor's ceilDiv — display
+  cannot diverge from post-apply) and re-verified Axes A/B/D sound
+  (raw-id fallback total; required machineId; centering shift
+  pin-safe). The clock≠100 observation recorded as a PRE-EXISTING
+  compare-convention property shared with the MACHINES column, out
+  of this arc's scope.
