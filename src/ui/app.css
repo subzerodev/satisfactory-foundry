@@ -1258,10 +1258,12 @@ body {
 }
 
 /* Panel controls join the P0 quiet-mono control treatment (the header
-   controls already carry it) — one grouped rule over the panel controls. */
+   controls already carry it) — one grouped rule over the panel controls.
+   The close ✕ is excluded below (boundary fold: it is deliberately
+   frameless); FindingsPanel/SummaryCards carry no controls (selectors
+   dropped rather than left dead). */
 .link-inspector button,
-.findings-panel button,
-.summary-cards button,
+.link-inspector select,
 .plans-bar button,
 .plans-bar select,
 .plans-bar input,
@@ -1275,6 +1277,13 @@ body {
   border: 1px solid var(--border-soft);
   background: transparent;
   border-radius: 0;
+}
+
+/* The frameless close glyph stays frameless (boundary fold — the grouped
+   panel-controls rule would otherwise box it and shrink its glyph). */
+.link-inspector-close {
+  border: none;
+  font-size: 14px;
 }
 
 /* --- Axis 3: SVG refinements ---------------------------------------------
