@@ -1,4 +1,4 @@
-# Stage 16 combined — field polish (tickets #83 + #84 + #85 + #86) — brainstorm v1
+# Stage 16 combined — field polish (tickets #83 + #84 + #85 + #86) — brainstorm v2
 
 **Goal.** Michael's two field reports (2026-08-05, verbatim): "this
 doesnt say the output per min also we can add more to the tiles like
@@ -40,14 +40,21 @@ directive.
    significant label also renders at the machine's left edge
    (xOf(index), :215), beside its boundary tick. Machine rects span
    [m.x, m.x + pitch−2].
-3. **#83 — alt-compare rows lack the output rate.** CompareRow =
-   {recipeName, machines, power, rawDraw, byproducts, isCurrent}
-   (AltCompare.tsx:40-49); the table renders recipe/machines/power/
-   raw-draw + the apply cell (:138-166). The comparison runs at the
-   stage's current primary-lane totalOutput R (:83-85, same-output
-   premise); each candidate's machine count is ceilDiv(R, candidate
-   perMinute) (:103) — so each row's ACTUAL produced rate
-   (machines × perMinute) can OVERSHOOT R differently.
+3. **#83 — alt-compare rows lack the output rate (r1 CORRECTED —
+   both reviewers, the converged BLOCKER/MAJOR).** The table's row
+   type is CandidateRow (chain-builder-adapter.ts:134-152:
+   recipeName, machines, power, rawDraw, byproducts, isCurrent),
+   wrapped by AltCompare's CompareRow {row, apply} (:40-44). The
+   displayed `machines` is the Σ machineCount across the candidate's
+   WHOLE SUBTREE (candidateRowsFor, chain-builder-adapter.ts:272-276
+   — proposal.stages.reduce) from a multi-stage proposeChain run —
+   NOT ceilDiv(R, perMinute) (that is the separate apply-payload
+   count, :300-308). So v1's `machines × perMinute` output formula
+   was WRONG for any multi-stage candidate (the widget←gadget
+   fixture at chain-builder-adapter.test.ts:411-419 exercises
+   exactly this). The honest produced rate ALREADY EXISTS:
+   `ProposedStage.outputRate` (src/core/chain-builder.ts:46-51,
+   :295) — the primary stage's exact, ceil-overshooting rate.
 4. **#84 — tiles name no building.** graph-flow.ts:644 builds
    StageNodeData {recipeName, machineCount, powerText, …};
    GraphCanvas.tsx:147-167 renders recipeName, ×{machineCount},
@@ -80,24 +87,38 @@ at boundaries.**
 
 ## Axis C — #83: the compare table shows output /min
 
-**Pick: a per-row OUTPUT column with the ACTUAL produced rate.**
-- CompareRow gains `output: string` = formatRate(machines ×
-  candidate perMinute) + "/min" — the actual (ceil-overshooting)
-  rate, honest per row; the current row shows the stage's real R.
-  Computed in the same adapter that builds machines/rawDraw (pure,
-  testable).
+**Pick (r1-corrected): a per-row OUTPUT column sourced from the
+primary stage's `outputRate` — no recomputation.**
+- `CandidateRow` gains `output: string` =
+  formatRate(proposal.stages.find(s => s.itemId === itemId)
+  .outputRate) + "/min", computed inside candidateRowsFor
+  (chain-builder-adapter.ts:256-289) where the proposal is in scope
+  — the exact, per-candidate ceil-overshooting produced rate,
+  correct for single- AND multi-stage candidates (the r1 BLOCKER:
+  `machines` is the subtree Σ, so v1's machines × perMinute was
+  nonsense for multi-stage; PreviewRow.outputRate at :98 is the
+  in-repo precedent for this exact pass-through).
+- Every row — INCLUDING the current one — shows its candidate's
+  ACTUAL produced rate uniformly (v1's "current row shows R
+  exactly" claim DROPPED, r1: the current recipe's own ceil can
+  overshoot R too; uniform actuals are the honest display).
 - Column order: RECIPE | MACHINES | OUTPUT | POWER | RAW DRAW |
-  (apply) — output beside machines, where the overshoot reads
-  naturally. Header idiom unchanged (schedule table).
+  (apply). Header idiom unchanged (schedule table).
 
 ## Axis D — #84: tiles name the building
 
 **Pick: `×N MachineName` on the existing machines line.**
-- StageNodeData gains `machineName: string | null` (the catalog
-  machine displayName for the stage's recipe machineId; null when
-  recipe-less — same nullability posture as recipeName). Built in
-  graph-flow.ts beside recipeName/powerText (the catalog is already
-  in scope at :644).
+- StageNodeData gains `machineName: string | null` (null ONLY when
+  recipe-less — same nullability posture as recipeName). For a
+  recipe whose machineId is OFF-TABLE (reachable — the Blueprint's
+  "footprint unknown" path proves it), fall back to the RAW
+  machineId string per the existing machineNameFor precedent
+  (chain-builder-adapter.ts:88-92) — never null under a non-null
+  recipeName, so the span cannot render a dangling "×N " (r1
+  adversarial). Built in graph-flow.ts beside recipeName/powerText
+  (catalog in scope at :644; displayName field verified at
+  src/data/types.ts:38-42; the machines span gate is
+  GraphCanvas.tsx:154-156).
 - GraphCanvas's machines span renders `×{machineCount}
   {machineName}` when machineName is non-null (recipe-less tiles
   unchanged — the span is already gated on recipeName). Michael's
@@ -121,10 +142,14 @@ at boundaries.**
   band-mode significant label at xOf + pitch/2; tick x unchanged at
   xOf; the S15 thinning pins (nine-pair residual, labeled subsets)
   UNCHANGED (spacing invariant under constant shift).
-- C: adapter unit test — a candidate whose ceil overshoots pins the
-  actual output string (e.g. R=810 with perMinute 12.5 → 65
-  machines → 812.5/min); the current row pins R exactly; SSR pin of
-  the OUTPUT header + a row value.
+- C: adapter unit tests — (1) a single-stage candidate whose ceil
+  overshoots pins the actual output string; (2) a MULTI-STAGE
+  candidate (the widget←gadget fixture idiom,
+  chain-builder-adapter.test.ts:411-419) pins output = the PRIMARY
+  stage's outputRate, NOT machines × perMinute — the test that
+  would have caught the v1 formula (r1); (3) the current row pins
+  its own actual rate. SSR pin of the OUTPUT header + a row
+  value.
 - D: graph-flow unit — machineName resolves the displayName, null
   when recipe-less; SSR/node pin "×65 Refinery" on the walk fixture
   (or the store-test fixture equivalent).
@@ -145,13 +170,15 @@ at boundaries.**
 2. No existing test pins the Blueprint's 0-based label content
    (drift hunt verifies; if one does, it flips with the fix as a
    corrected pin, not churn).
-3. The compare adapter has the candidate perMinute in scope where it
-   computes machines (AltCompare.tsx:103 idiom) — verify the exact
-   adapter location at implementation.
-4. catalog.machines[machineId].displayName exists (the power path
-   reads catalog.machines at graph-flow.ts:491; verify the
-   displayName field name against the catalog types at
-   implementation).
+3. RESOLVED at r1 (no longer deferred): the adapter is
+   candidateRowsFor at chain-builder-adapter.ts:256-289; the output
+   field lives on CandidateRow; the source is the primary
+   ProposedStage.outputRate.
+4. catalog.machines[machineId].displayName VERIFIED
+   (src/data/types.ts:38-42); provenance corrected (r1 nit):
+   graph-flow.ts:491 delegates power to advice.ts — the direct
+   catalog.machines read precedent is chain-builder-adapter.ts:199,
+   and machineNameFor (:88-92) is the fallback idiom.
 5. A constant +pitch/2 label shift preserves ALL S15 spacing
    invariants (label-to-label distances unchanged) — the nine-pair
    and subset pins must pass untouched.
@@ -162,3 +189,18 @@ at boundaries.**
   #85 off-by-one root cause (display indexing, not geometry), the
   compare-row and node-data shapes, and the schematic label
   anchoring.
+- v2 (2026-08-05): r1 BOTH NEEDS_REWORK, CONVERGED on the Axis C
+  formula ([code] 1 BLOCKER + 1 IMPORTANT + 2 nits; [adversarial]
+  2 MAJOR + 1 MINOR + 2 LOW): v1's `machines × perMinute` was wrong
+  — the displayed machines is the SUBTREE Σ, so the formula breaks
+  on any multi-stage candidate; CORRECTED to the primary stage's
+  ProposedStage.outputRate (already exact, PreviewRow precedent),
+  computed on CandidateRow in candidateRowsFor; the "current row
+  shows R exactly" claim dropped (uniform actuals); the multi-stage
+  test added to the plan as the bug-exposing pin. Axis D gains the
+  off-table-machineId fallback (raw id per machineNameFor — never a
+  dangling "×N "). Citations fixed (CompareRow wrapper vs
+  CandidateRow; graph-flow provenance; GraphCanvas :154-156). Both
+  reviewers verified Axes A + B fully sound (nothing consumes the
+  0-based blueprint label; the +pitch/2 shift touches no pin; the
+  N=161 band edge stays in-bounds at 1308 < 1310 < 1336).
