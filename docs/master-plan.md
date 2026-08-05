@@ -184,4 +184,4 @@ process (all-Claude roster, opus implementers, per-phase gates).
 - **Status:** SHIPPED (2026-08-05). P0 (3a3feae — views theming +
   #55 sticky title block) → P1 (055d3dc — visible raw feeds: derived
   supply cards, ground-truth isRawResource classification, 741 tests).
-  Release: develop → main PR at arc close.
+  Release: PR #58 (develop → main, merged 2026-08-05).
