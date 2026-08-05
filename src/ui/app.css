@@ -341,7 +341,7 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  padding: 12px 0;
+  padding: 12px;
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -370,7 +370,7 @@ body {
 
 /* Build-chain panel (Stage 8 / Phase 3). */
 .chain-builder {
-  padding: 12px 0;
+  padding: 12px;
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -422,7 +422,7 @@ body {
 
 .tier-toggles {
   display: inline-flex;
-  gap: 2px;
+  gap: 6px;
 }
 
 /* Layout-only (S10 P0): the base rule now dresses the box (mono/muted/soft
@@ -442,7 +442,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  padding: 12px 0;
+  padding: 12px;
 }
 
 .summary-card {
@@ -710,7 +710,7 @@ body {
 }
 
 .findings-panel {
-  padding: 12px 0;
+  padding: 12px;
 }
 
 .finding-error {
@@ -797,6 +797,14 @@ body {
   border-radius: 0;
   background: var(--bg-panel);
   overflow: hidden;
+}
+
+/* The top-left canvas panel holds two sibling buttons (add-stage + the
+   flow toggle); RF's Panel sets no display, so this is purely additive.
+   Position classes scope it away from RF's own controls/attribution. */
+.graph-canvas .react-flow__panel.top.left {
+  display: flex;
+  gap: 8px;
 }
 
 .graph-add-stage {
