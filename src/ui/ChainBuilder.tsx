@@ -1,12 +1,17 @@
 /**
- * Build-chain panel (Stage 8 / Phase 3, ticket #39). Pick a target item + a
- * rate, Propose → a component-local PREVIEW (one row per proposed stage + the
- * raw-inputs / byproducts lines), then Apply (bulk store action) or discard.
+ * Build-chain panel (Stage 8 / Phase 3, ticket #39; S20 P1 customization, #100).
+ * Pick a target item + a rate, Propose → a component-local PREVIEW (one row per
+ * proposed stage + the raw-inputs / byproducts lines + the cost sheet), then
+ * shape it before Apply: pick the recipe per stage (incl. alternates), mark
+ * items treat-as-raw, and edit which machines the proposer may use. Every change
+ * re-proposes synchronously; Apply is unchanged (applies the CUSTOMIZED chain).
  *
- * The proposal is ephemeral — component-local state, no store field (the store
- * only gains the apply action). Apply clears the preview, so a double-apply is
- * an explicit re-propose (frozen Axis 6). Solver runs are a synchronous
- * catalog-sized DFS. Frozen design Axis 6.
+ * The proposal + the customization choices are ephemeral — component-local
+ * state, no store field (the store only gains the apply action; choice
+ * persistence is P3). Apply clears the preview but KEEPS the choices (session
+ * intent); Discard likewise clears the preview, keeps the choices. Solver runs
+ * are a synchronous catalog-sized DFS. Frozen design: features/propose-grows-up/
+ * p1-brainstorm.md (v7).
  */
 
 import { useState } from "react";
@@ -15,13 +20,19 @@ import { Fraction } from "../core/fraction.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
 import { useAppStore } from "../state/store.ts";
 import {
+  EXCLUDED_MACHINE_IDS,
   proposeChainForCatalog,
   toProposalPreview,
   previewRowText,
   itemRateLineText,
   metricsPowerText,
+  effectiveDefaultRecipe,
+  producerRecipesFor,
+  pickerOptionsFor,
+  excludableMachines,
 } from "./chain-builder-adapter.ts";
 import type { ProposalPreview } from "./chain-builder-adapter.ts";
+import type { Catalog, CatalogRecipe } from "../data/types.ts";
 
 /**
  * Parse the raw rate text into a positive Fraction, or a labeled error (the
@@ -49,6 +60,14 @@ interface Preview {
   view: ProposalPreview;
 }
 
+/** The stage row for `itemId` in the current preview, or undefined. */
+function stageRecipeId(
+  proposal: ChainProposal,
+  itemId: string,
+): string | undefined {
+  return proposal.stages.find((s) => s.itemId === itemId)?.recipeId;
+}
+
 export function ChainBuilder() {
   const catalog = useAppStore((s) =>
     s.catalog.status === "ready" ? s.catalog.catalog : null,
@@ -60,12 +79,70 @@ export function ChainBuilder() {
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
 
+  // The three customization controls (component-local; no store surface, no
+  // persistence — P3). Stale entries are KEPT: the core validate-and-ignore
+  // totality makes an override/raw whose item has left the closure inert, and a
+  // choice "comes back" correctly if the item re-enters. excludedMachineIds is
+  // seeded from the module constant (converter/packager).
+  const [overrides, setOverrides] = useState<Map<string, string>>(
+    () => new Map(),
+  );
+  const [rawItemIds, setRawItemIds] = useState<Set<string>>(() => new Set());
+  const [excludedMachineIds, setExcludedMachineIds] = useState<Set<string>>(
+    () => new Set(EXCLUDED_MACHINE_IDS),
+  );
+  // The one open picker at a time (component-local).
+  const [pickerItemId, setPickerItemId] = useState<string | null>(null);
+
   if (catalog === null) return null;
 
   // All catalog items, sorted by display name (the select's option list).
   const items = Object.values(catalog.items).sort((a, b) =>
     a.displayName.localeCompare(b.displayName),
   );
+
+  /**
+   * Re-run the solver with the current target/rate/choices and set the preview
+   * — THE single propose path (simplify fold: one body serves Propose and every
+   * control change, so the option-building can never desync between them).
+   * Deterministic, synchronous, no debounce (a catalog-sized DFS per click).
+   * Returns silently when there is no valid target/rate.
+   */
+  function repropose(
+    cat: Catalog,
+    patch: {
+      overrides?: Map<string, string>;
+      rawItemIds?: Set<string>;
+      excludedMachineIds?: Set<string>;
+    } = {},
+    force = false,
+  ): void {
+    // force = true only on the initial Propose (builds the first preview);
+    // control-change re-proposes are inert until a preview is live. The patch
+    // carries a just-computed control value React state can't expose yet.
+    if (!force && preview === null) return;
+    if (targetItemId === "") return;
+    const parsed = parseRateText(rateText);
+    if (!parsed.ok) return;
+    const opts = {
+      overrides: patch.overrides ?? overrides,
+      rawItemIds: patch.rawItemIds ?? rawItemIds,
+      excludedMachineIds: patch.excludedMachineIds ?? excludedMachineIds,
+    };
+    const proposal = proposeChainForCatalog(
+      cat,
+      targetItemId,
+      parsed.value,
+      opts,
+    );
+    setPreview({
+      proposal,
+      view: toProposalPreview(proposal, cat, {
+        excludedMachineIds: opts.excludedMachineIds,
+        rawItemIds: opts.rawItemIds,
+      }),
+    });
+  }
 
   function onPropose() {
     setError(null);
@@ -80,20 +157,73 @@ export function ChainBuilder() {
       setError(parsed.error);
       return;
     }
-    const proposal = proposeChainForCatalog(
-      catalog,
-      targetItemId,
-      parsed.value,
-    );
-    setPreview({ proposal, view: toProposalPreview(proposal, catalog) });
+    repropose(catalog, {}, true);
   }
 
   function onApply() {
     if (preview === null) return;
     applyChainProposal(preview.proposal);
-    // Clear the preview so a double-apply is an explicit re-propose (Axis 6).
+    // Clear the preview so a double-apply is an explicit re-propose (Axis 6);
+    // KEEP the customization choices (the user's session intent — Axis 3).
     setPreview(null);
+    setPickerItemId(null);
   }
+
+  function onDiscard() {
+    // Clear the preview, KEEP the choices (Axis 3).
+    setPreview(null);
+    setPickerItemId(null);
+  }
+
+  /**
+   * Choose `recipeId` for `itemId` from the picker. SET an override UNLESS the
+   * chosen id equals the effective default's id (then CLEAR — the map holds only
+   * true deviations, and clearing can never move the proposal away from the shown
+   * selection). A null effective default (fully-excluded / alternate-only) ⇒
+   * EVERY choice is an explicit override, nothing clears. Then re-propose.
+   */
+  function chooseRecipe(itemId: string, recipeId: string): void {
+    if (catalog === null) return;
+    const dflt = effectiveDefaultRecipe(catalog, itemId, excludedMachineIds);
+    const next = new Map(overrides);
+    if (dflt !== null && recipeId === dflt.id) {
+      next.delete(itemId);
+    } else {
+      next.set(itemId, recipeId);
+    }
+    setOverrides(next);
+    setPickerItemId(null);
+    repropose(catalog, { overrides: next });
+  }
+
+  function toggleRaw(itemId: string): void {
+    if (catalog === null) return;
+    const next = new Set(rawItemIds);
+    if (next.has(itemId)) next.delete(itemId);
+    else next.add(itemId);
+    setRawItemIds(next);
+    repropose(catalog, { rawItemIds: next });
+  }
+
+  function toggleExclusion(machineId: string): void {
+    if (catalog === null) return;
+    const next = new Set(excludedMachineIds);
+    if (next.has(machineId)) next.delete(machineId);
+    else next.add(machineId);
+    setExcludedMachineIds(next);
+    repropose(catalog, { excludedMachineIds: next });
+  }
+
+  const view = preview?.view ?? null;
+  // The forced (user-raw) rows drive the RAW OVERRIDES strip; natural and
+  // constrained rows render on their own lines (forced rows excluded — the strip
+  // is their sole surface, no double display).
+  const forcedRaws = view?.rawInputs.filter((r) => r.cause === "forced") ?? [];
+  const naturalRaws =
+    view?.rawInputs.filter((r) => r.cause === "natural") ?? [];
+  const constrainedRaws =
+    view?.rawInputs.filter((r) => r.cause === "constrained") ?? [];
+  const machines = excludableMachines(catalog);
 
   return (
     <div className="chain-builder">
@@ -125,81 +255,297 @@ export function ChainBuilder() {
           Propose
         </button>
       </div>
+
+      {/* Machine exclusions — the <details> disclosure; changes re-propose. */}
+      <details className="chain-builder-exclusions">
+        <summary>MACHINE EXCLUSIONS ({excludedMachineIds.size})</summary>
+        <ul>
+          {machines.map((m) => (
+            <li key={m.machineId}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={excludedMachineIds.has(m.machineId)}
+                  onChange={() => toggleExclusion(m.machineId)}
+                />
+                {m.displayName}
+              </label>
+            </li>
+          ))}
+        </ul>
+      </details>
+
       {error !== null && <p className="chain-builder-error">{error}</p>}
-      {preview !== null && (
+      {preview !== null && view !== null && (
         <div className="chain-builder-preview">
-          {!preview.view.isEmpty && (
+          {!view.isEmpty && (
             <dl className="chain-builder-metrics">
               <div>
                 <dt>Σ POWER</dt>
-                <dd>{metricsPowerText(preview.view.metrics)}</dd>
+                <dd>{metricsPowerText(view.metrics)}</dd>
               </div>
               <div>
                 <dt>Σ MACHINES</dt>
-                <dd>{preview.view.metrics.machineCount.toString()}</dd>
+                <dd>{view.metrics.machineCount.toString()}</dd>
               </div>
               <div>
                 <dt>RAW</dt>
                 <dd>
-                  {preview.view.rawInputs.length > 0
-                    ? itemRateLineText(preview.view.rawInputs)
-                    : "—"}
+                  {naturalRaws.length > 0 ? itemRateLineText(naturalRaws) : "—"}
                 </dd>
               </div>
             </dl>
           )}
-          {preview.view.isEmpty ? (
-            <p className="chain-builder-empty">
-              Nothing to build — the target is a raw input.
-            </p>
+          {view.isEmpty ? (
+            /* Constrained/forced targets already render on their labeled raw
+               line with a recovery surface — a second generic message would
+               double-speak (boundary r1 NIT). Only a NATURAL raw target gets
+               the plain explanation. */
+            view.rawInputs.every((r) => r.cause === "natural") ? (
+              <p className="chain-builder-empty">
+                Nothing to build — the target is a raw input.
+              </p>
+            ) : null
           ) : (
             <ul className="chain-builder-rows">
-              {preview.view.rows.map((row, i) => (
-                <li key={row.itemName}>
-                  {/* Tier marker on the first row of each depth (the rows are
-                      ordered depth-asc, so a depth change === a new tier). */}
-                  {(i === 0 ||
-                    preview.view.rows[i - 1]!.depth !== row.depth) && (
-                    <span className="chain-builder-tier">T{row.depth}</span>
-                  )}
-                  {previewRowText(row)}
-                  {row.feeds.length > 0 && (
-                    <span className="chain-builder-feeds">
-                      {" → feeds "}
-                      {row.feeds.join(", ")}
-                    </span>
-                  )}
-                  {row.candidateCount > 0 && (
-                    <span className="chain-builder-alt">
-                      {" "}
-                      {row.candidateCount} recipes
-                    </span>
-                  )}
-                </li>
-              ))}
+              {view.rows.map((row, i) => {
+                const itemId = row.itemId;
+                return (
+                  <li key={row.itemId}>
+                    {/* Tier marker on the first row of each depth (rows are
+                        depth-asc, so a depth change === a new tier). */}
+                    {(i === 0 || view.rows[i - 1]!.depth !== row.depth) && (
+                      <span className="chain-builder-tier">T{row.depth}</span>
+                    )}
+                    {previewRowText(row)}
+                    {row.feeds.length > 0 && (
+                      <span className="chain-builder-feeds">
+                        {" → feeds "}
+                        {row.feeds.join(", ")}
+                      </span>
+                    )}
+                    <RecipePicker
+                      catalog={catalog}
+                      itemId={itemId}
+                      candidateCount={row.candidateCount}
+                      currentRecipeId={stageRecipeId(preview.proposal, itemId)}
+                      excludedMachineIds={excludedMachineIds}
+                      open={pickerItemId === itemId}
+                      onToggle={() =>
+                        setPickerItemId(pickerItemId === itemId ? null : itemId)
+                      }
+                      onChoose={(recipeId) => chooseRecipe(itemId, recipeId)}
+                    />
+                    {/* RAW toggle — never on the T0 target row (depth 0). */}
+                    {row.depth !== 0 && (
+                      <button
+                        type="button"
+                        className="chain-builder-rawtoggle"
+                        onClick={() => toggleRaw(itemId)}
+                      >
+                        RAW
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
-          {/* Raw inputs now live in the cost sheet's RAW line above (S20 P0
-              Axis 4); byproducts stay their own note here. */}
-          {preview.view.byproducts.length > 0 && (
+
+          {/* Constrained raws: a producer exists but none is eligible under the
+              current exclusions — their OWN labeled line, in the notice styling,
+              each with an inline recovery affordance. */}
+          {constrainedRaws.map((r) => {
+            const options = producerRecipesFor(
+              catalog,
+              r.itemId,
+              excludedMachineIds,
+            );
+            return (
+              <p key={r.itemId} className="chain-builder-constrained">
+                RAW (no eligible producer): {r.itemName} {r.rate}/min
+                {options.length > 0 ? (
+                  <>
+                    {" — "}
+                    <select
+                      aria-label={`pick a recipe for ${r.itemName}`}
+                      defaultValue=""
+                      onChange={(e) => {
+                        if (e.target.value !== "")
+                          chooseRecipe(r.itemId, e.target.value);
+                      }}
+                    >
+                      <option value="">pick recipe…</option>
+                      {options.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {recipeLabel(
+                            catalog,
+                            o,
+                            r.itemId,
+                            excludedMachineIds,
+                          )}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                ) : (
+                  <span className="chain-builder-constrained-hint">
+                    {" "}
+                    — every producer's machine is excluded; edit MACHINE
+                    EXCLUSIONS to recover.
+                  </span>
+                )}
+              </p>
+            );
+          })}
+
+          {/* RAW OVERRIDES strip — user-forced raws only; × to remove. Visible
+              only when nonempty; also where a stale raw mark is removed. */}
+          {forcedRaws.length > 0 && (
+            <p className="chain-builder-rawstrip">
+              RAW OVERRIDES:{" "}
+              {forcedRaws.map((r, i) => (
+                <span key={r.itemId}>
+                  {i > 0 && ", "}
+                  {r.itemName} {r.rate}/min
+                  <button
+                    type="button"
+                    aria-label={`remove raw override for ${r.itemName}`}
+                    onClick={() => toggleRaw(r.itemId)}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </p>
+          )}
+
+          {view.byproducts.length > 0 && (
             <p className="chain-builder-byproducts">
-              Byproducts: {itemRateLineText(preview.view.byproducts)}
+              Byproducts: {itemRateLineText(view.byproducts)}
             </p>
           )}
           <div className="chain-builder-actions">
-            <button
-              type="button"
-              onClick={onApply}
-              disabled={preview.view.isEmpty}
-            >
+            <button type="button" onClick={onApply} disabled={view.isEmpty}>
               Apply
             </button>
-            <button type="button" onClick={() => setPreview(null)}>
+            <button type="button" onClick={onDiscard}>
               Discard
             </button>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The compose-able option label for a picker recipe (Axis 4): "(alt)" on an
+ * alternate, "(default)" on the effective default when non-null, "(machine
+ * excluded)" on a force-included recipe whose machine is excluded — labels
+ * COMPOSE ("(alt) (machine excluded)" is the one reachable pairing). The
+ * recipe's display name leads.
+ */
+function recipeLabel(
+  catalog: Catalog,
+  recipe: CatalogRecipe,
+  itemId: string,
+  excludedMachineIds: ReadonlySet<string>,
+): string {
+  const dflt = effectiveDefaultRecipe(catalog, itemId, excludedMachineIds);
+  const tags: string[] = [];
+  if (recipe.isAlternate) tags.push("(alt)");
+  if (dflt !== null && recipe.id === dflt.id) tags.push("(default)");
+  if (excludedMachineIds.has(recipe.machineId)) tags.push("(machine excluded)");
+  return tags.length > 0
+    ? `${recipe.displayName} ${tags.join(" ")}`
+    : recipe.displayName;
+}
+
+interface RecipePickerProps {
+  catalog: Catalog;
+  itemId: string;
+  candidateCount: number;
+  currentRecipeId: string | undefined;
+  excludedMachineIds: ReadonlySet<string>;
+  open: boolean;
+  onToggle: () => void;
+  onChoose: (recipeId: string) => void;
+}
+
+/**
+ * The per-stage recipe picker (Axis 4). The affordance renders iff
+ * pickerOptionsFor(...).length ≥ 2 OR the current recipe is force-included —
+ * NEVER gated on candidateCount (so an excluded override is always reachable
+ * from its row). The chip reads "N recipes" when candidateCount ≥ 2 (P0
+ * semantics unchanged); when the affordance must render WITHOUT a ≥2 count chip
+ * it renders as a "machine excluded" chip in notice styling. Clicking toggles an
+ * inline <select> whose options come from pickerOptionsFor ALONE, labeled on the
+ * unified list; current selection = the stage's recipeId.
+ */
+function RecipePicker(props: RecipePickerProps) {
+  const {
+    catalog,
+    itemId,
+    candidateCount,
+    currentRecipeId,
+    excludedMachineIds,
+    open,
+    onToggle,
+    onChoose,
+  } = props;
+
+  const options = pickerOptionsFor(
+    catalog,
+    itemId,
+    excludedMachineIds,
+    currentRecipeId,
+  );
+  const forceIncluded =
+    currentRecipeId !== undefined &&
+    catalog.recipes[currentRecipeId] !== undefined &&
+    !producerRecipesFor(catalog, itemId, excludedMachineIds).some(
+      (r) => r.id === currentRecipeId,
+    );
+
+  // Affordance reachability (r4): options ≥ 2 OR the current recipe is
+  // force-included. Decoupled from candidateCount.
+  if (options.length < 2 && !forceIncluded) return null;
+
+  // The chip: the P0 "N recipes" count when candidateCount ≥ 2; otherwise (the
+  // affordance renders without a ≥2 count chip — e.g. an excluded override with
+  // ≤1 other eligible producer) a "machine excluded" notice chip.
+  const chipLabel =
+    candidateCount >= 2 ? `${candidateCount} recipes` : "machine excluded";
+  const chipClass =
+    candidateCount >= 2
+      ? "chain-builder-picker"
+      : "chain-builder-picker-notice";
+
+  return (
+    <span className="chain-builder-picker-wrap">
+      {" "}
+      <button
+        type="button"
+        className={chipClass}
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        {chipLabel}
+      </button>
+      {open && (
+        <select
+          aria-label="pick a recipe for this stage"
+          value={currentRecipeId ?? ""}
+          onChange={(e) => onChoose(e.target.value)}
+        >
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {recipeLabel(catalog, o, itemId, excludedMachineIds)}
+            </option>
+          ))}
+        </select>
+      )}
+    </span>
   );
 }
