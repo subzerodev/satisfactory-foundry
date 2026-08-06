@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Satisfactory Foundry">
+  <!-- Drafting-stamp identity. Full-bleed OPAQUE vellum field (no transparent
+       margin) so ONE raster serves both "any" and "maskable" purposes: a
+       transparent-padded icon would shrink to a glyph under maskable crops.
+       Ink (#24384a) manifold glyph — a horizontal bus line with vertical drops
+       feeding square take-off nodes, echoing the app's manifold visualizer.
+       Single orange accent (#c25a1d) marks the source drop. All glyph content
+       sits inside the inner 80% maskable safe zone (~51..461). -->
+  <rect x="0" y="0" width="512" height="512" fill="#ede9dc"/>
+
+  <!-- Sheet frame: an ink hairline border inside the safe zone. -->
+  <rect x="72" y="72" width="368" height="368" fill="none" stroke="#24384a" stroke-width="6"/>
+
+  <!-- The bus: a horizontal main line across the sheet. -->
+  <line x1="104" y1="256" x2="408" y2="256" stroke="#24384a" stroke-width="14" stroke-linecap="square"/>
+
+  <!-- Source node (accent): the drop the bus is fed from, on the left. -->
+  <rect x="96" y="224" width="64" height="64" fill="#c25a1d"/>
+
+  <!-- Take-off drops: vertical stubs down to square output nodes. -->
+  <g fill="#24384a" stroke="#24384a">
+    <line x1="216" y1="256" x2="216" y2="344" stroke-width="12"/>
+    <rect x="188" y="344" width="56" height="56" stroke="none"/>
+
+    <line x1="312" y1="256" x2="312" y2="344" stroke-width="12"/>
+    <rect x="284" y="344" width="56" height="56" stroke="none"/>
+  </g>
+
+  <!-- A single feed rising into the bus, balancing the drops below. -->
+  <g fill="#24384a" stroke="#24384a">
+    <line x1="264" y1="256" x2="264" y2="168" stroke-width="12"/>
+    <rect x="236" y="112" width="56" height="56" stroke="none"/>
+  </g>
+</svg>
