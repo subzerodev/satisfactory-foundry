@@ -102,27 +102,44 @@ export function ChainBuilder() {
   );
 
   /**
-   * Re-run the solver with the current target/rate/choices and set the preview.
-   * The single call Propose and every control change both make — deterministic,
-   * synchronous, no debounce (a catalog-sized DFS per click). Returns silently
-   * when there is no valid target/rate (nothing to re-propose against yet).
+   * Re-run the solver with the current target/rate/choices and set the preview
+   * — THE single propose path (simplify fold: one body serves Propose and every
+   * control change, so the option-building can never desync between them).
+   * Deterministic, synchronous, no debounce (a catalog-sized DFS per click).
+   * Returns silently when there is no valid target/rate.
    */
-  function repropose(cat: Catalog): void {
+  function repropose(
+    cat: Catalog,
+    patch: {
+      overrides?: Map<string, string>;
+      rawItemIds?: Set<string>;
+      excludedMachineIds?: Set<string>;
+    } = {},
+    force = false,
+  ): void {
+    // force = true only on the initial Propose (builds the first preview);
+    // control-change re-proposes are inert until a preview is live. The patch
+    // carries a just-computed control value React state can't expose yet.
+    if (!force && preview === null) return;
     if (targetItemId === "") return;
     const parsed = parseRateText(rateText);
     if (!parsed.ok) return;
-    const options = { overrides, rawItemIds, excludedMachineIds };
+    const opts = {
+      overrides: patch.overrides ?? overrides,
+      rawItemIds: patch.rawItemIds ?? rawItemIds,
+      excludedMachineIds: patch.excludedMachineIds ?? excludedMachineIds,
+    };
     const proposal = proposeChainForCatalog(
       cat,
       targetItemId,
       parsed.value,
-      options,
+      opts,
     );
     setPreview({
       proposal,
       view: toProposalPreview(proposal, cat, {
-        excludedMachineIds,
-        rawItemIds,
+        excludedMachineIds: opts.excludedMachineIds,
+        rawItemIds: opts.rawItemIds,
       }),
     });
   }
@@ -140,7 +157,7 @@ export function ChainBuilder() {
       setError(parsed.error);
       return;
     }
-    repropose(catalog);
+    repropose(catalog, {}, true);
   }
 
   function onApply() {
@@ -176,7 +193,7 @@ export function ChainBuilder() {
     }
     setOverrides(next);
     setPickerItemId(null);
-    reproposeWith(catalog, { overrides: next });
+    repropose(catalog, { overrides: next });
   }
 
   function toggleRaw(itemId: string): void {
@@ -185,7 +202,7 @@ export function ChainBuilder() {
     if (next.has(itemId)) next.delete(itemId);
     else next.add(itemId);
     setRawItemIds(next);
-    reproposeWith(catalog, { rawItemIds: next });
+    repropose(catalog, { rawItemIds: next });
   }
 
   function toggleExclusion(machineId: string): void {
@@ -194,44 +211,7 @@ export function ChainBuilder() {
     if (next.has(machineId)) next.delete(machineId);
     else next.add(machineId);
     setExcludedMachineIds(next);
-    reproposeWith(catalog, { excludedMachineIds: next });
-  }
-
-  /**
-   * Re-propose using a mix of the current state and the just-computed override
-   * of ONE control (React state updates are async, so the setter's value is not
-   * yet readable — pass it explicitly). Only re-proposes if a preview is live.
-   */
-  function reproposeWith(
-    cat: Catalog,
-    patch: {
-      overrides?: Map<string, string>;
-      rawItemIds?: Set<string>;
-      excludedMachineIds?: Set<string>;
-    },
-  ): void {
-    if (preview === null) return;
-    if (targetItemId === "") return;
-    const parsed = parseRateText(rateText);
-    if (!parsed.ok) return;
-    const opts = {
-      overrides: patch.overrides ?? overrides,
-      rawItemIds: patch.rawItemIds ?? rawItemIds,
-      excludedMachineIds: patch.excludedMachineIds ?? excludedMachineIds,
-    };
-    const proposal = proposeChainForCatalog(
-      cat,
-      targetItemId,
-      parsed.value,
-      opts,
-    );
-    setPreview({
-      proposal,
-      view: toProposalPreview(proposal, cat, {
-        excludedMachineIds: opts.excludedMachineIds,
-        rawItemIds: opts.rawItemIds,
-      }),
-    });
+    repropose(catalog, { excludedMachineIds: next });
   }
 
   const view = preview?.view ?? null;
