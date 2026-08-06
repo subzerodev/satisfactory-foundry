@@ -1,5 +1,9 @@
 /* Identity type (Stage 9 / Phase 0). Self-hosted latin-subset woff2 in
-   public/fonts/ (BASE_URL-relative so a subpath deploy still resolves);
+   public/fonts/, referenced root-absolute (url("/fonts/…")) so Vite treats
+   them as public assets and rewrites the URL under the build --base — a
+   subpath deploy at /satisfactory-foundry/ emits url(/satisfactory-foundry/
+   fonts/…). (CSS-relative url("./fonts/…") does NOT resolve — src/ui/fonts/
+   does not exist, so Vite emits it verbatim and it 404s in production.)
    font-display: swap so text paints in the fallback stack immediately and
    swaps when the face arrives. Big Shoulders is the condensed drafting
    display face (600 base + 700 emphasis); IBM Plex Mono carries tabular
@@ -9,28 +13,28 @@
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url("./fonts/big-shoulders-600.woff2") format("woff2");
+  src: url("/fonts/big-shoulders-600.woff2") format("woff2");
 }
 @font-face {
   font-family: "Big Shoulders";
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url("./fonts/big-shoulders-700.woff2") format("woff2");
+  src: url("/fonts/big-shoulders-700.woff2") format("woff2");
 }
 @font-face {
   font-family: "IBM Plex Mono";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url("./fonts/ibm-plex-mono-400.woff2") format("woff2");
+  src: url("/fonts/ibm-plex-mono-400.woff2") format("woff2");
 }
 @font-face {
   font-family: "IBM Plex Mono";
   font-style: normal;
   font-weight: 500;
   font-display: swap;
-  src: url("./fonts/ibm-plex-mono-500.woff2") format("woff2");
+  src: url("/fonts/ibm-plex-mono-500.woff2") format("woff2");
 }
 
 /* The VELLUM medium (Stage 9 / Phase 0). The existing semantic vars keep
@@ -324,6 +328,47 @@ body {
   margin: 0;
   color: var(--fg-muted);
   font-size: 0.85rem;
+}
+
+/* The PWA update prompt (Stage 18 / Axis 5) — a small drafting-stamp toast
+   pinned to the corner, shown only when a new service worker is waiting. Reads
+   the semantic tokens (ink frame on a lighter vellum panel; the RELOAD action
+   wears the ONE accent) so it inverts to the cyanotype theme with everything
+   else. z-index above the drop-overlay so it stays legible mid-drag. */
+.update-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+
+.update-toast-label {
+  font-family: var(--font-mono-num);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.update-toast-action {
+  font-family: var(--font-mono-num);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.update-toast-action:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 .controls-strip {

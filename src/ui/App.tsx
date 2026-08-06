@@ -28,6 +28,7 @@ import { ChainBuilder } from "./ChainBuilder.tsx";
 import { LinkInspector } from "./LinkInspector.tsx";
 import { AltCompare } from "./AltCompare.tsx";
 import { TitleBlock } from "./TitleBlock.tsx";
+import { UpdateToast } from "./UpdateToast.tsx";
 import "./app.css";
 
 // Wire the bundled default catalog once, at module load: fetch the static
@@ -235,6 +236,7 @@ export default function App() {
   if (s.catalog.status === "needs-upload") {
     return (
       <>
+        <UpdateToast />
         {dropOverlay}
         <UploadScreen
           reason={s.catalog.reason}
@@ -302,6 +304,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <UpdateToast />
       {dropOverlay}
       <header className="app-header">
         {/* The wordmark stays one <h1>; the "/ FICSIT DWG" suffix carries the
