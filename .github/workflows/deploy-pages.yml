@@ -26,6 +26,8 @@ jobs:
     # skip instead of failing on GitHub-only Pages actions.
     if: github.repository_owner == 'subzerodev'
     runs-on: ubuntu-latest
+    outputs:
+      bundle: ${{ steps.bundle.outputs.bundle }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -38,6 +40,14 @@ jobs:
         run: npm ci
       - name: Build (subpath base)
         run: npm run build -- --base=/satisfactory-foundry/
+      # The hashed bundle filename is unique per build — the verify step in
+      # deploy uses it as the fingerprint of THIS build on the live site.
+      - name: Record build fingerprint
+        id: bundle
+        run: |
+          b=$(grep -o -m 1 'assets/index-[^"]*\.js' dist/index.html)
+          [ -n "$b" ] || { echo "no bundle reference in dist/index.html — fingerprint would be empty, verify gate would fail open"; exit 1; }
+          echo "bundle=$b" >> "$GITHUB_OUTPUT"
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
@@ -51,35 +61,28 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: https://subzerodev.github.io/satisfactory-foundry/
     steps:
-      # deploy-pages clamps its `timeout` input to a HARD 10-min MAX_TIMEOUT
-      # (src/internal/deployment.js Math.min; it logs a warning and ignores
-      # larger values — verified live 2026-08-06: run 31099772326 received
-      # timeout: 1800000, still aborted at ~10:05). Pages deployments have sat
-      # unprocessed in deployment_queued past that ceiling (#95), so
-      # resilience comes from the retry job below — a fresh attempt gets a
-      # fresh 10-min window. On timeout the action CANCELS its server-side
-      # deployment before failing, so a retry never stacks on a live one.
-      - name: Deploy to GitHub Pages
+      # deploy-pages hard-caps its wait at 10 min (MAX_TIMEOUT clamp in its
+      # source; larger `timeout` inputs are ignored with a warning) and then
+      # reports failure + attempts a cancel — while the deployment often lands
+      # server-side anyway (2026-08-06, #95: every "failed" deploy went live).
+      # Its verdict is therefore ADVISORY ONLY; the job's real verdict comes
+      # from the verify step below — observed reality, on our own clock.
+      - name: Deploy to GitHub Pages (advisory verdict)
         id: deployment
         uses: actions/deploy-pages@v4
-
-  deploy-retry:
-    # always() suppresses the implicit success() GitHub prepends to if-
-    # conditions lacking a status-check function — without it this job is
-    # SKIPPED whenever deploy fails, i.e. exactly when it must run. The
-    # result check then scopes it: fires on deploy failure only (a build
-    # failure cascades deploy to 'skipped', not 'failure', so no misfire).
-    # The retry reuses the run's uploaded Pages artifact (same mechanism as
-    # a "re-run failed jobs" of the deploy job, observed working).
-    if: always() && github.repository_owner == 'subzerodev' && needs.deploy.result == 'failure'
-    needs: deploy
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages (retry)
-        id: deployment
-        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - name: Verify the site serves this build
+        env:
+          BUNDLE: ${{ needs.build.outputs.bundle }}
+        run: |
+          [ -n "$BUNDLE" ] || { echo "empty fingerprint reached verify — refusing to fail open"; exit 1; }
+          echo "expecting: $BUNDLE"
+          for i in $(seq 1 100); do
+            if curl -sf https://subzerodev.github.io/satisfactory-foundry/ | grep -qF "$BUNDLE"; then
+              echo "LIVE after $((i*15))s"; exit 0
+            fi
+            echo "poll $i: not serving this build yet"; sleep 15
+          done
+          echo "NOT live within 25 min"; exit 1
