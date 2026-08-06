@@ -3,6 +3,22 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-07 — Stage 20 P1: the Propose button takes direction
+
+> Hey Michael — the proposal is yours to shape now, before you commit
+> to it. Click the "N recipes" note on any line and pick a different
+> recipe — alternates included — and the whole chain instantly
+> re-plans around your choice, machine counts and power and all;
+> pick the default again and it's back to standard. Every line also
+> has a RAW button: press it to say "I already make this elsewhere"
+> and the chain stops there, listing it as a supply instead (a
+> little strip shows your raw markings with an × to undo). And
+> there's a MACHINE EXCLUSIONS panel — untick machines you haven't
+> built yet and the planner works around them; if that leaves
+> something unmakeable, it tells you plainly on its own line and
+> offers the alternate recipes that could still make it, right
+> there. Apply always builds exactly the chain you shaped.
+
 ## 2026-08-06 — Stage 20 P0: the Propose button shows its work
 
 > Hey Michael — when you ask the chain builder to Propose now, it
