@@ -71,6 +71,10 @@ export function proposeChainForCatalog(
 
 /** One preview row per proposed stage — pure data → display strings. */
 export interface PreviewRow {
+  /** The produced item's id — the key the P1 controls (picker / RAW toggle)
+   *  attach to. Rows are depth-sorted, so index alignment with `proposal.stages`
+   *  (id-sorted) is unsafe; the row carries its own id. */
+  itemId: string;
   /** The produced item's display name (falls back to id). */
   itemName: string;
   /** The producing machine's display name (falls back to id). */
@@ -260,6 +264,7 @@ export function toProposalPreview(
   }
 
   const rows: PreviewRow[] = proposal.stages.map((s) => ({
+    itemId: s.itemId,
     itemName: itemName(s.itemId),
     machineName: machineNameFor(s),
     machineCount: s.machineCount.toString(),
