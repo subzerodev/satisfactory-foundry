@@ -1,0 +1,811 @@
+diff --git a/features/plan-durability/r2-verification.log b/features/plan-durability/r2-verification.log
+new file mode 100644
+index 0000000..4e17139
+--- /dev/null
++++ b/features/plan-durability/r2-verification.log
+@@ -0,0 +1,134 @@
++# Stage 19 (#92) plan-durability — bidirectionality verification log
++# Each new production behavior: green baseline, a real break, a GENUINE
++# vitest FAIL naming the new test(s), restore, green re-run. No tautologies.
++# Test file: src/state/store.test.ts, describe "plan durability: export-all + bundle import"
++# Runner: npx vitest run src/state/store.test.ts -t '<name>'
++
++==================================================================
++BASELINE — all new durability tests green
++==================================================================
++ Test Files  1 passed (1)
++      Tests  9 passed | 134 skipped (143)
++
++==================================================================
++BEHAVIOR 1 — bundle arm (sniff + import entries)
++==================================================================
++BREAK: neutralize the bundle sniff so a bundle envelope falls through to
++the single-file arm (validatePlanFile rejects the envelope).
++  command: perl -0pi -e "s/if \(isPlanBundle\(parsed\)\) \{/if (false) {/" src/state/store.ts
++--- FAIL run (broken) ---
++ ❯ src/state/store.test.ts (143 tests | 7 failed | 134 skipped) 22ms
++     × round-trip: save 2 → exportAllPlans → wipe → importPlan(bundle) restores both, no auto-load 14ms
++     × collision: a bundle entry matching an existing name overwrites, keeping prior createdAt 1ms
++     × PINNED: two entries with the same trimmed name → ONE row, LAST entry's content, count proves no dup 1ms
++     × per-entry skip: [valid, corrupt, valid] → 2 imported, planError 'imported 2 of 3' 1ms
++     × all-valid bundle sets NO partial-success message (K=0) 1ms
++     × zero-valid bundle → error, nothing written 1ms
++     × empty bundle (plans: []) → error, nothing written 1ms
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
++ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > round-trip: save 2 → exportAllPlans → wipe → importPlan(bundle) restores both, no auto-load
++ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > collision: a bundle entry matching an existing name overwrites, keeping prior createdAt
++ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > PINNED: two entries with the same trimmed name → ONE row, LAST entry's content, count proves no dup
++ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > per-entry skip: [valid, corrupt, valid] → 2 imported, planError 'imported 2 of 3'
++ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > all-valid bundle sets NO partial-success message (K=0)
++ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > zero-valid bundle → error, nothing written
++AssertionError: expected 'import failed: not a valid plan file' to be 'import failed: no valid plans in bund…' // Object.is equality
++Expected: "import failed: no valid plans in bundle"
++Received: "import failed: not a valid plan file"
++    2921|       "import failed: no valid plans in bundle",
++ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > empty bundle (plans: []) → error, nothing written
++AssertionError: expected 'import failed: not a valid plan file' to be 'import failed: no valid plans in bund…' // Object.is equality
++Expected: "import failed: no valid plans in bundle"
++Received: "import failed: not a valid plan file"
++    2931|       "import failed: no valid plans in bundle",
++ Test Files  1 failed (1)
++      Tests  7 failed | 2 passed | 134 skipped (143)
++RESTORE: git checkout -- src/state/store.ts
++--- GREEN re-run (restored) ---
++ Test Files  1 passed (1)
++      Tests  9 passed | 134 skipped (143)
++
++==================================================================
++BEHAVIOR 2 — within-bundle duplicate-name resolution (PINNED)
++==================================================================
++BREAK: make the shared savePlanFromFile helper collision-BLIND (always
++create a fresh row) — this defeats last-entry-wins-into-one-row: two
++same-named bundle entries would each create a duplicate row.
++  command: perl -i -pe "s/const match = existing.find\(\(p\) => p.name === trimmed\);/const match = undefined; void existing;/ if \$. == 1059" src/state/store.ts
++--- FAIL run (broken) ---
++ ❯ src/state/store.test.ts (143 tests | 2 failed | 134 skipped) 21ms
++     × PINNED: two entries with the same trimmed name → ONE row, LAST entry's content, count proves no dup 1ms
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
++ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > collision: a bundle entry matching an existing name overwrites, keeping prior createdAt
++- Expected
+++ Received
++    2848|     ).toHaveLength(1);
++ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > PINNED: two entries with the same trimmed name → ONE row, LAST entry's content, count proves no dup
++- Expected
+++ Received
++    2871|     expect(store.getState().plans!).toHaveLength(1);
++ Test Files  1 failed (1)
++      Tests  2 failed | 7 passed | 134 skipped (143)
++RESTORE: git checkout -- src/state/store.ts
++--- GREEN re-run (restored) ---
++ Test Files  1 passed (1)
++      Tests  9 passed | 134 skipped (143)
++
++==================================================================
++BEHAVIOR 3 — exportAllPlans envelope shape
++==================================================================
++BREAK: emit a WRONG kind in the exported envelope. This fails the
++envelope-shape assertion AND the round-trip (import sniff won't fire).
++  command: perl -i -pe "s/kind: PLAN_BUNDLE_KIND,/kind: \"wrong-kind\" as any,/ if \$. == 1817" src/state/store.ts
++--- FAIL run (broken) ---
++ ❯ src/state/store.test.ts (143 tests | 2 failed | 134 skipped) 21ms
++     × round-trip: save 2 → exportAllPlans → wipe → importPlan(bundle) restores both, no auto-load 14ms
++     × envelope shape: kind, format_version, exportedAt, plans length 2ms
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
++ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > round-trip: save 2 → exportAllPlans → wipe → importPlan(bundle) restores both, no auto-load
++- Expected
+++ Received
++ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > envelope shape: kind, format_version, exportedAt, plans length
++AssertionError: expected 'wrong-kind' to be 'foundry-plan-bundle' // Object.is equality
++Expected: "foundry-plan-bundle"
++Received: "wrong-kind"
++ Test Files  1 failed (1)
++      Tests  2 failed | 7 passed | 134 skipped (143)
++RESTORE: git checkout -- src/state/store.ts
++--- GREEN re-run (restored) ---
++ Test Files  1 passed (1)
++      Tests  9 passed | 134 skipped (143)
++
++==================================================================
++BEHAVIOR 4 — partial-success message + skip-invalid policy
++==================================================================
++BREAK: suppress the partial-success planError (set it to null) so a
++[valid, corrupt, valid] bundle imports 2 but reports no caveat.
++  command: perl -i -pe "s/planError: .imported .{imported}.*invalid skipped\).,/planError: null,/ if \$. == 1879" src/state/store.ts
++--- FAIL run (broken) ---
++ ❯ src/state/store.test.ts (143 tests | 1 failed | 134 skipped) 20ms
++     × per-entry skip: [valid, corrupt, valid] → 2 imported, planError 'imported 2 of 3' 4ms
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
++ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > per-entry skip: [valid, corrupt, valid] → 2 imported, planError 'imported 2 of 3'
++- Expected:
+++ Received:
++ Test Files  1 failed (1)
++      Tests  1 failed | 8 passed | 134 skipped (143)
++RESTORE: git checkout -- src/state/store.ts
++--- GREEN re-run (restored) ---
++ Test Files  1 passed (1)
++      Tests  9 passed | 134 skipped (143)
++
++==================================================================
++SUMMARY
++==================================================================
++4 distinct new production behaviors, each broken with a real code edit
++and each producing a GENUINE vitest FAIL naming the new test(s):
++  1. Bundle arm (sniff neutralized)          → 7 bundle tests fail;
++     round-trip/collision/PINNED/skip/zero/empty all break.
++  2. Duplicate-name resolution (helper made   → PINNED + collision fail
++     collision-blind)                            (duplicate row created).
++  3. exportAllPlans envelope (wrong kind)     → envelope-shape + round-trip
++     fail (sniff can't fire on wrong kind).
++  4. Partial-success message (set to null)    → per-entry-skip fails.
++Each restore returns 9/9 green. No test passes both broken and fixed.
+diff --git a/src/state/store.test.ts b/src/state/store.test.ts
+index d043313..20fd3ce 100644
+--- a/src/state/store.test.ts
++++ b/src/state/store.test.ts
+@@ -7,7 +7,7 @@ import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
+ import { parseCatalogFromText } from "../data/catalog.ts";
+ import type { PlanFileV1, PlanFileV2, PlanFileV5 } from "../data/plan-store.ts";
+ import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
+-import type { StageLink } from "./store.ts";
++import type { StageLink, PlanBundle } from "./store.ts";
+ import { proposeChain } from "../core/chain-builder.ts";
+ import type { ChainProposal } from "../core/chain-builder.ts";
+ import { applyDrawnDistance } from "../ui/chain-view.ts";
+@@ -2719,6 +2719,227 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
+   });
+ });
+ 
++// ---------------------------------------------------------------------------
++// Plan durability — export-all bundle + bundle import (Stage 19 / #92).
++// ---------------------------------------------------------------------------
++
++describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
++  async function readyStore() {
++    const store = createAppStore(makeStorageStub().storage);
++    await store.getState().uploadDocsText(DOCS_TEXT);
++    return store;
++  }
++
++  /** A minimal valid v5 plan file with a chosen name + recipe (content marker). */
++  function planFile(name: string, recipeId: string | null): PlanFileV5 {
++    return {
++      format_version: 5,
++      name,
++      createdAt: "2026-01-01T00:00:00.000Z",
++      updatedAt: "2026-01-01T00:00:00.000Z",
++      flowDirection: "LR",
++      stages: [
++        {
++          name: "Stage 1",
++          selection: {
++            recipeId,
++            machineCount: 1,
++            clockPercentText: "100",
++            unlockedTiers: { belt: 1, pipe: 1 },
++            overrides: { feeds: {}, outputs: {} },
++          },
++        },
++      ],
++      links: [],
++    };
++  }
++
++  /** Wrap per-plan file objects in the bundle envelope (the export shape). */
++  function bundle(plans: PlanFileV5[]): PlanBundle {
++    return {
++      kind: "foundry-plan-bundle",
++      format_version: 1,
++      exportedAt: "2026-08-06T00:00:00.000Z",
++      plans,
++    };
++  }
++
++  it("round-trip: save 2 → exportAllPlans → wipe → importPlan(bundle) restores both, no auto-load", async () => {
++    const store = await readyStore();
++    store.getState().selectRecipe("ingot_iron");
++    store.getState().setClockPercentText("42");
++    await store.getState().savePlanAs("Alpha");
++    store.getState().setClockPercentText("75");
++    await store.getState().savePlanAs("Beta");
++
++    const json = (await store.getState().exportAllPlans())!;
++    expect(json).not.toBeNull();
++
++    // Wipe every stored plan (device-loss simulation) + the live selection.
++    const db = await (await import("../data/db.ts")).openDb();
++    for (const p of store.getState().plans!) {
++      await store.getState().deletePlan(p.id);
++    }
++    expect(store.getState().plans).toEqual([]);
++    const orderBefore = store.getState().stageOrder;
++    const selBefore = store.getState().selection.recipeId;
++
++    await store.getState().importPlan(json);
++
++    // Both plans are back with intact names/graphs.
++    const names = store
++      .getState()
++      .plans!.map((p) => p.name)
++      .sort();
++    expect(names).toEqual(["Alpha", "Beta"]);
++    const alpha = store.getState().plans!.find((p) => p.name === "Alpha")!;
++    const beta = store.getState().plans!.find((p) => p.name === "Beta")!;
++    const storedAlpha = (await db.get<PlanFileV5>("plans", alpha.id))!;
++    const storedBeta = (await db.get<PlanFileV5>("plans", beta.id))!;
++    expect(storedAlpha.stages[0]!.selection.clockPercentText).toBe("42");
++    expect(storedBeta.stages[0]!.selection.clockPercentText).toBe("75");
++    // NO auto-load: the live graph is untouched by a bundle import.
++    expect(store.getState().stageOrder).toEqual(orderBefore);
++    expect(store.getState().selection.recipeId).toBe(selBefore);
++  });
++
++  it("exportAllPlans returns null when there are no plans", async () => {
++    const store = await readyStore();
++    await store.getState().refreshPlans();
++    expect(await store.getState().exportAllPlans()).toBeNull();
++  });
++
++  it("envelope shape: kind, format_version, exportedAt, plans length", async () => {
++    const store = await readyStore();
++    store.getState().selectRecipe("ingot_iron");
++    await store.getState().savePlanAs("One");
++    await store.getState().savePlanAs("Two");
++
++    const before = new Date().toISOString();
++    const json = (await store.getState().exportAllPlans())!;
++    const env = JSON.parse(json) as PlanBundle;
++    expect(env.kind).toBe("foundry-plan-bundle");
++    expect(env.format_version).toBe(1);
++    expect(typeof env.exportedAt).toBe("string");
++    expect(env.exportedAt >= before).toBe(true); // stamped at the export moment
++    expect(env.plans).toHaveLength(2);
++    // Each entry is a per-plan v5 file object (validatePlanFile-shaped).
++    expect(env.plans.every((p) => p.format_version === 5)).toBe(true);
++    expect(env.plans.map((p) => p.name).sort()).toEqual(["One", "Two"]);
++    // Pretty-printed, matching JSON.stringify(bundle, null, 2).
++    expect(json).toContain('\n  "kind": "foundry-plan-bundle"');
++  });
++
++  it("collision: a bundle entry matching an existing name overwrites, keeping prior createdAt", async () => {
++    const store = await readyStore();
++    store.getState().selectRecipe("ingot_iron");
++    await store.getState().savePlanAs("Target");
++    const targetId = store.getState().plans![0]!.id;
++    const db = await (await import("../data/db.ts")).openDb();
++    const originalCreatedAt = (await db.get<PlanFileV5>("plans", targetId))!
++      .createdAt;
++
++    // A bundle entry named "Target" with a foreign stamp + different content.
++    const entry = planFile("Target", null);
++    entry.createdAt = "1999-12-31T00:00:00.000Z";
++    entry.stages[0]!.selection.machineCount = 7;
++    await store.getState().importPlan(JSON.stringify(bundle([entry])));
++
++    // Exactly one "Target" row, same id, prior createdAt preserved, content replaced.
++    expect(
++      store.getState().plans!.filter((p) => p.name === "Target"),
++    ).toHaveLength(1);
++    const stored = (await db.get<PlanFileV5>("plans", targetId))!;
++    expect(stored.createdAt).toBe(originalCreatedAt); // NOT the foreign 1999 stamp
++    expect(stored.stages[0]!.selection.machineCount).toBe(7);
++  });
++
++  it("PINNED: two entries with the same trimmed name → ONE row, LAST entry's content, count proves no dup", async () => {
++    const store = await readyStore();
++    await store.getState().refreshPlans();
++
++    // Two entries share the trimmed name "Dup" (one padded) but carry DIFFERENT
++    // content. Last-entry-wins into ONE row: the second entry must see the
++    // first's just-committed row and overwrite it (the per-entry-fresh
++    // collision read). A single-name row proves no duplicate was created.
++    const first = planFile("Dup", null);
++    first.stages[0]!.selection.machineCount = 1;
++    const second = planFile("  Dup  ", "ingot_iron");
++    second.stages[0]!.selection.machineCount = 99;
++    await store.getState().importPlan(JSON.stringify(bundle([first, second])));
++
++    // Exactly ONE plan total, exactly one "Dup" — no duplicate row.
++    expect(store.getState().plans!).toHaveLength(1);
++    expect(
++      store.getState().plans!.filter((p) => p.name === "Dup"),
++    ).toHaveLength(1);
++    // The surviving row carries the LAST entry's content (machineCount 99).
++    const dupId = store.getState().plans![0]!.id;
++    const db = await (await import("../data/db.ts")).openDb();
++    const stored = (await db.get<PlanFileV5>("plans", dupId))!;
++    expect(stored.name).toBe("Dup"); // trimmed form
++    expect(stored.stages[0]!.selection.machineCount).toBe(99);
++    expect(stored.stages[0]!.selection.recipeId).toBe("ingot_iron");
++  });
++
++  it("per-entry skip: [valid, corrupt, valid] → 2 imported, planError 'imported 2 of 3'", async () => {
++    const store = await readyStore();
++    await store.getState().refreshPlans();
++
++    const env = bundle([
++      planFile("Good1", "ingot_iron"),
++      planFile("Good2", null),
++    ]);
++    // Splice a corrupt (non-plan) entry BETWEEN the two valid ones.
++    (env.plans as unknown[]).splice(1, 0, { hello: "world" });
++    await store.getState().importPlan(JSON.stringify(env));
++
++    expect(
++      store
++        .getState()
++        .plans!.map((p) => p.name)
++        .sort(),
++    ).toEqual(["Good1", "Good2"]);
++    expect(store.getState().planError).toBe(
++      "imported 2 of 3 plans (1 invalid skipped)",
++    );
++  });
++
++  it("all-valid bundle sets NO partial-success message (K=0)", async () => {
++    const store = await readyStore();
++    await store.getState().refreshPlans();
++    await store
++      .getState()
++      .importPlan(
++        JSON.stringify(bundle([planFile("A", null), planFile("B", null)])),
++      );
++    expect(store.getState().plans!).toHaveLength(2);
++    expect(store.getState().planError).toBeNull();
++  });
++
++  it("zero-valid bundle → error, nothing written", async () => {
++    const store = await readyStore();
++    await store.getState().refreshPlans();
++    const env = bundle([]);
++    (env.plans as unknown[]).push({ hello: "world" }, { also: "garbage" });
++    await store.getState().importPlan(JSON.stringify(env));
++    expect(store.getState().planError).toBe(
++      "import failed: no valid plans in bundle",
++    );
++    expect(store.getState().plans).toEqual([]);
++  });
++
++  it("empty bundle (plans: []) → error, nothing written", async () => {
++    const store = await readyStore();
++    await store.getState().refreshPlans();
++    await store.getState().importPlan(JSON.stringify(bundle([])));
++    expect(store.getState().planError).toBe(
++      "import failed: no valid plans in bundle",
++    );
++    expect(store.getState().plans).toEqual([]);
++  });
++});
++
+ // ---------------------------------------------------------------------------
+ // applyChainProposal (Stage 8 / Phase 3, ticket #39): the additive bulk apply.
+ // ---------------------------------------------------------------------------
+diff --git a/src/state/store.ts b/src/state/store.ts
+index f7760f5..0bc4d42 100644
+--- a/src/state/store.ts
++++ b/src/state/store.ts
+@@ -333,12 +333,48 @@ export interface Actions {
+    *  row is missing/corrupt. Headless — App owns the Blob/anchor download. */
+   exportPlan(id: string): Promise<string | null>;
+   /** Validate + save an exported plan file's text under the save-over model.
+-   *  Never auto-loads (the live graph is untouched). Failures → planError. */
++   *  Sniffs a bundle envelope (Stage 19 / #92) and imports every entry, else
++   *  the single-file arm. Never auto-loads (the live graph is untouched).
++   *  Failures → planError. */
+   importPlan(text: string): Promise<void>;
++  /** Serialize EVERY stored plan as one re-importable bundle (Stage 19 / #92),
++   *  or null when no plans exist. Reads all rows inside one enqueue slot for a
++   *  consistent point-in-time snapshot. Headless — App owns the download. */
++  exportAllPlans(): Promise<string | null>;
+ }
+ 
+ export type Store = AppState & Actions;
+ 
++/**
++ * Stage 19 (#92): the export-all bundle envelope. A distinct `kind` string makes
++ * single-file-vs-bundle sniffing exact (a per-plan file has no `kind`), and
++ * `format_version` reserves bundle evolution independently of the per-plan file
++ * versions. Each `plans[]` entry is EXACTLY a per-plan file object (latest v5 as
++ * written by exportPlan's source), revived on import through the SAME
++ * `validatePlanFile` path — one migration surface, no second format to version.
++ */
++export interface PlanBundle {
++  kind: "foundry-plan-bundle";
++  format_version: 1;
++  exportedAt: string; // ISO
++  plans: PlanFileV5[];
++}
++
++/** The sniff constant (Axis 3): import branches to the bundle arm iff a parsed
++ *  object carries this exact `kind`. */
++const PLAN_BUNDLE_KIND = "foundry-plan-bundle";
++
++/** Sniff a parsed value as a bundle envelope by its `kind` (Axis 3): a per-plan
++ *  file has no `kind` field, so the sniff cannot misfire. Entry validation is
++ *  the bundle arm's job (via `validatePlanFile` per entry) — this only routes. */
++function isPlanBundle(value: unknown): boolean {
++  return (
++    value !== null &&
++    typeof value === "object" &&
++    (value as Record<string, unknown>).kind === PLAN_BUNDLE_KIND
++  );
++}
++
+ // ---------------------------------------------------------------------------
+ // Active-stage selectors — the canonical v1 read path (Stage 3 / Phase 1)
+ // ---------------------------------------------------------------------------
+@@ -1000,6 +1036,49 @@ export function createAppStore(storage?: StateStorage) {
+           return planOpChain;
+         };
+ 
++        // The one per-plan save path shared by importPlan's single arm AND its
++        // bundle arm (Stage 19 / #92, frozen Axis 3): OUR name rules on a
++        // VALIDATED file — trim, refuse-empty, then collision-overwrite (keep
++        // the existing row's createdAt; a foreign payload's stamp is untrusted)
++        // or create a fresh row (createdAt now). Behavior is byte-for-byte the
++        // pre-Stage-19 single-arm logic, just extracted.
++        //
++        // The collision read is a FRESH listPlanFiles() per call (never hoisted
++        // above the bundle loop): within one bundle, two entries sharing a
++        // trimmed name resolve last-entry-wins into ONE row — the second call
++        // sees the first's just-committed row and overwrites it, preserving the
++        // by-construction name-uniqueness invariant (store.ts collision idiom,
++        // savePlanAs). Returns "empty-name" for a whitespace name (caller shapes
++        // the message) or "saved" once the row is committed.
++        const savePlanFromFile = async (
++          file: PlanFileV5,
++        ): Promise<"saved" | "empty-name"> => {
++          const trimmed = file.name.trim();
++          if (trimmed === "") return "empty-name";
++          const existing = await listPlanFiles();
++          const match = existing.find((p) => p.name === trimmed);
++          const now = new Date().toISOString();
++          if (match) {
++            const prior = await loadPlanFile(match.id);
++            const plan: PlanFileV5 = {
++              ...file,
++              name: trimmed,
++              createdAt: prior?.createdAt ?? now,
++              updatedAt: now,
++            };
++            await savePlanFile(plan, match.id);
++          } else {
++            const plan: PlanFileV5 = {
++              ...file,
++              name: trimmed,
++              createdAt: now,
++              updatedAt: now,
++            };
++            await savePlanFile(plan, crypto.randomUUID());
++          }
++          return "saved";
++        };
++
+         // The default stage lives in the INITIAL-STATE LITERAL (not init()):
+         // persist's `merge` runs synchronously during createAppStore, before
+         // init(), and must find stages[activeStageId].selection to hydrate the
+@@ -1710,6 +1789,41 @@ export function createAppStore(storage?: StateStorage) {
+             return JSON.stringify(plan, null, 2);
+           },
+ 
++          async exportAllPlans(): Promise<string | null> {
++            // DELIBERATE divergence from exportPlan's no-enqueue posture
++            // (exportPlan is a single-row read, torn-snapshot-immune by size).
++            // A BUNDLE is a multi-row read across await boundaries: without the
++            // enqueue slot, a concurrent savePlanAs/deletePlan could interleave
++            // between the list and the per-row loads, yielding a TORN
++            // point-in-time snapshot (a row listed but since-deleted, or two
++            // rows from different instants). So the ENTIRE read runs inside ONE
++            // enqueue slot — serialized w.r.t. other plan ops — making the
++            // bundle a consistent snapshot. The op is TOTAL (returns a value via
++            // the captured `result`, sets no planError) so it never poisons the
++            // chain. Returns null when no plans exist (App suppresses download).
++            let result: string | null = null;
++            await enqueue(async () => {
++              const metas = await listPlanFiles();
++              if (metas.length === 0) return; // result stays null
++              const plans: PlanFileV5[] = [];
++              for (const meta of metas) {
++                const file = await loadPlanFile(meta.id);
++                // A row that fails to load (corrupt/foreign) is skipped rather
++                // than aborting the whole backup — listPlanFiles already only
++                // returns loadable rows, so this is defense in depth.
++                if (file !== null) plans.push(file);
++              }
++              const bundle: PlanBundle = {
++                kind: PLAN_BUNDLE_KIND,
++                format_version: 1,
++                exportedAt: new Date().toISOString(),
++                plans,
++              };
++              result = JSON.stringify(bundle, null, 2);
++            });
++            return result;
++          },
++
+           importPlan(text: string) {
+             return enqueue(async () => {
+               set({ planError: null });
+@@ -1723,46 +1837,67 @@ export function createAppStore(storage?: StateStorage) {
+                   set({ planError: "import failed: not valid JSON" });
+                   return;
+                 }
+-                // The SAME acceptance loadPlanFile uses (v2, else v1→migrateV1):
+-                // a foreign/corrupt payload is refused, nothing written.
++
++                // Sniff bundle-vs-single (Axis 3): a bundle envelope carries the
++                // exact `kind`; a per-plan file has no `kind`, so the single arm
++                // below stays byte-identical for every existing input.
++                if (isPlanBundle(parsed)) {
++                  // Bundle arm. The whole loop runs inside THIS one enqueue slot
++                  // — serialized w.r.t. other plan ops. Each entry is still its
++                  // own IDB put (no bundle-wide transaction, no rollback): the
++                  // skip-invalid policy covers the expected validation-failure
++                  // path, and a mid-loop I/O error leaves prior entries
++                  // committed. Does NOT auto-load; one doRefresh() at the end.
++                  const raw = (parsed as PlanBundle).plans;
++                  const entries = Array.isArray(raw) ? raw : [];
++                  const total = entries.length;
++                  let imported = 0;
++                  for (const entry of entries) {
++                    const file = validatePlanFile(entry);
++                    if (file === null) continue; // corrupt/foreign entry: skip
++                    // savePlanFromFile re-reads listPlanFiles per call, so two
++                    // same-named entries resolve last-entry-wins into ONE row
++                    // (the second sees the first's committed row). An empty name
++                    // is skipped like any other invalid entry.
++                    const result = await savePlanFromFile(file);
++                    if (result === "saved") imported += 1;
++                  }
++                  if (imported === 0) {
++                    // Zero valid entries (incl. an empty plans[]): nothing was
++                    // written, so no refresh needed — report the failure.
++                    set({
++                      planError: "import failed: no valid plans in bundle",
++                    });
++                    return;
++                  }
++                  const skipped = total - imported;
++                  if (skipped > 0) {
++                    // Partial success: extend the error channel to carry a
++                    // partial-success caveat (uploadError's precedent — the red
++                    // banner is the accepted surface). Only when K>0.
++                    set({
++                      planError: `imported ${imported} of ${total} plans (${skipped} invalid skipped)`,
++                    });
++                  }
++                  await doRefresh();
++                  return;
++                }
++
++                // Single-file arm (unchanged behavior, byte-for-byte error
++                // strings). The SAME acceptance loadPlanFile uses: a
++                // foreign/corrupt payload is refused, nothing written.
+                 const file = validatePlanFile(parsed);
+                 if (file === null) {
+                   set({ planError: "import failed: not a valid plan file" });
+                   return;
+                 }
+-                // OUR name rules (imports were never validated by them): trim,
+-                // refuse-empty. The trimmed form is what saves AND what
+-                // collision-matches — mirroring savePlanAs exactly.
+-                const trimmed = file.name.trim();
+-                if (trimmed === "") {
++                // OUR name rules via the shared helper (trim, refuse-empty,
++                // collision-overwrite-or-new — mirroring savePlanAs exactly).
++                const result = await savePlanFromFile(file);
++                if (result === "empty-name") {
+                   set({ planError: "plan name required" });
+                   return;
+                 }
+-                const existing = await listPlanFiles();
+-                const match = existing.find((p) => p.name === trimmed);
+-                const now = new Date().toISOString();
+-                if (match) {
+-                  // Overwrite the existing row: keep ITS createdAt (a foreign
+-                  // payload's timestamp is untrusted), stamp updatedAt now.
+-                  const prior = await loadPlanFile(match.id);
+-                  const plan: PlanFileV5 = {
+-                    ...file,
+-                    name: trimmed,
+-                    createdAt: prior?.createdAt ?? now,
+-                    updatedAt: now,
+-                  };
+-                  await savePlanFile(plan, match.id);
+-                } else {
+-                  // New row: createdAt now (savePlanAs precedent — new names get
+-                  // now, never the untrusted foreign timestamp).
+-                  const plan: PlanFileV5 = {
+-                    ...file,
+-                    name: trimmed,
+-                    createdAt: now,
+-                    updatedAt: now,
+-                  };
+-                  await savePlanFile(plan, crypto.randomUUID());
+-                }
+                 // Import does NOT auto-load: saving ≠ switching the working
+                 // graph. The live graph is untouched; only the list refreshes.
+                 await doRefresh();
+diff --git a/src/ui/App.tsx b/src/ui/App.tsx
+index be1a0c5..1016a33 100644
+--- a/src/ui/App.tsx
++++ b/src/ui/App.tsx
+@@ -14,6 +14,7 @@ import { computeTransportFindings } from "./graph-flow.ts";
+ import { fileToDocsText, fileFromDrop } from "./decode.ts";
+ import { resolveInitialTheme } from "./theme.ts";
+ import type { Theme } from "./theme.ts";
++import { requestPersistence } from "./persistence.ts";
+ import { UploadScreen } from "./UploadScreen.tsx";
+ import { ControlsStrip } from "./ControlsStrip.tsx";
+ import { PlansBar } from "./PlansBar.tsx";
+@@ -175,6 +176,14 @@ export default function App() {
+     window.localStorage.setItem("theme", theme);
+   }, [theme]);
+ 
++  // Stage 19 (#92): ask the browser for persistent storage on boot so the
++  // plans store is never auto-evicted (fire-and-forget — a denial changes
++  // nothing the user can act on; the helper feature-detects, logs, never
++  // throws). One-shot at mount; grant is environment-dependent.
++  useEffect(() => {
++    void requestPersistence();
++  }, []);
++
+   // Refresh the saved-plan list once the catalog is ready (the ready layout's
+   // first mount). `plans` starts null; this makes that null transient, so
+   // PlansBar's null and [] states share one placeholder. refreshPlans enqueues
+@@ -266,6 +275,18 @@ export default function App() {
+     downloadTextFile(json, `${sanitizeFilename(name)}.foundry-plan.json`);
+   }
+ 
++  // Export-all (Stage 19 / #92): the store hands back the whole-plans bundle
++  // JSON (or null when there are no plans); App does the browser-only download.
++  // Filename dates from the export moment; the `.foundry-plans.json` double
++  // extension is the machine/import signal, the prefix the human Downloads-sort
++  // signal (frozen Axis 4).
++  async function handleExportAll() {
++    const json = await s.exportAllPlans();
++    if (json === null) return; // no plans: nothing to download
++    const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
++    downloadTextFile(json, `foundry-plans-${date}.foundry-plans.json`);
++  }
++
+   // Import: plan files are OUR OWN UTF-8 JSON exports, so file.text() is correct
+   // here — the S5 UTF-16 decodeBytes lesson is Docs.json-specific (do NOT
+   // "fix" this into fileToDocsText). The store validates + saves.
+@@ -373,6 +394,7 @@ export default function App() {
+         onRename={s.renamePlan}
+         onDelete={s.deletePlan}
+         onExport={(id) => void handleExport(id)}
++        onExportAll={() => void handleExportAll()}
+         onImport={(file) => void handleImport(file)}
+       />
+       {solve.status === "idle" && (
+diff --git a/src/ui/PlansBar.tsx b/src/ui/PlansBar.tsx
+index 0470f27..cff230f 100644
+--- a/src/ui/PlansBar.tsx
++++ b/src/ui/PlansBar.tsx
+@@ -11,6 +11,8 @@ interface PlansBarProps {
+   onDelete(id: string): void;
+   /** Export the selected plan (App turns it into a file download). */
+   onExport(id: string): void;
++  /** Export EVERY saved plan as one re-importable bundle (Stage 19 / #92). */
++  onExportAll(): void;
+   /** Import a plan from an uploaded file (App reads its text first). */
+   onImport(file: File): void;
+ }
+@@ -38,6 +40,7 @@ export function PlansBar({
+   onRename,
+   onDelete,
+   onExport,
++  onExportAll,
+   onImport,
+ }: PlansBarProps) {
+   const [name, setName] = useState("");
+@@ -88,6 +91,12 @@ export function PlansBar({
+             <button type="button" onClick={() => onExport(activeId)}>
+               Export
+             </button>
++            {/* Export-all (Stage 19 / #92): the same plain-button idiom as its
++                siblings, targeting no specific row — it backs up EVERY plan, so
++                it's selection-independent and lives here where ≥1 plan exists. */}
++            <button type="button" onClick={() => onExportAll()}>
++              Export all
++            </button>
+             <button type="button" onClick={() => onDelete(activeId)}>
+               Delete
+             </button>
+diff --git a/src/ui/persistence.ts b/src/ui/persistence.ts
+new file mode 100644
+index 0000000..d75c210
+--- /dev/null
++++ b/src/ui/persistence.ts
+@@ -0,0 +1,36 @@
++/**
++ * Stage 19 (ticket #92): request persistent storage so the browser never
++ * auto-evicts this origin's IndexedDB (the plans store). One of the two plan-
++ * durability moves (the other is the export-all bundle) — this is the
++ * eviction-defense half.
++ *
++ * A browser-environment request, not data logic (frozen Axis 1): it lives in
++ * the UI layer and is called fire-and-forget from App's boot effect, never from
++ * db.ts or the store (both stay chrome-API-free, and db.ts runs under fake-
++ * indexeddb where `navigator.storage` may be absent).
++ *
++ * The `typeof navigator` guard makes this safe to call from ANY env, including
++ * node — it's defense in depth, not the test-immunity mechanism (the node-env
++ * suites never mount App, so they never call this). Feature-detects
++ * `navigator.storage.persist` (absent on old/insecure-context browsers),
++ * console.info's the granted/denied outcome, and swallows any rejection — it
++ * NEVER throws. No UI reflects the result: a denial changes nothing the user
++ * can act on (the rejected reminder-nudge binds).
++ */
++export async function requestPersistence(): Promise<boolean> {
++  if (
++    typeof navigator === "undefined" ||
++    typeof navigator.storage?.persist !== "function"
++  ) {
++    console.info("[persistence] navigator.storage.persist unsupported");
++    return false;
++  }
++  try {
++    const granted = await navigator.storage.persist();
++    console.info(`[persistence] persistent storage granted: ${granted}`);
++    return granted;
++  } catch (err) {
++    console.info("[persistence] persist() rejected", err);
++    return false;
++  }
++}
+diff --git a/src/ui/smoke.test.tsx b/src/ui/smoke.test.tsx
+index a194301..c1b7d95 100644
+--- a/src/ui/smoke.test.tsx
++++ b/src/ui/smoke.test.tsx
+@@ -1161,6 +1161,7 @@ describe("PlansBar", () => {
+         onRename={noop}
+         onDelete={noop}
+         onExport={noop}
++        onExportAll={noop}
+         onImport={noop}
+       />,
+     );
+@@ -1180,6 +1181,7 @@ describe("PlansBar", () => {
+         onRename={noop}
+         onDelete={noop}
+         onExport={noop}
++        onExportAll={noop}
+         onImport={noop}
+       />,
+     );
+@@ -1196,6 +1198,7 @@ describe("PlansBar", () => {
+         onRename={noop}
+         onDelete={noop}
+         onExport={noop}
++        onExportAll={noop}
+         onImport={noop}
+       />,
+     );
+@@ -1204,6 +1207,9 @@ describe("PlansBar", () => {
+     expect(html).toContain("Load");
+     expect(html).toContain("Rename");
+     expect(html).toContain("Export");
++    // Export-all (Stage 19 / #92) renders alongside the per-row buttons — a
++    // plain button, present whenever ≥1 plan exists, selection-independent.
++    expect(html).toContain("Export all");
+     expect(html).toContain("Delete");
+     expect(html).not.toContain("— no saved plans —");
+   });
+@@ -1218,6 +1224,7 @@ describe("PlansBar", () => {
+         onRename={noop}
+         onDelete={noop}
+         onExport={noop}
++        onExportAll={noop}
+         onImport={noop}
+       />,
+     );
+@@ -1235,6 +1242,7 @@ describe("PlansBar", () => {
+         onRename={noop}
+         onDelete={noop}
+         onExport={noop}
++        onExportAll={noop}
+         onImport={noop}
+       />,
+     );

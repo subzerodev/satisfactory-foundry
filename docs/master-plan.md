@@ -343,3 +343,28 @@ process (all-Claude roster, opus implementers, per-phase gates).
   main (a87440b); Michael-approved mirror push; Pages deploy run #1
   success; live + verified at
   https://subzerodev.github.io/satisfactory-foundry/.
+
+## Stage 19 — Plan durability: persist + export-all
+
+- **Goal:** Michael's #92 decision (options 1+2): kill the two realistic
+  plan-loss vectors. `navigator.storage.persist()` at App boot asks the
+  browser to exempt the origin from storage eviction (silent,
+  feature-detected, no UI); an EXPORT ALL button backs up every plan in
+  one re-importable `foundry-plans-<date>.foundry-plans.json` bundle
+  (covers eviction-denied platforms + device loss). Reminder nudge,
+  FS-Access auto-backup, and any backend were examined and rejected.
+- **Ticket:** #92 (milestone 90). Raised after Stage 18 went live.
+- **Status:** merged to develop 2026-08-06 (`4e25718` merge, 773 tests).
+  Design v3 FROZEN: r1 pinned the within-bundle duplicate-name contract
+  (last-entry-wins into one row, per-entry-fresh collision view, hoist
+  forbidden — test-enforced); r2 APPROVED+APPROVED incl. IDB
+  transaction-order analysis; simplify folded the rejected compose-in-App
+  rationale; r3 delta APPROVED+APPROVED. Implementation: 4 commits, one
+  drift catch (live "import failed: " prefixes kept byte-for-byte);
+  bundle sniff on kind, shared savePlanFromFile helper, partial imports
+  report "imported N of M plans (K invalid skipped)". Boundary
+  APPROVED+APPROVED (0); diff-simplify APPROVED (0); 4-behavior
+  bidirectionality log. Walk: live download → DB wipe → UI re-import
+  restored both plans (no auto-load); partial-bundle message verbatim;
+  persist() logs at boot. Live site update rides the next approved
+  mirror push.
