@@ -373,3 +373,19 @@ process (all-Claude roster, opus implementers, per-phase gates).
   the deployment landed server-side regardless and the site serves the
   Stage 19 bundle (verified byte-identical). The workflow verdict was
   fixed via PR #97 (verify-against-the-live-site gate).
+
+## Stage 20 — Propose grows up: info + customization
+
+- **Goal:** Michael's 2026-08-06 directive ("all of them as one arc"):
+  the auto-chain Propose panel becomes a planning surface. P0 info layer
+  (cost sheet: power/machines/raw totals; tree-structured preview;
+  per-row alternates tell) → P1 customization core (per-row recipe
+  picker wiring the existing Stage 8 P4 overrides seam; treat-item-as-
+  raw boundary; user-visible machine exclusions) → P2 solver extensions
+  (clock-percent target with the game's overclock power curve
+  [research-gated]; byproduct routing suggestions) → P3 persistence +
+  gating (saved alternate preferences; tier/unlock gating [tier-data
+  availability research-gated]).
+- **Epic:** #98 (milestone 91; children #99 #100 #101 #102, sequential
+  blocked-by chain). Record: `features/propose-grows-up/FEATURE.md`.
+- **Status:** IN PROGRESS — P0 (#99) design loop started 2026-08-06.
