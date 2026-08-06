@@ -446,7 +446,6 @@ body {
   padding-left: 1.2em;
 }
 
-.chain-builder-raw,
 .chain-builder-byproducts,
 .chain-builder-empty {
   margin: 4px 0 0;
@@ -457,6 +456,54 @@ body {
   display: flex;
   gap: 8px;
   margin-top: 8px;
+}
+
+/* S20 P0 cost sheet — the title-block idiom (mono numerics, muted labels) in a
+   compact block above the tiered rows. Existing tokens only; both themes follow
+   because --fg/--fg-muted/--font-mono-num redefine per theme (no local override
+   needed). */
+.chain-builder-metrics {
+  margin: 0 0 8px;
+  font-family: var(--font-mono-num);
+}
+
+.chain-builder-metrics > div {
+  display: flex;
+  gap: 8px;
+}
+
+.chain-builder-metrics dt {
+  min-width: 7.5em;
+  color: var(--fg-muted);
+  letter-spacing: 0.04em;
+}
+
+.chain-builder-metrics dd {
+  margin: 0;
+  color: var(--fg);
+}
+
+/* Depth tier marker ("T0/T1/…") — the mono drawing-idiom label leading the
+   first row of each tier. */
+.chain-builder-tier {
+  display: inline-block;
+  min-width: 2.2em;
+  font-family: var(--font-mono-num);
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+
+/* The "→ feeds …" named-adjacency suffix — secondary text (the DAG structure
+   signal, subordinate to the row itself). */
+.chain-builder-feeds {
+  color: var(--fg-muted);
+}
+
+/* The "N recipes" alternates chip — a muted count, the hook P1's picker
+   attaches to (display-only in P0). */
+.chain-builder-alt {
+  color: var(--fg-muted);
+  font-style: italic;
 }
 
 .tier-controls {

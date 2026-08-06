@@ -1,0 +1,100 @@
+S20 P0 — Propose info layer (ticket #99) · bidirectionality verification log
+============================================================================
+
+Discipline: per NEW production behavior, break the production code, show a
+GENUINE vitest FAIL (the test caught it), restore, show green. A test that
+cannot fail proves nothing. Four new behaviors → four break/restore cycles.
+All runs in the worktree .worktrees/s20-p0 on branch feature/s20-p0.
+
+Baseline: `npx vitest run src/ui/chain-builder-adapter.test.ts` → 32 passed.
+Post-restore identity: `diff` of chain-builder-adapter.ts against the
+pre-break backup → IDENTICAL (byte-for-byte).
+
+----------------------------------------------------------------------------
+Cycle 1 — Depth is LONGEST-path, not shortest-path (Axis 2)
+----------------------------------------------------------------------------
+Behavior: depthsFromTarget assigns each item the LONGEST path from the target,
+so no producer renders shallower than any consumer. On the diamond-with-shortcut
+fixture, Base is reachable at depth 1 (shortcut base→top) and depth 2
+(base→left→top). Longest-path must pick 2.
+
+Break: in depthsFromTarget's relaxation, replace the max-relaxation
+  `if (candidate > (depth.get(producer) ?? -1))`
+with a set-once (shortest/BFS) guard
+  `if (!depth.has(producer))`.
+
+Test: "assigns longest-path depth (target T0; base T2 despite the shortcut)"
+Result: FAIL (genuine) —
+  AssertionError: expected 1 to be 2 // Object.is equality
+  - Expected: 2
+  + Received: 1
+The shortcut edge won under shortest-path; Base collapsed to depth 1.
+
+Restore: revert to the max-relaxation guard.
+Result: PASS.
+
+----------------------------------------------------------------------------
+Cycle 2 — proposalMetrics sums machineCount across the subtree (Axis 1/4)
+----------------------------------------------------------------------------
+Behavior: proposalMetrics.machineCount is the Σ of every stage's machineCount
+(bigint, exact) — the cost sheet's Σ MACHINES line.
+
+Break: delete the accumulation line `machineCount += stage.machineCount;` from
+the proposalMetrics loop (leaving it at its 0n init).
+
+Test: "sums power + machines + raw exactly over the whole proposal"
+Result: FAIL (genuine) —
+  expect(m.machineCount).toBe(5n)
+  - Expected: 5n
+  + Received: 0n
+
+Restore: reinstate the accumulation line.
+Result: PASS.
+
+----------------------------------------------------------------------------
+Cycle 3 — feeds names EVERY direct consumer (fan-out, Axis 2)
+----------------------------------------------------------------------------
+Behavior: a producer's `feeds` lists ALL its direct consumers — on a DAG a
+fan-out producer (Base → Top, Left, Right) is legible only through this suffix.
+The consumersOf map appends each consumer.
+
+Break: replace the append
+  `const list = ...; if (list === undefined) set([to]); else list.push(to);`
+with an overwrite `consumersOf.set(link.fromItemId, [link.toItemId]);` — keeping
+only the LAST consumer per producer.
+
+Test: "names every direct consumer in feeds (fan-out shows both consumers)"
+Result: FAIL (genuine) —
+  expect(feedsByName.get("Base")).toEqual(["Top", "Left", "Right"])
+  Base's fan-out collapsed to the single last consumer.
+
+Restore: reinstate the append.
+Result: PASS.
+
+----------------------------------------------------------------------------
+Cycle 4 — candidateCount is the real alternates count (Axis 3)
+----------------------------------------------------------------------------
+Behavior: each row's candidateCount = candidateRecipesFor(catalog, itemId).length
+(0 or ≥2 by construction) — the "N recipes" chip / P1 picker hook.
+
+Break: hardcode the row field to `candidateCount: 0`.
+
+Test: "counts candidates per item (0 or >=2 by construction) from the catalog"
+Result: FAIL (genuine) —
+  expect(countByName.get("Ingot")).toBe(2)
+  Ingot (default + alternate) reported 0 under the hardcode.
+
+Restore: reinstate `candidateRecipesFor(catalog, s.itemId).length`.
+Result: PASS.
+
+----------------------------------------------------------------------------
+Regression guard — the compare path re-composes byte-identically
+----------------------------------------------------------------------------
+proposalMetrics was extracted from the former `subtreePower`; subtreePowerText
+(→ candidateRowsFor) now reads the widened struct. The pre-existing alt-compare
+tests (23) AND the new S20 regression pin ("re-composes proposalMetrics into
+byte-identical compare rows": std "16 MW"/"4", alt "32 MW"/"2") all pass
+unchanged — the extraction changed no compare-path output.
+
+Final: 32 passed; full `npm test` + `npm run check` green (recorded in the
+dispatch report).
