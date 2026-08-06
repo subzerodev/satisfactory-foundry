@@ -317,9 +317,15 @@ export function ChainBuilder() {
             </dl>
           )}
           {view.isEmpty ? (
-            <p className="chain-builder-empty">
-              Nothing to build — the target is a raw input.
-            </p>
+            /* Constrained/forced targets already render on their labeled raw
+               line with a recovery surface — a second generic message would
+               double-speak (boundary r1 NIT). Only a NATURAL raw target gets
+               the plain explanation. */
+            view.rawInputs.every((r) => r.cause === "natural") ? (
+              <p className="chain-builder-empty">
+                Nothing to build — the target is a raw input.
+              </p>
+            ) : null
           ) : (
             <ul className="chain-builder-rows">
               {view.rows.map((row, i) => {
@@ -539,12 +545,17 @@ function RecipePicker(props: RecipePickerProps) {
   return (
     <span className="chain-builder-picker-wrap">
       {" "}
-      <button type="button" className={chipClass} onClick={onToggle}>
+      <button
+        type="button"
+        className={chipClass}
+        onClick={onToggle}
+        aria-expanded={open}
+      >
         {chipLabel}
       </button>
       {open && (
         <select
-          aria-label={`pick a recipe for this stage`}
+          aria-label="pick a recipe for this stage"
           value={currentRecipeId ?? ""}
           onChange={(e) => onChoose(e.target.value)}
         >

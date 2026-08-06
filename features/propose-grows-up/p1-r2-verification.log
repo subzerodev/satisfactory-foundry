@@ -154,3 +154,19 @@ Regression guard — default-empty byte-identity + P0/AltCompare unchanged
 
 Final: `npx vitest run` → 812 passed (31 files); `npm run check` (tsc + eslint
 + prettier) clean. Both recorded in the dispatch report.
+
+=== Cycle 7 (boundary r1 fold): cause classifier mirrors the DEFAULT POLICY ===
+Behavior: an alternate-only collapse classifies "constrained" (with live
+recovery options), NOT "natural". The pre-fix classifier keyed on the
+alternates-INCLUSIVE producerRecipesFor and mislabeled this case.
+
+BREAK: revert causeOf's constrained test to
+  producerRecipesFor(catalog, itemId, excludedMachineIds).length === 0
+RESULT (verbatim):
+  × constrained (boundary r1 fix): an ALTERNATE-ONLY collapse is 'constrained', with live recovery options
+  FAIL  src/ui/chain-builder-adapter.test.ts > S20 P1 — rawInputs cause annotation > constrained (boundary r1 fix): ...
+  Tests  1 failed | 813 passed (814)
+
+RESTORE: effectiveDefaultRecipe(...) === null test reinstated.
+RESULT: Tests 814 passed (814). Adapter byte-identical to pre-break backup
+(cmp -s clean).

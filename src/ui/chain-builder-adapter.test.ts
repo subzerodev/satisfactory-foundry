@@ -1254,6 +1254,43 @@ describe("S20 P1 — rawInputs cause annotation", () => {
     expect(ingot.cause).toBe("constrained");
   });
 
+  it("constrained (boundary r1 fix): an ALTERNATE-ONLY collapse is 'constrained', with live recovery options", () => {
+    // Exclude only the smelter (the default r_std's machine): ingot's remaining
+    // producers are the two ALTERNATES on non-excluded machines. The core's
+    // default policy skips alternates → ingot collapses to raw. The classifier
+    // must mirror that policy: effective default null + producers exist ⇒
+    // "constrained" — and producerRecipesFor must still OFFER those alternates
+    // (the constrained row's inline recovery is live, not dead code). The
+    // pre-fix classifier keyed on the alternates-INCLUSIVE list and mislabeled
+    // this exact case "natural" with no recovery surface.
+    const cat = ingotCatalog();
+    const opts = { excludedMachineIds: ["smelter"] };
+    const view = toProposalPreview(
+      proposeChainForCatalog(cat, "plate", F(60), opts),
+      cat,
+      opts,
+    );
+    const ingot = view.rawInputs.find((r) => r.itemId === "ingot")!;
+    expect(ingot.cause).toBe("constrained");
+    const recovery = producerRecipesFor(cat, "ingot", new Set(["smelter"]));
+    expect(recovery.map((r) => r.id)).toEqual(["r_alt_a", "r_alt_z"]);
+  });
+
+  it("target immunity in causeOf: a stale target raw-mark never labels the target 'forced'", () => {
+    // The core ignores a target raw-mark; the adapter must mirror it, or the
+    // RAW OVERRIDES strip would offer an inert x for the target (boundary r1
+    // NIT). ore has no producers, so a raw-target proposal exercises the path.
+    const cat = ingotCatalog();
+    const opts = { rawItemIds: new Set(["ore"]) };
+    const view = toProposalPreview(
+      proposeChainForCatalog(cat, "ore", F(60), opts),
+      cat,
+      opts,
+    );
+    const ore = view.rawInputs.find((r) => r.itemId === "ore")!;
+    expect(ore.cause).toBe("natural");
+  });
+
   it("OVERLAP: a forced item with NO eligible producer reports 'forced' (precedence)", () => {
     // ingot is BOTH force-marked raw AND fully excluded. Precedence forced >
     // constrained → 'forced' (the strip carries its ×, not the constrained line).

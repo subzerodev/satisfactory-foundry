@@ -253,6 +253,10 @@ export function toProposalPreview(
   const targetItemId =
     proposal.stages.find((s) => !producedIds.has(s.itemId))?.itemId ??
     proposal.stages[0]?.itemId ??
+    // All-raw proposal (zero stages): the DFS stopped at the target itself, so
+    // the sole rawInputs entry IS the target (boundary r1 fix — the empty
+    // string fallback broke causeOf's target-immunity guard for raw targets).
+    proposal.rawInputs[0]?.itemId ??
     "";
   const depthOf = depthsFromTarget(targetItemId, proposal.links);
   // Direct consumers per producer item (from → to): the "feeds" adjacency.
@@ -287,18 +291,27 @@ export function toProposalPreview(
   // > default). "constrained" = the catalog HAS a producer recipe but NONE is
   // eligible under the current exclusions + default policy.
   const causeOf = (itemId: string): RawCause => {
-    if (rawItemIds.has(itemId)) return "forced";
+    // Target immunity mirrors the core (boundary r1 NIT): the core never
+    // forces the target raw, so a stale target raw-mark must not label the
+    // target "forced" here (the strip would offer an inert x).
+    if (itemId !== targetItemId && rawItemIds.has(itemId)) return "forced";
     // Has ANY primary-producing recipe at all in the catalog?
     const hasAnyProducer = Object.values(catalog.recipes).some(
       (r) => r.primaryOutputId === itemId,
     );
     if (!hasAnyProducer) return "natural";
-    // A producer exists — is any eligible under the current exclusions +
-    // default policy? producerRecipesFor is the UNGATED eligible list, so a
-    // non-empty result means the item could be produced (it is raw only via a
-    // solver backstop, classified "natural" — accepted limitation).
-    const eligible = producerRecipesFor(catalog, itemId, excludedMachineIds);
-    return eligible.length === 0 ? "constrained" : "natural";
+    // A producer exists — "constrained" mirrors the CORE's default policy
+    // (boundary r1 fix): raw because no non-alternate, non-excluded producer
+    // exists. This INCLUDES the alternate-only case — producerRecipesFor
+    // still lists those alternates, so the constrained row's inline recovery
+    // offers them as overrides. Testing the alternates-inclusive list here
+    // instead would mislabel alternate-only collapses "natural" and
+    // dead-code that recovery branch. A raw produced by a solver backstop
+    // (cycle guard) still classifies "natural" — accepted limitation, the
+    // adapter cannot see solver demotions.
+    return effectiveDefaultRecipe(catalog, itemId, excludedMachineIds) === null
+      ? "constrained"
+      : "natural";
   };
 
   return {
