@@ -53,13 +53,33 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # deploy-pages clamps its `timeout` input to a HARD 10-min MAX_TIMEOUT
+      # (src/internal/deployment.js Math.min; it logs a warning and ignores
+      # larger values — verified live 2026-08-06: run 31099772326 received
+      # timeout: 1800000, still aborted at ~10:05). Pages deployments have sat
+      # unprocessed in deployment_queued past that ceiling (#95), so
+      # resilience comes from the retry job below — a fresh attempt gets a
+      # fresh 10-min window. On timeout the action CANCELS its server-side
+      # deployment before failing, so a retry never stacks on a live one.
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-        with:
-          # deploy-pages' default 600000 ms (10 min) timeout aborted a healthy
-          # deploy (run 31098659621, 2026-08-06; first deploy took ~17 min).
-          # 30 min ≈ 2x the observed worst case — n=1, so bias generous: a
-          # false abort is the bug being fixed; over-waiting only delays a
-          # genuinely stuck run.
-          timeout: 1800000
+
+  deploy-retry:
+    # always() suppresses the implicit success() GitHub prepends to if-
+    # conditions lacking a status-check function — without it this job is
+    # SKIPPED whenever deploy fails, i.e. exactly when it must run. The
+    # result check then scopes it: fires on deploy failure only (a build
+    # failure cascades deploy to 'skipped', not 'failure', so no misfire).
+    # The retry reuses the run's uploaded Pages artifact (same mechanism as
+    # a "re-run failed jobs" of the deploy job, observed working).
+    if: always() && github.repository_owner == 'subzerodev' && needs.deploy.result == 'failure'
+    needs: deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages (retry)
+        id: deployment
+        uses: actions/deploy-pages@v4
