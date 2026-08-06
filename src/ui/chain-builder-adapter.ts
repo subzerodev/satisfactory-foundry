@@ -11,7 +11,11 @@
  */
 
 import { proposeChain } from "../core/chain-builder.ts";
-import type { ChainProposal, ProposedStage } from "../core/chain-builder.ts";
+import type {
+  ChainProposal,
+  ItemRate,
+  ProposedStage,
+} from "../core/chain-builder.ts";
 import { Fraction } from "../core/fraction.ts";
 import type { Catalog, CatalogRecipe } from "../data/types.ts";
 import { formatRate } from "./format.ts";
@@ -58,6 +62,30 @@ export interface PreviewRow {
   machineCount: string;
   /** The stage's primary output rate, formatted (exact). */
   outputRate: string;
+  /**
+   * Topological depth from the target: longest path from the target down to
+   * this stage over `proposal.links` (T0 = target, T1 = its direct feeders, …).
+   * Longest-path (not shortest) guarantees no producer ever renders in a
+   * shallower tier than any consumer. Rows are emitted in (depth asc, existing
+   * order); the tier marker is drawn on the first row of each depth. Unreachable
+   * stages get Number.MAX_SAFE_INTEGER so they totalize last (defensive — the
+   * target is the unique sink, so every stage is reachable in practice). S20 P0
+   * Axis 2.
+   */
+  depth: number;
+  /**
+   * The display names of the items this stage FEEDS (its direct consumers) —
+   * the named adjacency the DAG needs (a fan-out producer is legible only here,
+   * not in the depth marker). Empty for the target (feeds nothing) and for any
+   * stage with no consumer link. S20 P0 Axis 2.
+   */
+  feeds: string[];
+  /**
+   * How many candidate producer recipes exist for this item
+   * (candidateRecipesFor length — 0 or ≥2 by construction). Nonzero ⇒ the
+   * "N recipes" chip; this is exactly what P1's picker will offer. S20 P0 Axis 3.
+   */
+  candidateCount: number;
 }
 
 /** One item + rate line (raw inputs / byproducts) — pure data → strings. */
@@ -72,14 +100,68 @@ export interface ItemRateRow {
  * target itself is raw — has no stages). Names resolve through the catalog.
  */
 export interface ProposalPreview {
+  /** Stage rows in (depth asc, existing order); tier boundaries are derivable
+   *  from consecutive rows' `depth`. */
   rows: PreviewRow[];
   rawInputs: ItemRateRow[];
   byproducts: ItemRateRow[];
   /** true ⇒ nothing to build (no proposed stages); Apply is a no-op. */
   isEmpty: boolean;
+  /** The cost-sheet totals (Σ power / Σ machines / raw) rendered above the rows. */
+  metrics: ProposalMetrics;
 }
 
-/** Build the display-ready preview from a proposal + the catalog for names. */
+/**
+ * Longest-path depth from `targetItemId` to every item over `links`, keyed by
+ * item id. Links point input-item → consumer-item (chain-builder.ts:245), so a
+ * feed edge `from → to` means `to` is one hop SHALLOWER than `from`; the
+ * traversal walks `to → from` outward from the target (depth 0).
+ *
+ * Longest-path (max over incoming consumer depths + 1), NOT shortest: on a
+ * diamond DAG with a shortcut edge, shortest-path would place a producer
+ * shallower than one of its consumers and break the "feeds" reading. A queue
+ * relaxation over the DAG suffices (the proposal is acyclic — the builder's
+ * cycle guard). Items unreachable from the target never appear in the map;
+ * callers render them last (Number.MAX_SAFE_INTEGER). Pure + unit-testable.
+ */
+function depthsFromTarget(
+  targetItemId: string,
+  links: ChainProposal["links"],
+): Map<string, number> {
+  // Consumer (to) → producers (from): the outward adjacency the traversal walks.
+  const producersOf = new Map<string, string[]>();
+  for (const link of links) {
+    const list = producersOf.get(link.toItemId);
+    if (list === undefined) producersOf.set(link.toItemId, [link.fromItemId]);
+    else list.push(link.fromItemId);
+  }
+  const depth = new Map<string, number>([[targetItemId, 0]]);
+  // Relax outward: whenever a producer can be reached at a deeper level than
+  // recorded, raise it and re-enqueue. Acyclic ⇒ this settles; the deepest path
+  // to each item wins (longest-path). Ties keep the caller's row order (this map
+  // only assigns depths; row emission does the stable sort).
+  const queue: string[] = [targetItemId];
+  while (queue.length > 0) {
+    const item = queue.shift()!;
+    const here = depth.get(item)!;
+    for (const producer of producersOf.get(item) ?? []) {
+      const candidate = here + 1;
+      if (candidate > (depth.get(producer) ?? -1)) {
+        depth.set(producer, candidate);
+        queue.push(producer);
+      }
+    }
+  }
+  return depth;
+}
+
+/**
+ * Build the display-ready preview from a proposal + the catalog for names.
+ * Rows gain depth (longest-path tier from the target), feeds (direct-consumer
+ * display names), and candidateCount (alternate-recipe count) — S20 P0. Rows are
+ * ordered by (depth asc, existing stage order); the target unique sink is the
+ * root, so it renders T0 first. `metrics` carries the cost-sheet totals.
+ */
 export function toProposalPreview(
   proposal: ChainProposal,
   catalog: Catalog,
@@ -90,13 +172,41 @@ export function toProposalPreview(
     if (machineId === undefined) return stage.recipeId;
     return catalog.machines[machineId]?.displayName ?? machineId;
   };
+
+  // The target is the proposal's unique sink: the item that no link feeds (no
+  // `from` edge originates it — equivalently, it is never a `fromItemId`). The
+  // builder constructs demand-driven from the target, so it is always present;
+  // absent an unreachable-edge pathology, exactly one such stage exists. Fall
+  // back to the first stage's item (row order) so depth stays total.
+  const producedIds = new Set(proposal.links.map((l) => l.fromItemId));
+  const targetItemId =
+    proposal.stages.find((s) => !producedIds.has(s.itemId))?.itemId ??
+    proposal.stages[0]?.itemId ??
+    "";
+  const depthOf = depthsFromTarget(targetItemId, proposal.links);
+  // Direct consumers per producer item (from → to): the "feeds" adjacency.
+  const consumersOf = new Map<string, string[]>();
+  for (const link of proposal.links) {
+    const list = consumersOf.get(link.fromItemId);
+    if (list === undefined) consumersOf.set(link.fromItemId, [link.toItemId]);
+    else list.push(link.toItemId);
+  }
+
+  const rows: PreviewRow[] = proposal.stages.map((s) => ({
+    itemName: itemName(s.itemId),
+    machineName: machineNameFor(s),
+    machineCount: s.machineCount.toString(),
+    outputRate: formatRate(s.outputRate),
+    depth: depthOf.get(s.itemId) ?? Number.MAX_SAFE_INTEGER,
+    feeds: (consumersOf.get(s.itemId) ?? []).map(itemName),
+    candidateCount: candidateRecipesFor(catalog, s.itemId).length,
+  }));
+  // Stable sort by depth (asc); Array.prototype.sort is stable, so equal-depth
+  // rows keep their existing stage order (frozen: ties broken by row order).
+  rows.sort((a, b) => a.depth - b.depth);
+
   return {
-    rows: proposal.stages.map((s) => ({
-      itemName: itemName(s.itemId),
-      machineName: machineNameFor(s),
-      machineCount: s.machineCount.toString(),
-      outputRate: formatRate(s.outputRate),
-    })),
+    rows,
     rawInputs: proposal.rawInputs.map((r) => ({
       itemName: itemName(r.itemId),
       rate: formatRate(r.rate),
@@ -106,6 +216,7 @@ export function toProposalPreview(
       rate: formatRate(b.rate),
     })),
     isEmpty: proposal.stages.length === 0,
+    metrics: proposalMetrics(proposal, catalog),
   };
 }
 
@@ -117,6 +228,17 @@ export function previewRowText(row: PreviewRow): string {
 /** The raw-inputs / byproducts line: "Iron Ore 780/min, Water 360/min". */
 export function itemRateLineText(rows: ItemRateRow[]): string {
   return rows.map((r) => `${r.itemName} ${r.rate}/min`).join(", ");
+}
+
+/**
+ * The cost sheet's Σ POWER line: "<n> MW" exact (the 100%-clock exact branch —
+ * proposal stages are always 100% clock, so `formatRate` renders the Fraction
+ * verbatim), with a bare " (varies)" flag when any machine is variable-power.
+ * The flag is a warning, not the bounds range (the compare rows carry the full
+ * "(varies A–B MW)"; the sheet stays compact). S20 P0 Axis 4.
+ */
+export function metricsPowerText(metrics: ProposalMetrics): string {
+  return `${formatRate(metrics.powerMw)} MW${metrics.powerVaries ? " (varies)" : ""}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,36 +303,71 @@ export function candidateRecipesFor(
 }
 
 /**
- * The subtree power total for a proposal: Σ over each stage of
- * machineCount × the stage machine's exact `power.mw`, plus a flag set when ANY
- * contributing machine is variable-power (so the row can carry the varies
- * labeling). A stage whose recipe/machine/power does not resolve contributes
- * nothing (defensive — a proposal stage always resolves in practice).
+ * The whole-proposal metrics — the cost-sheet totals for a ChainProposal.
+ *
+ * A whole proposal IS the target's subtree, so this is the shared metric core
+ * for BOTH the P0 cost sheet (over the applied proposal) and the alt-compare
+ * candidate rows (over each candidate's subtree, which this function powers
+ * unchanged — S20 P0 Axis 1, reuse-first). Extracted from the former
+ * `subtreePower`; the compare path re-composes over it byte-identically.
+ *
+ * - `powerMw` — Σ over each stage of machineCount × the machine's exact
+ *   `power.mw`; `powerVaries` set when ANY contributing machine is
+ *   variable-power (so the row/sheet can carry the varies labeling).
+ * - `minMw`/`maxMw` — the summed power envelope; a variable machine contributes
+ *   its exact bounds, a constant one its `mw` as BOTH bounds (the `?? power.mw`
+ *   fallback). On a fully-constant chain minMw === maxMw === powerMw — the
+ *   degenerate envelope, never an absent state (frozen v3, r3 fold).
+ * - `machineCount` — Σ machineCount across the subtree (bigint, exact).
+ * - `rawInputs` — the proposal's RAW `{ itemId, rate }` rows, verbatim (rendered
+ *   at the consumer via itemRateLineText / itemRateDot).
+ *
+ * A stage whose recipe/machine/power does not resolve contributes nothing to the
+ * power sums (defensive — a proposal stage always resolves in practice); its
+ * machineCount still counts.
  */
-function subtreePower(
+export interface ProposalMetrics {
+  powerMw: Fraction;
+  powerVaries: boolean;
+  minMw: Fraction;
+  maxMw: Fraction;
+  machineCount: bigint;
+  rawInputs: ItemRate[];
+}
+
+export function proposalMetrics(
   proposal: ChainProposal,
   catalog: Catalog,
-): { total: Fraction; variable: boolean; minMw: Fraction; maxMw: Fraction } {
-  let total = Fraction.from(0);
-  let variable = false;
+): ProposalMetrics {
+  let powerMw = Fraction.from(0);
+  let powerVaries = false;
   // The min/max bounds accumulate in the SAME loop (diff-simplify fold): a
   // variable machine contributes its bounds, a constant one its mw as both —
   // so the mixed-subtree envelope stays honest and the two sums cannot drift
   // on which stages they skip.
   let minMw = Fraction.from(0);
   let maxMw = Fraction.from(0);
+  let machineCount = 0n;
   for (const stage of proposal.stages) {
+    machineCount += stage.machineCount;
     const machineId = catalog.recipes[stage.recipeId]?.machineId;
     if (machineId === undefined) continue;
     const power = catalog.machines[machineId]?.power;
     if (power === undefined) continue;
     const count = Fraction.from(stage.machineCount);
-    total = total.add(count.mul(power.mw));
-    if (power.variable) variable = true;
+    powerMw = powerMw.add(count.mul(power.mw));
+    if (power.variable) powerVaries = true;
     minMw = minMw.add(count.mul(power.minMw ?? power.mw));
     maxMw = maxMw.add(count.mul(power.maxMw ?? power.mw));
   }
-  return { total, variable, minMw, maxMw };
+  return {
+    powerMw,
+    powerVaries,
+    minMw,
+    maxMw,
+    machineCount,
+    rawInputs: proposal.rawInputs,
+  };
 }
 
 /**
@@ -218,11 +375,17 @@ function subtreePower(
  * `stagePowerText` (the S6 discipline) at 100% clock, so the exact-Fraction
  * rendering AND the "(varies A–B MW)" suffix come from ONE source. Proposal
  * stages are always 100% clock (ProposedStage produces at 100), so the exact
- * branch always applies. `minMw/maxMw` are the summed variable bounds (absent
- * on a non-variable total), matching stagePowerText's varies-suffix contract.
+ * branch always applies. `minMw/maxMw` are the summed variable bounds (the
+ * degenerate min===max===total on a constant chain), matching stagePowerText's
+ * varies-suffix contract.
  */
 function subtreePowerText(proposal: ChainProposal, catalog: Catalog): string {
-  const { total, variable, minMw, maxMw } = subtreePower(proposal, catalog);
+  const {
+    powerMw: total,
+    powerVaries: variable,
+    minMw,
+    maxMw,
+  } = proposalMetrics(proposal, catalog);
   // Pure formatting over the one-loop struct: the constant total renders exact
   // via the count=1 identity; the variable total carries the summed bounds so
   // the varies suffix brackets the same number the leading figure shows.
