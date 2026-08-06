@@ -14,6 +14,7 @@ import { computeTransportFindings } from "./graph-flow.ts";
 import { fileToDocsText, fileFromDrop } from "./decode.ts";
 import { resolveInitialTheme } from "./theme.ts";
 import type { Theme } from "./theme.ts";
+import { requestPersistence } from "./persistence.ts";
 import { UploadScreen } from "./UploadScreen.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
 import { PlansBar } from "./PlansBar.tsx";
@@ -175,6 +176,14 @@ export default function App() {
     window.localStorage.setItem("theme", theme);
   }, [theme]);
 
+  // Stage 19 (#92): ask the browser for persistent storage on boot so the
+  // plans store is never auto-evicted (fire-and-forget — a denial changes
+  // nothing the user can act on; the helper feature-detects, logs, never
+  // throws). One-shot at mount; grant is environment-dependent.
+  useEffect(() => {
+    void requestPersistence();
+  }, []);
+
   // Refresh the saved-plan list once the catalog is ready (the ready layout's
   // first mount). `plans` starts null; this makes that null transient, so
   // PlansBar's null and [] states share one placeholder. refreshPlans enqueues
@@ -264,6 +273,18 @@ export default function App() {
     if (json === null) return; // missing/corrupt: nothing to download
     const name = (s.plans ?? []).find((p) => p.id === id)?.name ?? "plan";
     downloadTextFile(json, `${sanitizeFilename(name)}.foundry-plan.json`);
+  }
+
+  // Export-all (Stage 19 / #92): the store hands back the whole-plans bundle
+  // JSON (or null when there are no plans); App does the browser-only download.
+  // Filename dates from the export moment; the `.foundry-plans.json` double
+  // extension is the machine/import signal, the prefix the human Downloads-sort
+  // signal (frozen Axis 4).
+  async function handleExportAll() {
+    const json = await s.exportAllPlans();
+    if (json === null) return; // no plans: nothing to download
+    const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    downloadTextFile(json, `foundry-plans-${date}.foundry-plans.json`);
   }
 
   // Import: plan files are OUR OWN UTF-8 JSON exports, so file.text() is correct
@@ -373,6 +394,7 @@ export default function App() {
         onRename={s.renamePlan}
         onDelete={s.deletePlan}
         onExport={(id) => void handleExport(id)}
+        onExportAll={() => void handleExportAll()}
         onImport={(file) => void handleImport(file)}
       />
       {solve.status === "idle" && (

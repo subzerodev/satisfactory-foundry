@@ -11,6 +11,8 @@ interface PlansBarProps {
   onDelete(id: string): void;
   /** Export the selected plan (App turns it into a file download). */
   onExport(id: string): void;
+  /** Export EVERY saved plan as one re-importable bundle (Stage 19 / #92). */
+  onExportAll(): void;
   /** Import a plan from an uploaded file (App reads its text first). */
   onImport(file: File): void;
 }
@@ -38,6 +40,7 @@ export function PlansBar({
   onRename,
   onDelete,
   onExport,
+  onExportAll,
   onImport,
 }: PlansBarProps) {
   const [name, setName] = useState("");
@@ -87,6 +90,12 @@ export function PlansBar({
             </button>
             <button type="button" onClick={() => onExport(activeId)}>
               Export
+            </button>
+            {/* Export-all (Stage 19 / #92): the same plain-button idiom as its
+                siblings, targeting no specific row — it backs up EVERY plan, so
+                it's selection-independent and lives here where ≥1 plan exists. */}
+            <button type="button" onClick={() => onExportAll()}>
+              Export all
             </button>
             <button type="button" onClick={() => onDelete(activeId)}>
               Delete

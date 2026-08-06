@@ -333,11 +333,47 @@ export interface Actions {
    *  row is missing/corrupt. Headless — App owns the Blob/anchor download. */
   exportPlan(id: string): Promise<string | null>;
   /** Validate + save an exported plan file's text under the save-over model.
-   *  Never auto-loads (the live graph is untouched). Failures → planError. */
+   *  Sniffs a bundle envelope (Stage 19 / #92) and imports every entry, else
+   *  the single-file arm. Never auto-loads (the live graph is untouched).
+   *  Failures → planError. */
   importPlan(text: string): Promise<void>;
+  /** Serialize EVERY stored plan as one re-importable bundle (Stage 19 / #92),
+   *  or null when no plans exist. Reads all rows inside one enqueue slot for a
+   *  consistent point-in-time snapshot. Headless — App owns the download. */
+  exportAllPlans(): Promise<string | null>;
 }
 
 export type Store = AppState & Actions;
+
+/**
+ * Stage 19 (#92): the export-all bundle envelope. A distinct `kind` string makes
+ * single-file-vs-bundle sniffing exact (a per-plan file has no `kind`), and
+ * `format_version` reserves bundle evolution independently of the per-plan file
+ * versions. Each `plans[]` entry is EXACTLY a per-plan file object (latest v5 as
+ * written by exportPlan's source), revived on import through the SAME
+ * `validatePlanFile` path — one migration surface, no second format to version.
+ */
+export interface PlanBundle {
+  kind: "foundry-plan-bundle";
+  format_version: 1;
+  exportedAt: string; // ISO
+  plans: PlanFileV5[];
+}
+
+/** The sniff constant (Axis 3): import branches to the bundle arm iff a parsed
+ *  object carries this exact `kind`. */
+const PLAN_BUNDLE_KIND = "foundry-plan-bundle";
+
+/** Sniff a parsed value as a bundle envelope by its `kind` (Axis 3): a per-plan
+ *  file has no `kind` field, so the sniff cannot misfire. Entry validation is
+ *  the bundle arm's job (via `validatePlanFile` per entry) — this only routes. */
+function isPlanBundle(value: unknown): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (value as Record<string, unknown>).kind === PLAN_BUNDLE_KIND
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Active-stage selectors — the canonical v1 read path (Stage 3 / Phase 1)
@@ -998,6 +1034,49 @@ export function createAppStore(storage?: StateStorage) {
         const enqueue = (op: () => Promise<void>): Promise<void> => {
           planOpChain = planOpChain.then(op);
           return planOpChain;
+        };
+
+        // The one per-plan save path shared by importPlan's single arm AND its
+        // bundle arm (Stage 19 / #92, frozen Axis 3): OUR name rules on a
+        // VALIDATED file — trim, refuse-empty, then collision-overwrite (keep
+        // the existing row's createdAt; a foreign payload's stamp is untrusted)
+        // or create a fresh row (createdAt now). Behavior is byte-for-byte the
+        // pre-Stage-19 single-arm logic, just extracted.
+        //
+        // The collision read is a FRESH listPlanFiles() per call (never hoisted
+        // above the bundle loop): within one bundle, two entries sharing a
+        // trimmed name resolve last-entry-wins into ONE row — the second call
+        // sees the first's just-committed row and overwrites it, preserving the
+        // by-construction name-uniqueness invariant (store.ts collision idiom,
+        // savePlanAs). Returns "empty-name" for a whitespace name (caller shapes
+        // the message) or "saved" once the row is committed.
+        const savePlanFromFile = async (
+          file: PlanFileV5,
+        ): Promise<"saved" | "empty-name"> => {
+          const trimmed = file.name.trim();
+          if (trimmed === "") return "empty-name";
+          const existing = await listPlanFiles();
+          const match = existing.find((p) => p.name === trimmed);
+          const now = new Date().toISOString();
+          if (match) {
+            const prior = await loadPlanFile(match.id);
+            const plan: PlanFileV5 = {
+              ...file,
+              name: trimmed,
+              createdAt: prior?.createdAt ?? now,
+              updatedAt: now,
+            };
+            await savePlanFile(plan, match.id);
+          } else {
+            const plan: PlanFileV5 = {
+              ...file,
+              name: trimmed,
+              createdAt: now,
+              updatedAt: now,
+            };
+            await savePlanFile(plan, crypto.randomUUID());
+          }
+          return "saved";
         };
 
         // The default stage lives in the INITIAL-STATE LITERAL (not init()):
@@ -1710,6 +1789,41 @@ export function createAppStore(storage?: StateStorage) {
             return JSON.stringify(plan, null, 2);
           },
 
+          async exportAllPlans(): Promise<string | null> {
+            // DELIBERATE divergence from exportPlan's no-enqueue posture
+            // (exportPlan is a single-row read, torn-snapshot-immune by size).
+            // A BUNDLE is a multi-row read across await boundaries: without the
+            // enqueue slot, a concurrent savePlanAs/deletePlan could interleave
+            // between the list and the per-row loads, yielding a TORN
+            // point-in-time snapshot (a row listed but since-deleted, or two
+            // rows from different instants). So the ENTIRE read runs inside ONE
+            // enqueue slot — serialized w.r.t. other plan ops — making the
+            // bundle a consistent snapshot. The op is TOTAL (returns a value via
+            // the captured `result`, sets no planError) so it never poisons the
+            // chain. Returns null when no plans exist (App suppresses download).
+            let result: string | null = null;
+            await enqueue(async () => {
+              const metas = await listPlanFiles();
+              if (metas.length === 0) return; // result stays null
+              const plans: PlanFileV5[] = [];
+              for (const meta of metas) {
+                const file = await loadPlanFile(meta.id);
+                // A row that fails to load (corrupt/foreign) is skipped rather
+                // than aborting the whole backup — listPlanFiles already only
+                // returns loadable rows, so this is defense in depth.
+                if (file !== null) plans.push(file);
+              }
+              const bundle: PlanBundle = {
+                kind: PLAN_BUNDLE_KIND,
+                format_version: 1,
+                exportedAt: new Date().toISOString(),
+                plans,
+              };
+              result = JSON.stringify(bundle, null, 2);
+            });
+            return result;
+          },
+
           importPlan(text: string) {
             return enqueue(async () => {
               set({ planError: null });
@@ -1723,45 +1837,66 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "import failed: not valid JSON" });
                   return;
                 }
-                // The SAME acceptance loadPlanFile uses (v2, else v1→migrateV1):
-                // a foreign/corrupt payload is refused, nothing written.
+
+                // Sniff bundle-vs-single (Axis 3): a bundle envelope carries the
+                // exact `kind`; a per-plan file has no `kind`, so the single arm
+                // below stays byte-identical for every existing input.
+                if (isPlanBundle(parsed)) {
+                  // Bundle arm. The whole loop runs inside THIS one enqueue slot
+                  // — serialized w.r.t. other plan ops. Each entry is still its
+                  // own IDB put (no bundle-wide transaction, no rollback): the
+                  // skip-invalid policy covers the expected validation-failure
+                  // path, and a mid-loop I/O error leaves prior entries
+                  // committed. Does NOT auto-load; one doRefresh() at the end.
+                  const raw = (parsed as PlanBundle).plans;
+                  const entries = Array.isArray(raw) ? raw : [];
+                  const total = entries.length;
+                  let imported = 0;
+                  for (const entry of entries) {
+                    const file = validatePlanFile(entry);
+                    if (file === null) continue; // corrupt/foreign entry: skip
+                    // savePlanFromFile re-reads listPlanFiles per call, so two
+                    // same-named entries resolve last-entry-wins into ONE row
+                    // (the second sees the first's committed row). An empty name
+                    // is skipped like any other invalid entry.
+                    const result = await savePlanFromFile(file);
+                    if (result === "saved") imported += 1;
+                  }
+                  if (imported === 0) {
+                    // Zero valid entries (incl. an empty plans[]): nothing was
+                    // written, so no refresh needed — report the failure.
+                    set({
+                      planError: "import failed: no valid plans in bundle",
+                    });
+                    return;
+                  }
+                  const skipped = total - imported;
+                  if (skipped > 0) {
+                    // Partial success: extend the error channel to carry a
+                    // partial-success caveat (uploadError's precedent — the red
+                    // banner is the accepted surface). Only when K>0.
+                    set({
+                      planError: `imported ${imported} of ${total} plans (${skipped} invalid skipped)`,
+                    });
+                  }
+                  await doRefresh();
+                  return;
+                }
+
+                // Single-file arm (unchanged behavior, byte-for-byte error
+                // strings). The SAME acceptance loadPlanFile uses: a
+                // foreign/corrupt payload is refused, nothing written.
                 const file = validatePlanFile(parsed);
                 if (file === null) {
                   set({ planError: "import failed: not a valid plan file" });
                   return;
                 }
-                // OUR name rules (imports were never validated by them): trim,
-                // refuse-empty. The trimmed form is what saves AND what
-                // collision-matches — mirroring savePlanAs exactly.
-                const trimmed = file.name.trim();
-                if (trimmed === "") {
+                // OUR name rules via the shared helper (trim, refuse-empty,
+                // collision-overwrite-or-new — mirroring savePlanAs exactly).
+                const result = await savePlanFromFile(file);
+                if (result === "empty-name") {
                   set({ planError: "plan name required" });
                   return;
-                }
-                const existing = await listPlanFiles();
-                const match = existing.find((p) => p.name === trimmed);
-                const now = new Date().toISOString();
-                if (match) {
-                  // Overwrite the existing row: keep ITS createdAt (a foreign
-                  // payload's timestamp is untrusted), stamp updatedAt now.
-                  const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV5 = {
-                    ...file,
-                    name: trimmed,
-                    createdAt: prior?.createdAt ?? now,
-                    updatedAt: now,
-                  };
-                  await savePlanFile(plan, match.id);
-                } else {
-                  // New row: createdAt now (savePlanAs precedent — new names get
-                  // now, never the untrusted foreign timestamp).
-                  const plan: PlanFileV5 = {
-                    ...file,
-                    name: trimmed,
-                    createdAt: now,
-                    updatedAt: now,
-                  };
-                  await savePlanFile(plan, crypto.randomUUID());
                 }
                 // Import does NOT auto-load: saving ≠ switching the working
                 // graph. The live graph is untouched; only the list refreshes.

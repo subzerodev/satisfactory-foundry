@@ -1161,6 +1161,7 @@ describe("PlansBar", () => {
         onRename={noop}
         onDelete={noop}
         onExport={noop}
+        onExportAll={noop}
         onImport={noop}
       />,
     );
@@ -1180,6 +1181,7 @@ describe("PlansBar", () => {
         onRename={noop}
         onDelete={noop}
         onExport={noop}
+        onExportAll={noop}
         onImport={noop}
       />,
     );
@@ -1196,6 +1198,7 @@ describe("PlansBar", () => {
         onRename={noop}
         onDelete={noop}
         onExport={noop}
+        onExportAll={noop}
         onImport={noop}
       />,
     );
@@ -1204,6 +1207,9 @@ describe("PlansBar", () => {
     expect(html).toContain("Load");
     expect(html).toContain("Rename");
     expect(html).toContain("Export");
+    // Export-all (Stage 19 / #92) renders alongside the per-row buttons — a
+    // plain button, present whenever ≥1 plan exists, selection-independent.
+    expect(html).toContain("Export all");
     expect(html).toContain("Delete");
     expect(html).not.toContain("— no saved plans —");
   });
@@ -1218,6 +1224,7 @@ describe("PlansBar", () => {
         onRename={noop}
         onDelete={noop}
         onExport={noop}
+        onExportAll={noop}
         onImport={noop}
       />,
     );
@@ -1235,6 +1242,7 @@ describe("PlansBar", () => {
         onRename={noop}
         onDelete={noop}
         onExport={noop}
+        onExportAll={noop}
         onImport={noop}
       />,
     );
