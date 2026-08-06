@@ -52,8 +52,12 @@
 ## Acceptance criteria
 
 - [x] Installable PWA; fully offline after first visit (walk-verified
-  locally; final install check on the live URL)
+  locally: SW cache-served fonts/catalog, update cycle live)
 - [x] Full gate at pickup (design r1-r3, boundary, simplify ×2, walk)
-- [ ] **App live on GitHub Pages — awaiting Michael:** approve
-  `git push github main` + set the mirror repo's Pages source to
-  "GitHub Actions". Ticket #56 stays open until the live URL loads.
+- [x] **App LIVE on GitHub Pages** (2026-08-06, Michael-approved push
+  `git push github main` @ a87440b; Pages source: GitHub Actions;
+  deploy run #1 completed success):
+  https://subzerodev.github.io/satisfactory-foundry/ — title, manifest
+  (standalone, 192 any + 512 any-maskable), sw.js, all icons, all 4
+  fonts base-rewritten in the served CSS, catalog + provenance all
+  verified serving on the live URL.

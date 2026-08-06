@@ -39,3 +39,4 @@ extra = ["epic", "blocked"]    # stage:N labels are generated from [stages]
 "16" = "Stage 16 — Field polish: alt-recipe output rate + machine names on tiles"
 "17" = "Stage 17 — Drawn-distance goes two-site; the chain engine retires"
 "18" = "Stage 18 — Packaging: PWA + GitHub Pages"
+"19" = "Stage 19 — Plan durability: persist + export-all"

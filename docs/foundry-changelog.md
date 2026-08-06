@@ -3,6 +3,21 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-06 — Stage 19: your plans are harder to lose
+
+> Hey Michael — two quiet protections for your saved factories. First,
+> the app now asks the browser to mark its storage as protected, so
+> the browser won't quietly clear your plans if the disk ever runs
+> low — on an installed app this is usually granted automatically,
+> with nothing for you to do. Second, there's a new "Export all"
+> button next to the other plan buttons: one click downloads every
+> saved plan as a single backup file. Drop that file back into the
+> same Import you already use and everything comes back — even on a
+> brand-new device. If a backup file is ever damaged, the import
+> saves whatever is still good and tells you plainly, like
+> "imported 2 of 3 plans (1 invalid skipped)". Your plans still
+> never leave your machine.
+
 ## 2026-08-06 — Stage 18: the app becomes installable and works offline
 
 > Hey Michael — the Foundry can now live on your phone or desktop

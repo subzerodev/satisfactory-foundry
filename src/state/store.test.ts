@@ -7,7 +7,7 @@ import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
 import type { PlanFileV1, PlanFileV2, PlanFileV5 } from "../data/plan-store.ts";
 import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
-import type { StageLink } from "./store.ts";
+import type { StageLink, PlanBundle } from "./store.ts";
 import { proposeChain } from "../core/chain-builder.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
 import { applyDrawnDistance } from "../ui/chain-view.ts";
@@ -2716,6 +2716,227 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     await store.getState().savePlanAs("Recovered");
     expect(store.getState().planError).toBeNull();
     expect(store.getState().plans!.map((p) => p.name)).toEqual(["Recovered"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan durability — export-all bundle + bundle import (Stage 19 / #92).
+// ---------------------------------------------------------------------------
+
+describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
+  async function readyStore() {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    return store;
+  }
+
+  /** A minimal valid v5 plan file with a chosen name + recipe (content marker). */
+  function planFile(name: string, recipeId: string | null): PlanFileV5 {
+    return {
+      format_version: 5,
+      name,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      flowDirection: "LR",
+      stages: [
+        {
+          name: "Stage 1",
+          selection: {
+            recipeId,
+            machineCount: 1,
+            clockPercentText: "100",
+            unlockedTiers: { belt: 1, pipe: 1 },
+            overrides: { feeds: {}, outputs: {} },
+          },
+        },
+      ],
+      links: [],
+    };
+  }
+
+  /** Wrap per-plan file objects in the bundle envelope (the export shape). */
+  function bundle(plans: PlanFileV5[]): PlanBundle {
+    return {
+      kind: "foundry-plan-bundle",
+      format_version: 1,
+      exportedAt: "2026-08-06T00:00:00.000Z",
+      plans,
+    };
+  }
+
+  it("round-trip: save 2 → exportAllPlans → wipe → importPlan(bundle) restores both, no auto-load", async () => {
+    const store = await readyStore();
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setClockPercentText("42");
+    await store.getState().savePlanAs("Alpha");
+    store.getState().setClockPercentText("75");
+    await store.getState().savePlanAs("Beta");
+
+    const json = (await store.getState().exportAllPlans())!;
+    expect(json).not.toBeNull();
+
+    // Wipe every stored plan (device-loss simulation) + the live selection.
+    const db = await (await import("../data/db.ts")).openDb();
+    for (const p of store.getState().plans!) {
+      await store.getState().deletePlan(p.id);
+    }
+    expect(store.getState().plans).toEqual([]);
+    const orderBefore = store.getState().stageOrder;
+    const selBefore = store.getState().selection.recipeId;
+
+    await store.getState().importPlan(json);
+
+    // Both plans are back with intact names/graphs.
+    const names = store
+      .getState()
+      .plans!.map((p) => p.name)
+      .sort();
+    expect(names).toEqual(["Alpha", "Beta"]);
+    const alpha = store.getState().plans!.find((p) => p.name === "Alpha")!;
+    const beta = store.getState().plans!.find((p) => p.name === "Beta")!;
+    const storedAlpha = (await db.get<PlanFileV5>("plans", alpha.id))!;
+    const storedBeta = (await db.get<PlanFileV5>("plans", beta.id))!;
+    expect(storedAlpha.stages[0]!.selection.clockPercentText).toBe("42");
+    expect(storedBeta.stages[0]!.selection.clockPercentText).toBe("75");
+    // NO auto-load: the live graph is untouched by a bundle import.
+    expect(store.getState().stageOrder).toEqual(orderBefore);
+    expect(store.getState().selection.recipeId).toBe(selBefore);
+  });
+
+  it("exportAllPlans returns null when there are no plans", async () => {
+    const store = await readyStore();
+    await store.getState().refreshPlans();
+    expect(await store.getState().exportAllPlans()).toBeNull();
+  });
+
+  it("envelope shape: kind, format_version, exportedAt, plans length", async () => {
+    const store = await readyStore();
+    store.getState().selectRecipe("ingot_iron");
+    await store.getState().savePlanAs("One");
+    await store.getState().savePlanAs("Two");
+
+    const before = new Date().toISOString();
+    const json = (await store.getState().exportAllPlans())!;
+    const env = JSON.parse(json) as PlanBundle;
+    expect(env.kind).toBe("foundry-plan-bundle");
+    expect(env.format_version).toBe(1);
+    expect(typeof env.exportedAt).toBe("string");
+    expect(env.exportedAt >= before).toBe(true); // stamped at the export moment
+    expect(env.plans).toHaveLength(2);
+    // Each entry is a per-plan v5 file object (validatePlanFile-shaped).
+    expect(env.plans.every((p) => p.format_version === 5)).toBe(true);
+    expect(env.plans.map((p) => p.name).sort()).toEqual(["One", "Two"]);
+    // Pretty-printed, matching JSON.stringify(bundle, null, 2).
+    expect(json).toContain('\n  "kind": "foundry-plan-bundle"');
+  });
+
+  it("collision: a bundle entry matching an existing name overwrites, keeping prior createdAt", async () => {
+    const store = await readyStore();
+    store.getState().selectRecipe("ingot_iron");
+    await store.getState().savePlanAs("Target");
+    const targetId = store.getState().plans![0]!.id;
+    const db = await (await import("../data/db.ts")).openDb();
+    const originalCreatedAt = (await db.get<PlanFileV5>("plans", targetId))!
+      .createdAt;
+
+    // A bundle entry named "Target" with a foreign stamp + different content.
+    const entry = planFile("Target", null);
+    entry.createdAt = "1999-12-31T00:00:00.000Z";
+    entry.stages[0]!.selection.machineCount = 7;
+    await store.getState().importPlan(JSON.stringify(bundle([entry])));
+
+    // Exactly one "Target" row, same id, prior createdAt preserved, content replaced.
+    expect(
+      store.getState().plans!.filter((p) => p.name === "Target"),
+    ).toHaveLength(1);
+    const stored = (await db.get<PlanFileV5>("plans", targetId))!;
+    expect(stored.createdAt).toBe(originalCreatedAt); // NOT the foreign 1999 stamp
+    expect(stored.stages[0]!.selection.machineCount).toBe(7);
+  });
+
+  it("PINNED: two entries with the same trimmed name → ONE row, LAST entry's content, count proves no dup", async () => {
+    const store = await readyStore();
+    await store.getState().refreshPlans();
+
+    // Two entries share the trimmed name "Dup" (one padded) but carry DIFFERENT
+    // content. Last-entry-wins into ONE row: the second entry must see the
+    // first's just-committed row and overwrite it (the per-entry-fresh
+    // collision read). A single-name row proves no duplicate was created.
+    const first = planFile("Dup", null);
+    first.stages[0]!.selection.machineCount = 1;
+    const second = planFile("  Dup  ", "ingot_iron");
+    second.stages[0]!.selection.machineCount = 99;
+    await store.getState().importPlan(JSON.stringify(bundle([first, second])));
+
+    // Exactly ONE plan total, exactly one "Dup" — no duplicate row.
+    expect(store.getState().plans!).toHaveLength(1);
+    expect(
+      store.getState().plans!.filter((p) => p.name === "Dup"),
+    ).toHaveLength(1);
+    // The surviving row carries the LAST entry's content (machineCount 99).
+    const dupId = store.getState().plans![0]!.id;
+    const db = await (await import("../data/db.ts")).openDb();
+    const stored = (await db.get<PlanFileV5>("plans", dupId))!;
+    expect(stored.name).toBe("Dup"); // trimmed form
+    expect(stored.stages[0]!.selection.machineCount).toBe(99);
+    expect(stored.stages[0]!.selection.recipeId).toBe("ingot_iron");
+  });
+
+  it("per-entry skip: [valid, corrupt, valid] → 2 imported, planError 'imported 2 of 3'", async () => {
+    const store = await readyStore();
+    await store.getState().refreshPlans();
+
+    const env = bundle([
+      planFile("Good1", "ingot_iron"),
+      planFile("Good2", null),
+    ]);
+    // Splice a corrupt (non-plan) entry BETWEEN the two valid ones.
+    (env.plans as unknown[]).splice(1, 0, { hello: "world" });
+    await store.getState().importPlan(JSON.stringify(env));
+
+    expect(
+      store
+        .getState()
+        .plans!.map((p) => p.name)
+        .sort(),
+    ).toEqual(["Good1", "Good2"]);
+    expect(store.getState().planError).toBe(
+      "imported 2 of 3 plans (1 invalid skipped)",
+    );
+  });
+
+  it("all-valid bundle sets NO partial-success message (K=0)", async () => {
+    const store = await readyStore();
+    await store.getState().refreshPlans();
+    await store
+      .getState()
+      .importPlan(
+        JSON.stringify(bundle([planFile("A", null), planFile("B", null)])),
+      );
+    expect(store.getState().plans!).toHaveLength(2);
+    expect(store.getState().planError).toBeNull();
+  });
+
+  it("zero-valid bundle → error, nothing written", async () => {
+    const store = await readyStore();
+    await store.getState().refreshPlans();
+    const env = bundle([]);
+    (env.plans as unknown[]).push({ hello: "world" }, { also: "garbage" });
+    await store.getState().importPlan(JSON.stringify(env));
+    expect(store.getState().planError).toBe(
+      "import failed: no valid plans in bundle",
+    );
+    expect(store.getState().plans).toEqual([]);
+  });
+
+  it("empty bundle (plans: []) → error, nothing written", async () => {
+    const store = await readyStore();
+    await store.getState().refreshPlans();
+    await store.getState().importPlan(JSON.stringify(bundle([])));
+    expect(store.getState().planError).toBe(
+      "import failed: no valid plans in bundle",
+    );
+    expect(store.getState().plans).toEqual([]);
   });
 });
 

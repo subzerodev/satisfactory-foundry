@@ -1,0 +1,134 @@
+# Stage 19 (#92) plan-durability — bidirectionality verification log
+# Each new production behavior: green baseline, a real break, a GENUINE
+# vitest FAIL naming the new test(s), restore, green re-run. No tautologies.
+# Test file: src/state/store.test.ts, describe "plan durability: export-all + bundle import"
+# Runner: npx vitest run src/state/store.test.ts -t '<name>'
+
+==================================================================
+BASELINE — all new durability tests green
+==================================================================
+ Test Files  1 passed (1)
+      Tests  9 passed | 134 skipped (143)
+
+==================================================================
+BEHAVIOR 1 — bundle arm (sniff + import entries)
+==================================================================
+BREAK: neutralize the bundle sniff so a bundle envelope falls through to
+the single-file arm (validatePlanFile rejects the envelope).
+  command: perl -0pi -e "s/if \(isPlanBundle\(parsed\)\) \{/if (false) {/" src/state/store.ts
+--- FAIL run (broken) ---
+ ❯ src/state/store.test.ts (143 tests | 7 failed | 134 skipped) 22ms
+     × round-trip: save 2 → exportAllPlans → wipe → importPlan(bundle) restores both, no auto-load 14ms
+     × collision: a bundle entry matching an existing name overwrites, keeping prior createdAt 1ms
+     × PINNED: two entries with the same trimmed name → ONE row, LAST entry's content, count proves no dup 1ms
+     × per-entry skip: [valid, corrupt, valid] → 2 imported, planError 'imported 2 of 3' 1ms
+     × all-valid bundle sets NO partial-success message (K=0) 1ms
+     × zero-valid bundle → error, nothing written 1ms
+     × empty bundle (plans: []) → error, nothing written 1ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > round-trip: save 2 → exportAllPlans → wipe → importPlan(bundle) restores both, no auto-load
+ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > collision: a bundle entry matching an existing name overwrites, keeping prior createdAt
+ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > PINNED: two entries with the same trimmed name → ONE row, LAST entry's content, count proves no dup
+ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > per-entry skip: [valid, corrupt, valid] → 2 imported, planError 'imported 2 of 3'
+ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > all-valid bundle sets NO partial-success message (K=0)
+ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > zero-valid bundle → error, nothing written
+AssertionError: expected 'import failed: not a valid plan file' to be 'import failed: no valid plans in bund…' // Object.is equality
+Expected: "import failed: no valid plans in bundle"
+Received: "import failed: not a valid plan file"
+    2921|       "import failed: no valid plans in bundle",
+ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > empty bundle (plans: []) → error, nothing written
+AssertionError: expected 'import failed: not a valid plan file' to be 'import failed: no valid plans in bund…' // Object.is equality
+Expected: "import failed: no valid plans in bundle"
+Received: "import failed: not a valid plan file"
+    2931|       "import failed: no valid plans in bundle",
+ Test Files  1 failed (1)
+      Tests  7 failed | 2 passed | 134 skipped (143)
+RESTORE: git checkout -- src/state/store.ts
+--- GREEN re-run (restored) ---
+ Test Files  1 passed (1)
+      Tests  9 passed | 134 skipped (143)
+
+==================================================================
+BEHAVIOR 2 — within-bundle duplicate-name resolution (PINNED)
+==================================================================
+BREAK: make the shared savePlanFromFile helper collision-BLIND (always
+create a fresh row) — this defeats last-entry-wins-into-one-row: two
+same-named bundle entries would each create a duplicate row.
+  command: perl -i -pe "s/const match = existing.find\(\(p\) => p.name === trimmed\);/const match = undefined; void existing;/ if \$. == 1059" src/state/store.ts
+--- FAIL run (broken) ---
+ ❯ src/state/store.test.ts (143 tests | 2 failed | 134 skipped) 21ms
+     × PINNED: two entries with the same trimmed name → ONE row, LAST entry's content, count proves no dup 1ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > collision: a bundle entry matching an existing name overwrites, keeping prior createdAt
+- Expected
++ Received
+    2848|     ).toHaveLength(1);
+ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > PINNED: two entries with the same trimmed name → ONE row, LAST entry's content, count proves no dup
+- Expected
++ Received
+    2871|     expect(store.getState().plans!).toHaveLength(1);
+ Test Files  1 failed (1)
+      Tests  2 failed | 7 passed | 134 skipped (143)
+RESTORE: git checkout -- src/state/store.ts
+--- GREEN re-run (restored) ---
+ Test Files  1 passed (1)
+      Tests  9 passed | 134 skipped (143)
+
+==================================================================
+BEHAVIOR 3 — exportAllPlans envelope shape
+==================================================================
+BREAK: emit a WRONG kind in the exported envelope. This fails the
+envelope-shape assertion AND the round-trip (import sniff won't fire).
+  command: perl -i -pe "s/kind: PLAN_BUNDLE_KIND,/kind: \"wrong-kind\" as any,/ if \$. == 1817" src/state/store.ts
+--- FAIL run (broken) ---
+ ❯ src/state/store.test.ts (143 tests | 2 failed | 134 skipped) 21ms
+     × round-trip: save 2 → exportAllPlans → wipe → importPlan(bundle) restores both, no auto-load 14ms
+     × envelope shape: kind, format_version, exportedAt, plans length 2ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > round-trip: save 2 → exportAllPlans → wipe → importPlan(bundle) restores both, no auto-load
+- Expected
++ Received
+ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > envelope shape: kind, format_version, exportedAt, plans length
+AssertionError: expected 'wrong-kind' to be 'foundry-plan-bundle' // Object.is equality
+Expected: "foundry-plan-bundle"
+Received: "wrong-kind"
+ Test Files  1 failed (1)
+      Tests  2 failed | 7 passed | 134 skipped (143)
+RESTORE: git checkout -- src/state/store.ts
+--- GREEN re-run (restored) ---
+ Test Files  1 passed (1)
+      Tests  9 passed | 134 skipped (143)
+
+==================================================================
+BEHAVIOR 4 — partial-success message + skip-invalid policy
+==================================================================
+BREAK: suppress the partial-success planError (set it to null) so a
+[valid, corrupt, valid] bundle imports 2 but reports no caveat.
+  command: perl -i -pe "s/planError: .imported .{imported}.*invalid skipped\).,/planError: null,/ if \$. == 1879" src/state/store.ts
+--- FAIL run (broken) ---
+ ❯ src/state/store.test.ts (143 tests | 1 failed | 134 skipped) 20ms
+     × per-entry skip: [valid, corrupt, valid] → 2 imported, planError 'imported 2 of 3' 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > plan durability: export-all + bundle import (Stage 19 / #92) > per-entry skip: [valid, corrupt, valid] → 2 imported, planError 'imported 2 of 3'
+- Expected:
++ Received:
+ Test Files  1 failed (1)
+      Tests  1 failed | 8 passed | 134 skipped (143)
+RESTORE: git checkout -- src/state/store.ts
+--- GREEN re-run (restored) ---
+ Test Files  1 passed (1)
+      Tests  9 passed | 134 skipped (143)
+
+==================================================================
+SUMMARY
+==================================================================
+4 distinct new production behaviors, each broken with a real code edit
+and each producing a GENUINE vitest FAIL naming the new test(s):
+  1. Bundle arm (sniff neutralized)          → 7 bundle tests fail;
+     round-trip/collision/PINNED/skip/zero/empty all break.
+  2. Duplicate-name resolution (helper made   → PINNED + collision fail
+     collision-blind)                            (duplicate row created).
+  3. exportAllPlans envelope (wrong kind)     → envelope-shape + round-trip
+     fail (sniff can't fire on wrong kind).
+  4. Partial-success message (set to null)    → per-entry-skip fails.
+Each restore returns 9/9 green. No test passes both broken and fixed.
