@@ -164,8 +164,19 @@ interface Plan {
  * an invalid entry is ignored (default policy applies). Absent/empty ⇒ the
  * proposal is byte-identical to the pre-P4 behavior.
  *
- * Determinism: same target + rate + recipes + exclusions + overrides ⇒
- * identical proposal.
+ * `rawItemIds` (S20 / P1) is an optional set of user-forced-raw item ids
+ * consulted BEFORE producer selection at each item: a member (other than the
+ * target — see below) is a raw leaf, exactly like a natural no-producer item —
+ * its demand aggregates into `rawInputs` and its subtree never enters the
+ * closure. Precedence is raw > override > default policy: raw is the stronger,
+ * later user intent, so it wins over an override for the same item. **The
+ * target is immune**: `targetItemId ∈ rawItemIds` is IGNORED (a chain that
+ * produces nothing is not a chain) — the guard keeps the function total and the
+ * UI honest, silently. Absent/empty ⇒ the proposal is byte-identical to the
+ * pre-P1 behavior.
+ *
+ * Determinism: same target + rate + recipes + exclusions + overrides +
+ * rawItemIds ⇒ identical proposal.
  */
 export function proposeChain(
   targetItemId: string,
@@ -173,6 +184,7 @@ export function proposeChain(
   recipes: BuilderRecipe[],
   excludedMachineIds: Iterable<string>,
   overrides: ReadonlyMap<string, string> = new Map(),
+  rawItemIds: ReadonlySet<string> = new Set(),
 ): ChainProposal {
   const excluded = new Set(excludedMachineIds);
   // Every item that has appeared in the closure, produced or raw.
@@ -196,6 +208,19 @@ export function proposeChain(
     const existing = plans.get(itemId);
     if (existing !== undefined) {
       return existing;
+    }
+
+    // Forced-raw guard (S20 P1): a user-forced-raw item is a raw leaf BEFORE
+    // any producer selection — its demand aggregates into rawInputs exactly
+    // like a natural no-producer leaf, and its subtree never enters the
+    // closure. Raw > override > default (raw is the later, stronger user
+    // intent). The TARGET is immune: forcing the target raw would produce an
+    // empty chain, so `targetItemId ∈ rawItemIds` is silently ignored (keeps
+    // the function total).
+    if (itemId !== targetItemId && rawItemIds.has(itemId)) {
+      const plan: Plan = { itemId, recipe: null, demand: Fraction.from(0) };
+      plans.set(itemId, plan);
+      return plan;
     }
 
     // Cycle guard: if selecting a producer would route back onto the current
