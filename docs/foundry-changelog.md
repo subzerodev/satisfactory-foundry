@@ -3,6 +3,18 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-06 — Stage 20 P0: the Propose button shows its work
+
+> Hey Michael — when you ask the chain builder to Propose now, it
+> tells you what you'd be signing up for before you hit Apply. A
+> summary up top shows total power, total machines, and the raw ores
+> and fluids the whole chain will drink per minute. The stage list is
+> now organised into tiers — your target first, then what feeds it,
+> then what feeds those — and each line says exactly where its output
+> goes, so branching chains read honestly. And where an item has
+> alternate recipes, its line shows a little "3 recipes" note — a
+> preview of the recipe picking that's coming next.
+
 ## 2026-08-06 — Stage 19: your plans are harder to lose
 
 > Hey Michael — two quiet protections for your saved factories. First,

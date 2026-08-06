@@ -8,10 +8,17 @@ there" → the full option menu → **"all of them as one arc."**
 
 ## Phase status
 
-- **P0 (#99) — info layer** (cost sheet, tree preview, alternates tell):
-  IN PROGRESS — design loop.
+- **P0 (#99) — info layer**: DONE 2026-08-06 (merge on develop; 782
+  tests, +9). Design v3 FROZEN after 4 review rounds (r1 caught a wrong
+  signature + a false walk premise; simplify widened proposalMetrics
+  with the varies bounds; r3 pinned the degenerate envelope). Boundary
+  APPROVED+APPROVED (0); diff-simplify APPROVED (0); 4-behavior
+  bidirectionality log. Walk: cost sheet 928 MW exact == TitleBlock
+  Σ ≈ 928 MW (within-1-MW check); tiers T0-T3; fan-out feeds; recipe
+  chips; both themes.
 - **P1 (#100) — customization core** (recipe picker via the existing
-  overrides seam, treat-as-raw, exposed machine exclusions): blocked-by P0.
+  overrides seam, treat-as-raw, exposed machine exclusions): NEXT — P0
+  landed, unblocked.
 - **P2 (#101) — solver extensions** (clock-percent target, byproduct
   routing suggestions): blocked-by P1. Overclock power-curve exponent is
   research-gated at design.
