@@ -31,4 +31,10 @@ test: npm test
 remains the source of truth for all branches, board, and CI. Deploy runbook:
 get approval → `git push github main` → the owner-guarded
 `.github/workflows/deploy-pages.yml` builds (`--base=/satisfactory-foundry/`)
-and publishes Pages. Icons regenerate via `scripts/generate-icons.sh`.
+and publishes Pages. **The run's verdict is the "Verify the site serves this
+build" step** (polls the live URL for the build's hashed-bundle fingerprint;
+green ⇔ actually live). The deploy-pages step inside it is ADVISORY — its
+hard 10-min cap can show a red annotation while the deploy still lands;
+never react to that step alone (2026-08-06 lesson:
+`docs/postmortems/2026-08-06-pages-deploy-false-failures.md`). Icons
+regenerate via `scripts/generate-icons.sh`.

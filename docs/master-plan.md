@@ -366,5 +366,10 @@ process (all-Claude roster, opus implementers, per-phase gates).
   APPROVED+APPROVED (0); diff-simplify APPROVED (0); 4-behavior
   bidirectionality log. Walk: live download → DB wipe → UI re-import
   restored both plans (no auto-load); partial-bundle message verbatim;
-  persist() logs at boot. Live site update rides the next approved
-  mirror push.
+  persist() logs at boot. **LIVE 2026-08-06** — the approved mirror
+  push's workflow runs showed false failures (deploy-pages' hard 10-min
+  cap vs a slow Pages backend; see
+  `docs/postmortems/2026-08-06-pages-deploy-false-failures.md` and #95);
+  the deployment landed server-side regardless and the site serves the
+  Stage 19 bundle (verified byte-identical). The workflow verdict was
+  fixed via PR #97 (verify-against-the-live-site gate).
