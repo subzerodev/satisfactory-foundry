@@ -56,3 +56,10 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # deploy-pages' default 600000 ms (10 min) timeout aborted a healthy
+          # deploy (run 31098659621, 2026-08-06; first deploy took ~17 min).
+          # 30 min ≈ 2x the observed worst case — n=1, so bias generous: a
+          # false abort is the bug being fixed; over-waiting only delays a
+          # genuinely stuck run.
+          timeout: 1800000
