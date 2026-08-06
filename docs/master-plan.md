@@ -312,3 +312,32 @@ process (all-Claude roster, opus implementers, per-phase gates).
   fold pair APPROVED+APPROVED. Walk: unrelated-stage move left the
   readout at 22 m, endpoint move changed it 22→51 m, both themes.
   **SHIPPED** — release PR #90 merged to main 2026-08-06.
+
+## Stage 18 — Packaging: PWA + GitHub Pages
+
+- **Goal:** zero-skill access. The app is hosted on GitHub Pages
+  (mirror repo `subzerodev/satisfactory-foundry`, deploy-only,
+  pushed ONLY on Michael's explicit approval — Forgejo stays the
+  source of truth) and is an installable PWA: manifest + drafting-
+  stamp icons, Workbox precache of the full app incl. the 5.3 MB
+  catalog (fully offline after first visit), and a prompt-based
+  REVISION AVAILABLE / RELOAD update toast. Design also surfaced and
+  fixed a pre-existing production font 404 (CSS-relative
+  `url("./fonts/…")` emitted unresolved into built CSS at any base).
+- **Ticket:** #56 (milestone 89). Michael's 2026-08-05 direction;
+  supersedes the sharing/PWA exclusion for the PWA half only.
+  Share-plan-as-link stays excluded.
+- **Status:** merged to develop 2026-08-06 (`b745bf6`, 764 tests).
+  Design: brainstorm v3 FROZEN (r1 fold incl. the font-404
+  discovery, empirically reproduced before folding; r2
+  APPROVED+APPROVED; simplify 2 nits folded — dual-purpose
+  `any maskable` 512 icon, minimal icon recorder; r3 delta
+  APPROVED_WITH_NITS(1, folded: opaque edge-to-edge icon note)
+  +APPROVED). Implementation: zero drift, 5 commits; vitest
+  fallback not needed. Boundary r1 APPROVED+APPROVED (0);
+  diff-simplify APPROVED (0). Walk (subpath preview): SW precache
+  serves catalog+fonts (transferSize 0), manifest/icons correct,
+  update toast cycle proven live, both themes. Deploy workflow
+  `.github/workflows/deploy-pages.yml` (owner-guarded — inert on
+  Forgejo). **Awaiting Michael's approved mirror push + Pages
+  enable for the live URL.**

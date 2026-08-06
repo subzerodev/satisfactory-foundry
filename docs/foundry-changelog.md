@@ -3,6 +3,21 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-06 — Stage 18: the app becomes installable and works offline
+
+> Hey Michael — the Foundry can now live on your phone or desktop
+> like a real app. Once it's published to its public web address,
+> anyone can open the link, and the browser will offer "Install
+> app" — it gets its own drafting-stamp icon and its own window, no
+> browser bars. After the first visit it works fully offline,
+> including the whole parts catalog. When I ship a new revision,
+> you'll see a small "REVISION AVAILABLE" note in the corner — hit
+> RELOAD whenever suits you; nothing updates behind your back.
+> Bonus fix: the drawing's typefaces were silently broken in
+> packaged builds (they only ever worked on the dev server) —
+> that's repaired, so the published app looks exactly like the one
+> you've been using.
+
 ## 2026-08-06 — Stage 17: the distance readout stops lying about unrelated moves
 
 > Hey Michael — the Transport panel's drawn distance is now honest

@@ -22,3 +22,13 @@ no DOM) — all solver math lives there, in exact rational arithmetic
 
 lint: npm run check
 test: npm test
+
+## GitHub mirror (deploy-only) — deviation from the single-remote default
+
+`github` remote → `https://github.com/subzerodev/satisfactory-foundry.git`
+(HTTP+broker, never SSH). It exists ONLY to publish GitHub Pages: push it
+**solely on Michael's explicit approval**, and only `main`. Forgejo `origin`
+remains the source of truth for all branches, board, and CI. Deploy runbook:
+get approval → `git push github main` → the owner-guarded
+`.github/workflows/deploy-pages.yml` builds (`--base=/satisfactory-foundry/`)
+and publishes Pages. Icons regenerate via `scripts/generate-icons.sh`.
