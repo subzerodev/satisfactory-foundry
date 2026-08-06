@@ -1,0 +1,58 @@
+name: Deploy to GitHub Pages
+
+# Vite's documented Pages idiom: build from source on the mirror and publish
+# via the Pages Actions pipeline. Triggered by the approved mirror push to main
+# (the push-on-approval policy) or manually.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Pages deployment needs id-token (OIDC) + pages:write; contents:read to check
+# out. No write to contents — the mirror carries only source, no build output.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One Pages deploy at a time; don't cancel an in-flight publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # Owner guard: if Forgejo Actions ever runs this on the sudohworks origin,
+    # skip instead of failing on GitHub-only Pages actions.
+    if: github.repository_owner == 'subzerodev'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build (subpath base)
+        run: npm run build -- --base=/satisfactory-foundry/
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  deploy:
+    if: github.repository_owner == 'subzerodev'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
