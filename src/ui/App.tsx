@@ -275,6 +275,18 @@ export default function App() {
     downloadTextFile(json, `${sanitizeFilename(name)}.foundry-plan.json`);
   }
 
+  // Export-all (Stage 19 / #92): the store hands back the whole-plans bundle
+  // JSON (or null when there are no plans); App does the browser-only download.
+  // Filename dates from the export moment; the `.foundry-plans.json` double
+  // extension is the machine/import signal, the prefix the human Downloads-sort
+  // signal (frozen Axis 4).
+  async function handleExportAll() {
+    const json = await s.exportAllPlans();
+    if (json === null) return; // no plans: nothing to download
+    const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    downloadTextFile(json, `foundry-plans-${date}.foundry-plans.json`);
+  }
+
   // Import: plan files are OUR OWN UTF-8 JSON exports, so file.text() is correct
   // here — the S5 UTF-16 decodeBytes lesson is Docs.json-specific (do NOT
   // "fix" this into fileToDocsText). The store validates + saves.
@@ -382,6 +394,7 @@ export default function App() {
         onRename={s.renamePlan}
         onDelete={s.deletePlan}
         onExport={(id) => void handleExport(id)}
+        onExportAll={() => void handleExportAll()}
         onImport={(file) => void handleImport(file)}
       />
       {solve.status === "idle" && (
