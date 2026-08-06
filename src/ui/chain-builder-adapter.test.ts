@@ -28,6 +28,10 @@ import {
   candidateRecipesFor,
   candidateRowsFor,
   swapMachineCountFor,
+  effectiveDefaultRecipe,
+  producerRecipesFor,
+  pickerOptionsFor,
+  excludableMachines,
 } from "./chain-builder-adapter.ts";
 // The real bundled snapshot as raw text (Vite ?raw), parsed through the SAME
 // pipeline the app uses — the rows guard catalog drift (renamed ids, a new
@@ -157,7 +161,19 @@ describe("adapter — preview shaping", () => {
     const preview = toProposalPreview(p, catalog);
     expect(preview.isEmpty).toBe(true);
     expect(preview.rows).toEqual([]);
-    expect(preview.rawInputs).toEqual([{ itemName: "Iron Ore", rate: "120" }]);
+    // S20 P1 widened the raw-input row: it now carries itemId + the
+    // reconstructed cause. Iron Ore's SOLE producer in the bundled catalog is a
+    // converter recipe (iron_limestone) — excluded by default policy — so it
+    // classifies "constrained" (a producer exists but none is eligible), not
+    // "natural". The honest label for an over-excluded degradation.
+    expect(preview.rawInputs).toEqual([
+      {
+        itemId: "ore_iron",
+        itemName: "Iron Ore",
+        rate: "120",
+        cause: "constrained",
+      },
+    ]);
   });
 
   it("itemRateLineText joins multiple items with commas", () => {
@@ -795,5 +811,482 @@ describe("S20 P0 — compare-path regression (candidateRowsFor unchanged)", () =
     expect(std.machines).toBe("4");
     expect(alt.power).toBe("32 MW");
     expect(alt.machines).toBe("2");
+  });
+});
+
+// ===========================================================================
+// S20 P1 — Propose customization core (ticket #100). Adapter families per the
+// frozen spec item 5: options plumbing, candidateRecipesFor exclusions param,
+// excludableMachines, effectiveDefaultRecipe (incl. null), producerRecipesFor
+// (UNGATED), pickerOptionsFor (TOTAL + the reachability pin), toProposalPreview
+// candidateCount under exclusions, and the rawInputs cause annotation.
+// ===========================================================================
+
+// A three-producer ingot catalog reused across the picker/helper families:
+//   r_std   — smelter, non-alternate  (the effective default)
+//   r_alt_a — foundry, alternate
+//   r_alt_z — refinery, alternate
+// plus a plate that consumes ingot, so a full chain exists.
+function ingotCatalog(): Catalog {
+  return synthCatalog(
+    [item("plate", "Plate"), item("ingot", "Ingot"), item("ore", "Ore")],
+    [
+      machine("constructor", 4),
+      machine("smelter", 4),
+      machine("foundry", 16),
+      machine("refinery", 30),
+    ],
+    [
+      crecipe(
+        "r_plate",
+        "Plate",
+        "constructor",
+        [["plate", 20]],
+        [["ingot", 30]],
+      ),
+      crecipe(
+        "r_std",
+        "Standard Ingot",
+        "smelter",
+        [["ingot", 30]],
+        [["ore", 30]],
+      ),
+      crecipe(
+        "r_alt_a",
+        "Alt A Ingot",
+        "foundry",
+        [["ingot", 45]],
+        [["ore", 40]],
+        true,
+      ),
+      crecipe(
+        "r_alt_z",
+        "Alt Z Ingot",
+        "refinery",
+        [["ingot", 60]],
+        [["ore", 50]],
+        true,
+      ),
+    ],
+  );
+}
+
+describe("S20 P1 — proposeChainForCatalog options plumbing", () => {
+  it("an override + a raw + an exclusion each deterministically change the proposal", () => {
+    const cat = ingotCatalog();
+    const base = proposeChainForCatalog(cat, "plate", F(60));
+    // Baseline: ingot produced by the default (r_std).
+    expect(base.stages.find((s) => s.itemId === "ingot")!.recipeId).toBe(
+      "r_std",
+    );
+
+    // Override ingot → an alternate.
+    const overridden = proposeChainForCatalog(cat, "plate", F(60), {
+      overrides: new Map([["ingot", "r_alt_a"]]),
+    });
+    expect(overridden.stages.find((s) => s.itemId === "ingot")!.recipeId).toBe(
+      "r_alt_a",
+    );
+
+    // Force ingot raw → its stage vanishes, its subtree pruned.
+    const forced = proposeChainForCatalog(cat, "plate", F(60), {
+      rawItemIds: new Set(["ingot"]),
+    });
+    expect(forced.stages.find((s) => s.itemId === "ingot")).toBeUndefined();
+    expect(forced.rawInputs.some((r) => r.itemId === "ingot")).toBe(true);
+
+    // Exclude the smelter → the default (r_std, smelter) is gone; ingot falls to
+    // its next non-alternate producer — none exists here, so ingot is raw.
+    const excluded = proposeChainForCatalog(cat, "plate", F(60), {
+      excludedMachineIds: ["smelter"],
+    });
+    expect(excluded.stages.find((s) => s.itemId === "ingot")).toBeUndefined();
+    expect(excluded.rawInputs.some((r) => r.itemId === "ingot")).toBe(true);
+
+    // Determinism: same options ⇒ byte-identical.
+    const again = proposeChainForCatalog(cat, "plate", F(60), {
+      overrides: new Map([["ingot", "r_alt_a"]]),
+    });
+    expect(again).toEqual(overridden);
+  });
+
+  it("absent options is byte-identical to the 3-arg call (P0 unchanged)", () => {
+    const cat = ingotCatalog();
+    const threeArg = proposeChainForCatalog(cat, "plate", F(60));
+    const emptyOpts = proposeChainForCatalog(cat, "plate", F(60), {});
+    expect(emptyOpts).toEqual(threeArg);
+  });
+});
+
+describe("S20 P1 — candidateRecipesFor custom exclusions", () => {
+  it("an excluded machine's recipe drops out of candidacy", () => {
+    // ingot has 3 producers (std + 2 alternates). Excluding the foundry drops
+    // r_alt_a → 2 remain (still ≥2, so a non-empty list).
+    const cat = ingotCatalog();
+    const all = candidateRecipesFor(cat, "ingot").map((r) => r.id);
+    expect(all).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
+    const excl = candidateRecipesFor(cat, "ingot", ["foundry"]).map(
+      (r) => r.id,
+    );
+    expect(excl).toEqual(["r_std", "r_alt_z"]);
+  });
+
+  it("the default-arg call is unchanged (module constant — AltCompare/P0)", () => {
+    // The default exclusion set is the module constant (converter/packager);
+    // an unexcluded synthetic catalog is unaffected either way.
+    const cat = ingotCatalog();
+    const dflt = candidateRecipesFor(cat, "ingot").map((r) => r.id);
+    const explicit = candidateRecipesFor(
+      cat,
+      "ingot",
+      EXCLUDED_MACHINE_IDS,
+    ).map((r) => r.id);
+    expect(dflt).toEqual(explicit);
+  });
+});
+
+describe("S20 P1 — excludableMachines", () => {
+  it("lists only recipe-referenced machines, name-resolved, sorted by name", () => {
+    const cat = synthCatalog(
+      [item("ingot", "Ingot"), item("ore", "Ore")],
+      [
+        machine("smelter", 4),
+        machine("foundry", 16),
+        // An UNREFERENCED machine (no recipe uses it) — must be omitted.
+        machine("orphan", 0),
+      ],
+      [
+        crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]]),
+        crecipe(
+          "r_alt",
+          "Alt",
+          "foundry",
+          [["ingot", 60]],
+          [["ore", 45]],
+          true,
+        ),
+      ],
+    );
+    // displayName falls back to id (the synth machine() sets displayName = id).
+    const list = excludableMachines(cat);
+    expect(list.map((m) => m.machineId)).toEqual(["foundry", "smelter"]);
+    expect(list.every((m) => m.displayName === m.machineId)).toBe(true);
+    // orphan is never listed (no recipe references it).
+    expect(list.some((m) => m.machineId === "orphan")).toBe(false);
+  });
+
+  it("resolves display names from the catalog machines", () => {
+    const cat: Catalog = {
+      items: { ingot: item("ingot", "Ingot"), ore: item("ore", "Ore") },
+      machines: {
+        sm: { id: "sm", displayName: "Smelter", power: machine("sm", 4).power },
+      },
+      recipes: {
+        r: crecipe("r", "R", "sm", [["ingot", 30]], [["ore", 30]]),
+      },
+      tiers: { belt: [F(60)], pipe: [F(300)] },
+    };
+    expect(excludableMachines(cat)).toEqual([
+      { machineId: "sm", displayName: "Smelter" },
+    ]);
+  });
+});
+
+describe("S20 P1 — effectiveDefaultRecipe (matches selectProducer)", () => {
+  it("picks the non-alternate, non-excluded, ascending-id recipe", () => {
+    const cat = ingotCatalog();
+    expect(effectiveDefaultRecipe(cat, "ingot")!.id).toBe("r_std");
+  });
+
+  it("returns null when every non-alternate producer's machine is excluded", () => {
+    // Excluding the smelter removes r_std (the only non-alternate) → the default
+    // policy has no candidate (alternates never default) → null.
+    const cat = ingotCatalog();
+    expect(effectiveDefaultRecipe(cat, "ingot", ["smelter"])).toBeNull();
+  });
+
+  it("returns null for an alternate-only item (alternates never default)", () => {
+    const cat = synthCatalog(
+      [item("ingot", "Ingot"), item("ore", "Ore")],
+      [machine("foundry", 16)],
+      [
+        crecipe(
+          "r_alt",
+          "Alt",
+          "foundry",
+          [["ingot", 60]],
+          [["ore", 45]],
+          true,
+        ),
+      ],
+    );
+    expect(effectiveDefaultRecipe(cat, "ingot")).toBeNull();
+  });
+});
+
+describe("S20 P1 — producerRecipesFor (UNGATED eligible list)", () => {
+  it("lists a LONE eligible candidate (no ≥2 gate, unlike candidateRecipesFor)", () => {
+    const cat = synthCatalog(
+      [item("ingot", "Ingot"), item("ore", "Ore")],
+      [machine("smelter", 4)],
+      [crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]])],
+    );
+    // candidateRecipesFor gates at ≥2 → []; producerRecipesFor lists the one.
+    expect(candidateRecipesFor(cat, "ingot")).toEqual([]);
+    expect(producerRecipesFor(cat, "ingot").map((r) => r.id)).toEqual([
+      "r_std",
+    ]);
+  });
+
+  it("orders effective-default first, then ascending id", () => {
+    const cat = ingotCatalog();
+    // Default (r_std) leads; the two alternates ascending (r_alt_a, r_alt_z).
+    expect(producerRecipesFor(cat, "ingot").map((r) => r.id)).toEqual([
+      "r_std",
+      "r_alt_a",
+      "r_alt_z",
+    ]);
+  });
+
+  it("an alternate-only item returns its alternates (null default → ascending id)", () => {
+    const cat = synthCatalog(
+      [item("ingot", "Ingot"), item("ore", "Ore")],
+      [machine("foundry", 16), machine("refinery", 30)],
+      [
+        crecipe(
+          "r_alt_z",
+          "Alt Z",
+          "refinery",
+          [["ingot", 60]],
+          [["ore", 50]],
+          true,
+        ),
+        crecipe(
+          "r_alt_a",
+          "Alt A",
+          "foundry",
+          [["ingot", 45]],
+          [["ore", 40]],
+          true,
+        ),
+      ],
+    );
+    // No effective default (all alternate) → the ordering degenerates to plain
+    // ascending id (r_alt_a before r_alt_z), NOT array order.
+    expect(producerRecipesFor(cat, "ingot").map((r) => r.id)).toEqual([
+      "r_alt_a",
+      "r_alt_z",
+    ]);
+  });
+
+  it("a fully-excluded item returns [] (every producer's machine excluded)", () => {
+    const cat = ingotCatalog();
+    expect(
+      producerRecipesFor(cat, "ingot", ["smelter", "foundry", "refinery"]),
+    ).toEqual([]);
+  });
+});
+
+describe("S20 P1 — pickerOptionsFor (TOTAL + reachability)", () => {
+  it("in-list current recipe adds nothing (bare eligible list)", () => {
+    const cat = ingotCatalog();
+    // current = r_std, which IS in the eligible list → no force-include.
+    expect(
+      pickerOptionsFor(cat, "ingot", EXCLUDED_MACHINE_IDS, "r_std").map(
+        (r) => r.id,
+      ),
+    ).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
+  });
+
+  it("force-includes a current recipe absent from the eligible list (excluded machine)", () => {
+    const cat = ingotCatalog();
+    // Exclude the foundry AND make r_alt_a the current recipe. It is no longer
+    // eligible → force-included (appended last).
+    const opts = pickerOptionsFor(cat, "ingot", ["foundry"], "r_alt_a");
+    expect(opts.map((r) => r.id)).toEqual(["r_std", "r_alt_z", "r_alt_a"]);
+    // The force-included recipe is the last entry (the deviation, not a default).
+    expect(opts[opts.length - 1]!.id).toBe("r_alt_a");
+  });
+
+  it("TOTAL: undefined currentRecipeId → the bare eligible list", () => {
+    const cat = ingotCatalog();
+    expect(
+      pickerOptionsFor(cat, "ingot", EXCLUDED_MACHINE_IDS, undefined).map(
+        (r) => r.id,
+      ),
+    ).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
+  });
+
+  it("TOTAL: a catalog-absent currentRecipeId fabricates nothing → bare list", () => {
+    const cat = ingotCatalog();
+    expect(
+      pickerOptionsFor(
+        cat,
+        "ingot",
+        EXCLUDED_MACHINE_IDS,
+        "r_does_not_exist",
+      ).map((r) => r.id),
+    ).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
+  });
+
+  it("REACHABILITY pin: at 0/1 eligible with an excluded override the predicate is TRUE", () => {
+    // The dead-end the r4 fold killed: an override to an excluded-machine recipe
+    // with ≤1 OTHER eligible producer. The affordance predicate
+    // (options.length ≥ 2 OR current force-included) must be TRUE so the row is
+    // reachable and fixable.
+
+    // Case A — ZERO other eligible producers. Single-producer catalog; exclude
+    // its machine; override to it. Eligible = [] but the current is force-
+    // included → options = [current], force-included = true.
+    const single = synthCatalog(
+      [item("ingot", "Ingot"), item("ore", "Ore")],
+      [machine("smelter", 4)],
+      [crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]])],
+    );
+    const optsA = pickerOptionsFor(single, "ingot", ["smelter"], "r_std");
+    expect(optsA.map((r) => r.id)).toEqual(["r_std"]); // just the force-include
+    const forceIncludedA = !producerRecipesFor(single, "ingot", [
+      "smelter",
+    ]).some((r) => r.id === "r_std");
+    expect(optsA.length >= 2 || forceIncludedA).toBe(true);
+
+    // Case B — ONE other eligible producer. ingot has r_std (smelter) + r_alt_a
+    // (foundry); exclude the foundry, override to the (now-ineligible) r_alt_a.
+    // Eligible = [r_std] (length 1), current force-included → predicate TRUE.
+    const two = synthCatalog(
+      [item("ingot", "Ingot"), item("ore", "Ore")],
+      [machine("smelter", 4), machine("foundry", 16)],
+      [
+        crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]]),
+        crecipe(
+          "r_alt_a",
+          "Alt A",
+          "foundry",
+          [["ingot", 45]],
+          [["ore", 40]],
+          true,
+        ),
+      ],
+    );
+    const optsB = pickerOptionsFor(two, "ingot", ["foundry"], "r_alt_a");
+    expect(optsB.map((r) => r.id)).toEqual(["r_std", "r_alt_a"]);
+    const eligibleB = producerRecipesFor(two, "ingot", ["foundry"]);
+    const forceIncludedB = !eligibleB.some((r) => r.id === "r_alt_a");
+    expect(eligibleB.length).toBe(1); // only ONE other eligible
+    expect(optsB.length >= 2 || forceIncludedB).toBe(true);
+  });
+});
+
+describe("S20 P1 — toProposalPreview candidateCount under exclusions", () => {
+  it("counts eligible candidates with the CURRENT exclusions (chip == picker)", () => {
+    // ingot has 3 candidates by default. Excluding the foundry drops one → 2.
+    // The chip must reflect the CURRENT set, else it disagrees with the picker.
+    const cat = ingotCatalog();
+    const base = toProposalPreview(
+      proposeChainForCatalog(cat, "plate", F(60)),
+      cat,
+    );
+    expect(base.rows.find((r) => r.itemName === "Ingot")!.candidateCount).toBe(
+      3,
+    );
+
+    const excludedOpts = { excludedMachineIds: ["foundry"] };
+    const excl = toProposalPreview(
+      proposeChainForCatalog(cat, "plate", F(60), excludedOpts),
+      cat,
+      excludedOpts,
+    );
+    expect(excl.rows.find((r) => r.itemName === "Ingot")!.candidateCount).toBe(
+      2,
+    );
+  });
+
+  it("keeps the P0 ≥2-gate semantics (a lone candidate → 0)", () => {
+    // Excluding two of the three producers leaves ONE eligible → the ≥2 gate in
+    // candidateRecipesFor returns [] → candidateCount 0 (P0 chip semantics).
+    const cat = ingotCatalog();
+    const opts = { excludedMachineIds: ["foundry", "refinery"] };
+    const view = toProposalPreview(
+      proposeChainForCatalog(cat, "plate", F(60), opts),
+      cat,
+      opts,
+    );
+    expect(view.rows.find((r) => r.itemName === "Ingot")!.candidateCount).toBe(
+      0,
+    );
+  });
+});
+
+describe("S20 P1 — rawInputs cause annotation", () => {
+  it("natural: a genuine no-producer leaf (ore) is 'natural'", () => {
+    const cat = ingotCatalog();
+    const view = toProposalPreview(
+      proposeChainForCatalog(cat, "plate", F(60)),
+      cat,
+    );
+    const ore = view.rawInputs.find((r) => r.itemId === "ore")!;
+    expect(ore.cause).toBe("natural");
+  });
+
+  it("forced: a user-raw-marked item is 'forced'", () => {
+    const cat = ingotCatalog();
+    const opts = { rawItemIds: new Set(["ingot"]) };
+    const view = toProposalPreview(
+      proposeChainForCatalog(cat, "plate", F(60), opts),
+      cat,
+      opts,
+    );
+    const ingot = view.rawInputs.find((r) => r.itemId === "ingot")!;
+    expect(ingot.cause).toBe("forced");
+  });
+
+  it("constrained: a producer exists but none is eligible under exclusions", () => {
+    // Exclude every ingot producer → ingot has recipes but none eligible → its
+    // demand collapses to raw, classified 'constrained' (NOT natural, NOT forced).
+    const cat = ingotCatalog();
+    const opts = { excludedMachineIds: ["smelter", "foundry", "refinery"] };
+    const view = toProposalPreview(
+      proposeChainForCatalog(cat, "plate", F(60), opts),
+      cat,
+      opts,
+    );
+    const ingot = view.rawInputs.find((r) => r.itemId === "ingot")!;
+    expect(ingot.cause).toBe("constrained");
+  });
+
+  it("OVERLAP: a forced item with NO eligible producer reports 'forced' (precedence)", () => {
+    // ingot is BOTH force-marked raw AND fully excluded. Precedence forced >
+    // constrained → 'forced' (the strip carries its ×, not the constrained line).
+    const cat = ingotCatalog();
+    const opts = {
+      rawItemIds: new Set(["ingot"]),
+      excludedMachineIds: ["smelter", "foundry", "refinery"],
+    };
+    const view = toProposalPreview(
+      proposeChainForCatalog(cat, "plate", F(60), opts),
+      cat,
+      opts,
+    );
+    const ingot = view.rawInputs.find((r) => r.itemId === "ingot")!;
+    expect(ingot.cause).toBe("forced");
+  });
+
+  it("forced raws are DISTINGUISHABLE so the caller excludes them from other lines", () => {
+    // The natural/constrained display lines filter by cause !== 'forced'. Verify
+    // the forced row is present with cause 'forced' AND the natural ore row is
+    // present with cause 'natural' — the two are separable by the consumer.
+    const cat = ingotCatalog();
+    const opts = { rawItemIds: new Set(["ingot"]) };
+    const view = toProposalPreview(
+      proposeChainForCatalog(cat, "plate", F(60), opts),
+      cat,
+      opts,
+    );
+    const byCause = new Map(view.rawInputs.map((r) => [r.itemId, r.cause]));
+    expect(byCause.get("ingot")).toBe("forced");
+    // ore is no longer in the closure (ingot's subtree pruned) — so the only raw
+    // is the forced ingot. The forced row is cleanly separable.
+    expect(view.rawInputs.filter((r) => r.cause === "natural")).toEqual([]);
+    expect(view.rawInputs.filter((r) => r.cause === "forced")).toHaveLength(1);
   });
 });
