@@ -339,5 +339,7 @@ process (all-Claude roster, opus implementers, per-phase gates).
   serves catalog+fonts (transferSize 0), manifest/icons correct,
   update toast cycle proven live, both themes. Deploy workflow
   `.github/workflows/deploy-pages.yml` (owner-guarded — inert on
-  Forgejo). **Awaiting Michael's approved mirror push + Pages
-  enable for the live URL.**
+  Forgejo). **SHIPPED + LIVE 2026-08-06** — release PR #91 merged to
+  main (a87440b); Michael-approved mirror push; Pages deploy run #1
+  success; live + verified at
+  https://subzerodev.github.io/satisfactory-foundry/.
