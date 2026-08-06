@@ -9,7 +9,7 @@
 import { describe, it, expect } from "vitest";
 
 import { Fraction } from "../core/fraction.ts";
-import type { BuilderRecipe } from "../core/chain-builder.ts";
+import type { BuilderRecipe, ChainProposal } from "../core/chain-builder.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
 import type {
   Catalog,
@@ -23,6 +23,8 @@ import {
   toProposalPreview,
   previewRowText,
   itemRateLineText,
+  metricsPowerText,
+  proposalMetrics,
   candidateRecipesFor,
   candidateRowsFor,
   swapMachineCountFor,
@@ -554,5 +556,244 @@ describe("alt-compare — swap machine count (ceil at compared rate)", () => {
     expect(swapMachineCountFor(r, F(130))).toBe(2);
     // 131/min → ceil(131/65) = 3 (ceil over-produces).
     expect(swapMachineCountFor(r, F(131))).toBe(3);
+  });
+});
+
+// ===========================================================================
+// S20 P0 — Propose info layer (ticket #99). Four spec families:
+//   1. proposalMetrics exact totals (varies flag + degenerate envelope);
+//   2. depth on a diamond DAG (longest-path + feeds names);
+//   3. candidateCount against known-alternate fixtures;
+//   4. compare-path regression (candidateRowsFor outputs unchanged).
+// ===========================================================================
+
+// A ProposalStage literal — the pieces proposalMetrics/toProposalPreview read.
+function stage(
+  itemId: string,
+  recipeId: string,
+  machineCount: bigint,
+  outputRate: number,
+): ChainProposal["stages"][number] {
+  return { itemId, recipeId, machineCount, outputRate: F(outputRate) };
+}
+
+describe("S20 P0 — proposalMetrics (exact totals)", () => {
+  // Two stages: a smelter (4 MW, constant) ×3 and a foundry (16 MW, constant)
+  // ×2 → power 3×4 + 2×16 = 44 MW; machines 5; raw ore 120.
+  const cat = synthCatalog(
+    [item("ingot", "Ingot"), item("plate", "Plate"), item("ore", "Ore")],
+    [machine("smelter", 4), machine("foundry", 16)],
+    [
+      crecipe("r_ingot", "Ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
+      crecipe("r_plate", "Plate", "foundry", [["plate", 20]], [["ingot", 45]]),
+    ],
+  );
+  const proposal: ChainProposal = {
+    stages: [
+      stage("plate", "r_plate", 2n, 40),
+      stage("ingot", "r_ingot", 3n, 90),
+    ],
+    links: [{ fromItemId: "ingot", toItemId: "plate" }],
+    rawInputs: [{ itemId: "ore", rate: F(120) }],
+    byproducts: [],
+  };
+
+  it("sums power + machines + raw exactly over the whole proposal", () => {
+    const m = proposalMetrics(proposal, cat);
+    expect(m.powerMw.eq(F(44))).toBe(true); // 3×4 + 2×16
+    expect(m.machineCount).toBe(5n); // 3 + 2
+    expect(m.powerVaries).toBe(false);
+    expect(m.rawInputs).toEqual([{ itemId: "ore", rate: F(120) }]);
+    expect(metricsPowerText(m)).toBe("44 MW"); // exact, no varies flag
+  });
+
+  it("on a fully-constant chain the envelope is degenerate: min===max===power", () => {
+    // The `?? power.mw` fallback makes a constant machine contribute mw as BOTH
+    // bounds — so min/max collapse onto the exact total, never an absent state.
+    const m = proposalMetrics(proposal, cat);
+    expect(m.minMw.eq(m.powerMw)).toBe(true);
+    expect(m.maxMw.eq(m.powerMw)).toBe(true);
+    expect(m.minMw.eq(F(44))).toBe(true);
+  });
+
+  it("sets powerVaries + widens the envelope when a machine is variable-power", () => {
+    const varCat = synthCatalog(
+      [item("ingot", "Ingot"), item("ore", "Ore")],
+      [machine("refinery", 30, { variable: true, minMw: 20, maxMw: 40 })],
+      [crecipe("r_ingot", "Ingot", "refinery", [["ingot", 30]], [["ore", 30]])],
+    );
+    const varProposal: ChainProposal = {
+      stages: [stage("ingot", "r_ingot", 2n, 60)],
+      links: [],
+      rawInputs: [{ itemId: "ore", rate: F(60) }],
+      byproducts: [],
+    };
+    const m = proposalMetrics(varProposal, varCat);
+    expect(m.powerVaries).toBe(true);
+    expect(m.powerMw.eq(F(60))).toBe(true); // 2 × 30 midpoint
+    expect(m.minMw.eq(F(40))).toBe(true); // 2 × 20
+    expect(m.maxMw.eq(F(80))).toBe(true); // 2 × 40
+    // The sheet flags variance without repeating the bounds (compact).
+    expect(metricsPowerText(m)).toBe("60 MW (varies)");
+  });
+});
+
+describe("S20 P0 — depth on a diamond DAG (longest-path + feeds)", () => {
+  // Diamond WITH a shortcut edge, the case shortest-path gets wrong:
+  //   base → left → top   (base at depth 2 via this arm)
+  //   base → right → top
+  //   base → top          (shortcut: base at depth 1 via this arm)
+  // Longest-path must place `base` at depth 2 (deeper than the shortcut's 1) so
+  // no producer renders shallower than any consumer. Links point input → consumer.
+  const cat = synthCatalog(
+    [
+      item("top", "Top"),
+      item("left", "Left"),
+      item("right", "Right"),
+      item("base", "Base"),
+      item("ore", "Ore"),
+    ],
+    [machine("m", 1)],
+    [
+      crecipe(
+        "r_top",
+        "Top",
+        "m",
+        [["top", 10]],
+        [
+          ["left", 10],
+          ["right", 10],
+          ["base", 10],
+        ],
+      ),
+      crecipe("r_left", "Left", "m", [["left", 10]], [["base", 10]]),
+      crecipe("r_right", "Right", "m", [["right", 10]], [["base", 10]]),
+      crecipe("r_base", "Base", "m", [["base", 30]], [["ore", 30]]),
+    ],
+  );
+  const proposal: ChainProposal = {
+    // Stage order deliberately NOT depth order — the sort must reorder.
+    stages: [
+      stage("top", "r_top", 1n, 10),
+      stage("base", "r_base", 1n, 30),
+      stage("left", "r_left", 1n, 10),
+      stage("right", "r_right", 1n, 10),
+    ],
+    links: [
+      { fromItemId: "left", toItemId: "top" },
+      { fromItemId: "right", toItemId: "top" },
+      { fromItemId: "base", toItemId: "top" }, // the shortcut
+      { fromItemId: "base", toItemId: "left" },
+      { fromItemId: "base", toItemId: "right" },
+    ],
+    rawInputs: [{ itemId: "ore", rate: F(30) }],
+    byproducts: [],
+  };
+
+  it("assigns longest-path depth (target T0; base T2 despite the shortcut)", () => {
+    const view = toProposalPreview(proposal, cat);
+    const depthByName = new Map(view.rows.map((r) => [r.itemName, r.depth]));
+    expect(depthByName.get("Top")).toBe(0); // the unique sink = target
+    expect(depthByName.get("Left")).toBe(1);
+    expect(depthByName.get("Right")).toBe(1);
+    // Longest-path: base→left→top is 2 hops; the shortcut base→top is 1. The
+    // MAX wins → 2. Shortest-path would wrongly say 1 (shallower than left/right
+    // which base feeds), breaking the "feeds" reading.
+    expect(depthByName.get("Base")).toBe(2);
+  });
+
+  it("orders rows depth-asc with the target first, ties keeping stage order", () => {
+    const view = toProposalPreview(proposal, cat);
+    expect(view.rows.map((r) => r.itemName)).toEqual([
+      "Top", // depth 0
+      "Left", // depth 1 (before Right — stage order among the depth-1 tie)
+      "Right", // depth 1
+      "Base", // depth 2
+    ]);
+  });
+
+  it("names every direct consumer in feeds (fan-out shows both consumers)", () => {
+    const view = toProposalPreview(proposal, cat);
+    const feedsByName = new Map(view.rows.map((r) => [r.itemName, r.feeds]));
+    // base fans out to left, right, AND top (the shortcut) — all three named.
+    expect(feedsByName.get("Base")).toEqual(["Top", "Left", "Right"]);
+    expect(feedsByName.get("Left")).toEqual(["Top"]);
+    expect(feedsByName.get("Right")).toEqual(["Top"]);
+    // The target feeds nothing.
+    expect(feedsByName.get("Top")).toEqual([]);
+  });
+});
+
+describe("S20 P0 — candidateCount on preview rows", () => {
+  it("counts candidates per item (0 or >=2 by construction) from the catalog", () => {
+    // ingot has TWO producers (default + alternate) → count 2; plate has one →
+    // count 0 (candidateRecipesFor returns [] below 2).
+    const cat = synthCatalog(
+      [item("plate", "Plate"), item("ingot", "Ingot"), item("ore", "Ore")],
+      [machine("m", 4)],
+      [
+        crecipe("r_plate", "Plate", "m", [["plate", 20]], [["ingot", 30]]),
+        crecipe("r_ingot", "Ingot", "m", [["ingot", 30]], [["ore", 30]]),
+        crecipe(
+          "r_ingot_alt",
+          "Ingot Alt",
+          "m",
+          [["ingot", 45]],
+          [["ore", 40]],
+          true,
+        ),
+      ],
+    );
+    // proposeChain picks the default ingot recipe; the preview still counts BOTH
+    // ingot candidates (the count P1's picker will offer).
+    const p = proposeChainForCatalog(cat, "plate", F(20));
+    const view = toProposalPreview(p, cat);
+    const countByName = new Map(
+      view.rows.map((r) => [r.itemName, r.candidateCount]),
+    );
+    expect(countByName.get("Ingot")).toBe(2); // default + alternate
+    expect(countByName.get("Plate")).toBe(0); // single producer → []
+    // Never a bare 1 — candidateRecipesFor returns [] below 2.
+    expect([...countByName.values()].every((c) => c === 0 || c >= 2)).toBe(
+      true,
+    );
+  });
+
+  it("counts the real bundled Iron Ingot alternates (5) on its preview row", () => {
+    const p = proposeChainForCatalog(catalog, "iron_plate", F(60));
+    const view = toProposalPreview(p, catalog);
+    const ingotRow = view.rows.find((r) => r.itemName === "Iron Ingot")!;
+    // Matches the alt-compare enumeration (default + 4 alternates).
+    expect(ingotRow.candidateCount).toBe(5);
+  });
+});
+
+describe("S20 P0 — compare-path regression (candidateRowsFor unchanged)", () => {
+  it("re-composes proposalMetrics into byte-identical compare rows", () => {
+    // The extraction moved subtreePower's body into proposalMetrics; the compare
+    // path (subtreePowerText → candidateRowsFor) must render identically. Pin the
+    // exact strings the pre-extraction code produced for the synthetic cat.
+    const cat = synthCatalog(
+      [item("ingot", "Ingot"), item("ore", "Ore")],
+      [machine("smelter", 4), machine("foundry", 16)],
+      [
+        crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]]),
+        crecipe(
+          "r_alt",
+          "Alternate",
+          "foundry",
+          [["ingot", 60]],
+          [["ore", 45]],
+          true,
+        ),
+      ],
+    );
+    const rows = candidateRowsFor(cat, "ingot", "r_std", F(120));
+    const std = rows.find((r) => r.recipeId === "r_std")!;
+    const alt = rows.find((r) => r.recipeId === "r_alt")!;
+    expect(std.power).toBe("16 MW"); // unchanged from the pre-S20 pin
+    expect(std.machines).toBe("4");
+    expect(alt.power).toBe("32 MW");
+    expect(alt.machines).toBe("2");
   });
 });
