@@ -14,6 +14,7 @@ import { computeTransportFindings } from "./graph-flow.ts";
 import { fileToDocsText, fileFromDrop } from "./decode.ts";
 import { resolveInitialTheme } from "./theme.ts";
 import type { Theme } from "./theme.ts";
+import { requestPersistence } from "./persistence.ts";
 import { UploadScreen } from "./UploadScreen.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
 import { PlansBar } from "./PlansBar.tsx";
@@ -174,6 +175,14 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
     window.localStorage.setItem("theme", theme);
   }, [theme]);
+
+  // Stage 19 (#92): ask the browser for persistent storage on boot so the
+  // plans store is never auto-evicted (fire-and-forget — a denial changes
+  // nothing the user can act on; the helper feature-detects, logs, never
+  // throws). One-shot at mount; grant is environment-dependent.
+  useEffect(() => {
+    void requestPersistence();
+  }, []);
 
   // Refresh the saved-plan list once the catalog is ready (the ready layout's
   // first mount). `plans` starts null; this makes that null transient, so
