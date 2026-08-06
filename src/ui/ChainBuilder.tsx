@@ -19,6 +19,7 @@ import {
   toProposalPreview,
   previewRowText,
   itemRateLineText,
+  metricsPowerText,
 } from "./chain-builder-adapter.ts";
 import type { ProposalPreview } from "./chain-builder-adapter.ts";
 
@@ -127,22 +128,59 @@ export function ChainBuilder() {
       {error !== null && <p className="chain-builder-error">{error}</p>}
       {preview !== null && (
         <div className="chain-builder-preview">
+          {!preview.view.isEmpty && (
+            <dl className="chain-builder-metrics">
+              <div>
+                <dt>Σ POWER</dt>
+                <dd>{metricsPowerText(preview.view.metrics)}</dd>
+              </div>
+              <div>
+                <dt>Σ MACHINES</dt>
+                <dd>{preview.view.metrics.machineCount.toString()}</dd>
+              </div>
+              <div>
+                <dt>RAW</dt>
+                <dd>
+                  {preview.view.rawInputs.length > 0
+                    ? itemRateLineText(preview.view.rawInputs)
+                    : "—"}
+                </dd>
+              </div>
+            </dl>
+          )}
           {preview.view.isEmpty ? (
             <p className="chain-builder-empty">
               Nothing to build — the target is a raw input.
             </p>
           ) : (
             <ul className="chain-builder-rows">
-              {preview.view.rows.map((row) => (
-                <li key={row.itemName}>{previewRowText(row)}</li>
+              {preview.view.rows.map((row, i) => (
+                <li key={row.itemName}>
+                  {/* Tier marker on the first row of each depth (the rows are
+                      ordered depth-asc, so a depth change === a new tier). */}
+                  {(i === 0 ||
+                    preview.view.rows[i - 1]!.depth !== row.depth) && (
+                    <span className="chain-builder-tier">T{row.depth}</span>
+                  )}
+                  {previewRowText(row)}
+                  {row.feeds.length > 0 && (
+                    <span className="chain-builder-feeds">
+                      {" → feeds "}
+                      {row.feeds.join(", ")}
+                    </span>
+                  )}
+                  {row.candidateCount > 0 && (
+                    <span className="chain-builder-alt">
+                      {" "}
+                      {row.candidateCount} recipes
+                    </span>
+                  )}
+                </li>
               ))}
             </ul>
           )}
-          {preview.view.rawInputs.length > 0 && (
-            <p className="chain-builder-raw">
-              Raw inputs: {itemRateLineText(preview.view.rawInputs)}
-            </p>
-          )}
+          {/* Raw inputs now live in the cost sheet's RAW line above (S20 P0
+              Axis 4); byproducts stay their own note here. */}
           {preview.view.byproducts.length > 0 && (
             <p className="chain-builder-byproducts">
               Byproducts: {itemRateLineText(preview.view.byproducts)}
