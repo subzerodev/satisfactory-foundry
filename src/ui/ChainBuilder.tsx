@@ -17,7 +17,7 @@
  * p1-brainstorm.md (v7), p3-brainstorm.md (v12).
  */
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 
 import { Fraction } from "../core/fraction.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
@@ -96,6 +96,16 @@ interface Preview {
    * for — the applied graph must carry the clock its counts assumed.
    */
   clockText: string;
+  /**
+   * The tier-gated catalog this proposal was SOLVED against — the same
+   * snapshot posture as `clockText`, for the same reason. Every gate-sensitive
+   * render site reads it, so the pickers, the constrained rows and the
+   * proposal are guaranteed to describe ONE world: a tier change that cannot
+   * re-propose (an unparseable Rate makes `repropose` return early) leaves
+   * this untouched, rather than skewing the controls into a world the rows
+   * were never solved in. Derived once, in `repropose`.
+   */
+  gated: Catalog;
 }
 
 /** The stage row for `itemId` in the current preview, or undefined. */
@@ -145,26 +155,7 @@ export function ChainBuilder() {
   // The one open picker at a time (component-local).
   const [pickerItemId, setPickerItemId] = useState<string | null>(null);
 
-  // Axis 4's FIRST derivation site: the gated world the RENDER seams read.
-  // This hook MUST sit ABOVE the null-catalog guard below and tolerate a null
-  // catalog — every other body derivation sits UNDER that guard, so the natural
-  // placement here would be a CONDITIONAL hook, and the toolchain carries no
-  // eslint-plugin-react-hooks to catch it (Blueprint.tsx:14-17 records the same
-  // hazard). Memoized because it runs per RENDER, not per propose: at a
-  // non-null tier it filters the whole recipe map on every Rate/Clock keystroke.
-  const gatedOrNull = useMemo(
-    () => (catalog === null ? null : gateCatalog(catalog, unlockedTier)),
-    [catalog, unlockedTier],
-  );
-
-  // `gatedOrNull` is non-null exactly when `catalog` is (same memo condition);
-  // the second disjunct narrows the type, it does not add a second case.
-  if (catalog === null || gatedOrNull === null) return null;
-  // Re-bound with a non-null DECLARED type so the handlers below can use it:
-  // narrowing does not flow into hoisted function declarations (which is why
-  // each handler re-checks `catalog` too). This is the `gated` world every
-  // gate-sensitive site reads.
-  const gated: Catalog = gatedOrNull;
+  if (catalog === null) return null;
 
   // All catalog items, sorted by display name (the select's option list).
   const items = Object.values(catalog.items).sort((a, b) =>
@@ -206,12 +197,13 @@ export function ChainBuilder() {
       excludedMachineIds: patch.excludedMachineIds ?? excludedMachineIds,
       clockPercent: parsedClock.value,
     };
-    // Axis 4's SECOND derivation site. The tier for THIS propose rides the
-    // patch like every other control: a React binding is stale within the tick,
-    // and here that skew is dangerous — the stale world's stage recipe can be
-    // ABSENT from the new one, defeating pickerOptionsFor's force-include and
-    // leaving the picker <select> with no matching option. `!== undefined`, NOT
-    // `??`, because `null` is the meaningful "all" value.
+    // The ONE gating derivation. The tier for this propose rides the patch like
+    // every other control: a React binding is stale within the tick, and here
+    // that skew is dangerous — the stale world's stage recipe can be ABSENT
+    // from the new one, defeating pickerOptionsFor's force-include and leaving
+    // the picker <select> with no matching option. `!== undefined`, NOT `??`,
+    // because `null` is the meaningful "all" value. The result is snapshotted
+    // onto the preview below, so every render site reads this exact world.
     const tier =
       patch.unlockedTier !== undefined ? patch.unlockedTier : unlockedTier;
     const gatedCat = gateCatalog(cat, tier);
@@ -231,6 +223,7 @@ export function ChainBuilder() {
         ungatedCatalog: cat,
       }),
       clockText,
+      gated: gatedCat,
     });
   }
 
@@ -282,11 +275,20 @@ export function ChainBuilder() {
    */
   function chooseRecipe(itemId: string, recipeId: string): void {
     if (catalog === null) return;
+    // Only ever reached from the picker or a constrained row, both of which
+    // render inside the preview block — so the preview (and its gated world)
+    // always exists here; the guard is for narrowing, in the same idiom as the
+    // catalog check above.
+    if (preview === null) return;
     // The clear rule resolves against the GATED default: the user is choosing
     // from the gated option list, so clearing must compare against what that
     // list calls the default — otherwise picking the gated default would set a
     // spurious override that outlives the tier change.
-    const dflt = effectiveDefaultRecipe(gated, itemId, excludedMachineIds);
+    const dflt = effectiveDefaultRecipe(
+      preview.gated,
+      itemId,
+      excludedMachineIds,
+    );
     const next = new Map(overrides);
     if (dflt !== null && recipeId === dflt.id) {
       next.delete(itemId);
@@ -489,7 +491,7 @@ export function ChainBuilder() {
                       </span>
                     )}
                     <RecipePicker
-                      catalog={gated}
+                      catalog={preview.gated}
                       itemId={itemId}
                       candidateCount={row.candidateCount}
                       currentRecipeId={stageRecipeId(preview.proposal, itemId)}
@@ -524,7 +526,7 @@ export function ChainBuilder() {
             // then validate-and-ignores — a dead control contradicting the
             // recovery wording's own "raise TIER" advice.
             const options = producerRecipesFor(
-              gated,
+              preview.gated,
               r.itemId,
               excludedMachineIds,
             );
@@ -545,7 +547,12 @@ export function ChainBuilder() {
                       <option value="">pick recipe…</option>
                       {options.map((o) => (
                         <option key={o.id} value={o.id}>
-                          {recipeLabel(gated, o, r.itemId, excludedMachineIds)}
+                          {recipeLabel(
+                            preview.gated,
+                            o,
+                            r.itemId,
+                            excludedMachineIds,
+                          )}
                         </option>
                       ))}
                     </select>

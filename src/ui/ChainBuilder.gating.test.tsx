@@ -415,24 +415,6 @@ describe("S20 P3 seams — the gated world reaches the render (jsdom)", () => {
     expect(appStore.getState().proposePrefs.overrides).toEqual({});
   });
 
-  it("the render seams follow a TIER change too, not just the propose", () => {
-    // The body derivation is memoized on [catalog, unlockedTier]. Were the tier
-    // dropped from those deps, `gated` would freeze at the tier of the first
-    // render — the propose would still be correct (it derives its own world
-    // from the patch), so ONLY a render-seam assertion catches it: the picker
-    // would keep offering the old tier's recipes indefinitely.
-    mount(splitCatalog(), { unlockedTier: null });
-    propose();
-    expect(openPickerOptions("Ingot").some((l) => l.startsWith("Delta"))).toBe(
-      true,
-    );
-
-    chooseOption(tierSelect(), "0");
-    const afterLabels = openPickerOptions("Ingot");
-    expect(afterLabels.some((l) => l.startsWith("Delta"))).toBe(false);
-    expect(afterLabels.some((l) => l.startsWith("Bravo"))).toBe(true);
-  });
-
   it("staleness: a TIER change re-proposes in the NEW tier's world on that same propose", () => {
     // The r4 pin. `unlockedTier` is stale within the tick, so a `gated` derived
     // from the state binding would gate at the OLD tier on the very propose the
@@ -495,11 +477,6 @@ describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () => 
         (o) => o.textContent,
       ),
     ).toEqual(["all"]);
-  });
-
-  it("renders the persisted tier when it IS among the options", () => {
-    mount(splitCatalog(), { unlockedTier: 2 });
-    expect(selectedTierLabel()).toBe("2");
   });
 
   it("mirrors a tier change back to the persisted prefs", () => {

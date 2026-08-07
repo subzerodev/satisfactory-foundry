@@ -1494,7 +1494,11 @@ describe("S20 P3 — cause classification across the two worlds", () => {
   });
 
   it("an item with no producer in EITHER world stays 'natural'", () => {
-    const cat = gatedIngotCatalog({ r_std: 5 });
+    // The ALTERNATES are gated, not the default — so ingot is still produced at
+    // tier 0 and the closure actually reaches ore. (Gating r_std instead would
+    // collapse ingot to raw, prune ore from the closure entirely, and leave
+    // this row asserting nothing at all.)
+    const cat = gatedIngotCatalog({ r_alt_a: 5, r_alt_z: 5 });
     const gated = gateCatalog(cat, 0);
     const view = toProposalPreview(
       proposeChainForCatalog(gated, "plate", F(60)),
@@ -1502,8 +1506,11 @@ describe("S20 P3 — cause classification across the two worlds", () => {
       { ungatedCatalog: cat },
     );
     // ore is a genuine extraction leaf — gating cannot make it constrained.
-    const ore = view.rawInputs.find((r) => r.itemId === "ore");
-    if (ore) expect(ore.cause).toBe("natural");
+    // Asserted through optional chaining, not an `if`: were ore to stop
+    // appearing among the raw inputs, a guarded assertion would pass vacuously.
+    expect(view.rawInputs.find((r) => r.itemId === "ore")?.cause).toBe(
+      "natural",
+    );
   });
 
   it("at tier null the classification is byte-identical to P1 (regression)", () => {

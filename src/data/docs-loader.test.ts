@@ -697,16 +697,9 @@ describe("parseDocsJson — FGSchematic unlock tiers (S20 P3, spec row 8)", () =
     expect(cat.recipeUnlocks[""]).toBeUndefined();
     expect(cat.recipeUnlocks["ingot_iron"]).toBe(3);
     expect(cat.recipes["ingot_iron"]).toBeDefined();
-  });
-
-  it("keys by the NORMALIZED catalog id — a raw class name never matches", () => {
-    const cat = parseDocsJson(
-      withSchematics([schematic("2", ["Recipe_IngotIron_C"])]),
-    );
-    // `Recipe_IngotIron_C` is NOT the catalog id (`ingot_iron` is): a
+    // …and the RAW class name is not the catalog id, so it never matches: a
     // literal-key parse would gate nothing, since no lookup would ever hit.
     expect(cat.recipeUnlocks["Recipe_IngotIron_C"]).toBeUndefined();
-    expect(cat.recipeUnlocks["ingot_iron"]).toBe(2);
   });
 
   it("takes the MINIMUM tier when several schematic types unlock one recipe", () => {
@@ -720,18 +713,6 @@ describe("parseDocsJson — FGSchematic unlock tiers (S20 P3, spec row 8)", () =
       ]),
     );
     expect(cat.recipeUnlocks["ingot_iron"]).toBe(1);
-  });
-
-  it("normalizes a negative or fractional mTechTier to 0", () => {
-    // Symmetric with the store-side validTier. These values reach the TIER
-    // option list via `Math.max(...) + 1`, where a fractional max truncates the
-    // list and a negative max empties it.
-    for (const bad of ["-3", "2.5", "Infinity"]) {
-      const cat = parseDocsJson(
-        withSchematics([schematic(bad, ["Recipe_IngotIron_C"])]),
-      );
-      expect(cat.recipeUnlocks["ingot_iron"], `mTechTier ${bad}`).toBe(0);
-    }
   });
 
   it("matches refs regardless of GROUP ORDER — the schematic group may come first", () => {
@@ -751,26 +732,20 @@ describe("parseDocsJson — FGSchematic unlock tiers (S20 P3, spec row 8)", () =
     expect(cat.recipeUnlocks["ingot_iron"]).toBe(4);
   });
 
-  it("parses a garbage or absent mTechTier as 0", () => {
-    const garbage = parseDocsJson(
-      withSchematics([schematic("banana", ["Recipe_IngotIron_C"])]),
+  it.each([
+    ["a negative tier", "-3"],
+    ["a fractional tier", "2.5"],
+    ["a non-finite tier", "Infinity"],
+    ["un-parseable garbage", "banana"],
+    ["an absent mTechTier", undefined],
+  ])("normalizes %s to 0", (_label, raw) => {
+    // One fallback branch, one row per input class. Non-negative INTEGER is the
+    // contract (mirroring the store-side validTier): a fractional tier would
+    // truncate the derived TIER option list and a negative one would empty it.
+    const cat = parseDocsJson(
+      withSchematics([schematic(raw, ["Recipe_IngotIron_C"])]),
     );
-    expect(garbage.recipeUnlocks["ingot_iron"]).toBe(0);
-    const absent = parseDocsJson(
-      withSchematics([
-        {
-          ClassName: "Schematic_NoTier_C",
-          mType: "EST_Milestone",
-          mUnlocks: [
-            {
-              Class: "BP_UnlockRecipe_C",
-              mRecipes: mRecipesRefs("Recipe_IngotIron_C"),
-            },
-          ],
-        },
-      ]),
-    );
-    expect(absent.recipeUnlocks["ingot_iron"]).toBe(0);
+    expect(cat.recipeUnlocks["ingot_iron"]).toBe(0);
   });
 
   it("yields an EMPTY map when no schematic group is present", () => {
