@@ -292,6 +292,17 @@ function selectedTierLabel(): string | null {
     : (el.options[el.selectedIndex]?.textContent ?? null);
 }
 
+/** The MACHINE EXCLUSIONS checkbox for a machine, by its visible name. */
+function exclusionCheckbox(machineName: string): HTMLInputElement {
+  return $$<HTMLLIElement>(".chain-builder-exclusions li")
+    .find((li) => li.textContent === machineName)!
+    .querySelector<HTMLInputElement>("input")!;
+}
+
+/** The open stage picker's <select>. */
+const stagePicker = (): HTMLSelectElement =>
+  $<HTMLSelectElement>('select[aria-label="pick a recipe for this stage"]');
+
 /** The stage row for `Item …` in the rendered preview. Matched on the row
  *  sentence's "<item> — " lead, not the start of textContent: the first row of
  *  each depth is prefixed by a `T<depth>` tier marker. */
@@ -486,21 +497,61 @@ describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () => 
     expect(appStore.getState().proposePrefs.unlockedTier).toBe(null);
   });
 
+  it("mirrors a RECIPE CHOICE back to the persisted prefs", () => {
+    // The ticket's headline: a preferred recipe survives restart. Choosing a
+    // NON-default recipe must write the override through — asserting the map is
+    // still empty would pass without the mirror, since that is the seeded state.
+    mount(splitCatalog(), { unlockedTier: null });
+    propose();
+    openPickerOptions("Ingot");
+    chooseOption(stagePicker(), "r_b_std");
+    expect(appStore.getState().proposePrefs.overrides).toEqual({
+      ingot: "r_b_std",
+    });
+  });
+
+  it("mirrors a MACHINE EXCLUSION toggle back to the persisted prefs", () => {
+    mount(splitCatalog(), { unlockedTier: null, excludedMachineIds: [] });
+    click(exclusionCheckbox("Refinery"));
+    expect(appStore.getState().proposePrefs.excludedMachineIds).toEqual([
+      "refinery",
+    ]);
+    // …and un-toggling writes the removal through too.
+    click(exclusionCheckbox("Refinery"));
+    expect(appStore.getState().proposePrefs.excludedMachineIds).toEqual([]);
+  });
+
+  it("SEEDS the overrides map from the persisted prefs", () => {
+    // A stored preference must shape the very FIRST propose, with no user
+    // interaction at all. Charlie runs on the Refinery; the unseeded default
+    // (Alpha) runs on the Smelter, so the machine name discriminates.
+    mount(splitCatalog(), {
+      unlockedTier: null,
+      overrides: { ingot: "r_c_alt" },
+    });
+    propose();
+    expect(stageRow("Ingot").textContent).toContain("Ingot — Refinery");
+  });
+
   it("seeds its controls from the persisted prefs", () => {
     mount(splitCatalog(), {
       unlockedTier: 2,
       excludedMachineIds: ["refinery"],
     });
-    expect(tierSelect().value).toBe("2");
-    // The exclusions panel reflects the seeded set, and its list stays UNGATED
-    // so a high-tier machine's checkbox is never deleted out from under a
-    // persisted exclusion.
+    expect(selectedTierLabel()).toBe("2");
     expect(
       $<HTMLElement>(".chain-builder-exclusions summary").textContent,
     ).toBe("MACHINE EXCLUSIONS (1)");
-    const checked = $$<HTMLInputElement>(
+    const boxes = $$<HTMLInputElement>(
       ".chain-builder-exclusions input[type=checkbox]",
-    ).filter((c) => c.checked);
-    expect(checked).toHaveLength(1);
+    );
+    expect(boxes.filter((c) => c.checked)).toHaveLength(1);
+    // The panel's list is built from the UNGATED catalog, so EVERY machine is
+    // still listed at tier 2 even though Alpha and Delta are gated out. The
+    // TOTAL is what bites: were the list gated, Smelter would lose its checkbox
+    // while an exclusion naming it could still be persisted — stranding that id
+    // with no control able to clear it. The checked count alone cannot catch
+    // that (it stays 1 either way).
+    expect(boxes).toHaveLength(4);
   });
 });
