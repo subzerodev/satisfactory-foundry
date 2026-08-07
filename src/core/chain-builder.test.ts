@@ -593,3 +593,99 @@ describe("proposeChain — forced-raw items (rawItemIds)", () => {
     expect(emptySet).toEqual(fiveArg);
   });
 });
+
+// ---------------------------------------------------------------------------
+// S20 P2 — clockPercent (7th positional). Per-machine primary rates scale
+// `perMinute × clockPercent/100` (linear, exact) in BOTH the count-fix pass and
+// the outputRate; ceilDiv counts stay exact; the 100% default is byte-identical.
+// ---------------------------------------------------------------------------
+
+describe("proposeChain — clockPercent scaling (S20 P2)", () => {
+  const F32 = (n: number, d: number): Fraction => Fraction.of(n, d);
+  // ingot: 30/machine from 30 ore, at 100%.
+  const recipes = [
+    recipe("r_ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
+  ];
+
+  it("150% scales the per-machine rate so fewer machines cover the demand", () => {
+    // At 100%: ceil(120/30) = 4 machines. At 150%: each machine makes 45/min, so
+    // ceil(120 / (30 × 3/2)) = ceil(120/45) = 3 — the spec's exact example.
+    const at100 = proposeChain("ingot", F(120), recipes, []);
+    expect(stageFor(at100, "ingot")!.machineCount).toBe(4n);
+
+    const at150 = proposeChain(
+      "ingot",
+      F(120),
+      recipes,
+      [],
+      new Map(),
+      new Set(),
+      F(150),
+    );
+    expect(stageFor(at150, "ingot")!.machineCount).toBe(3n);
+    // outputRate = 3 × (30 × 3/2) = 3 × 45 = 135 (exact; the ceil overshoot).
+    expect(stageFor(at150, "ingot")!.outputRate.eq(F(135))).toBe(true);
+    // Input consumption also scales: 3 machines × (30 × 3/2) = 135 ore raw.
+    expect(at150.rawInputs).toEqual([{ itemId: "ore", rate: F(135) }]);
+  });
+
+  it("a non-integer clock keeps rates EXACT (no float creep)", () => {
+    // 133⅓% = 400/300 = 4/3. Per-machine ingot = 30 × 4/3 = 40/min.
+    // ceil(120 / 40) = 3; outputRate = 3 × 40 = 120 exactly.
+    const p = proposeChain(
+      "ingot",
+      F(120),
+      recipes,
+      [],
+      new Map(),
+      new Set(),
+      F32(400, 3),
+    );
+    expect(stageFor(p, "ingot")!.machineCount).toBe(3n);
+    expect(stageFor(p, "ingot")!.outputRate.eq(F(120))).toBe(true);
+  });
+
+  it("scales byproduct rates by the clock too", () => {
+    // A recipe with a byproduct: 20 primary + 10 byproduct per machine from ore.
+    const bp = [
+      recipe(
+        "r_fuel",
+        "refinery",
+        [
+          ["fuel", 20],
+          ["resin", 10],
+        ],
+        [["oil", 30]],
+      ),
+    ];
+    // At 150%: 1 machine makes 30 fuel (ceil(20/(20×3/2)) = ceil(20/30) = 1),
+    // and the byproduct resin scales to 10 × 3/2 = 15/min.
+    const p = proposeChain("fuel", F(20), bp, [], new Map(), new Set(), F(150));
+    expect(stageFor(p, "fuel")!.machineCount).toBe(1n);
+    expect(p.byproducts).toEqual([{ itemId: "resin", rate: F(15) }]);
+  });
+
+  it("the 100% DEFAULT is byte-identical to the 6-arg call (regression pin)", () => {
+    const sixArg = proposeChain(
+      "ingot",
+      F(120),
+      recipes,
+      [],
+      new Map(),
+      new Set(),
+    );
+    const explicit100 = proposeChain(
+      "ingot",
+      F(120),
+      recipes,
+      [],
+      new Map(),
+      new Set(),
+      F(100),
+    );
+    // The absent 7th arg and an explicit Fraction.from(100) must both equal the
+    // pre-P2 output exactly (the epic's byte-stability acceptance).
+    expect(explicit100).toEqual(sixArg);
+    expect(stageFor(sixArg, "ingot")!.machineCount).toBe(4n);
+  });
+});
