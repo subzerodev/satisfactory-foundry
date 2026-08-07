@@ -83,6 +83,13 @@ export function parseClockText(
 interface Preview {
   proposal: ChainProposal;
   view: ProposalPreview;
+  /**
+   * The raw clock text the proposal was SOLVED at. Apply seeds from this
+   * snapshot, never the live input: clock (like Rate) does not re-propose on
+   * edit, so the live text can drift from the counts the proposal was sized
+   * for — the applied graph must carry the clock its counts assumed.
+   */
+  clockText: string;
 }
 
 /** The stage row for `itemId` in the current preview, or undefined. */
@@ -175,6 +182,7 @@ export function ChainBuilder() {
         rawItemIds: opts.rawItemIds,
         clockPercent: opts.clockPercent,
       }),
+      clockText,
     });
   }
 
@@ -201,10 +209,10 @@ export function ChainBuilder() {
 
   function onApply() {
     if (preview === null) return;
-    // Seed the applied stages with the propose-time clock text (S20 P2). A live
-    // preview implies a valid clock (repropose bails on an invalid one), so the
-    // raw text carries straight through as the user-intent-text idiom.
-    applyChainProposal(preview.proposal, clockText);
+    // Seed the applied stages with the SNAPSHOT clock text (S20 P2) — the one
+    // the proposal's counts were solved at. The live input may have drifted
+    // since propose (clock, like Rate, only takes effect on the next Propose).
+    applyChainProposal(preview.proposal, preview.clockText);
     // Clear the preview so a double-apply is an explicit re-propose (Axis 6);
     // KEEP the customization choices (the user's session intent — Axis 3).
     setPreview(null);
