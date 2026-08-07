@@ -284,6 +284,16 @@ function propose(): void {
 const tierSelect = (): HTMLSelectElement =>
   $<HTMLSelectElement>('select[aria-label="unlocked tier"]');
 
+/** The TIER select's SELECTED option label, or null when nothing is selected.
+ *  Discriminating where `select.value` is not: an unmatched value reports ""
+ *  and selectedIndex -1, which is indistinguishable from a real "all". */
+function selectedTierLabel(): string | null {
+  const el = tierSelect();
+  return el.selectedIndex < 0
+    ? null
+    : (el.options[el.selectedIndex]?.textContent ?? null);
+}
+
 /** The stage row for `Item …` in the rendered preview. Matched on the row
  *  sentence's "<item> — " lead, not the start of textContent: the first row of
  *  each depth is prefixed by a `T<depth>` tier marker. */
@@ -292,9 +302,12 @@ const stageRow = (itemName: string): HTMLLIElement =>
     li.textContent!.includes(`${itemName} — `),
   )!;
 
-/** Open the one stage picker and return its option labels. */
+/** Open the stage picker (the chip is a TOGGLE, so only click it when closed —
+ *  a second unconditional click would collapse it again) and return its option
+ *  labels. The chip is the row's first button; the RAW toggle follows it. */
 function openPickerOptions(itemName: string): string[] {
-  click(stageRow(itemName).querySelector<HTMLButtonElement>("button")!);
+  const chip = stageRow(itemName).querySelector<HTMLButtonElement>("button")!;
+  if (chip.getAttribute("aria-expanded") !== "true") click(chip);
   return $$<HTMLOptionElement>(
     'select[aria-label="pick a recipe for this stage"] option',
   ).map((o) => o.textContent!);
@@ -393,6 +406,24 @@ describe("S20 P3 seams — the gated world reaches the render (jsdom)", () => {
     expect(appStore.getState().proposePrefs.overrides).toEqual({});
   });
 
+  it("the render seams follow a TIER change too, not just the propose", () => {
+    // The body derivation is memoized on [catalog, unlockedTier]. Were the tier
+    // dropped from those deps, `gated` would freeze at the tier of the first
+    // render — the propose would still be correct (it derives its own world
+    // from the patch), so ONLY a render-seam assertion catches it: the picker
+    // would keep offering the old tier's recipes indefinitely.
+    mount(splitCatalog(), { unlockedTier: null });
+    propose();
+    expect(openPickerOptions("Ingot").some((l) => l.startsWith("Delta"))).toBe(
+      true,
+    );
+
+    chooseOption(tierSelect(), "0");
+    const afterLabels = openPickerOptions("Ingot");
+    expect(afterLabels.some((l) => l.startsWith("Delta"))).toBe(false);
+    expect(afterLabels.some((l) => l.startsWith("Bravo"))).toBe(true);
+  });
+
   it("staleness: a TIER change re-proposes in the NEW tier's world on that same propose", () => {
     // The r4 pin. `unlockedTier` is stale within the tick, so a `gated` derived
     // from the state binding would gate at the OLD tier on the very propose the
@@ -419,15 +450,20 @@ describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () => 
   it("renders 'all' when the persisted tier has no matching option", () => {
     // Render-level normalization: an above-range tier gates nothing, so it
     // already BEHAVES as "all" and is shown that way. No clamp, no write-back.
+    //
+    // Asserted through the SELECTED OPTION, not `select.value`: with an
+    // unmatched value the DOM reports value "" and selectedIndex -1 anyway, so
+    // a `value === ""` assertion passes under the broken binding too — green
+    // and non-discriminating, the failure mode this design ate twice already.
     mount(splitCatalog(), { unlockedTier: 999 });
-    expect(tierSelect().value).toBe("");
+    expect(selectedTierLabel()).toBe("all");
     // Nothing was written back — the stored value is left exactly as found.
     expect(appStore.getState().proposePrefs.unlockedTier).toBe(999);
   });
 
   it("renders 'all' when the catalog carries no unlock data at all", () => {
     mount(catalogOf([PLATE], {}), { unlockedTier: 3 });
-    expect(tierSelect().value).toBe("");
+    expect(selectedTierLabel()).toBe("all");
     expect(
       $$<HTMLOptionElement>('select[aria-label="unlocked tier"] option').map(
         (o) => o.textContent,
@@ -437,7 +473,7 @@ describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () => 
 
   it("renders the persisted tier when it IS among the options", () => {
     mount(splitCatalog(), { unlockedTier: 2 });
-    expect(tierSelect().value).toBe("2");
+    expect(selectedTierLabel()).toBe("2");
   });
 
   it("mirrors a tier change back to the persisted prefs", () => {
