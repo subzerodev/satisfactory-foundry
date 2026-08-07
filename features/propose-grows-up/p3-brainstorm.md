@@ -1,6 +1,6 @@
 # S20 P3 — Propose persistence + gating (brainstorm + spec)
 
-**Ticket:** #102 · **Epic:** #98 · **Milestone:** 91 · **Status:** v9 — **FROZEN** (review of record: r8 APPROVED_WITH_NITS ×2, nits folded; design simplify pass consumed at v4)
+**Ticket:** #102 · **Epic:** #98 · **Milestone:** 91 · **Status:** v12 — FROZEN (design r8 APPROVED_WITH_NITS ×2; spec-8 amendment reviewed + two of its mechanics corrected BY MEASUREMENT at implementation; simplify pass consumed at v4)
 
 ## Purpose
 
@@ -535,7 +535,9 @@ separate alternates toggle in P3.
    the `repropose` patch (Axis 4); recovery wording per the four-cell
    matrix.
 7. **`src/ui/app.css`** — tier-select styles from existing tokens.
-8. **Tests** (data + state + adapter + UI, node env): schematic parse
+8. **Tests** (data + state + adapter + UI — node env throughout,
+   EXCEPT the one jsdom-scoped seam file the amendment below adds):
+   schematic parse
    (**normalization to catalog ids** — a ref keyed raw must NOT
    match, **a real `mRecipes` ref (trailing apostrophe and all) must
    yield a real catalog id — never `""`** (the r4 silent-total-failure
@@ -611,9 +613,138 @@ separate alternates toggle in P3.
      the stage to D, the missed edit stays pinned to D′ by the
      spurious override.
    Each row is written at the UI level (a rendered-output assertion);
-   an adapter-level test exercises none of these seams. TIER select
-   renders "all" when the persisted tier has no matching option (the
-   Axis 1 render-normalization — no clamp, no write-back);
+   an adapter-level test exercises none of these seams.
+
+   **HOW they are written (v10 amendment — the design specified this
+   requirement for eight rounds without verifying the repo could
+   satisfy it; the implementer's drift hunt caught it).** The
+   toolchain is `environment: 'node'` globally (`vite.config.ts:46`)
+   with NO jsdom/happy-dom/testing-library, and every UI test is
+   `renderToStaticMarkup` SSR smoke by deliberate posture
+   (`ChainBuilder.test.tsx:2-6`: "Interactive propose→preview→apply
+   is the browser walk"). All five gate-sensitive sites are reachable
+   ONLY THROUGH (`:418` is lexically inside; `:237`, `:526`, `:569`,
+   `:578` are function bodies called only from within)
+   `{preview !== null && view !== null && …}` (`ChainBuilder.tsx:338`)
+   — `preview` is component-local state set only by the Propose click
+   handler — so SSR renders initial state and NEVER reaches them.
+   The rows as specced were unimplementable.
+
+   **Resolution: add `jsdom` as a devDependency, scoped to the new P3
+   seam-test file ONLY** via a per-file `@vitest-environment jsdom`
+   pragma; drive React with `createRoot` + `act` (both already
+   available — no testing-library; a plain
+   `el.value = x; el.dispatchEvent(new Event("change",
+   {bubbles:true}))` DOES fire React's `onChange` for a `<select>`,
+   verified — the value-tracker short-circuit that makes
+   testing-library necessary for text inputs does not apply). The
+   global node env and every existing test file stay UNTOUCHED, so
+   the repo's SSR-smoke posture is unchanged everywhere else; the new
+   file's docblock states why it departs.
+
+   **Three mechanics the implementer must not have to rediscover:**
+   - **Set `globalThis.IS_REACT_ACT_ENVIRONMENT = true`** in the new
+     file. There are no `setupFiles`, and testing-library (which
+     normally sets it) is deliberately not used, so React otherwise
+     logs "The current testing environment is not configured to
+     support act(...)".
+   - **NEVER write the literal pragma string in any other file's
+     comments.** Vitest matches it against the WHOLE FILE CONTENT
+     (a bare `content.match(/@(?:vitest|jest)-environment\s+…/)`),
+     not a leading docblock — so a file merely *mentioning* it flips
+     environment silently and still passes. The likeliest violation
+     is cross-referencing this decision from
+     `ChainBuilder.test.tsx:2` ("Node env, no jsdom"): describe it in
+     prose, never quote the pragma.
+   - **jsdom supplies NEITHER `localStorage` NOR `indexedDB`**
+     (v12 — MEASURED at implementation; my v11 claim that it gives a
+     real `localStorage` was WRONG: jsdom serves `about:blank`, an
+     opaque origin, so touching `localStorage` throws
+     `SecurityError: localStorage is not available for opaque
+     origins`). The file must install an in-memory stand-in, and it
+     must do so in `vi.hoisted` — `createJSONStorage` resolves the
+     storage ONCE, eagerly, at import, and guards only a throw, not
+     `undefined`. Any catalog path needing IDB injects
+     `fake-indexeddb` as the existing suites do.
+
+   **Why not the alternatives** (both were offered; recorded so this
+   is not re-opened): extracting an exported pure `ChainPreview`
+   would relocate Axis 4's component-body derivation site — the exact
+   thing r4/r5/r6 fought over, including r6's "memo above the null
+   guard" ruling — i.e. trading a design the gate approved eight
+   times for an unreviewed restructure. Routing the rows to the
+   browser walk leaves them unenforced in CI, which directly voids
+   the r5 finding this whole mechanism rests on ("a missed seam is a
+   SILENT behavioural regression"; `gateCatalog` returns `Catalog`,
+   so the wiring is not compile-forced).
+
+   **TWO further rows belong in this jsdom file — my first sweep
+   named only the five seams and missed both** (amendment review,
+   one found by each reviewer):
+   - **the null-tier recovery-WORDING row**: the P1 string "every
+     producer's machine is excluded; edit MACHINE EXCLUSIONS to
+     recover" exists at exactly one place in the tree,
+     `ChainBuilder.tsx:451-455`, inside the same `preview !== null`
+     block, and is UI-rendered by design (spec 5 surfaces only a
+     discriminated cause detail; spec 6 assigns the wording to the
+     component);
+   - **the r4 STALENESS row** ("TIER re-propose uses the NEW tier's
+     world on that same propose"): it requires driving the TIER
+     select AND asserting against `preview`, and it is NOT
+     adapter-testable either — the defect it pins is the
+     patch-carries-the-just-computed-value idiom that lives solely in
+     the un-exported `repropose` (`ChainBuilder.tsx:145-187`, the
+     rationale comment at `:154-156`).
+
+   So the jsdom file's scope is: the four observable seam rows, the
+   null-tier recovery-wording row, the staleness row, and the
+   TIER-select row below.
+
+   **TIER select renders "all"** when the persisted tier has no
+   matching option (the Axis 1 render-normalization — no clamp, no
+   write-back). **This row is ALSO DOM-dependent, and spec 6 must
+   make the binding explicit** (amendment review): React's server
+   renderer marks `selected` only on an option matching the select's
+   `value`, so for an above-range integer the SSR string contains NO
+   selected option — an "all renders" assertion would be red, and
+   weakening it to "an 'all' option exists" would be green-and-
+   non-discriminating (the exact failure mode already eaten twice, at
+   the r6 label row and the r7 fixture). Therefore spec 6 binds it
+   explicitly — `value = options.includes(t) ? String(t) : ""`.
+
+   **That binding CANNOT be pinned on `select.value === ""`, or on
+   any client-DOM assertion at all** (v12 — MEASURED at
+   implementation and independently re-verified by the team lead; my
+   v11 fold of the reviewer's finding was itself wrong). In the REACT
+   path, `value=""` and `value="999"` produce byte-identical DOM —
+   `value:""`, `selectedIndex:0`, identical `innerHTML` — because
+   React sets `option.selected` flags rather than `select.value`, so
+   when nothing matches, no option is flagged and the DOM's own reset
+   algorithm selects the FIRST option, which IS "all". (A raw-DOM
+   probe assigning `.value` directly DOES diverge —
+   `selectedIndex: -1` — which is exactly why this looked pinnable;
+   that is not the path React takes.) The divergence is real only in
+   React's SERVER renderer, which this SPA never uses. So: KEEP the
+   explicit binding (it is the honest expression of intent), pin the
+   USER-VISIBLE outcome instead, and record the binding expression as
+   a PROVEN NO-OP alongside `:441` — never give it a phantom
+   assertion.
+
+   *Future work, NOT for P3 — tracked as **#106**, created now (the
+   operating model requires the ticket, not an "if wanted" park):* a
+   branded `GatedCatalog` return type would make the FORGOT-TO-GATE
+   direction a COMPILE error rather than a tested one. **Not
+   "strictly better than any test"** (amendment review corrected my
+   overclaim): a brand is still assignable to `Catalog`, so it would
+   NOT catch the reverse mistake — the Axis-4 carve-outs that must
+   receive the UNGATED catalog (`excludableMachines`,
+   `byproductSuggestions`, AltCompare's `candidateRecipesFor`) would
+   silently accept a gated one. And it is not a cheap swap: it
+   collides with this spec's frozen "helper signatures UNCHANGED"
+   pin and would touch ~12 existing adapter-test call sites. Both
+   facts STRENGTHEN the deferral — it is a signature redesign, not a
+   type annotation.
+
    **bidirectionality log**
    `features/propose-grows-up/p3-r2-verification.log`.
 9. **Docs at merge (team lead).** Arc-close docs follow (separate
@@ -895,3 +1026,74 @@ themes.
   that widening `partialize` turns red, with the ruling to update the
   assertion/comment/title and NOT to narrow the projection.
   Design of record; implementation may proceed.
+- v10 (2026-08-07): **implementation-time amendment (team-lead call,
+  under delta review).** The implementer's drift hunt found that
+  spec 8's UI seam rows were UNIMPLEMENTABLE in this toolchain — a
+  design-grounding failure of my own: I specced "rendered-output
+  assertions" for eight rounds without verifying the repo could write
+  them (node env, no DOM library, and all five seams sit inside the
+  `preview !== null` block SSR never reaches). Resolved by adding
+  `jsdom` scoped to the new seam-test file via a per-file pragma,
+  leaving the global env and every existing test untouched. The two
+  alternatives are recorded as rejected in spec 8 with reasons
+  (restructuring trades a gate-approved design for an unreviewed one;
+  the browser walk leaves the r5 silent-regression finding unenforced
+  in CI). A branded `GatedCatalog` — which would make wrong wiring a
+  compile error — is noted as a future ticket, deliberately NOT taken
+  unreviewed at implementation time. Items 1-7 are unaffected.
+- v11 (2026-08-07): amendment delta review = NEEDS_REWORK ×2; the
+  MECHANISM was endorsed by both (diagnosis independently verified,
+  no SSR route to the seams exists, the pragma genuinely isolates,
+  `act` available, DOM already in tsconfig lib, and both rejected
+  alternatives correctly rejected) — the rework was localised.
+  **IMPORTANT (both): my paste ORPHANED live requirements** (the
+  TIER row + the bidirectionality-log pointer) into the "NOT for P3"
+  paragraph — FOLDED, split back out. **IMPORTANT (both): the sweep
+  was incomplete — FOLDED**: the null-tier recovery-WORDING row
+  (code-reviewer) and the r4 STALENESS row (adversarial) are in the
+  same unimplementable class and neither is adapter-testable; both
+  now named for the jsdom file. **IMPORTANT (code-reviewer): the
+  TIER-renders-"all" row is itself DOM-dependent — FOLDED**: SSR
+  marks `selected` only on a value match, so above-range yields NO
+  selected option (assertion red, or weakened to
+  green-and-non-discriminating — the failure mode already eaten
+  twice); spec 6 now binds the value explicitly and the row is
+  pinned on `select.value === ""`. **IMPORTANT (adversarial): the
+  #106 park violated the own-ticket rule — FOLDED**, ticket created
+  and cited. **NITs — FOLDED**: `IS_REACT_ACT_ENVIRONMENT` (no
+  setupFiles, no testing-library); **the pragma is matched against
+  WHOLE FILE CONTENT**, so no other file may quote the literal
+  string or it silently flips environment; jsdom's ambient
+  consequences (real `localStorage` ⇒ the store singleton hydrates
+  for real, reset between tests; no `indexedDB` ⇒ inject
+  `fake-indexeddb`); spec-8 header no longer says "node env"
+  unqualified; "live inside" → "reachable only through"; and the
+  `GatedCatalog` rationale corrected — a brand catches only the
+  forgot-to-gate direction and collides with the frozen
+  signatures-unchanged pin, which strengthens the deferral rather
+  than weakening it.
+- v12 (2026-08-07): **two of the v11 amendment's mechanics were
+  wrong, and the IMPLEMENTER caught both by measurement** (team lead
+  independently re-verified each before folding — the second one
+  reversed my own first probe):
+  - **jsdom supplies NO `localStorage`** — it serves `about:blank`,
+    an opaque origin, so the call throws `SecurityError`. v11 claimed
+    the opposite and told the implementer to "reset storage between
+    tests". Corrected: install an in-memory stand-in, and do it in
+    `vi.hoisted`, because `createJSONStorage` resolves storage once
+    eagerly at import and guards only a throw, not `undefined`.
+  - **The TIER `value` binding is a client-DOM NO-OP** — in React's
+    path `value=""` and `value="999"` render byte-identically
+    (`value:""`, `selectedIndex:0`, same `innerHTML`), because React
+    flags `option.selected` rather than setting `select.value`, and
+    an unmatched value leaves the DOM's reset algorithm to select the
+    first option, which IS "all". v11's `select.value === ""` pin
+    would therefore have been NON-DISCRIMINATING — the same failure
+    class this spec has now caught four times (r6 label row, r7
+    fixture, and two of the implementer's own tests). Binding kept;
+    outcome pinned; expression recorded as a proven no-op.
+  The implementer also self-caught two tautological tests of its own
+  during the bidirectionality sweep (the TIER-normalization row and
+  an unpinned `unlockedTier` memo dependency — dropping the dep
+  leaves the propose correct while freezing the render seams
+  forever), fixing both before writing the log.
