@@ -33,6 +33,7 @@ import {
   producerRecipesFor,
   pickerOptionsFor,
   excludableMachines,
+  gateCatalog,
 } from "./chain-builder-adapter.ts";
 // The real bundled snapshot as raw text (Vite ?raw), parsed through the SAME
 // pipeline the app uses — the rows guard catalog drift (renamed ids, a new
@@ -57,6 +58,58 @@ describe("adapter — exclusion ids", () => {
     // normalizeClassName lowercases/snake-cases Build_Converter_C/Build_Packager_C.
     expect(catalog.machines["converter"]).toBeDefined();
     expect(catalog.machines["packager"]).toBeDefined();
+  });
+});
+
+describe("S20 P3 — recipeUnlocks against the REAL bundled snapshot", () => {
+  // Every other FGSchematic pin in the suite is synthetic, so a future Docs
+  // export that changed the mUnlocks/mRecipes shape would leave them all green
+  // while gating silently no-ops in production — precisely the failure class
+  // this phase exists to close, on the one path the synthetic fixtures cannot
+  // guard. The assertions are deliberately structural, not exact-value: they
+  // must survive a game rebalance but not a shape change. Three of the four
+  // bite on a mutation TODAY (each recorded in the phase's verification log);
+  // the fourth is a FORWARD CANARY over data this snapshot cannot produce, and
+  // is labeled as one rather than claimed as a pin.
+  const unlockIds = Object.keys(catalog.recipeUnlocks);
+
+  it("parses unlock tiers for most of the real catalog's recipes", () => {
+    expect(unlockIds.length).toBeGreaterThan(
+      Object.keys(catalog.recipes).length / 2,
+    );
+  });
+
+  it("keys them by real catalog recipe ids — never the empty string", () => {
+    // MEASURED bite: deleting the unresolvable-ref skip in docs-loader, which
+    // is what keeps building/cosmetic refs (and any id that normalizes to "")
+    // out of the map. NOT the r4 apostrophe bug — under r4 the map comes out
+    // EMPTY, so both assertions below hold vacuously and this row stays green;
+    // r4 is caught by the two rows that require the map to be populated.
+    expect(catalog.recipeUnlocks[""]).toBeUndefined();
+    for (const id of unlockIds) expect(catalog.recipes[id]).toBeDefined();
+  });
+
+  it("carries only non-negative integer tiers (FORWARD CANARY, not a pin)", () => {
+    // Cannot fail against this snapshot in either direction: parseTechTier
+    // forces the invariant for every input, and every mTechTier here is a
+    // plain "0".."9". Kept deliberately, to catch a FUTURE export carrying
+    // fractional/negative tiers — which would reach the TIER option list. It
+    // earns no entry in the verification log, because no mutation makes it red.
+    for (const id of unlockIds) {
+      const tier = catalog.recipeUnlocks[id]!;
+      expect(Number.isInteger(tier) && tier >= 0, `${id} → ${tier}`).toBe(true);
+    }
+  });
+
+  it("actually GATES most of the real catalog at tier 0", () => {
+    // The end-to-end proof that gating bites on shipped data. The share is
+    // asserted, not just non-emptiness: tier 0 must leave under half the
+    // catalog standing (measured: 87 of 290 remain), while "all" removes none.
+    const atZero = Object.keys(gateCatalog(catalog, 0).recipes).length;
+    const all = Object.keys(catalog.recipes).length;
+    expect(atZero).toBeGreaterThan(0);
+    expect(atZero * 2).toBeLessThan(all);
+    expect(Object.keys(gateCatalog(catalog, null).recipes)).toHaveLength(all);
   });
 });
 
@@ -173,6 +226,9 @@ describe("adapter — preview shaping", () => {
         itemName: "Iron Ore",
         rate: "120",
         cause: "constrained",
+        // No ungatedCatalog passed ⇒ gated ≡ ungated ⇒ the tier lever cannot
+        // fire, so the four-cell matrix reduces to exactly P1's machine case.
+        lever: "machine",
       },
     ]);
   });
@@ -241,12 +297,16 @@ function synthCatalog(
   items: CatalogItem[],
   machines: CatalogMachine[],
   recipes: CatalogRecipe[],
+  // Recipe id → min unlock tier (S20 P3). Empty ⇒ no recipe is gated at any
+  // tier, which is what every pre-P3 fixture wants.
+  recipeUnlocks: Record<string, number> = {},
 ): Catalog {
   return {
     items: Object.fromEntries(items.map((i) => [i.id, i])),
     machines: Object.fromEntries(machines.map((m) => [m.id, m])),
     recipes: Object.fromEntries(recipes.map((r) => [r.id, r])),
     tiers: { belt: [F(60)], pipe: [F(300)] },
+    recipeUnlocks,
   };
 }
 
@@ -986,6 +1046,7 @@ describe("S20 P1 — excludableMachines", () => {
         r: crecipe("r", "R", "sm", [["ingot", 30]], [["ore", 30]]),
       },
       tiers: { belt: [F(60)], pipe: [F(300)] },
+      recipeUnlocks: {},
     };
     expect(excludableMachines(cat)).toEqual([
       { machineId: "sm", displayName: "Smelter" },
@@ -1326,6 +1387,249 @@ describe("S20 P1 — rawInputs cause annotation", () => {
     // is the forced ingot. The forced row is cleanly separable.
     expect(view.rawInputs.filter((r) => r.cause === "natural")).toEqual([]);
     expect(view.rawInputs.filter((r) => r.cause === "forced")).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S20 P3 — tier gating (ticket #102): gateCatalog, the both-worlds cause split,
+// and the four-cell recovery lever matrix.
+// ---------------------------------------------------------------------------
+
+/** ingotCatalog with unlock tiers attached. */
+function gatedIngotCatalog(recipeUnlocks: Record<string, number>): Catalog {
+  return { ...ingotCatalog(), recipeUnlocks };
+}
+
+/** ingot is produced ONLY by alternates (no non-alternate producer exists at
+ *  all) — the shape the v2 alternate-blind predicates dropped silently. */
+function altOnlyIngotCatalog(recipeUnlocks: Record<string, number>): Catalog {
+  return synthCatalog(
+    [item("plate", "Plate"), item("ingot", "Ingot"), item("ore", "Ore")],
+    [
+      machine("constructor", 4),
+      machine("foundry", 16),
+      machine("refinery", 30),
+    ],
+    [
+      crecipe(
+        "r_plate",
+        "Plate",
+        "constructor",
+        [["plate", 20]],
+        [["ingot", 30]],
+      ),
+      crecipe(
+        "r_alt_a",
+        "Alt A",
+        "foundry",
+        [["ingot", 45]],
+        [["ore", 40]],
+        true,
+      ),
+      crecipe(
+        "r_alt_z",
+        "Alt Z",
+        "refinery",
+        [["ingot", 30]],
+        [["ore", 35]],
+        true,
+      ),
+    ],
+    recipeUnlocks,
+  );
+}
+
+describe("S20 P3 — gateCatalog", () => {
+  it("returns the SAME REFERENCE at unlockedTier null (byte-stable no-gating path)", () => {
+    const cat = gatedIngotCatalog({ r_std: 5 });
+    // Identity, not a structural copy: this is what makes the null-tier path
+    // byte-stable and the render-time derivation trivially memoizable.
+    expect(gateCatalog(cat, null)).toBe(cat);
+  });
+
+  it("filters recipes whose min unlock tier exceeds the tier", () => {
+    const cat = gatedIngotCatalog({ r_std: 0, r_alt_a: 3, r_alt_z: 7 });
+    const gated = gateCatalog(cat, 3);
+    expect(Object.keys(gated.recipes).sort()).toEqual([
+      "r_alt_a", // unlock 3 ≤ 3 — available
+      "r_plate", // NO unlock entry — nothing gates it, always available
+      "r_std", // unlock 0
+    ]);
+  });
+
+  it("carries items/machines/tiers/recipeUnlocks through untouched", () => {
+    const cat = gatedIngotCatalog({ r_std: 9 });
+    const gated = gateCatalog(cat, 0);
+    expect(gated.items).toBe(cat.items);
+    expect(gated.machines).toBe(cat.machines);
+    expect(gated.tiers).toBe(cat.tiers);
+    expect(gated.recipeUnlocks).toBe(cat.recipeUnlocks);
+  });
+
+  it("builds the gated recipes map with a null prototype (#28, third construction site)", () => {
+    // The parse and revive boundaries are pinned elsewhere; gateCatalog is a
+    // THIRD site, and a natural Object.fromEntries/spread would silently
+    // regress it for every non-null tier with no existing test to catch it.
+    const gated = gateCatalog(gatedIngotCatalog({ r_std: 0 }), 5);
+    expect(Object.getPrototypeOf(gated.recipes)).toBeNull();
+    expect(gated.recipes["constructor"]).toBeUndefined();
+  });
+});
+
+describe("S20 P3 — cause classification across the two worlds", () => {
+  it("every producer tier-gated → 'constrained', NOT 'natural'", () => {
+    // hasAnyProducer must read the UNGATED world. Against the gated world this
+    // item would look producer-less and classify "natural", silently losing
+    // its recovery line — the whole reason causeOf takes both catalogs.
+    const cat = gatedIngotCatalog({ r_std: 5, r_alt_a: 5, r_alt_z: 5 });
+    const gated = gateCatalog(cat, 0);
+    const opts = { excludedMachineIds: [] as string[] };
+    const view = toProposalPreview(
+      proposeChainForCatalog(gated, "plate", F(60), opts),
+      gated,
+      { ...opts, ungatedCatalog: cat },
+    );
+    const ingot = view.rawInputs.find((r) => r.itemId === "ingot")!;
+    expect(ingot.cause).toBe("constrained");
+  });
+
+  it("an item with no producer in EITHER world stays 'natural'", () => {
+    // The ALTERNATES are gated, not the default — so ingot is still produced at
+    // tier 0 and the closure actually reaches ore. (Gating r_std instead would
+    // collapse ingot to raw, prune ore from the closure entirely, and leave
+    // this row asserting nothing at all.)
+    const cat = gatedIngotCatalog({ r_alt_a: 5, r_alt_z: 5 });
+    const gated = gateCatalog(cat, 0);
+    const view = toProposalPreview(
+      proposeChainForCatalog(gated, "plate", F(60)),
+      gated,
+      { ungatedCatalog: cat },
+    );
+    // ore is a genuine extraction leaf — gating cannot make it constrained.
+    // Asserted through optional chaining, not an `if`: were ore to stop
+    // appearing among the raw inputs, a guarded assertion would pass vacuously.
+    expect(view.rawInputs.find((r) => r.itemId === "ore")?.cause).toBe(
+      "natural",
+    );
+  });
+
+  it("at tier null the classification is byte-identical to P1 (regression)", () => {
+    // gated ≡ ungated ⇒ every P1 classification is reproduced exactly. This is
+    // an exact reduction, not a refinement.
+    const cat = gatedIngotCatalog({ r_std: 5, r_alt_a: 5, r_alt_z: 5 });
+    const opts = { excludedMachineIds: ["smelter", "foundry", "refinery"] };
+    const p1 = toProposalPreview(
+      proposeChainForCatalog(ingotCatalog(), "plate", F(60), opts),
+      ingotCatalog(),
+      opts,
+    );
+    const gated = gateCatalog(cat, null);
+    const p3 = toProposalPreview(
+      proposeChainForCatalog(gated, "plate", F(60), opts),
+      gated,
+      { ...opts, ungatedCatalog: cat },
+    );
+    expect(p3.rawInputs).toEqual(p1.rawInputs);
+  });
+});
+
+describe("S20 P3 — the four-cell recovery lever matrix", () => {
+  /** The constrained ingot row's lever under `unlocks` at `tier` + exclusions. */
+  function leverFor(
+    cat: Catalog,
+    tier: number | null,
+    excludedMachineIds: string[],
+  ) {
+    const gated = gateCatalog(cat, tier);
+    const opts = { excludedMachineIds };
+    const view = toProposalPreview(
+      proposeChainForCatalog(gated, "plate", F(60), opts),
+      gated,
+      { ...opts, ungatedCatalog: cat },
+    );
+    return view.rawInputs.find((r) => r.itemId === "ingot")!;
+  }
+
+  it("TIER-only: every producer is gated out, nothing is machine-excluded", () => {
+    const row = leverFor(
+      gatedIngotCatalog({ r_std: 5, r_alt_a: 5, r_alt_z: 5 }),
+      0,
+      [],
+    );
+    expect(row.cause).toBe("constrained");
+    expect(row.lever).toBe("tier");
+  });
+
+  it("MACHINE-only: every producer's machine is excluded, nothing is gated", () => {
+    const row = leverFor(
+      gatedIngotCatalog({ r_std: 0, r_alt_a: 0, r_alt_z: 0 }),
+      9,
+      ["smelter", "foundry", "refinery"],
+    );
+    expect(row.cause).toBe("constrained");
+    expect(row.lever).toBe("machine");
+  });
+
+  it("EITHER: producers split across the two levers, so each alone recovers", () => {
+    // r_std is tier-gated but its machine is free; r_alt_a is available but its
+    // machine is excluded. Raising the tier restores r_std; clearing exclusions
+    // restores r_alt_a. r_alt_z is blocked both ways so it forces neither cell.
+    const row = leverFor(
+      gatedIngotCatalog({ r_std: 5, r_alt_a: 0, r_alt_z: 5 }),
+      0,
+      ["foundry", "refinery"],
+    );
+    expect(row.cause).toBe("constrained");
+    expect(row.lever).toBe("either");
+  });
+
+  it("BOTH: a machine-excluded producer whose recipe is ALSO tier-gated", () => {
+    // The compound case. Neither lever alone recovers, so a lone MACHINE
+    // EXCLUSIONS hint would point at a control that cannot fix it.
+    const row = leverFor(
+      gatedIngotCatalog({ r_std: 5, r_alt_a: 5, r_alt_z: 5 }),
+      0,
+      ["smelter", "foundry", "refinery"],
+    );
+    expect(row.cause).toBe("constrained");
+    expect(row.lever).toBe("both");
+  });
+
+  it("ALTERNATE-ONLY with every alternate tier-gated → TIER, and raising the tier restores the picker", () => {
+    // v2's silent-drop cell: the branch entry is alternate-INCLUSIVE, so
+    // effectiveDefaultRecipe-based predicates left this item with NO line at
+    // all — regressing the message P1 always emits.
+    const cat = altOnlyIngotCatalog({ r_alt_a: 5, r_alt_z: 5 });
+    const row = leverFor(cat, 0, []);
+    expect(row.cause).toBe("constrained");
+    expect(row.lever).toBe("tier");
+    // "Recovery" means the inline picker becomes non-empty again — P1's actual
+    // affordance, which alternates participate in.
+    expect(producerRecipesFor(gateCatalog(cat, 0), "ingot", []).length).toBe(0);
+    expect(
+      producerRecipesFor(gateCatalog(cat, 5), "ingot", []).map((r) => r.id),
+    ).toEqual(["r_alt_a", "r_alt_z"]);
+  });
+
+  it("lever is null while the inline picker still has options (P1 recovery stands)", () => {
+    // Only the smelter is excluded, so the alternates remain offerable: the
+    // picker IS the recovery and no lever wording is needed.
+    const row = leverFor(
+      gatedIngotCatalog({ r_std: 0, r_alt_a: 0, r_alt_z: 0 }),
+      9,
+      ["smelter"],
+    );
+    expect(row.cause).toBe("constrained");
+    expect(row.lever).toBe(null);
+  });
+
+  it("lever is null on non-constrained rows", () => {
+    const cat = gatedIngotCatalog({});
+    const view = toProposalPreview(
+      proposeChainForCatalog(cat, "plate", F(60)),
+      cat,
+    );
+    expect(view.rawInputs.every((r) => r.lever === null)).toBe(true);
   });
 });
 

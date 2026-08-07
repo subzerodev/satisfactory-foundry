@@ -1,0 +1,3455 @@
+diff --git a/features/propose-grows-up/p3-r2-verification.log b/features/propose-grows-up/p3-r2-verification.log
+new file mode 100644
+index 0000000..f934c41
+--- /dev/null
++++ b/features/propose-grows-up/p3-r2-verification.log
+@@ -0,0 +1,468 @@
++S20 P3 — bidirectionality verification log (ticket #102, epic #98)
++Frozen contract: features/propose-grows-up/p3-brainstorm.md (v11)
++
++METHOD
++------
++A test that passes while the code is present proves nothing on its own — it
++may be asserting something the code does not decide. So every production
++behavior this phase adds was verified in BOTH directions: green with the code
++present, and RED with the code deliberately broken.
++
++For each behavior below the harness, run from a clean tree at HEAD:
++  1. asserts the mutation string occurs EXACTLY ONCE in the target file
++     (so the break is precise and cannot silently miss);
++  2. applies that one mutation;
++  3. runs the naming test file under vitest and records the genuine failing
++     test names, verbatim;
++  4. restores with `git checkout -- <file>`.
++After the last entry the whole suite is re-run and `git status` is asserted
++clean, so nothing below leaked into the tree.
++
++The harness is reproducible: scratchpad/bidi.sh + scratchpad/mutate.py.
++
++RESULT: 37 behaviors exercised — 35 are PINNED (breaking them fails at least
++one named test) and 2 are CONFIRMED BEHAVIOURAL NO-OPS, both recorded with
++their proofs below rather than given a phantom assertion.
++
++TWO CONFIRMED NO-OPS (deliberate, not gaps)
++-------------------------------------------
++(1) SEAM :441 — `recipeLabel`'s catalog argument in the CONSTRAINED row.
++    The frozen spec predicts this and forbids a pin for it; the sweep
++    confirms the prediction empirically. `recipeLabel` uses its catalog for
++    one thing, `dflt = effectiveDefaultRecipe(catalog, …)`, and that site
++    executes only inside `constrainedRaws.map`. A row is constrained exactly
++    when `effectiveDefaultRecipe(gated, …) === null`, so under correct wiring
++    no option can carry `(default)`. Under the missed edit `dflt` is the
++    ungated default D — but constrained implies D is gated out, and the
++    options come from `producerRecipesFor(gated, …)`, so D is absent from
++    them and the tag still never fires. The site is changed for consistency;
++    the `(default)` tag is pinned where it CAN fire, on a normal stage row.
++
++(2) The TIER select's `value` binding
++    (`tierOptions.includes(t) ? String(t) : ""`).
++    This one departs from the v11 amendment, which asked for it to be pinned
++    in jsdom on `select.value === ""`. MEASURED: that assertion cannot
++    discriminate, and neither can any other client-DOM assertion. Rendering
++    the same select with `value=""` and with `value="999"` (no matching
++    option) yields a byte-identical DOM — value "", selectedIndex 0,
++    per-option `selected` flags [true,false,false], and identical innerHTML —
++    because the DOM's own "ask for a reset" algorithm selects the first
++    option when none matches, and that first option IS "all". The difference
++    the amendment reasoned about is real only in React's SERVER renderer,
++    which emits `selected` attributes; this app is a client-rendered SPA and
++    never takes that path. The explicit binding is kept (it is the specced
++    shape and keeps a server-rendered string honest) and the user-visible
++    outcome — an above-range tier displays "all", with no write-back — IS
++    pinned; only the binding expression is unpinnable, and no test pretends
++    otherwise.
++
++=================================================================
++S20 P3 bidirectionality log — generated 2026-08-07T10:05:59Z
++HEAD: c41c325 on feature/s20-p3
++=================================================================
++
++BASELINE (all code present):
++   Test Files  32 passed (32)
++        Tests  884 passed (884)
++
++##### spec 2 — FGSchematic parse (docs-loader.ts)
++-----------------------------------------------------------------
++BEHAVIOR: Ref capture EXCLUDES the trailing apostrophe (r4 silent-total-failure)
++  FILE:   src/data/docs-loader.ts
++  BREAK (exact, asserted unique in file):
++    - /\.(Recipe_[A-Za-z0-9_]+_C)'/g
++    + /\.(Recipe_[A-Za-z0-9_]+_C')/g
++  BROKEN: 5 failing test(s):
++      × maps a real mRecipes ref (trailing apostrophe and all) to a real catalog id — NEVER the empty string
++      × keys by the NORMALIZED catalog id — a raw class name never matches
++      × takes the MINIMUM tier when several schematic types unlock one recipe
++      × parses a garbage or absent mTechTier as 0
++      × skips refs that normalize to no catalog recipe
++  RESTORE: git checkout -- src/data/docs-loader.ts
++-----------------------------------------------------------------
++BEHAVIOR: Refs are normalized to catalog ids, not used raw
++  FILE:   src/data/docs-loader.ts
++  BREAK (exact, asserted unique in file):
++    - const id = normalizeClassName(className, "Recipe_");
++    + const id = className;
++  BROKEN: 5 failing test(s):
++      × maps a real mRecipes ref (trailing apostrophe and all) to a real catalog id — NEVER the empty string
++      × keys by the NORMALIZED catalog id — a raw class name never matches
++      × takes the MINIMUM tier when several schematic types unlock one recipe
++      × parses a garbage or absent mTechTier as 0
++      × skips refs that normalize to no catalog recipe
++  RESTORE: git checkout -- src/data/docs-loader.ts
++-----------------------------------------------------------------
++BEHAVIOR: A recipe unlocked several times takes the MINIMUM tier
++  FILE:   src/data/docs-loader.ts
++  BREAK (exact, asserted unique in file):
++    - if (prev === undefined || s.techTier < prev)
++    + if (true)
++  BROKEN: 1 failing test(s):
++      × takes the MINIMUM tier when several schematic types unlock one recipe
++  RESTORE: git checkout -- src/data/docs-loader.ts
++-----------------------------------------------------------------
++BEHAVIOR: Garbage/absent mTechTier parses to 0
++  FILE:   src/data/docs-loader.ts
++  BREAK (exact, asserted unique in file):
++    - return Number.isFinite(n) ? n : 0;
++    + return n;
++  BROKEN: 1 failing test(s):
++      × parses a garbage or absent mTechTier as 0
++  RESTORE: git checkout -- src/data/docs-loader.ts
++-----------------------------------------------------------------
++BEHAVIOR: Only BP_UnlockRecipe_C entries are read
++  FILE:   src/data/docs-loader.ts
++  BREAK (exact, asserted unique in file):
++    - if (u.Class !== UNLOCK_RECIPE_CLASS) continue;
++    + <deleted>
++  BROKEN: 1 failing test(s):
++      × reads only BP_UnlockRecipe_C entries — other unlock kinds are ignored
++  RESTORE: git checkout -- src/data/docs-loader.ts
++-----------------------------------------------------------------
++BEHAVIOR: Refs matching no catalog recipe are skipped
++  FILE:   src/data/docs-loader.ts
++  BREAK (exact, asserted unique in file):
++    - if (recipes[id] === undefined) continue;
++    + <deleted>
++  BROKEN: 1 failing test(s):
++      × skips refs that normalize to no catalog recipe
++  RESTORE: git checkout -- src/data/docs-loader.ts
++-----------------------------------------------------------------
++BEHAVIOR: recipeUnlocks is a null-prototype map (#28)
++  FILE:   src/data/docs-loader.ts
++  BREAK (exact, asserted unique in file):
++    - const recipeUnlocks: Record<string, number> = Object.create(null);
++    + const recipeUnlocks: Record<string, number> = {};
++  BROKEN: 1 failing test(s):
++      × builds recipeUnlocks with a null prototype
++  RESTORE: git checkout -- src/data/docs-loader.ts
++
++##### spec 3 — cache round-trip (catalog-store.ts)
++-----------------------------------------------------------------
++BEHAVIOR: serializeCatalog WRITES recipeUnlocks (r5 second-boot failure)
++  FILE:   src/data/catalog-store.ts
++  BREAK (exact, asserted unique in file):
++    -     recipeUnlocks: { ...catalog.recipeUnlocks },
++    + <deleted>
++  BROKEN: 5 failing test(s):
++      × save → load returns a hit with Fraction-equal catalog + records a hash
++      × round-trips a bundled source on the hit
++      × defaults the source to user when saveCatalog omits it
++      × revived items/machines/recipes maps have a null prototype
++      × save → load carries recipeUnlocks NON-EMPTY, with a null prototype (S20 P3)
++  RESTORE: git checkout -- src/data/catalog-store.ts
++-----------------------------------------------------------------
++BEHAVIOR: reviveCatalog's shape guard covers recipeUnlocks
++  FILE:   src/data/catalog-store.ts
++  BREAK (exact, asserted unique in file):
++    -     typeof data.recipeUnlocks !== "object"
++    +     false
++  BROKEN: 1 failing test(s):
++      × returns stale on a stored row whose recipeUnlocks is malformed (S20 P3)
++  RESTORE: git checkout -- src/data/catalog-store.ts
++-----------------------------------------------------------------
++BEHAVIOR: reviveCatalog rebuilds recipeUnlocks null-prototype (#28)
++  FILE:   src/data/catalog-store.ts
++  BREAK (exact, asserted unique in file):
++    - const recipeUnlocks: Catalog["recipeUnlocks"] = Object.create(null);
++    + const recipeUnlocks: Catalog["recipeUnlocks"] = {};
++  BROKEN: 1 failing test(s):
++      × save → load carries recipeUnlocks NON-EMPTY, with a null prototype (S20 P3)
++  RESTORE: git checkout -- src/data/catalog-store.ts
++-----------------------------------------------------------------
++BEHAVIOR: CATALOG_PARSER_VERSION bumped to 5
++  FILE:   src/data/catalog-store.ts
++  BREAK (exact, asserted unique in file):
++    - export const CATALOG_PARSER_VERSION = 5;
++    + export const CATALOG_PARSER_VERSION = 4;
++  BROKEN: 1 failing test(s):
++      × treats a version-2 cached row as stale under the current version
++  RESTORE: git checkout -- src/data/catalog-store.ts
++
++##### spec 4 — persisted prefs (store.ts)
++-----------------------------------------------------------------
++BEHAVIOR: partialize projects proposePrefs
++  FILE:   src/state/store.ts
++  BREAK (exact, asserted unique in file):
++    -           proposePrefs: s.proposePrefs,
++    + <deleted>
++  BROKEN: 3 failing test(s):
++      × tiers survive a store re-create via the stub; stored value is exactly {unlockedTiers, proposePrefs} under satis_foundry:tiers
++      × round-trips through storage: write → new store instance on the same backing → hydrated
++      × an empty exclusion array round-trips as empty (a legitimate user choice)
++  RESTORE: git checkout -- src/state/store.ts
++-----------------------------------------------------------------
++BEHAVIOR: merge validates prefs on read
++  FILE:   src/state/store.ts
++  BREAK (exact, asserted unique in file):
++    - proposePrefs: validateProposePrefs(p?.proposePrefs),
++    + proposePrefs: (p?.proposePrefs ?? defaultProposePrefs()) as ProposePrefs,
++  BROKEN: 5 failing test(s):
++      × corrupt stored prefs drop to defaults
++      × drops non-string entries inside otherwise well-shaped containers
++      × validates a negative tier to null on read
++      × validates a fractional tier to null on read
++      × validates a non-number tier to null on read
++  RESTORE: git checkout -- src/state/store.ts
++-----------------------------------------------------------------
++BEHAVIOR: unlockedTier validates to a non-negative integer or null
++  FILE:   src/state/store.ts
++  BREAK (exact, asserted unique in file):
++    -   return Number.isInteger(value) && (value as number) >= 0
++    -     ? (value as number)
++    -     : null;
++    +   return (value ?? null) as number | null;
++  BROKEN: 4 failing test(s):
++      × corrupt stored prefs drop to defaults
++      × validates a negative tier to null on read
++      × validates a fractional tier to null on read
++      × validates a non-number tier to null on read
++  RESTORE: git checkout -- src/state/store.ts
++-----------------------------------------------------------------
++BEHAVIOR: an above-range tier is NOT clamped on read
++  FILE:   src/state/store.ts
++  BREAK (exact, asserted unique in file):
++    -     ? (value as number)
++    +     ? Math.min(value as number, 9)
++  BROKEN: 1 failing test(s):
++      × keeps an ABOVE-RANGE tier verbatim — no clamp on read
++  RESTORE: git checkout -- src/state/store.ts
++-----------------------------------------------------------------
++BEHAVIOR: setProposePrefs is a partial update
++  FILE:   src/state/store.ts
++  BREAK (exact, asserted unique in file):
++    - set((s) => ({ proposePrefs: { ...s.proposePrefs, ...patch } }));
++    + set(() => ({ proposePrefs: patch as ProposePrefs }));
++  BROKEN: 1 failing test(s):
++      × setProposePrefs is a PARTIAL update — untouched fields survive
++  RESTORE: git checkout -- src/state/store.ts
++-----------------------------------------------------------------
++BEHAVIOR: the default exclusions match the adapter constant
++  FILE:   src/state/store.ts
++  BREAK (exact, asserted unique in file):
++    -     excludedMachineIds: ["converter", "packager"],
++    +     excludedMachineIds: ["converter"],
++  BROKEN: 5 failing test(s):
++      × tiers survive a store re-create via the stub; stored value is exactly {unlockedTiers, proposePrefs} under satis_foundry:tiers
++      × defaults to no overrides, the converter/packager exclusions, and no tier gate
++      × the default exclusions match the adapter's EXCLUDED_MACHINE_IDS
++      × setProposePrefs is a PARTIAL update — untouched fields survive
++      × corrupt stored prefs drop to defaults
++  RESTORE: git checkout -- src/state/store.ts
++
++##### spec 5 — gateCatalog + both-worlds (chain-builder-adapter.ts)
++-----------------------------------------------------------------
++BEHAVIOR: gateCatalog returns the SAME REFERENCE at tier null
++  FILE:   src/ui/chain-builder-adapter.ts
++  BREAK (exact, asserted unique in file):
++    - if (unlockedTier === null) return catalog;
++    + if (unlockedTier === null) return { ...catalog };
++  BROKEN: 1 failing test(s):
++      × returns the SAME REFERENCE at unlockedTier null (byte-stable no-gating path)
++  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
++-----------------------------------------------------------------
++BEHAVIOR: gateCatalog filters recipes above the tier
++  FILE:   src/ui/chain-builder-adapter.ts
++  BREAK (exact, asserted unique in file):
++    -     if (unlock !== undefined && unlock > unlockedTier) continue;
++    + <deleted>
++  BROKEN: 6 failing test(s):
++      × filters recipes whose min unlock tier exceeds the tier
++      × every producer tier-gated → 'constrained', NOT 'natural'
++      × TIER-only: every producer is gated out, nothing is machine-excluded
++      × EITHER: producers split across the two levers, so each alone recovers
++      × BOTH: a machine-excluded producer whose recipe is ALSO tier-gated
++      × ALTERNATE-ONLY with every alternate tier-gated → TIER, and raising the tier restores the picker
++  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
++-----------------------------------------------------------------
++BEHAVIOR: gateCatalog seeds the filtered map null-prototype (#28, 3rd site)
++  FILE:   src/ui/chain-builder-adapter.ts
++  BREAK (exact, asserted unique in file):
++    -   const recipes: Catalog["recipes"] = Object.create(null);
++    -   for (const [id, recipe] of Object.entries(catalog.recipes)) {
++    +   const recipes: Catalog["recipes"] = {};
++    +   for (const [id, recipe] of Object.entries(catalog.recipes)) {
++  BROKEN: 1 failing test(s):
++      × builds the gated recipes map with a null prototype (#28, third construction site)
++  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
++-----------------------------------------------------------------
++BEHAVIOR: causeOf reads hasAnyProducer on the UNGATED world
++  FILE:   src/ui/chain-builder-adapter.ts
++  BREAK (exact, asserted unique in file):
++    - const hasAnyProducer = Object.values(ungated.recipes).some(
++    + const hasAnyProducer = Object.values(catalog.recipes).some(
++  BROKEN: 4 failing test(s):
++      × every producer tier-gated → 'constrained', NOT 'natural'
++      × TIER-only: every producer is gated out, nothing is machine-excluded
++      × BOTH: a machine-excluded producer whose recipe is ALSO tier-gated
++      × ALTERNATE-ONLY with every alternate tier-gated → TIER, and raising the tier restores the picker
++  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
++-----------------------------------------------------------------
++BEHAVIOR: the tier lever is alternate-inclusive producerRecipesFor on ungated
++  FILE:   src/ui/chain-builder-adapter.ts
++  BREAK (exact, asserted unique in file):
++    -     const tierLever =
++    -       producerRecipesFor(ungated, itemId, excludedMachineIds).length > 0;
++    +     const tierLever = false;
++  BROKEN: 3 failing test(s):
++      × TIER-only: every producer is gated out, nothing is machine-excluded
++      × EITHER: producers split across the two levers, so each alone recovers
++      × ALTERNATE-ONLY with every alternate tier-gated → TIER, and raising the tier restores the picker
++  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
++-----------------------------------------------------------------
++BEHAVIOR: the machine lever clears exclusions on the GATED world
++  FILE:   src/ui/chain-builder-adapter.ts
++  BREAK (exact, asserted unique in file):
++    -     const machineLever = producerRecipesFor(catalog, itemId, []).length > 0;
++    +     const machineLever = false;
++  BROKEN: 3 failing test(s):
++      × marks an all-raw proposal empty (the target itself is raw)
++      × MACHINE-only: every producer's machine is excluded, nothing is gated
++      × EITHER: producers split across the two levers, so each alone recovers
++  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
++-----------------------------------------------------------------
++BEHAVIOR: lever is null while the inline picker still has options
++  FILE:   src/ui/chain-builder-adapter.ts
++  BREAK (exact, asserted unique in file):
++    -     if (producerRecipesFor(catalog, itemId, excludedMachineIds).length > 0) {
++    -       return null;
++    -     }
++    + <deleted>
++  BROKEN: 1 failing test(s):
++      × lever is null while the inline picker still has options (P1 recovery stands)
++  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
++
++##### spec 6 — ChainBuilder seams (ChainBuilder.tsx), pinned in jsdom
++-----------------------------------------------------------------
++BEHAVIOR: SEAM :387 — RecipePicker receives the GATED catalog
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    - catalog={gated}
++    + catalog={catalog}
++  BROKEN: 3 failing test(s):
++      × RecipePicker prop: a tier-gated recipe is ABSENT from the rendered picker options
++      × recipeLabel via the picker prop: the GATED default carries the (default) tag
++      × the render seams follow a TIER change too, not just the propose
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: SEAM :418 — the constrained recovery list is GATED
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    -             const options = producerRecipesFor(
++    -               gated,
++    +             const options = producerRecipesFor(
++    +               catalog,
++  BROKEN: 1 failing test(s):
++      × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: SEAM :237 — the clear rule resolves against the GATED default
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    - const dflt = effectiveDefaultRecipe(gated, itemId, excludedMachineIds);
++    + const dflt = effectiveDefaultRecipe(catalog, itemId, excludedMachineIds);
++  BROKEN: 1 failing test(s):
++      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: SEAM :441 — recipeLabel in the constrained row (SPEC SAYS NO-OP)
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    - {recipeLabel(gated, o, r.itemId, excludedMachineIds)}
++    + {recipeLabel(catalog, o, r.itemId, excludedMachineIds)}
++  RESULT: no test failed — CONFIRMED BEHAVIOURAL NO-OP (expected; see note)
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: the tier rides the repropose PATCH with !== undefined, not ??
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    - patch.unlockedTier !== undefined ? patch.unlockedTier : unlockedTier;
++    + patch.unlockedTier ?? unlockedTier;
++  BROKEN: 1 failing test(s):
++      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: repropose solves against the GATED catalog
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    -     const proposal = proposeChainForCatalog(
++    -       gatedCat,
++    +     const proposal = proposeChainForCatalog(
++    +       cat,
++  BROKEN: 3 failing test(s):
++      × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
++      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
++      × staleness: a TIER change re-proposes in the NEW tier's world on that same propose
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: repropose passes the UNGATED world to the preview
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    -         ungatedCatalog: cat,
++    + <deleted>
++  BROKEN: 1 failing test(s):
++      × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: the body memo tracks the tier (not just the catalog)
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    -     [catalog, unlockedTier],
++    +     [catalog],
++  BROKEN: 1 failing test(s):
++      × the render seams follow a TIER change too, not just the propose
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: the TIER select value binding (DOM-level NO-OP, see note)
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    -     unlockedTier !== null && tierOptions.includes(unlockedTier)
++    -       ? String(unlockedTier)
++    -       : "";
++    +     unlockedTier === null ? "" : String(unlockedTier);
++  RESULT: no test failed — CONFIRMED BEHAVIOURAL NO-OP (expected; see note)
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: the TIER options are DERIVED from recipeUnlocks, never hardcoded
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    - Array.from({ length: Math.max(...unlockTiers) + 1 }, (_, i) => i);
++    + Array.from({ length: 10 }, (_, i) => i);
++  BROKEN: 1 failing test(s):
++      × derives its options from recipeUnlocks (all + 0..max), never hardcoded
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: a tier change MIRRORS back to the persisted prefs
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    -     setProposePrefs({ unlockedTier: next });
++    + <deleted>
++  BROKEN: 1 failing test(s):
++      × mirrors a tier change back to the persisted prefs
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: the constrained TIER wording
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    - return " — locked behind the TIER gate; raise TIER to recover.";
++    + return " — no producer.";
++  BROKEN: 1 failing test(s):
++      × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: the null-tier (machine) wording is P1's exact string
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    - return " — every producer's machine is excluded; edit MACHINE EXCLUSIONS to recover.";
++    + return " — machines excluded.";
++  BROKEN: 1 failing test(s):
++      × constrained recovery: at tier null the wording is P1's exact string (regression)
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++
++=================================================================
++RESTORE + re-run (all mutations reverted):
++   Test Files  32 passed (32)
++        Tests  884 passed (884)
++git status (must be clean):
++=================================================================
+diff --git a/package-lock.json b/package-lock.json
+index 07b0437..3893117 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -20,6 +20,7 @@
+         "@vitejs/plugin-react": "^6.0.4",
+         "eslint": "^10.8.0",
+         "fake-indexeddb": "^6.2.5",
++        "jsdom": "^30.0.1",
+         "prettier": "^3.9.6",
+         "typescript": "~6.0.2",
+         "typescript-eslint": "^8.65.0",
+@@ -28,6 +29,59 @@
+         "vitest": "^4.1.10"
+       }
+     },
++    "node_modules/@asamuzakjp/css-color": {
++      "version": "6.0.5",
++      "resolved": "https://registry.npmjs.org/@asamuzakjp/css-color/-/css-color-6.0.5.tgz",
++      "integrity": "sha512-mbhpPMmnw/kwW19aRNmSUl1QzLbdGo1SCuE49BT98MNwqF6zaHb3o2owssFc/PEO/4t2UjqtCNwocuDtJornzA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@csstools/css-calc": "^3.2.1",
++        "@csstools/css-color-parser": "^4.1.9",
++        "@csstools/css-parser-algorithms": "^4.0.0",
++        "@csstools/css-tokenizer": "^4.0.0",
++        "lru-cache": "^11.5.2"
++      },
++      "engines": {
++        "node": "^22.13.0 || >=24.0.0"
++      }
++    },
++    "node_modules/@asamuzakjp/css-color/node_modules/lru-cache": {
++      "version": "11.5.2",
++      "resolved": "https://registry.npmjs.org/lru-cache/-/lru-cache-11.5.2.tgz",
++      "integrity": "sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g==",
++      "dev": true,
++      "license": "BlueOak-1.0.0",
++      "engines": {
++        "node": "20 || >=22"
++      }
++    },
++    "node_modules/@asamuzakjp/dom-selector": {
++      "version": "8.3.2",
++      "resolved": "https://registry.npmjs.org/@asamuzakjp/dom-selector/-/dom-selector-8.3.2.tgz",
++      "integrity": "sha512-93Z1N+BQNXysodoicpOIyNh2drHfz/CTf9nnT0FEx72GJcIiwgydD7tGAr78j41LsYn3hlRn+LdGPuBLn1Bl8Q==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "bidi-js": "^1.0.3",
++        "css-tree": "^3.2.1",
++        "is-potential-custom-element-name": "^1.0.1",
++        "lru-cache": "^11.5.2"
++      },
++      "engines": {
++        "node": "^22.13.0 || >=24.0.0"
++      }
++    },
++    "node_modules/@asamuzakjp/dom-selector/node_modules/lru-cache": {
++      "version": "11.5.2",
++      "resolved": "https://registry.npmjs.org/lru-cache/-/lru-cache-11.5.2.tgz",
++      "integrity": "sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g==",
++      "dev": true,
++      "license": "BlueOak-1.0.0",
++      "engines": {
++        "node": "20 || >=22"
++      }
++    },
+     "node_modules/@babel/code-frame": {
+       "version": "7.29.7",
+       "resolved": "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.29.7.tgz",
+@@ -1620,6 +1674,159 @@
+         "node": ">=6.9.0"
+       }
+     },
++    "node_modules/@bramus/specificity": {
++      "version": "2.4.2",
++      "resolved": "https://registry.npmjs.org/@bramus/specificity/-/specificity-2.4.2.tgz",
++      "integrity": "sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "css-tree": "^3.0.0"
++      },
++      "bin": {
++        "specificity": "bin/cli.js"
++      }
++    },
++    "node_modules/@csstools/color-helpers": {
++      "version": "6.1.0",
++      "resolved": "https://registry.npmjs.org/@csstools/color-helpers/-/color-helpers-6.1.0.tgz",
++      "integrity": "sha512-064IFJdjTfUqnjpCVpMOdbr8FLQBhinbZj6yRv2An2E41O/pLEXqfFRWqGq/SxlE5PEUYTlvWsG2r8MswAVvkg==",
++      "dev": true,
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/csstools"
++        },
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/csstools"
++        }
++      ],
++      "license": "MIT-0",
++      "engines": {
++        "node": ">=20.19.0"
++      }
++    },
++    "node_modules/@csstools/css-calc": {
++      "version": "3.3.0",
++      "resolved": "https://registry.npmjs.org/@csstools/css-calc/-/css-calc-3.3.0.tgz",
++      "integrity": "sha512-c5ihYsPkdG6JCkU2zTMm4+k6r7RXuGxtWYhu5DHMIiF1FHzrfmHL5so11AoFpUv/tu61xfcmT4AmKoFfMPoqdQ==",
++      "dev": true,
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/csstools"
++        },
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/csstools"
++        }
++      ],
++      "license": "MIT",
++      "engines": {
++        "node": ">=20.19.0"
++      },
++      "peerDependencies": {
++        "@csstools/css-parser-algorithms": "^4.0.0",
++        "@csstools/css-tokenizer": "^4.0.0"
++      }
++    },
++    "node_modules/@csstools/css-color-parser": {
++      "version": "4.1.10",
++      "resolved": "https://registry.npmjs.org/@csstools/css-color-parser/-/css-color-parser-4.1.10.tgz",
++      "integrity": "sha512-UZhQLIUyJaaMepqehrCODwCg2KW25vFvLWBmqYFaPclYvvxzj/sG8LBOhBFCp11i9uE7t1EyS+RAoV9tztPFyw==",
++      "dev": true,
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/csstools"
++        },
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/csstools"
++        }
++      ],
++      "license": "MIT",
++      "dependencies": {
++        "@csstools/color-helpers": "^6.1.0",
++        "@csstools/css-calc": "^3.3.0"
++      },
++      "engines": {
++        "node": ">=20.19.0"
++      },
++      "peerDependencies": {
++        "@csstools/css-parser-algorithms": "^4.0.0",
++        "@csstools/css-tokenizer": "^4.0.0"
++      }
++    },
++    "node_modules/@csstools/css-parser-algorithms": {
++      "version": "4.0.0",
++      "resolved": "https://registry.npmjs.org/@csstools/css-parser-algorithms/-/css-parser-algorithms-4.0.0.tgz",
++      "integrity": "sha512-+B87qS7fIG3L5h3qwJ/IFbjoVoOe/bpOdh9hAjXbvx0o8ImEmUsGXN0inFOnk2ChCFgqkkGFQ+TpM5rbhkKe4w==",
++      "dev": true,
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/csstools"
++        },
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/csstools"
++        }
++      ],
++      "license": "MIT",
++      "engines": {
++        "node": ">=20.19.0"
++      },
++      "peerDependencies": {
++        "@csstools/css-tokenizer": "^4.0.0"
++      }
++    },
++    "node_modules/@csstools/css-syntax-patches-for-csstree": {
++      "version": "1.1.7",
++      "resolved": "https://registry.npmjs.org/@csstools/css-syntax-patches-for-csstree/-/css-syntax-patches-for-csstree-1.1.7.tgz",
++      "integrity": "sha512-fQ+05118eQS1cofO3aJpB5efgpBZMvIzwr/sbC8kDLVA5XLG8q1kJV5yzrUAI1f7lvhPnm8fgIjzFB8/O/5Dig==",
++      "dev": true,
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/csstools"
++        },
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/csstools"
++        }
++      ],
++      "license": "MIT-0",
++      "peerDependencies": {
++        "css-tree": "^3.2.1"
++      },
++      "peerDependenciesMeta": {
++        "css-tree": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/@csstools/css-tokenizer": {
++      "version": "4.0.0",
++      "resolved": "https://registry.npmjs.org/@csstools/css-tokenizer/-/css-tokenizer-4.0.0.tgz",
++      "integrity": "sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==",
++      "dev": true,
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/csstools"
++        },
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/csstools"
++        }
++      ],
++      "license": "MIT",
++      "engines": {
++        "node": ">=20.19.0"
++      }
++    },
+     "node_modules/@eslint-community/eslint-utils": {
+       "version": "4.10.1",
+       "resolved": "https://registry.npmjs.org/@eslint-community/eslint-utils/-/eslint-utils-4.10.1.tgz",
+@@ -1727,6 +1934,24 @@
+         "node": "^20.19.0 || ^22.13.0 || >=24"
+       }
+     },
++    "node_modules/@exodus/bytes": {
++      "version": "1.15.1",
++      "resolved": "https://registry.npmjs.org/@exodus/bytes/-/bytes-1.15.1.tgz",
++      "integrity": "sha512-S6mL0yNB/Abt9Ei4tq8gDhcczc4S3+vQ4ra7vxnAf+YHC02srtqxKKZghx2Dq6p0e66THKwR6r8N6P95wEty7Q==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
++      },
++      "peerDependencies": {
++        "@noble/hashes": "^1.8.0 || ^2.0.0"
++      },
++      "peerDependenciesMeta": {
++        "@noble/hashes": {
++          "optional": true
++        }
++      }
++    },
+     "node_modules/@humanfs/core": {
+       "version": "0.19.2",
+       "resolved": "https://registry.npmjs.org/@humanfs/core/-/core-0.19.2.tgz",
+@@ -3474,6 +3699,16 @@
+         "node": ">=6.0.0"
+       }
+     },
++    "node_modules/bidi-js": {
++      "version": "1.0.3",
++      "resolved": "https://registry.npmjs.org/bidi-js/-/bidi-js-1.0.3.tgz",
++      "integrity": "sha512-RKshQI1R3YQ+n9YJz2QQ147P66ELpa1FQEg20Dk8oW9t2KgLbpDLLp9aGZ7y8WHSshDknG0bknqGw5/tyCs5tw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "require-from-string": "^2.0.2"
++      }
++    },
+     "node_modules/brace-expansion": {
+       "version": "5.0.9",
+       "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz",
+@@ -3681,6 +3916,20 @@
+         "node": ">=8"
+       }
+     },
++    "node_modules/css-tree": {
++      "version": "3.2.1",
++      "resolved": "https://registry.npmjs.org/css-tree/-/css-tree-3.2.1.tgz",
++      "integrity": "sha512-X7sjQzceUhu1u7Y/ylrRZFU2FS6LRiFVp6rKLPg23y3x3c3DOKAwuXGDp+PAGjh6CSnCjYeAul8pcT8bAl+lSA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "mdn-data": "2.27.1",
++        "source-map-js": "^1.2.1"
++      },
++      "engines": {
++        "node": "^10 || ^12.20.0 || ^14.13.0 || >=15.0.0"
++      }
++    },
+     "node_modules/csstype": {
+       "version": "3.2.3",
+       "resolved": "https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz",
+@@ -3793,6 +4042,35 @@
+         "node": ">=12"
+       }
+     },
++    "node_modules/data-urls": {
++      "version": "7.0.0",
++      "resolved": "https://registry.npmjs.org/data-urls/-/data-urls-7.0.0.tgz",
++      "integrity": "sha512-23XHcCF+coGYevirZceTVD7NdJOqVn+49IHyxgszm+JIiHLoB2TkmPtsYkNWT1pvRSGkc35L6NHs0yHkN2SumA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "whatwg-mimetype": "^5.0.0",
++        "whatwg-url": "^16.0.0"
++      },
++      "engines": {
++        "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
++      }
++    },
++    "node_modules/data-urls/node_modules/whatwg-url": {
++      "version": "16.0.1",
++      "resolved": "https://registry.npmjs.org/whatwg-url/-/whatwg-url-16.0.1.tgz",
++      "integrity": "sha512-1to4zXBxmXHV3IiSSEInrreIlu02vUOvrhxJJH5vcxYTBDAx51cqZiKdyTxlecdKNSjj8EcxGBxNf6Vg+945gw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@exodus/bytes": "^1.11.0",
++        "tr46": "^6.0.0",
++        "webidl-conversions": "^8.0.1"
++      },
++      "engines": {
++        "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
++      }
++    },
+     "node_modules/data-view-buffer": {
+       "version": "1.0.2",
+       "resolved": "https://registry.npmjs.org/data-view-buffer/-/data-view-buffer-1.0.2.tgz",
+@@ -3865,6 +4143,13 @@
+         }
+       }
+     },
++    "node_modules/decimal.js": {
++      "version": "10.6.0",
++      "resolved": "https://registry.npmjs.org/decimal.js/-/decimal.js-10.6.0.tgz",
++      "integrity": "sha512-YpgQiITW3JXGntzdUmyUR1V812Hn8T1YVXhCu+wO3OpS4eU9l4YdD3qjyiKdV6mvV29zapkMeD390UVEf2lkUg==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/deep-is": {
+       "version": "0.1.4",
+       "resolved": "https://registry.npmjs.org/deep-is/-/deep-is-0.1.4.tgz",
+@@ -3966,6 +4251,19 @@
+       "dev": true,
+       "license": "ISC"
+     },
++    "node_modules/entities": {
++      "version": "8.0.0",
++      "resolved": "https://registry.npmjs.org/entities/-/entities-8.0.0.tgz",
++      "integrity": "sha512-zwfzJecQ/Uej6tusMqwAqU/6KL2XaB2VZ2Jg54Je6ahNBGNH6Ek6g3jjNCF0fG9EWQKGZNddNjU5F1ZQn/sBnA==",
++      "dev": true,
++      "license": "BSD-2-Clause",
++      "engines": {
++        "node": ">=20.19.0"
++      },
++      "funding": {
++        "url": "https://github.com/fb55/entities?sponsor=1"
++      }
++    },
+     "node_modules/es-abstract": {
+       "version": "1.24.2",
+       "resolved": "https://registry.npmjs.org/es-abstract/-/es-abstract-1.24.2.tgz",
+@@ -4850,6 +5148,19 @@
+         "node": ">= 0.4"
+       }
+     },
++    "node_modules/html-encoding-sniffer": {
++      "version": "6.0.0",
++      "resolved": "https://registry.npmjs.org/html-encoding-sniffer/-/html-encoding-sniffer-6.0.0.tgz",
++      "integrity": "sha512-CV9TW3Y3f8/wT0BRFc1/KAVQ3TUHiXmaAb6VW9vtiMFf7SLoMd1PdAc4W3KFOFETBJUb90KatHqlsZMWV+R9Gg==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@exodus/bytes": "^1.6.0"
++      },
++      "engines": {
++        "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
++      }
++    },
+     "node_modules/idb": {
+       "version": "7.1.1",
+       "resolved": "https://registry.npmjs.org/idb/-/idb-7.1.1.tgz",
+@@ -5162,6 +5473,13 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/is-potential-custom-element-name": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/is-potential-custom-element-name/-/is-potential-custom-element-name-1.0.1.tgz",
++      "integrity": "sha512-bCYeRA2rVibKZd+s2625gGnGF/t7DSqDs4dP7CrLA1m7jKWz6pps0LpYLJN8Q64HtmPKJ1hrN3nzPNKFEKOUiQ==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/is-regex": {
+       "version": "1.2.1",
+       "resolved": "https://registry.npmjs.org/is-regex/-/is-regex-1.2.1.tgz",
+@@ -5385,6 +5703,57 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/jsdom": {
++      "version": "30.0.1",
++      "resolved": "https://registry.npmjs.org/jsdom/-/jsdom-30.0.1.tgz",
++      "integrity": "sha512-52v7mUVUfNQVYYqE1lcdaymWL0njO7lTLUog6ZvW2U5KsbiLk/GnZlVJ+qx0xfNJZ6Gn+KSpPNE52vurbxZwrA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@asamuzakjp/css-color": "^6.0.5",
++        "@asamuzakjp/dom-selector": "^8.3.0",
++        "@bramus/specificity": "^2.4.2",
++        "@csstools/css-syntax-patches-for-csstree": "^1.1.7",
++        "@exodus/bytes": "^1.15.1",
++        "css-tree": "^3.2.1",
++        "data-urls": "^7.0.0",
++        "decimal.js": "^10.6.0",
++        "html-encoding-sniffer": "^6.0.0",
++        "is-potential-custom-element-name": "^1.0.1",
++        "lru-cache": "^11.5.2",
++        "parse5": "^8.0.1",
++        "saxes": "^6.0.0",
++        "symbol-tree": "^3.2.4",
++        "tough-cookie": "^6.0.2",
++        "undici": "^8.9.0",
++        "w3c-xmlserializer": "^5.0.0",
++        "webidl-conversions": "^8.0.1",
++        "whatwg-mimetype": "^5.0.0",
++        "whatwg-url": "^17.1.0",
++        "xml-name-validator": "^5.0.0"
++      },
++      "engines": {
++        "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
++      },
++      "peerDependencies": {
++        "canvas": "^3.2.3"
++      },
++      "peerDependenciesMeta": {
++        "canvas": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/jsdom/node_modules/lru-cache": {
++      "version": "11.5.2",
++      "resolved": "https://registry.npmjs.org/lru-cache/-/lru-cache-11.5.2.tgz",
++      "integrity": "sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g==",
++      "dev": true,
++      "license": "BlueOak-1.0.0",
++      "engines": {
++        "node": "20 || >=22"
++      }
++    },
+     "node_modules/jsesc": {
+       "version": "3.1.0",
+       "resolved": "https://registry.npmjs.org/jsesc/-/jsesc-3.1.0.tgz",
+@@ -5815,6 +6184,13 @@
+         "node": ">= 0.4"
+       }
+     },
++    "node_modules/mdn-data": {
++      "version": "2.27.1",
++      "resolved": "https://registry.npmjs.org/mdn-data/-/mdn-data-2.27.1.tgz",
++      "integrity": "sha512-9Yubnt3e8A0OKwxYSXyhLymGW4sCufcLG6VdiDdUGVkPhpqLxlvP5vl1983gQjJl3tqbrM731mjaZaP68AgosQ==",
++      "dev": true,
++      "license": "CC0-1.0"
++    },
+     "node_modules/minimatch": {
+       "version": "10.2.6",
+       "resolved": "https://registry.npmjs.org/minimatch/-/minimatch-10.2.6.tgz",
+@@ -6018,6 +6394,19 @@
+       "dev": true,
+       "license": "BlueOak-1.0.0"
+     },
++    "node_modules/parse5": {
++      "version": "8.0.1",
++      "resolved": "https://registry.npmjs.org/parse5/-/parse5-8.0.1.tgz",
++      "integrity": "sha512-z1e/HMG90obSGeidlli3hj7cbocou0/wa5HacvI3ASx34PecNjNQeaHNo5WIZpWofN9kgkqV1q5YvXe3F0FoPw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "entities": "^8.0.0"
++      },
++      "funding": {
++        "url": "https://github.com/inikulin/parse5?sponsor=1"
++      }
++    },
+     "node_modules/path-exists": {
+       "version": "4.0.0",
+       "resolved": "https://registry.npmjs.org/path-exists/-/path-exists-4.0.0.tgz",
+@@ -6476,6 +6865,19 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/saxes": {
++      "version": "6.0.0",
++      "resolved": "https://registry.npmjs.org/saxes/-/saxes-6.0.0.tgz",
++      "integrity": "sha512-xAg7SOnEhrm5zI3puOOKyy1OMcMlIJZYNJY7xLBwSze0UjhPLnWfj2GF2EpT0jmzaJKIWKHLsaSSajf35bcYnA==",
++      "dev": true,
++      "license": "ISC",
++      "dependencies": {
++        "xmlchars": "^2.2.0"
++      },
++      "engines": {
++        "node": ">=v12.22.7"
++      }
++    },
+     "node_modules/scheduler": {
+       "version": "0.27.0",
+       "resolved": "https://registry.npmjs.org/scheduler/-/scheduler-0.27.0.tgz",
+@@ -6878,6 +7280,13 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/symbol-tree": {
++      "version": "3.2.4",
++      "resolved": "https://registry.npmjs.org/symbol-tree/-/symbol-tree-3.2.4.tgz",
++      "integrity": "sha512-9QNk5KwDF+Bvz+PyObkmSYjI5ksVUYtjW7AU22r2NKcfLJcXp96hkDWU3+XndOsUb+AQ9QhfzfCT2O+CNWT5Tw==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/temp-dir": {
+       "version": "2.0.0",
+       "resolved": "https://registry.npmjs.org/temp-dir/-/temp-dir-2.0.0.tgz",
+@@ -6970,6 +7379,52 @@
+         "node": ">=14.0.0"
+       }
+     },
++    "node_modules/tldts": {
++      "version": "7.4.10",
++      "resolved": "https://registry.npmjs.org/tldts/-/tldts-7.4.10.tgz",
++      "integrity": "sha512-GgouD1B+sWwvkaEq8vXC15DjQitxbvs12oIXELpconwm+Tg3zfcEv4jgzq3vtKverDXsg3VI8aRgNL2Nra0Iog==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "tldts-core": "^7.4.10"
++      },
++      "bin": {
++        "tldts": "bin/cli.js"
++      }
++    },
++    "node_modules/tldts-core": {
++      "version": "7.4.10",
++      "resolved": "https://registry.npmjs.org/tldts-core/-/tldts-core-7.4.10.tgz",
++      "integrity": "sha512-KnQjp53ZekKgm/r3l+u8kJGGzYgrWdP8+Mql7a4vijh2WE0IrZWspQj/TpTxDho/YxO+AnOZnIjQcCD+q6iJsw==",
++      "dev": true,
++      "license": "MIT"
++    },
++    "node_modules/tough-cookie": {
++      "version": "6.0.2",
++      "resolved": "https://registry.npmjs.org/tough-cookie/-/tough-cookie-6.0.2.tgz",
++      "integrity": "sha512-exgYmnmL/sJpR3upZfXG5PoatXQii55xAiXGXzY+sROLZ/Y+SLcp9PgJNI9Vz37HpQ74WvDcLT8eqm+kV3FzrA==",
++      "dev": true,
++      "license": "BSD-3-Clause",
++      "dependencies": {
++        "tldts": "^7.0.5"
++      },
++      "engines": {
++        "node": ">=16"
++      }
++    },
++    "node_modules/tr46": {
++      "version": "6.0.0",
++      "resolved": "https://registry.npmjs.org/tr46/-/tr46-6.0.0.tgz",
++      "integrity": "sha512-bLVMLPtstlZ4iMQHpFHTR7GAGj2jxi8Dg0s2h2MafAE4uSWF98FC/3MomU51iQAMf8/qDUbKWf5GxuvvVcXEhw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "punycode": "^2.3.1"
++      },
++      "engines": {
++        "node": ">=20"
++      }
++    },
+     "node_modules/ts-api-utils": {
+       "version": "2.5.0",
+       "resolved": "https://registry.npmjs.org/ts-api-utils/-/ts-api-utils-2.5.0.tgz",
+@@ -7144,6 +7599,16 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/undici": {
++      "version": "8.10.0",
++      "resolved": "https://registry.npmjs.org/undici/-/undici-8.10.0.tgz",
++      "integrity": "sha512-HvltHd7avK13QIw/oLe4qoOLyoVSoafqJ2jYOrtMRBkbYT31eiBQ8O0ehRKZiEZCMEyLFQNIADpgCWC5fALvYQ==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=22.19.0"
++      }
++    },
+     "node_modules/undici-types": {
+       "version": "7.18.2",
+       "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-7.18.2.tgz",
+@@ -7478,6 +7943,54 @@
+         }
+       }
+     },
++    "node_modules/w3c-xmlserializer": {
++      "version": "5.0.0",
++      "resolved": "https://registry.npmjs.org/w3c-xmlserializer/-/w3c-xmlserializer-5.0.0.tgz",
++      "integrity": "sha512-o8qghlI8NZHU1lLPrpi2+Uq7abh4GGPpYANlalzWxyWteJOCsr/P+oPBA49TOLu5FTZO4d3F9MnWJfiMo4BkmA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "xml-name-validator": "^5.0.0"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/webidl-conversions": {
++      "version": "8.0.1",
++      "resolved": "https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-8.0.1.tgz",
++      "integrity": "sha512-BMhLD/Sw+GbJC21C/UgyaZX41nPt8bUTg+jWyDeg7e7YN4xOM05YPSIXceACnXVtqyEw/LMClUQMtMZ+PGGpqQ==",
++      "dev": true,
++      "license": "BSD-2-Clause",
++      "engines": {
++        "node": ">=20"
++      }
++    },
++    "node_modules/whatwg-mimetype": {
++      "version": "5.0.0",
++      "resolved": "https://registry.npmjs.org/whatwg-mimetype/-/whatwg-mimetype-5.0.0.tgz",
++      "integrity": "sha512-sXcNcHOC51uPGF0P/D4NVtrkjSU2fNsm9iog4ZvZJsL3rjoDAzXZhkm2MWt1y+PUdggKAYVoMAIYcs78wJ51Cw==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=20"
++      }
++    },
++    "node_modules/whatwg-url": {
++      "version": "17.1.0",
++      "resolved": "https://registry.npmjs.org/whatwg-url/-/whatwg-url-17.1.0.tgz",
++      "integrity": "sha512-3GeworPmc2ZfEEHP7lEbUfBX/L75wdEsi0rLNhXcXxnoN5jyq0SL5gCy06SGW2cyTIZdTvWIDQNQoza++vKeaw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@exodus/bytes": "^1.15.1",
++        "tr46": "^6.0.0",
++        "webidl-conversions": "^8.0.1"
++      },
++      "engines": {
++        "node": "^22.14.0 || >=24.0.0"
++      }
++    },
+     "node_modules/which": {
+       "version": "2.0.2",
+       "resolved": "https://registry.npmjs.org/which/-/which-2.0.2.tgz",
+@@ -7871,6 +8384,23 @@
+         "workbox-core": "7.4.1"
+       }
+     },
++    "node_modules/xml-name-validator": {
++      "version": "5.0.0",
++      "resolved": "https://registry.npmjs.org/xml-name-validator/-/xml-name-validator-5.0.0.tgz",
++      "integrity": "sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/xmlchars": {
++      "version": "2.2.0",
++      "resolved": "https://registry.npmjs.org/xmlchars/-/xmlchars-2.2.0.tgz",
++      "integrity": "sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/yallist": {
+       "version": "3.1.1",
+       "resolved": "https://registry.npmjs.org/yallist/-/yallist-3.1.1.tgz",
+diff --git a/package.json b/package.json
+index fbb5777..8d34373 100644
+--- a/package.json
++++ b/package.json
+@@ -24,6 +24,7 @@
+     "@vitejs/plugin-react": "^6.0.4",
+     "eslint": "^10.8.0",
+     "fake-indexeddb": "^6.2.5",
++    "jsdom": "^30.0.1",
+     "prettier": "^3.9.6",
+     "typescript": "~6.0.2",
+     "typescript-eslint": "^8.65.0",
+diff --git a/src/data/catalog-store.test.ts b/src/data/catalog-store.test.ts
+index 5af1735..6128932 100644
+--- a/src/data/catalog-store.test.ts
++++ b/src/data/catalog-store.test.ts
+@@ -55,6 +55,10 @@ function sampleCatalog(): Catalog {
+       },
+     },
+     tiers: TIER_TABLE,
++    // A non-empty unlock map so the cache round-trip has something to lose
++    // (S20 P3): an empty map would revive identically whether or not the
++    // serializer wrote the field.
++    recipeUnlocks: { ingot_iron: 3 },
+   };
+ }
+ 
+@@ -125,7 +129,7 @@ describe("catalog cache — round-trip (spec row 7)", () => {
+     const db = await openDb();
+     const stored = await db.get<Record<string, unknown>>("catalog", "current");
+     await db.put("catalog", { ...stored, parser_version: 2 }, "current");
+-    expect(CATALOG_PARSER_VERSION).toBe(4);
++    expect(CATALOG_PARSER_VERSION).toBe(5);
+     expect((await loadCatalog()).status).toBe("stale");
+   });
+ 
+@@ -149,7 +153,40 @@ describe("catalog cache — round-trip (spec row 7)", () => {
+     await db.put(
+       "catalog",
+       {
+-        catalog: { items: {}, machines: {}, recipes: { bad: null } },
++        // recipeUnlocks is present and WELL-FORMED on purpose (S20 P3): the
++        // reviver's shape guard now checks it, so omitting it would make this
++        // row throw at the GUARD before `recipes` is ever walked — the test
++        // would stay green (it asserts only "stale") while the corrupt-recipe
++        // path it exists to cover silently stopped being exercised.
++        catalog: {
++          items: {},
++          machines: {},
++          recipes: { bad: null },
++          recipeUnlocks: {},
++        },
++        source_hash: "x",
++        cached_at: new Date().toISOString(),
++        parser_version: CATALOG_PARSER_VERSION,
++      },
++      "current",
++    );
++    expect((await loadCatalog()).status).toBe("stale");
++  });
++
++  it("returns stale on a stored row whose recipeUnlocks is malformed (S20 P3)", async () => {
++    // The shape guard covers the new field too, so a malformed row fails loudly
++    // through the existing catch → 'stale' path rather than reviving a
++    // half-catalog whose empty unlock map would read as "nothing is gated".
++    const db = await openDb();
++    await db.put(
++      "catalog",
++      {
++        catalog: {
++          items: {},
++          machines: {},
++          recipes: {},
++          recipeUnlocks: "not a map",
++        },
+         source_hash: "x",
+         cached_at: new Date().toISOString(),
+         parser_version: CATALOG_PARSER_VERSION,
+@@ -248,6 +285,22 @@ describe("catalog cache — null-prototype maps survive revive (#28)", () => {
+     expect(result.catalog.machines["constructor"]).toBeUndefined();
+     expect(result.catalog.items["constructor"]).toBeUndefined();
+   });
++
++  it("save → load carries recipeUnlocks NON-EMPTY, with a null prototype (S20 P3)", async () => {
++    // The second-boot pin. The cache is FIELD-WHITELISTED, and its two halves
++    // fail ASYMMETRICALLY: reviveCatalog's return is tsc-forced, serializeCatalog
++    // is NOT. Satisfying only the compiler writes no recipeUnlocks, so every
++    // boot after the first loads an EMPTY map — and by the absent-key rule every
++    // recipe then reads "always available", so gating silently no-ops on the
++    // DOMINANT runtime path (a cache hit). The pre-existing revive pin above
++    // cannot catch it: it never inspects a field the serializer never wrote.
++    await saveCatalog("raw docs text", sampleCatalog());
++    const result = await loadCatalog();
++    expect(result.status).toBe("hit");
++    if (result.status !== "hit") return;
++    expect(result.catalog.recipeUnlocks).toEqual({ ingot_iron: 3 });
++    expect(Object.getPrototypeOf(result.catalog.recipeUnlocks)).toBeNull();
++  });
+ });
+ 
+ /** The JSON-safe shape saveCatalog would write for `sampleCatalog()`, used to
+@@ -286,5 +339,11 @@ function serializedSample() {
+         primaryOutputId: "iron_ingot",
+       },
+     },
++    // Untyped factory, so tsc does NOT force this (S20 P3): without it the
++    // revived row would throw the shape guard → "stale" and the legacy-row
++    // HIT test below would go red. Fixing the FIXTURE is the ruling — making
++    // the reviver tolerant (`data.recipeUnlocks ?? {}`) would re-open the very
++    // empty-map path the required field exists to close.
++    recipeUnlocks: { ingot_iron: 3 },
+   };
+ }
+diff --git a/src/data/catalog-store.ts b/src/data/catalog-store.ts
+index 8ed005e..e563c84 100644
+--- a/src/data/catalog-store.ts
++++ b/src/data/catalog-store.ts
+@@ -28,8 +28,17 @@ const CATALOG_KEY = "current";
+  * no such trigger, so the raw-feed feature stayed invisible for existing
+  * users (Michael's field report). This bump supersedes that decision and
+  * forces the one re-parse.
++ *
++ * 4 → 5 (S20 P3, #102): the catalog gained `recipeUnlocks` (recipe id → min
++ * schematic unlock tier), parsed from FGSchematic. Same discard-and-re-parse
++ * semantics as every prior bump, disclosed honestly: no raw Docs text is
++ * stored (only a SHA-256 hash), so a BUNDLED-catalog user self-heals via the
++ * bundled re-fetch, while an UPLOADED-Docs user falls back to the bundled
++ * catalog (the banner flips, loudly) and re-uploads once. Uploaded Docs.json
++ * carries FGSchematic identically (same game-export format), so the re-upload
++ * lands with full tier data.
+  */
+-export const CATALOG_PARSER_VERSION = 4;
++export const CATALOG_PARSER_VERSION = 5;
+ 
+ /**
+  * JSON-safe CatalogItem: `stackSize` is a toString() string or null. Items
+@@ -85,6 +94,17 @@ interface StoredCatalogData {
+   items: Record<string, StoredCatalogItem>;
+   machines: Record<string, StoredCatalogMachine>;
+   recipes: Record<string, StoredRecipe>;
++  /**
++   * Mirrors Catalog.recipeUnlocks (S20 P3, #102) — plain numbers, so it stores
++   * verbatim. It MUST appear in all three enumerating functions
++   * (StoredCatalogData / serializeCatalog / reviveCatalog): `tiers` is
++   * re-attachable on revive only because it is a CONSTANT, which this is not.
++   * Omitting it from the serializer alone would revive an EMPTY map on every
++   * boot after the first, and by the absent-key rule every recipe would read
++   * "always available" — gating silently no-ops. Exactly the `isRawResource`
++   * scar recorded above (ticket #57).
++   */
++  recipeUnlocks: Record<string, number>;
+ }
+ 
+ /**
+@@ -204,7 +224,15 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
+   for (const [id, it] of Object.entries(catalog.items)) {
+     items[id] = serializeItem(it);
+   }
+-  return { items, machines, recipes };
++  // Plain numbers — copied verbatim, no per-entry transform. This half is NOT
++  // tsc-forced (the literal below would typecheck without it were the field
++  // optional), which is precisely why the field is REQUIRED on StoredCatalogData.
++  return {
++    items,
++    machines,
++    recipes,
++    recipeUnlocks: { ...catalog.recipeUnlocks },
++  };
+ }
+ 
+ function serializeItem(item: CatalogItem): StoredCatalogItem {
+@@ -241,7 +269,8 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
+     typeof data !== "object" ||
+     typeof data.items !== "object" ||
+     typeof data.machines !== "object" ||
+-    typeof data.recipes !== "object"
++    typeof data.recipes !== "object" ||
++    typeof data.recipeUnlocks !== "object"
+   ) {
+     throw new Error("catalog-store: corrupted stored catalog shape.");
+   }
+@@ -273,12 +302,20 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
+   for (const [id, it] of Object.entries(data.items)) {
+     items[id] = reviveItem(it);
+   }
++  // Null-prototype container (#28) — same rebuild rationale as the three maps
++  // above: gating reads this map by bracket access on recipe ids.
++  const recipeUnlocks: Catalog["recipeUnlocks"] = Object.create(null);
++  for (const [id, tier] of Object.entries(data.recipeUnlocks)) {
++    recipeUnlocks[id] = tier;
++  }
+   // Tiers are always the curated table, never round-tripped through storage.
++  // recipeUnlocks is NOT such a constant — it is parsed data, so it round-trips.
+   return {
+     items,
+     machines,
+     recipes,
+     tiers: TIER_TABLE,
++    recipeUnlocks,
+   };
+ }
+ 
+diff --git a/src/data/docs-loader.test.ts b/src/data/docs-loader.test.ts
+index 42509d1..9b6000a 100644
+--- a/src/data/docs-loader.test.ts
++++ b/src/data/docs-loader.test.ts
+@@ -634,3 +634,161 @@ describe("parseDocsJson — null-prototype maps resist prototype-key collision (
+     expect(Object.getPrototypeOf(cat.recipes)).toBeNull();
+   });
+ });
++
++// ---------------------------------------------------------------------------
++// FGSchematic unlock tiers (S20 P3, ticket #102)
++// ---------------------------------------------------------------------------
++
++/**
++ * A REAL-shape `mRecipes` tuple string for the given recipe class names — the
++ * game's own serialization, path prefix and TRAILING APOSTROPHE included. The
++ * apostrophe is the whole point: it is what makes a whole-ref normalize return
++ * the empty string, so every fixture here must carry it.
++ */
++function mRecipesRefs(...classNames: string[]): string {
++  return `(${classNames
++    .map(
++      (cn) =>
++        `"/Script/Engine.BlueprintGeneratedClass'/Game/FactoryGame/Recipes/${cn.replace(
++          /_C$/,
++          "",
++        )}.${cn}'"`,
++    )
++    .join(",")})`;
++}
++
++/** One FGSchematic class entry unlocking `classNames` at `mTechTier`. */
++function schematic(
++  mTechTier: unknown,
++  classNames: string[],
++  mType = "EST_Milestone",
++): Record<string, unknown> {
++  return {
++    ClassName: `Schematic_${mType}_C`,
++    mType,
++    mTechTier,
++    mUnlocks: [
++      { Class: "BP_UnlockRecipe_C", mRecipes: mRecipesRefs(...classNames) },
++    ],
++  };
++}
++
++/** DOCS_FRAGMENT plus an FGSchematic group carrying `schematics`. */
++function withSchematics(schematics: Record<string, unknown>[]): unknown[] {
++  return [
++    ...DOCS_FRAGMENT,
++    {
++      NativeClass: "/Script/CoreUObject.Class'/Script/FactoryGame.FGSchematic'",
++      Classes: schematics,
++    },
++  ];
++}
++
++describe("parseDocsJson — FGSchematic unlock tiers (S20 P3, spec row 8)", () => {
++  it("maps a real mRecipes ref (trailing apostrophe and all) to a real catalog id — NEVER the empty string", () => {
++    const cat = parseDocsJson(
++      withSchematics([schematic("3", ["Recipe_IngotIron_C"])]),
++    );
++    // The r4 silent-total-failure guard. normalizeClassName splits on [./'] and
++    // takes the LAST segment, so handing it a whole ref (they end in ') returns
++    // "": every id would collapse to one empty key and gating would no-op
++    // invisibly, disguised by the "empty map ⇒ the select collapses to all"
++    // tolerance. A real ref must yield a real catalog id.
++    expect(cat.recipeUnlocks[""]).toBeUndefined();
++    expect(cat.recipeUnlocks["ingot_iron"]).toBe(3);
++    expect(cat.recipes["ingot_iron"]).toBeDefined();
++  });
++
++  it("keys by the NORMALIZED catalog id — a raw class name never matches", () => {
++    const cat = parseDocsJson(
++      withSchematics([schematic("2", ["Recipe_IngotIron_C"])]),
++    );
++    // `Recipe_IngotIron_C` is NOT the catalog id (`ingot_iron` is): a
++    // literal-key parse would gate nothing, since no lookup would ever hit.
++    expect(cat.recipeUnlocks["Recipe_IngotIron_C"]).toBeUndefined();
++    expect(cat.recipeUnlocks["ingot_iron"]).toBe(2);
++  });
++
++  it("takes the MINIMUM tier when several schematic types unlock one recipe", () => {
++    const cat = parseDocsJson(
++      withSchematics([
++        // Higher tier FIRST, so last-wins would give 5 and first-wins 5 too —
++        // only a real min-merge yields 1.
++        schematic("5", ["Recipe_IngotIron_C"], "EST_Milestone"),
++        schematic("1", ["Recipe_IngotIron_C"], "EST_MAM"),
++        schematic("7", ["Recipe_IngotIron_C"], "EST_Alternate"),
++      ]),
++    );
++    expect(cat.recipeUnlocks["ingot_iron"]).toBe(1);
++  });
++
++  it("parses a garbage or absent mTechTier as 0", () => {
++    const garbage = parseDocsJson(
++      withSchematics([schematic("banana", ["Recipe_IngotIron_C"])]),
++    );
++    expect(garbage.recipeUnlocks["ingot_iron"]).toBe(0);
++    const absent = parseDocsJson(
++      withSchematics([
++        {
++          ClassName: "Schematic_NoTier_C",
++          mType: "EST_Milestone",
++          mUnlocks: [
++            {
++              Class: "BP_UnlockRecipe_C",
++              mRecipes: mRecipesRefs("Recipe_IngotIron_C"),
++            },
++          ],
++        },
++      ]),
++    );
++    expect(absent.recipeUnlocks["ingot_iron"]).toBe(0);
++  });
++
++  it("yields an EMPTY map when no schematic group is present", () => {
++    // The tolerant-parse posture: absent progression data gates nothing.
++    const cat = parseDocsJson(DOCS_FRAGMENT);
++    expect(Object.keys(cat.recipeUnlocks)).toEqual([]);
++  });
++
++  it("skips refs that normalize to no catalog recipe", () => {
++    const cat = parseDocsJson(
++      withSchematics([
++        schematic("4", ["Recipe_IngotIron_C", "Recipe_ConveyorBeltMk1_C"]),
++      ]),
++    );
++    // Building/cosmetic recipes are unmatched and dropped silently by design —
++    // and the matched sibling in the SAME schematic still lands.
++    expect(cat.recipeUnlocks["conveyor_belt_mk1"]).toBeUndefined();
++    expect(cat.recipeUnlocks["ingot_iron"]).toBe(4);
++  });
++
++  it("reads only BP_UnlockRecipe_C entries — other unlock kinds are ignored", () => {
++    const cat = parseDocsJson(
++      withSchematics([
++        {
++          ClassName: "Schematic_Tape_C",
++          mType: "EST_Milestone",
++          mTechTier: "6",
++          mUnlocks: [
++            // A non-recipe unlock carrying a recipe-shaped payload must not
++            // register a tier (tape/info unlocks are not progression gates).
++            {
++              Class: "FGUnlockTape",
++              mRecipes: mRecipesRefs("Recipe_IngotIron_C"),
++            },
++          ],
++        },
++      ]),
++    );
++    expect(cat.recipeUnlocks["ingot_iron"]).toBeUndefined();
++  });
++
++  it("builds recipeUnlocks with a null prototype", () => {
++    const cat = parseDocsJson(
++      withSchematics([schematic("1", ["Recipe_IngotIron_C"])]),
++    );
++    expect(Object.getPrototypeOf(cat.recipeUnlocks)).toBeNull();
++    // A prototype-member id misses cleanly (#28).
++    expect(cat.recipeUnlocks["constructor"]).toBeUndefined();
++  });
++});
+diff --git a/src/data/docs-loader.ts b/src/data/docs-loader.ts
+index ff24836..07b6d61 100644
+--- a/src/data/docs-loader.ts
++++ b/src/data/docs-loader.ts
+@@ -32,6 +32,10 @@ const NATIVE_BUILDING_REGEX =
+ const NATIVE_ITEM_REGEX =
+   /FG(ItemDescriptor|ResourceDescriptor|ConsumableDescriptor|EquipmentDescriptor|PowerShardDescriptor|ChainsawFuelDescriptor|AmmoType)/;
+ const NATIVE_RECIPE = "FGRecipe";
++// Progression data (S20 P3, ticket #102). FGSchematic is its own native class:
++// it matches none of the filters above (no "FGRecipe" substring, no descriptor
++// or buildable prefix), so it gets its own branch below.
++const NATIVE_SCHEMATIC = "FGSchematic";
+ 
+ /** Raw recipe fields carried through extraction; strings stay strings until
+  *  the exact-Fraction post-processing step (no float ever). */
+@@ -44,6 +48,16 @@ interface RawRecipe {
+   producedIn: string;
+ }
+ 
++/**
++ * One schematic's recipe unlocks, held until the recipes map exists: the refs
++ * are normalized to catalog ids and matched against that map, and Docs.json
++ * does not guarantee FGSchematic comes after FGRecipe.
++ */
++interface RawSchematic {
++  techTier: number;
++  recipeClassNames: string[];
++}
++
+ export function parseDocsJson(raw: unknown): Catalog {
+   if (!Array.isArray(raw)) {
+     throw new DocsParseError("Docs.json root must be an array.");
+@@ -56,6 +70,7 @@ export function parseDocsJson(raw: unknown): Catalog {
+   const items: Record<string, CatalogItem> = Object.create(null);
+   const machines: Record<string, CatalogMachine> = Object.create(null);
+   const recipesRaw: RawRecipe[] = [];
++  const schematicsRaw: RawSchematic[] = [];
+ 
+   for (const group of raw) {
+     if (typeof group !== "object" || group === null) continue;
+@@ -117,6 +132,33 @@ export function parseDocsJson(raw: unknown): Catalog {
+           producedIn: (c.mProducedIn as string | undefined) ?? "",
+         });
+       }
++    } else if (nativeClass.includes(NATIVE_SCHEMATIC)) {
++      // Progression unlocks (S20 P3). EVERY mType is visited — the type is read
++      // only to be counted during design, never stored: it was MEASURED that no
++      // catalog production recipe takes a lower min-tier from a non-progression
++      // type (their BP_UnlockRecipe_C refs are building/cosmetic recipes, which
++      // the unmatched-ref skip below drops). Non-recipe unlocks (tapes, emotes,
++      // inventory slots, …) are filtered by the BP_UnlockRecipe_C check.
++      for (const cls of classes) {
++        const c = cls as Record<string, unknown>;
++        const unlocks = Array.isArray(c.mUnlocks) ? c.mUnlocks : [];
++        const recipeClassNames: string[] = [];
++        for (const unlock of unlocks) {
++          if (typeof unlock !== "object" || unlock === null) continue;
++          const u = unlock as { Class?: unknown; mRecipes?: unknown };
++          if (u.Class !== UNLOCK_RECIPE_CLASS) continue;
++          if (typeof u.mRecipes !== "string") continue;
++          for (const m of u.mRecipes.matchAll(RECIPE_REF_REGEX)) {
++            if (m[1] !== undefined) recipeClassNames.push(m[1]);
++          }
++        }
++        // A schematic unlocking no recipe carries no tier information.
++        if (recipeClassNames.length === 0) continue;
++        schematicsRaw.push({
++          techTier: parseTechTier(c.mTechTier),
++          recipeClassNames,
++        });
++      }
+     }
+   }
+ 
+@@ -154,7 +196,54 @@ export function parseDocsJson(raw: unknown): Catalog {
+     };
+   }
+ 
+-  return { items, machines, recipes, tiers: TIER_TABLE };
++  // Min unlock tier per catalog recipe (S20 P3). Null-prototype container (#28)
++  // — see the items/machines/recipes seeds above; this map is read by bracket
++  // access at every gating site.
++  const recipeUnlocks: Record<string, number> = Object.create(null);
++  for (const s of schematicsRaw) {
++    for (const className of s.recipeClassNames) {
++      // The RAW trailing segment is NOT the catalog id: the same normalizer
++      // that keys `recipes` above must key this map, or nothing ever matches.
++      const id = normalizeClassName(className, "Recipe_");
++      // Refs that normalize to no catalog recipe (building/cosmetic recipes)
++      // are skipped silently — by design, not by oversight.
++      if (recipes[id] === undefined) continue;
++      const prev = recipeUnlocks[id];
++      // A recipe unlocked by several schematics takes the MINIMUM tier: the
++      // earliest availability, which is the honest gate.
++      if (prev === undefined || s.techTier < prev)
++        recipeUnlocks[id] = s.techTier;
++    }
++  }
++
++  return { items, machines, recipes, tiers: TIER_TABLE, recipeUnlocks };
++}
++
++/** The `mUnlocks` entry class that carries recipe unlocks. Every other unlock
++ *  kind (tapes, emotes, inventory slots, scannables, …) is skipped. */
++const UNLOCK_RECIPE_CLASS = "BP_UnlockRecipe_C";
++
++/**
++ * Recipe class names inside an `mRecipes` tuple string. Each ref reads
++ * `…'/Game/…/Recipe_<X>.Recipe_<X>_C'` — note it ENDS in an apostrophe, so the
++ * capture EXCLUDES the quote deliberately: `normalizeClassName` splits on
++ * `[./']` and takes the last segment, so handing it a whole ref would yield the
++ * EMPTY STRING, collapsing every id and making gating a silent no-op. The
++ * capture takes the bare class name only; `matchAll` clones the regex, so the
++ * module-level `/g` lastIndex is never shared across calls.
++ */
++const RECIPE_REF_REGEX = /\.(Recipe_[A-Za-z0-9_]+_C)'/g;
++
++/**
++ * A schematic's `mTechTier` as a number. The game exports it as a STRING
++ * ("0".."9"); absence, a non-string/number, or un-parseable garbage yields 0 —
++ * the tolerant-parse posture (a schematic with an unreadable tier gates at the
++ * earliest tier rather than becoming a new parse rejection).
++ */
++function parseTechTier(raw: unknown): number {
++  if (typeof raw !== "string" && typeof raw !== "number") return 0;
++  const n = Number(raw);
++  return Number.isFinite(n) ? n : 0;
+ }
+ 
+ /**
+diff --git a/src/data/stage-input.test.ts b/src/data/stage-input.test.ts
+index d76a0ee..4d4cf8e 100644
+--- a/src/data/stage-input.test.ts
++++ b/src/data/stage-input.test.ts
+@@ -13,7 +13,13 @@ function catalogWith(items: Record<string, { isFluid: boolean }>): Catalog {
+     // stackSize is irrelevant to toStageInput (it reads only isFluid); null.
+     full[id] = { id, displayName: id, isFluid, stackSize: null };
+   }
+-  return { items: full, machines: {}, recipes: {}, tiers: TIER_TABLE };
++  return {
++    items: full,
++    machines: {},
++    recipes: {},
++    tiers: TIER_TABLE,
++    recipeUnlocks: {},
++  };
+ }
+ 
+ function io(itemId: string, perMinute: Fraction) {
+diff --git a/src/data/types.ts b/src/data/types.ts
+index b9960c8..85cd787 100644
+--- a/src/data/types.ts
++++ b/src/data/types.ts
+@@ -95,4 +95,17 @@ export interface Catalog {
+   machines: Record<string, CatalogMachine>;
+   recipes: Record<string, CatalogRecipe>;
+   tiers: TierTable;
++  /**
++   * Recipe id → the MINIMUM `mTechTier` across every FGSchematic that unlocks
++   * it (S20 P3, ticket #102). An ABSENT key means no schematic unlocks the
++   * recipe, so nothing gates it — always available. A recipe unlocked by
++   * several schematics takes the earliest (minimum) tier: the honest gate.
++   *
++   * REQUIRED, deliberately NOT optional like `isRawResource` above. Optional
++   * would un-force `reviveCatalog`'s return, and the cache round-trip is
++   * exactly what keeps gating alive past the first boot — the recorded
++   * `isRawResource` scar (catalog-store.ts:46-50, ticket #57) is a field that
++   * silently vanished on the second boot for want of that forcing.
++   */
++  recipeUnlocks: Record<string, number>;
+ }
+diff --git a/src/state/store.test.ts b/src/state/store.test.ts
+index 77ab5ed..dc24c73 100644
+--- a/src/state/store.test.ts
++++ b/src/state/store.test.ts
+@@ -11,6 +11,7 @@ import type { StageLink, PlanBundle } from "./store.ts";
+ import { proposeChain } from "../core/chain-builder.ts";
+ import type { ChainProposal } from "../core/chain-builder.ts";
+ import { applyDrawnDistance } from "../ui/chain-view.ts";
++import { EXCLUDED_MACHINE_IDS } from "../ui/chain-builder-adapter.ts";
+ import type { StateStorage } from "zustand/middleware";
+ 
+ // ---------------------------------------------------------------------------
+@@ -585,17 +586,26 @@ describe("re-upload re-validation (spec row 3)", () => {
+ // ---------------------------------------------------------------------------
+ 
+ describe("persistence (spec row 7)", () => {
+-  it("tiers survive a store re-create via the stub; stored value is exactly {unlockedTiers} under satis_foundry:tiers", async () => {
++  it("tiers survive a store re-create via the stub; stored value is exactly {unlockedTiers, proposePrefs} under satis_foundry:tiers", async () => {
+     const { storage, backing } = makeStorageStub();
+     const store = createAppStore(storage);
+     store.getState().setUnlockedTiers({ belt: 3, pipe: 1 });
+ 
+-    // The stored value is written under the pinned key and carries ONLY the
+-    // projected slice: { state: { unlockedTiers }, version }.
++    // The stored value is written under the pinned key and carries exactly the
++    // projected slice: { state: { unlockedTiers, proposePrefs }, version }.
++    // S20 P3 WIDENED this projection from tiers alone — the untouched
++    // proposePrefs ride along at their defaults.
+     const raw = backing["satis_foundry:tiers"];
+     expect(raw).toBeDefined();
+     const parsed = JSON.parse(raw!);
+-    expect(parsed.state).toEqual({ unlockedTiers: { belt: 3, pipe: 1 } });
++    expect(parsed.state).toEqual({
++      unlockedTiers: { belt: 3, pipe: 1 },
++      proposePrefs: {
++        overrides: {},
++        excludedMachineIds: ["converter", "packager"],
++        unlockedTier: null,
++      },
++    });
+ 
+     // Re-create the store against the SAME backing → hydration restores tiers
+     // before any action runs.
+@@ -634,6 +644,160 @@ describe("persistence (spec row 7)", () => {
+   });
+ });
+ 
++// ---------------------------------------------------------------------------
++// Propose preferences — persistence + read-validation (S20 P3, ticket #102)
++// ---------------------------------------------------------------------------
++
++describe("proposePrefs persistence (S20 P3)", () => {
++  it("defaults to no overrides, the converter/packager exclusions, and no tier gate", () => {
++    const store = createAppStore(makeStorageStub().storage);
++    expect(store.getState().proposePrefs).toEqual({
++      overrides: {},
++      excludedMachineIds: ["converter", "packager"],
++      unlockedTier: null,
++    });
++  });
++
++  it("the default exclusions match the adapter's EXCLUDED_MACHINE_IDS", () => {
++    // The store cannot import from the UI layer, so the default is duplicated
++    // there. This pin is what stops the two copies drifting apart silently.
++    const store = createAppStore(makeStorageStub().storage);
++    expect(store.getState().proposePrefs.excludedMachineIds).toEqual([
++      ...EXCLUDED_MACHINE_IDS,
++    ]);
++  });
++
++  it("round-trips through storage: write → new store instance on the same backing → hydrated", () => {
++    const { storage } = makeStorageStub();
++    const store = createAppStore(storage);
++    store.getState().setProposePrefs({
++      overrides: { iron_plate: "alternate_coated_iron_plate" },
++      excludedMachineIds: ["converter"],
++      unlockedTier: 4,
++    });
++
++    const store2 = createAppStore(storage);
++    expect(store2.getState().proposePrefs).toEqual({
++      overrides: { iron_plate: "alternate_coated_iron_plate" },
++      excludedMachineIds: ["converter"],
++      unlockedTier: 4,
++    });
++  });
++
++  it("setProposePrefs is a PARTIAL update — untouched fields survive", () => {
++    const store = createAppStore(makeStorageStub().storage);
++    store.getState().setProposePrefs({ unlockedTier: 2 });
++    expect(store.getState().proposePrefs).toEqual({
++      overrides: {},
++      excludedMachineIds: ["converter", "packager"],
++      unlockedTier: 2,
++    });
++  });
++
++  it("an empty exclusion array round-trips as empty (a legitimate user choice)", () => {
++    const { storage } = makeStorageStub();
++    createAppStore(storage).getState().setProposePrefs({
++      excludedMachineIds: [],
++    });
++    expect(
++      createAppStore(storage).getState().proposePrefs.excludedMachineIds,
++    ).toEqual([]);
++  });
++
++  it("corrupt stored prefs drop to defaults", () => {
++    const { storage } = makeStorageStub({
++      "satis_foundry:tiers": JSON.stringify({
++        state: {
++          unlockedTiers: { belt: 3, pipe: 1 },
++          proposePrefs: {
++            overrides: "not an object",
++            excludedMachineIds: 7,
++            unlockedTier: "high",
++          },
++        },
++        version: 0,
++      }),
++    });
++    expect(createAppStore(storage).getState().proposePrefs).toEqual({
++      overrides: {},
++      excludedMachineIds: ["converter", "packager"],
++      unlockedTier: null,
++    });
++  });
++
++  it("drops non-string entries inside otherwise well-shaped containers", () => {
++    const { storage } = makeStorageStub({
++      "satis_foundry:tiers": JSON.stringify({
++        state: {
++          unlockedTiers: { belt: 3, pipe: 1 },
++          proposePrefs: {
++            overrides: { good: "recipe_a", bad: 42 },
++            excludedMachineIds: ["converter", 9, null],
++            unlockedTier: 1,
++          },
++        },
++        version: 0,
++      }),
++    });
++    expect(createAppStore(storage).getState().proposePrefs).toEqual({
++      overrides: { good: "recipe_a" },
++      excludedMachineIds: ["converter"],
++      unlockedTier: 1,
++    });
++  });
++
++  it.each([
++    ["a negative tier", -1],
++    ["a fractional tier", 2.5],
++    ["a non-number tier", "3"],
++    ["null (already 'all')", null],
++  ])("validates %s to null on read", (_label, stored) => {
++    // Catalog-INDEPENDENT validation. Without it a persisted -1/2.5/NaN would
++    // survive, render as "all" (no such option exists) while gating filtered
++    // out every unlock-bearing recipe — and it would be STICKY, since nothing
++    // writes back and selecting "all" fires no change event.
++    const { storage } = makeStorageStub({
++      "satis_foundry:tiers": JSON.stringify({
++        state: {
++          unlockedTiers: { belt: 3, pipe: 1 },
++          proposePrefs: {
++            overrides: {},
++            excludedMachineIds: [],
++            unlockedTier: stored,
++          },
++        },
++        version: 0,
++      }),
++    });
++    expect(createAppStore(storage).getState().proposePrefs.unlockedTier).toBe(
++      null,
++    );
++  });
++
++  it("keeps an ABOVE-RANGE tier verbatim — no clamp on read", () => {
++    // Deliberately NOT clamped: a catalog-derived bound does not exist at merge
++    // time (persist hydrates while the catalog is still 'initializing'), and a
++    // too-high tier gates nothing, so it already behaves as "all". The RENDER
++    // normalizes it, with no write-back.
++    const { storage } = makeStorageStub({
++      "satis_foundry:tiers": JSON.stringify({
++        state: {
++          unlockedTiers: { belt: 3, pipe: 1 },
++          proposePrefs: {
++            overrides: {},
++            excludedMachineIds: [],
++            unlockedTier: 999,
++          },
++        },
++        version: 0,
++      }),
++    });
++    expect(createAppStore(storage).getState().proposePrefs.unlockedTier).toBe(
++      999,
++    );
++  });
++});
++
+ // ---------------------------------------------------------------------------
+ // Bundled default catalog — the boot-fallback matrix (ticket #9)
+ // ---------------------------------------------------------------------------
+diff --git a/src/state/store.ts b/src/state/store.ts
+index 088c65e..bd4dcbc 100644
+--- a/src/state/store.ts
++++ b/src/state/store.ts
+@@ -260,6 +260,33 @@ export interface AppState {
+    * uploadError, whose semantics are catalog-specific.
+    */
+   planError: string | null;
++  /**
++   * User-global Propose preferences (S20 P3, ticket #102) — persisted beside
++   * `unlockedTiers`, and the SEED for ChainBuilder's component-local controls
++   * (which remain the live per-run truth; these are the seed + the sink).
++   *
++   * Deliberately NOT per-plan: the ticket's framing is "applied to every future
++   * Propose", so they are a property of the USER, not of the open plan.
++   */
++  proposePrefs: ProposePrefs;
++}
++
++/**
++ * The persisted Propose preferences. Only these three: raw markings are a
++ * per-plan boundary intent ("I make this elsewhere" — about a factory, not the
++ * user) and the clock is a per-run target, so both stay ephemeral.
++ */
++export interface ProposePrefs {
++  /** Item id → chosen recipe id. Stale ids need no validation — the core's
++   *  validate-and-ignore totality makes them inert (P1 frozen). */
++  overrides: Record<string, string>;
++  /** Machine ids the proposer may not use. An EMPTY array is a legitimate
++   *  user choice (both defaults unchecked), distinct from an absent field. */
++  excludedMachineIds: string[];
++  /** The propose tier gate: `null` = "all" (no gating, the default and the
++   *  byte-stable pre-P3 behavior); otherwise recipes whose min unlock tier
++   *  exceeds it are filtered out of the propose world. */
++  unlockedTier: number | null;
+ }
+ 
+ export interface Actions {
+@@ -284,6 +311,9 @@ export interface Actions {
+   ): void;
+   setClockPercentText(text: string): void;
+   setUnlockedTiers(t: { belt: number; pipe: number }): void;
++  /** Partial-update the persisted Propose preferences (S20 P3). ChainBuilder
++   *  mirrors each control change here from the same handler that re-proposes. */
++  setProposePrefs(patch: Partial<ProposePrefs>): void;
+   setOverride(
+     side: "feeds" | "outputs",
+     itemId: string,
+@@ -937,9 +967,83 @@ export function canLink(
+ /** localStorage key for the persisted tiers slice (v1). */
+ const PERSIST_KEY = "satis_foundry:tiers";
+ 
+-/** The persisted projection: top-level `{ unlockedTiers }` only. */
++/** The persisted projection: `{ unlockedTiers, proposePrefs }` (S20 P3 widened
++ *  this from tiers alone; the localStorage key is unchanged). */
+ interface PersistedShape {
+   unlockedTiers: { belt: number; pipe: number };
++  proposePrefs: ProposePrefs;
++}
++
++/**
++ * The default Propose preferences: no overrides, today's converter/packager
++ * exclusions, no tier gate — i.e. byte-identical to pre-P3 Propose.
++ *
++ * The exclusion ids are duplicated from `EXCLUDED_MACHINE_IDS`
++ * (src/ui/chain-builder-adapter.ts) rather than imported: the store is a lower
++ * layer than the UI and imports nothing from it. store.test.ts pins the two
++ * lists equal, so the duplication cannot drift silently.
++ */
++function defaultProposePrefs(): ProposePrefs {
++  return {
++    overrides: {},
++    excludedMachineIds: ["converter", "packager"],
++    unlockedTier: null,
++  };
++}
++
++/**
++ * Validate persisted Propose preferences on read — the `clampTier` discipline
++ * applied per field: a field whose container is the wrong shape falls back to
++ * its default, and within a well-shaped container non-conforming entries are
++ * dropped. Total: any input yields a usable ProposePrefs.
++ */
++function validateProposePrefs(value: unknown): ProposePrefs {
++  const fallback = defaultProposePrefs();
++  if (typeof value !== "object" || value === null) return fallback;
++  const p = value as Partial<Record<keyof ProposePrefs, unknown>>;
++
++  const overrides: Record<string, string> = {};
++  if (
++    typeof p.overrides === "object" &&
++    p.overrides !== null &&
++    !Array.isArray(p.overrides)
++  ) {
++    for (const [itemId, recipeId] of Object.entries(p.overrides)) {
++      if (typeof recipeId === "string") overrides[itemId] = recipeId;
++    }
++  }
++
++  // An empty array survives as empty (the user unchecked everything); only a
++  // non-array falls back to the converter/packager default.
++  const excludedMachineIds = Array.isArray(p.excludedMachineIds)
++    ? p.excludedMachineIds.filter((id): id is string => typeof id === "string")
++    : fallback.excludedMachineIds;
++
++  return {
++    overrides,
++    excludedMachineIds,
++    unlockedTier: validTier(p.unlockedTier),
++  };
++}
++
++/**
++ * A persisted tier value, or `null` for "all". CATALOG-INDEPENDENT by design —
++ * module-level facts only, so it has none of the hydration-order problem a
++ * catalog-derived bound would have (persist hydrates during `createAppStore`,
++ * while the catalog is still `initializing`).
++ *
++ * This half is NOT optional: a persisted `-1`, `2.5` or `NaN` would otherwise
++ * survive, render as "all" (no such option exists) while gating filtered out
++ * every unlock-bearing recipe — the display lying about the world, and STICKY,
++ * since nothing writes back and selecting "all" fires no change event (the
++ * control already shows it). An ABOVE-range tier is deliberately NOT clamped
++ * here: it gates nothing, so it already behaves as "all", and the render
++ * normalizes it (no write-back, no catalog dependency).
++ */
++function validTier(value: unknown): number | null {
++  return Number.isInteger(value) && (value as number) >= 0
++    ? (value as number)
++    : null;
+ }
+ 
+ /** Clamp a tier count to `[1, TIER_TABLE.<kind>.length]`, defaulting a corrupt
+@@ -1117,6 +1221,9 @@ export function createAppStore(storage?: StateStorage) {
+           uploadError: null,
+           plans: null,
+           planError: null,
++          // Overwritten by persist's `merge` during createAppStore when a
++          // stored projection exists (validated on the way in).
++          proposePrefs: defaultProposePrefs(),
+ 
+           async init() {
+             const result = await loadCatalog();
+@@ -1362,6 +1469,13 @@ export function createAppStore(storage?: StateStorage) {
+             );
+           },
+ 
++          setProposePrefs(patch: Partial<ProposePrefs>) {
++            // A plain merge — no derive: these are Propose-time preferences,
++            // not solver inputs, so no stage re-solves. The persist middleware
++            // writes the widened projection on the resulting state change.
++            set((s) => ({ proposePrefs: { ...s.proposePrefs, ...patch } }));
++          },
++
+           setOverride(
+             side: "feeds" | "outputs",
+             itemId: string,
+@@ -1935,6 +2049,8 @@ export function createAppStore(storage?: StateStorage) {
+         // the tiers-global invariant, so the active stage's copy is canonical).
+         partialize: (s): PersistedShape => ({
+           unlockedTiers: s.stages[s.activeStageId]!.selection.unlockedTiers,
++          // User-global, already flat — projected verbatim (S20 P3).
++          proposePrefs: s.proposePrefs,
+         }),
+         // Validating merge (runs synchronously during createAppStore, before
+         // init): write the persisted tiers, clamped/defaulted, into EVERY stage
+@@ -1959,6 +2075,10 @@ export function createAppStore(storage?: StateStorage) {
+           return {
+             ...current,
+             stages,
++            // Value-validated on read, exactly like the tiers above (S20 P3):
++            // a corrupt field falls back to its default rather than reaching
++            // the propose path.
++            proposePrefs: validateProposePrefs(p?.proposePrefs),
+             selection: active.selection,
+             solve: active.solve,
+           };
+diff --git a/src/ui/AltCompare.test.tsx b/src/ui/AltCompare.test.tsx
+index 06e5c42..8b2ff12 100644
+--- a/src/ui/AltCompare.test.tsx
++++ b/src/ui/AltCompare.test.tsx
+@@ -87,6 +87,10 @@ const CAT: Catalog = {
+     ),
+   },
+   tiers: { belt: [F(60)], pipe: [F(300)] },
++  // AltCompare is deliberately UNGATED (S20 P3 Axis 4 carve-out): it serves the
++  // APPLIED graph, where a stage may legitimately run a recipe above the propose
++  // tier. An empty map keeps these fixtures gate-free.
++  recipeUnlocks: {},
+ };
+ 
+ function selection(recipeId: string | null): Selection {
+diff --git a/src/ui/ChainBuilder.gating.test.tsx b/src/ui/ChainBuilder.gating.test.tsx
+new file mode 100644
+index 0000000..a83cf03
+--- /dev/null
++++ b/src/ui/ChainBuilder.gating.test.tsx
+@@ -0,0 +1,506 @@
++/**
++ * @vitest-environment jsdom
++ */
++
++/**
++ * ChainBuilder tier-gating SEAM tests (S20 P3, ticket #102).
++ *
++ * WHY THIS FILE DEPARTS FROM THE REPO'S SSR-SMOKE POSTURE. Everywhere else the
++ * UI suites render through `renderToStaticMarkup` in the global node
++ * environment, and interactive propose→preview→apply is left to the browser
++ * walk. That cannot work for these rows, for two compounding reasons:
++ *
++ *  1. The gate-sensitive call sites are reachable only through ChainBuilder's
++ *     `preview !== null && view !== null` block, and `preview` is
++ *     component-local state set only by the Propose click handler — so a
++ *     static render never reaches them at all.
++ *  2. The wiring they pin is NOT compile-forced: `gateCatalog` returns a plain
++ *     `Catalog`, so passing the gated or the ungated world typechecks
++ *     identically at every seam. A missed seam is a SILENT behavioural
++ *     regression, and an adapter-level test cannot catch it — the adapter is
++ *     handed whichever catalog the component chose, which is the very thing
++ *     under test. (A branded `GatedCatalog` type is deferred to #106.)
++ *
++ * So this ONE file runs in jsdom (scoped by the pragma above; the global
++ * environment and every other test file are untouched) and drives React with
++ * `createRoot` + `act`. No testing-library — a plain value-set plus a bubbling
++ * event fires `onChange` for a `<select>`, and text inputs go through the
++ * native value setter so React's value tracker sees the change.
++ *
++ * Two ambient facts, MEASURED rather than assumed. Vitest's jsdom environment
++ * exposes NO `localStorage` (the global exists but is undefined) while the
++ * persisted store's write path calls `setItem` unguarded, so the file installs
++ * a minimal in-memory stand-in below — which also means the mirror-back
++ * assertions exercise the real persist path rather than a degraded one. There
++ * is no `indexedDB` either, which is fine: nothing here touches the catalog
++ * cache.
++ */
++
++import { describe, it, expect, afterEach, vi } from "vitest";
++import { act } from "react";
++import { createRoot } from "react-dom/client";
++import type { Root } from "react-dom/client";
++
++import { Fraction } from "../core/fraction.ts";
++import type {
++  Catalog,
++  CatalogItem,
++  CatalogMachine,
++  CatalogRecipe,
++} from "../data/types.ts";
++import { appStore } from "../state/store.ts";
++import { ChainBuilder } from "./ChainBuilder.tsx";
++
++// React's act() otherwise warns that the environment is not configured for it.
++// There are no setupFiles and no testing-library (which normally sets this).
++(
++  globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
++).IS_REACT_ACT_ENVIRONMENT = true;
++
++/**
++ * A minimal in-memory `localStorage`, installed BEFORE the store module loads.
++ * `vi.hoisted` is required, not stylistic: zustand's `createJSONStorage`
++ * resolves the storage ONCE, eagerly, when `store.ts` builds the `appStore`
++ * singleton at import time — and it guards only against a THROW, not against
++ * an undefined result. Installed any later, every persisted write would fail
++ * on `undefined.setItem`.
++ */
++const storage = vi.hoisted(() => {
++  const memory = new Map<string, string>();
++  const stub: Storage = {
++    getItem: (k) => memory.get(k) ?? null,
++    setItem: (k, v) => void memory.set(k, v),
++    removeItem: (k) => void memory.delete(k),
++    clear: () => memory.clear(),
++    key: (i) => [...memory.keys()][i] ?? null,
++    get length() {
++      return memory.size;
++    },
++  };
++  (globalThis as unknown as { localStorage: Storage }).localStorage = stub;
++  return stub;
++});
++
++const F = (n: number): Fraction => Fraction.from(n);
++
++function item(id: string, displayName: string): CatalogItem {
++  return { id, displayName, isFluid: false, stackSize: F(100) };
++}
++function machine(id: string, displayName: string): CatalogMachine {
++  return {
++    id,
++    displayName,
++    power: { mw: F(4), variable: false, exponent: F(1) },
++  };
++}
++function recipe(
++  id: string,
++  displayName: string,
++  machineId: string,
++  outputs: [string, number][],
++  inputs: [string, number][],
++  isAlternate = false,
++): CatalogRecipe {
++  const out = outputs.map(([itemId, perMinute]) => ({
++    itemId,
++    perMinute: F(perMinute),
++  }));
++  return {
++    id,
++    displayName,
++    machineId,
++    isAlternate,
++    primaryOutputId: out[0]!.itemId,
++    outputs: out,
++    inputs: inputs.map(([itemId, perMinute]) => ({
++      itemId,
++      perMinute: F(perMinute),
++    })),
++  };
++}
++function catalogOf(
++  recipes: CatalogRecipe[],
++  recipeUnlocks: Record<string, number>,
++): Catalog {
++  return {
++    items: Object.fromEntries(
++      [item("plate", "Plate"), item("ingot", "Ingot"), item("ore", "Ore")].map(
++        (i) => [i.id, i],
++      ),
++    ),
++    machines: Object.fromEntries(
++      [
++        machine("constructor", "Constructor"),
++        machine("smelter", "Smelter"),
++        machine("foundry", "Foundry"),
++        machine("refinery", "Refinery"),
++      ].map((m) => [m.id, m]),
++    ),
++    recipes: Object.fromEntries(recipes.map((r) => [r.id, r])),
++    tiers: { belt: [F(60)], pipe: [F(300)] },
++    recipeUnlocks,
++  };
++}
++
++const PLATE = recipe(
++  "r_plate",
++  "Plate",
++  "constructor",
++  [["plate", 20]],
++  [["ingot", 30]],
++);
++
++/**
++ * Ingot has FOUR producers spanning both levers of the gate:
++ *   r_a_std — Smelter,  non-alternate, unlock 5  ← the UNGATED default D
++ *   r_b_std — Foundry,  non-alternate, unlock 0  ← the GATED default D′ at 0
++ *   r_c_alt — Refinery, alternate,     unlock 0  ← keeps the picker ≥2 at 0
++ *   r_d_alt — Refinery, alternate,     unlock 5  ← must vanish at tier 0
++ * Ids are ordered so the default policy (lowest id among non-alternates) picks
++ * r_a_std ungated and r_b_std at tier 0 — which is what makes the `(default)`
++ * tag and the two-step clear-rule rows discriminating.
++ */
++function splitCatalog(): Catalog {
++  return catalogOf(
++    [
++      PLATE,
++      recipe("r_a_std", "Alpha", "smelter", [["ingot", 30]], [["ore", 30]]),
++      recipe("r_b_std", "Bravo", "foundry", [["ingot", 30]], [["ore", 35]]),
++      recipe(
++        "r_c_alt",
++        "Charlie",
++        "refinery",
++        [["ingot", 30]],
++        [["ore", 40]],
++        true,
++      ),
++      recipe(
++        "r_d_alt",
++        "Delta",
++        "refinery",
++        [["ingot", 30]],
++        [["ore", 45]],
++        true,
++      ),
++    ],
++    { r_plate: 0, r_a_std: 5, r_b_std: 0, r_c_alt: 0, r_d_alt: 5 },
++  );
++}
++
++/** Every ingot producer sits at tier 5, so tier 0 gates the item out entirely. */
++function allGatedCatalog(): Catalog {
++  return catalogOf(
++    [
++      PLATE,
++      recipe("r_only", "Only", "smelter", [["ingot", 30]], [["ore", 30]]),
++      recipe(
++        "r_alt",
++        "Only Alt",
++        "foundry",
++        [["ingot", 30]],
++        [["ore", 35]],
++        true,
++      ),
++    ],
++    { r_plate: 0, r_only: 5, r_alt: 5 },
++  );
++}
++
++// --- harness ---------------------------------------------------------------
++
++let container: HTMLDivElement;
++let root: Root;
++
++function mount(
++  catalog: Catalog,
++  prefs: Partial<{
++    overrides: Record<string, string>;
++    excludedMachineIds: string[];
++    unlockedTier: number | null;
++  }> = {},
++): void {
++  appStore.setState({
++    catalog: { status: "ready", catalog },
++    proposePrefs: {
++      overrides: {},
++      excludedMachineIds: [],
++      unlockedTier: null,
++      ...prefs,
++    },
++  });
++  container = document.createElement("div");
++  document.body.appendChild(container);
++  root = createRoot(container);
++  act(() => {
++    root.render(<ChainBuilder />);
++  });
++}
++
++const $ = <T extends Element>(sel: string): T =>
++  container.querySelector<T>(sel)!;
++const $$ = <T extends Element>(sel: string): T[] =>
++  Array.from(container.querySelectorAll<T>(sel));
++
++/** Set a <select> and fire React's onChange (no value-tracker short-circuit). */
++function chooseOption(el: HTMLSelectElement, value: string): void {
++  act(() => {
++    el.value = value;
++    el.dispatchEvent(new Event("change", { bubbles: true }));
++  });
++}
++
++/** Set a text <input> through the NATIVE setter, so React's value tracker sees
++ *  the change and does not swallow the event. */
++function typeInto(el: HTMLInputElement, value: string): void {
++  const setter = Object.getOwnPropertyDescriptor(
++    HTMLInputElement.prototype,
++    "value",
++  )!.set!;
++  act(() => {
++    setter.call(el, value);
++    el.dispatchEvent(new Event("input", { bubbles: true }));
++  });
++}
++
++function click(el: HTMLElement): void {
++  act(() => {
++    el.click();
++  });
++}
++
++/** Propose `plate` at 60/min — the entry into the preview block every seam
++ *  below lives inside. */
++function propose(): void {
++  const selects = $$<HTMLSelectElement>(".chain-builder-controls select");
++  chooseOption(selects[0]!, "plate");
++  typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "60");
++  click(
++    $$<HTMLButtonElement>(".chain-builder-controls button").find(
++      (b) => b.textContent === "Propose",
++    )!,
++  );
++}
++
++const tierSelect = (): HTMLSelectElement =>
++  $<HTMLSelectElement>('select[aria-label="unlocked tier"]');
++
++/** The TIER select's SELECTED option label — what the user actually sees. */
++function selectedTierLabel(): string | null {
++  const el = tierSelect();
++  return el.selectedIndex < 0
++    ? null
++    : (el.options[el.selectedIndex]?.textContent ?? null);
++}
++
++/** The stage row for `Item …` in the rendered preview. Matched on the row
++ *  sentence's "<item> — " lead, not the start of textContent: the first row of
++ *  each depth is prefixed by a `T<depth>` tier marker. */
++const stageRow = (itemName: string): HTMLLIElement =>
++  $$<HTMLLIElement>(".chain-builder-rows li").find((li) =>
++    li.textContent!.includes(`${itemName} — `),
++  )!;
++
++/** Open the stage picker (the chip is a TOGGLE, so only click it when closed —
++ *  a second unconditional click would collapse it again) and return its option
++ *  labels. The chip is the row's first button; the RAW toggle follows it. */
++function openPickerOptions(itemName: string): string[] {
++  const chip = stageRow(itemName).querySelector<HTMLButtonElement>("button")!;
++  if (chip.getAttribute("aria-expanded") !== "true") click(chip);
++  return $$<HTMLOptionElement>(
++    'select[aria-label="pick a recipe for this stage"] option',
++  ).map((o) => o.textContent!);
++}
++
++afterEach(() => {
++  act(() => {
++    root.unmount();
++  });
++  container.remove();
++  storage.clear();
++});
++
++// --- the seam rows ---------------------------------------------------------
++
++describe("S20 P3 seams — the gated world reaches the render (jsdom)", () => {
++  it("RecipePicker prop: a tier-gated recipe is ABSENT from the rendered picker options", () => {
++    mount(splitCatalog(), { unlockedTier: 0 });
++    propose();
++    const labels = openPickerOptions("Ingot");
++    // Available at tier 0 (unlock 0).
++    expect(labels.some((l) => l.startsWith("Bravo"))).toBe(true);
++    expect(labels.some((l) => l.startsWith("Charlie"))).toBe(true);
++    // Gated out at tier 0 (unlock 5) — this is the whole "gated-out recipes
++    // vanish from pickers and chips" claim. An ungated prop would list them.
++    expect(labels.some((l) => l.startsWith("Alpha"))).toBe(false);
++    expect(labels.some((l) => l.startsWith("Delta"))).toBe(false);
++  });
++
++  it("RecipePicker prop: the same recipes ARE offered at tier 'all'", () => {
++    // The control for the row above: absence must be caused by the tier, not
++    // by the fixture.
++    mount(splitCatalog(), { unlockedTier: null });
++    propose();
++    const labels = openPickerOptions("Ingot");
++    expect(labels.some((l) => l.startsWith("Alpha"))).toBe(true);
++    expect(labels.some((l) => l.startsWith("Delta"))).toBe(true);
++  });
++
++  it("recipeLabel via the picker prop: the GATED default carries the (default) tag", () => {
++    // At tier 0 the ungated default (Alpha) is gated out, so the gated default
++    // is Bravo. Under a missed seam `recipeLabel` would resolve the default
++    // against the UNGATED catalog — yielding Alpha, which is absent from these
++    // options, so NO option would carry the tag at all.
++    mount(splitCatalog(), { unlockedTier: 0 });
++    propose();
++    const labels = openPickerOptions("Ingot");
++    expect(labels.find((l) => l.includes("(default)"))).toBe("Bravo (default)");
++  });
++
++  it("constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select", () => {
++    mount(allGatedCatalog(), { unlockedTier: 0 });
++    propose();
++    const row = $<HTMLParagraphElement>("p.chain-builder-constrained");
++    expect(row.textContent).toContain("RAW (no eligible producer): Ingot");
++    expect(row.textContent).toContain(
++      "locked behind the TIER gate; raise TIER to recover.",
++    );
++    // An ungated option list here would render a dead <select> offering
++    // recipes the gated solve then validate-and-ignores — a control that
++    // contradicts the hint's own "raise TIER" advice.
++    expect(row.querySelector("select")).toBe(null);
++  });
++
++  it("constrained recovery: at tier null the wording is P1's exact string (regression)", () => {
++    // The tier lever cannot fire at "all", so the four-cell matrix reduces to
++    // exactly one reachable cell. This pins the reduction against drift.
++    mount(allGatedCatalog(), {
++      unlockedTier: null,
++      excludedMachineIds: ["smelter", "foundry"],
++    });
++    propose();
++    expect($<HTMLElement>(".chain-builder-constrained-hint").textContent).toBe(
++      " — every producer's machine is excluded; edit MACHINE EXCLUSIONS to recover.",
++    );
++  });
++
++  it("clear rule: choosing the GATED default sets no override — observable only after raising the tier back", () => {
++    // Step one cannot discriminate: under correct wiring choosing Bravo (the
++    // gated default) CLEARS, and under the missed seam it SETS
++    // ingot → r_b_std; both re-propose to Bravo with identical output.
++    mount(splitCatalog(), { unlockedTier: 0 });
++    propose();
++    openPickerOptions("Ingot");
++    chooseOption(
++      $<HTMLSelectElement>('select[aria-label="pick a recipe for this stage"]'),
++      "r_b_std",
++    );
++    expect(stageRow("Ingot").textContent).toContain("Ingot — Foundry");
++
++    // Step two makes it observable: with no override the default policy picks
++    // Alpha again; a spurious override would pin the stage to Bravo (and it is
++    // a VALID ungated id, so validate-and-ignore does not rescue it).
++    chooseOption(tierSelect(), "");
++    expect(stageRow("Ingot").textContent).toContain("Ingot — Smelter");
++    expect(appStore.getState().proposePrefs.overrides).toEqual({});
++  });
++
++  it("the render seams follow a TIER change too, not just the propose", () => {
++    // The body derivation is memoized on [catalog, unlockedTier]. Were the tier
++    // dropped from those deps, `gated` would freeze at the tier of the first
++    // render — the propose would still be correct (it derives its own world
++    // from the patch), so ONLY a render-seam assertion catches it: the picker
++    // would keep offering the old tier's recipes indefinitely.
++    mount(splitCatalog(), { unlockedTier: null });
++    propose();
++    expect(openPickerOptions("Ingot").some((l) => l.startsWith("Delta"))).toBe(
++      true,
++    );
++
++    chooseOption(tierSelect(), "0");
++    const afterLabels = openPickerOptions("Ingot");
++    expect(afterLabels.some((l) => l.startsWith("Delta"))).toBe(false);
++    expect(afterLabels.some((l) => l.startsWith("Bravo"))).toBe(true);
++  });
++
++  it("staleness: a TIER change re-proposes in the NEW tier's world on that same propose", () => {
++    // The r4 pin. `unlockedTier` is stale within the tick, so a `gated` derived
++    // from the state binding would gate at the OLD tier on the very propose the
++    // change triggers — leaving Alpha (gated out at 0) as the stage recipe.
++    mount(splitCatalog(), { unlockedTier: null });
++    propose();
++    expect(stageRow("Ingot").textContent).toContain("Ingot — Smelter");
++
++    chooseOption(tierSelect(), "0");
++    expect(stageRow("Ingot").textContent).toContain("Ingot — Foundry");
++  });
++});
++
++describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () => {
++  it("derives its options from recipeUnlocks (all + 0..max), never hardcoded", () => {
++    mount(splitCatalog(), { unlockedTier: null });
++    expect(
++      $$<HTMLOptionElement>('select[aria-label="unlocked tier"] option').map(
++        (o) => o.textContent,
++      ),
++    ).toEqual(["all", "0", "1", "2", "3", "4", "5"]);
++  });
++
++  it("renders 'all' when the persisted tier has no matching option", () => {
++    // Render-level normalization: an above-range tier gates nothing, so it
++    // already BEHAVES as "all" and is shown that way. No clamp, no write-back.
++    //
++    // This locks the user-visible outcome, NOT the binding expression that
++    // produces it. Measured: `value={""}` and `value={"999"}` yield a
++    // byte-identical DOM here — value, selectedIndex, per-option selected flags
++    // and innerHTML all match — because the DOM's own "ask for a reset"
++    // algorithm selects the first option when none matches. The explicit
++    // binding in ChainBuilder is therefore defensive (it keeps a server-
++    // rendered string honest); on this client path it is a no-op, so no
++    // assertion here can discriminate it, and none pretends to.
++    mount(splitCatalog(), { unlockedTier: 999 });
++    expect(selectedTierLabel()).toBe("all");
++    // Nothing was written back — the stored value is left exactly as found.
++    expect(appStore.getState().proposePrefs.unlockedTier).toBe(999);
++  });
++
++  it("renders 'all' when the catalog carries no unlock data at all", () => {
++    mount(catalogOf([PLATE], {}), { unlockedTier: 3 });
++    expect(selectedTierLabel()).toBe("all");
++    expect(
++      $$<HTMLOptionElement>('select[aria-label="unlocked tier"] option').map(
++        (o) => o.textContent,
++      ),
++    ).toEqual(["all"]);
++  });
++
++  it("renders the persisted tier when it IS among the options", () => {
++    mount(splitCatalog(), { unlockedTier: 2 });
++    expect(selectedTierLabel()).toBe("2");
++  });
++
++  it("mirrors a tier change back to the persisted prefs", () => {
++    mount(splitCatalog(), { unlockedTier: null });
++    chooseOption(tierSelect(), "3");
++    expect(appStore.getState().proposePrefs.unlockedTier).toBe(3);
++    chooseOption(tierSelect(), "");
++    expect(appStore.getState().proposePrefs.unlockedTier).toBe(null);
++  });
++
++  it("seeds its controls from the persisted prefs", () => {
++    mount(splitCatalog(), {
++      unlockedTier: 2,
++      excludedMachineIds: ["refinery"],
++    });
++    expect(tierSelect().value).toBe("2");
++    // The exclusions panel reflects the seeded set, and its list stays UNGATED
++    // so a high-tier machine's checkbox is never deleted out from under a
++    // persisted exclusion.
++    expect(
++      $<HTMLElement>(".chain-builder-exclusions summary").textContent,
++    ).toBe("MACHINE EXCLUSIONS (1)");
++    const checked = $$<HTMLInputElement>(
++      ".chain-builder-exclusions input[type=checkbox]",
++    ).filter((c) => c.checked);
++    expect(checked).toHaveLength(1);
++  });
++});
+diff --git a/src/ui/ChainBuilder.tsx b/src/ui/ChainBuilder.tsx
+index 64b606c..72d831e 100644
+--- a/src/ui/ChainBuilder.tsx
++++ b/src/ui/ChainBuilder.tsx
+@@ -6,22 +6,24 @@
+  * items treat-as-raw, and edit which machines the proposer may use. Every change
+  * re-proposes synchronously; Apply is unchanged (applies the CUSTOMIZED chain).
+  *
+- * The proposal + the customization choices are ephemeral — component-local
+- * state, no store field (the store only gains the apply action; choice
+- * persistence is P3). Apply clears the preview but KEEPS the choices (session
+- * intent); Discard likewise clears the preview, keeps the choices. Solver runs
+- * are a synchronous catalog-sized DFS. Frozen design: features/propose-grows-up/
+- * p1-brainstorm.md (v7).
++ * The proposal is ephemeral — component-local state, cleared by Apply and
++ * Discard alike (both KEEP the choices: session intent). The customization
++ * choices are component state too, but as of S20 P3 (#102) the overrides, the
++ * machine exclusions and the TIER gate are SEEDED from the persisted
++ * `proposePrefs` and MIRRORED back on every change, so they survive a restart
++ * and seed every future Propose; raw markings and the clock stay ephemeral (a
++ * per-plan boundary intent and a per-run target respectively). Solver runs are
++ * a synchronous catalog-sized DFS. Frozen design: features/propose-grows-up/
++ * p1-brainstorm.md (v7), p3-brainstorm.md (v11).
+  */
+ 
+-import { useState } from "react";
++import { useState, useMemo } from "react";
+ 
+ import { Fraction } from "../core/fraction.ts";
+ import type { ChainProposal } from "../core/chain-builder.ts";
+ import { useAppStore } from "../state/store.ts";
+ import { formatRate } from "./format.ts";
+ import {
+-  EXCLUDED_MACHINE_IDS,
+   proposeChainForCatalog,
+   toProposalPreview,
+   previewRowText,
+@@ -32,8 +34,12 @@ import {
+   pickerOptionsFor,
+   excludableMachines,
+   byproductSuggestions,
++  gateCatalog,
++} from "./chain-builder-adapter.ts";
++import type {
++  ProposalPreview,
++  ConstrainedLever,
+ } from "./chain-builder-adapter.ts";
+-import type { ProposalPreview } from "./chain-builder-adapter.ts";
+ import type { Catalog, CatalogRecipe } from "../data/types.ts";
+ 
+ /**
+@@ -105,6 +111,10 @@ export function ChainBuilder() {
+     s.catalog.status === "ready" ? s.catalog.catalog : null,
+   );
+   const applyChainProposal = useAppStore((s) => s.applyChainProposal);
++  // The persisted Propose preferences (S20 P3): the SEED for the three
++  // persisted controls below, and the sink every change mirrors back to.
++  const proposePrefs = useAppStore((s) => s.proposePrefs);
++  const setProposePrefs = useAppStore((s) => s.setProposePrefs);
+ 
+   const [targetItemId, setTargetItemId] = useState("");
+   const [rateText, setRateText] = useState("");
+@@ -113,22 +123,48 @@ export function ChainBuilder() {
+   const [error, setError] = useState<string | null>(null);
+   const [preview, setPreview] = useState<Preview | null>(null);
+ 
+-  // The three customization controls (component-local; no store surface, no
+-  // persistence — P3). Stale entries are KEPT: the core validate-and-ignore
++  // The customization controls. Component state remains the live per-run truth;
++  // the three PERSISTED ones (overrides, exclusions, tier) are seeded from
++  // proposePrefs via lazy initializers and mirrored back in the same handlers
++  // that re-propose. Stale entries are KEPT: the core validate-and-ignore
+   // totality makes an override/raw whose item has left the closure inert, and a
+-  // choice "comes back" correctly if the item re-enters. excludedMachineIds is
+-  // seeded from the module constant (converter/packager).
++  // choice "comes back" correctly if the item re-enters.
+   const [overrides, setOverrides] = useState<Map<string, string>>(
+-    () => new Map(),
++    () => new Map(Object.entries(proposePrefs.overrides)),
+   );
++  // rawItemIds is deliberately NOT persisted — a raw marking is a statement
++  // about one factory ("I make this elsewhere"), not about the user.
+   const [rawItemIds, setRawItemIds] = useState<Set<string>>(() => new Set());
+   const [excludedMachineIds, setExcludedMachineIds] = useState<Set<string>>(
+-    () => new Set(EXCLUDED_MACHINE_IDS),
++    () => new Set(proposePrefs.excludedMachineIds),
++  );
++  // The propose tier gate (S20 P3); null = "all", the byte-stable default.
++  const [unlockedTier, setUnlockedTier] = useState<number | null>(
++    () => proposePrefs.unlockedTier,
+   );
+   // The one open picker at a time (component-local).
+   const [pickerItemId, setPickerItemId] = useState<string | null>(null);
+ 
+-  if (catalog === null) return null;
++  // Axis 4's FIRST derivation site: the gated world the RENDER seams read.
++  // This hook MUST sit ABOVE the null-catalog guard below and tolerate a null
++  // catalog — every other body derivation sits UNDER that guard, so the natural
++  // placement here would be a CONDITIONAL hook, and the toolchain carries no
++  // eslint-plugin-react-hooks to catch it (Blueprint.tsx:14-17 records the same
++  // hazard). Memoized because it runs per RENDER, not per propose: at a
++  // non-null tier it filters the whole recipe map on every Rate/Clock keystroke.
++  const gatedOrNull = useMemo(
++    () => (catalog === null ? null : gateCatalog(catalog, unlockedTier)),
++    [catalog, unlockedTier],
++  );
++
++  // `gatedOrNull` is non-null exactly when `catalog` is (same memo condition);
++  // the second disjunct narrows the type, it does not add a second case.
++  if (catalog === null || gatedOrNull === null) return null;
++  // Re-bound with a non-null DECLARED type so the handlers below can use it:
++  // narrowing does not flow into hoisted function declarations (which is why
++  // each handler re-checks `catalog` too). This is the `gated` world every
++  // gate-sensitive site reads.
++  const gated: Catalog = gatedOrNull;
+ 
+   // All catalog items, sorted by display name (the select's option list).
+   const items = Object.values(catalog.items).sort((a, b) =>
+@@ -148,6 +184,7 @@ export function ChainBuilder() {
+       overrides?: Map<string, string>;
+       rawItemIds?: Set<string>;
+       excludedMachineIds?: Set<string>;
++      unlockedTier?: number | null;
+     } = {},
+     force = false,
+   ): void {
+@@ -169,18 +206,29 @@ export function ChainBuilder() {
+       excludedMachineIds: patch.excludedMachineIds ?? excludedMachineIds,
+       clockPercent: parsedClock.value,
+     };
++    // Axis 4's SECOND derivation site. The tier for THIS propose rides the
++    // patch like every other control: a React binding is stale within the tick,
++    // and here that skew is dangerous — the stale world's stage recipe can be
++    // ABSENT from the new one, defeating pickerOptionsFor's force-include and
++    // leaving the picker <select> with no matching option. `!== undefined`, NOT
++    // `??`, because `null` is the meaningful "all" value.
++    const tier =
++      patch.unlockedTier !== undefined ? patch.unlockedTier : unlockedTier;
++    const gatedCat = gateCatalog(cat, tier);
+     const proposal = proposeChainForCatalog(
+-      cat,
++      gatedCat,
+       targetItemId,
+       parsed.value,
+       opts,
+     );
+     setPreview({
+       proposal,
+-      view: toProposalPreview(proposal, cat, {
++      view: toProposalPreview(proposal, gatedCat, {
+         excludedMachineIds: opts.excludedMachineIds,
+         rawItemIds: opts.rawItemIds,
+         clockPercent: opts.clockPercent,
++        // The UNGATED world, for the cause split + the lever matrix.
++        ungatedCatalog: cat,
+       }),
+       clockText,
+     });
+@@ -234,7 +282,11 @@ export function ChainBuilder() {
+    */
+   function chooseRecipe(itemId: string, recipeId: string): void {
+     if (catalog === null) return;
+-    const dflt = effectiveDefaultRecipe(catalog, itemId, excludedMachineIds);
++    // The clear rule resolves against the GATED default: the user is choosing
++    // from the gated option list, so clearing must compare against what that
++    // list calls the default — otherwise picking the gated default would set a
++    // spurious override that outlives the tier change.
++    const dflt = effectiveDefaultRecipe(gated, itemId, excludedMachineIds);
+     const next = new Map(overrides);
+     if (dflt !== null && recipeId === dflt.id) {
+       next.delete(itemId);
+@@ -242,6 +294,7 @@ export function ChainBuilder() {
+       next.set(itemId, recipeId);
+     }
+     setOverrides(next);
++    setProposePrefs({ overrides: Object.fromEntries(next) });
+     setPickerItemId(null);
+     repropose(catalog, { overrides: next });
+   }
+@@ -261,9 +314,23 @@ export function ChainBuilder() {
+     if (next.has(machineId)) next.delete(machineId);
+     else next.add(machineId);
+     setExcludedMachineIds(next);
++    setProposePrefs({ excludedMachineIds: [...next] });
+     repropose(catalog, { excludedMachineIds: next });
+   }
+ 
++  /**
++   * Change the propose TIER gate. A discrete control, so it re-proposes
++   * immediately (the P1 auto-repropose idiom, not the Rate/Clock text idiom),
++   * and the new tier MUST ride the patch — see `repropose`.
++   */
++  function onTierChange(raw: string): void {
++    if (catalog === null) return;
++    const next = raw === "" ? null : Number(raw);
++    setUnlockedTier(next);
++    setProposePrefs({ unlockedTier: next });
++    repropose(catalog, { unlockedTier: next });
++  }
++
+   const view = preview?.view ?? null;
+   // The forced (user-raw) rows drive the RAW OVERRIDES strip; natural and
+   // constrained rows render on their own lines (forced rows excluded — the strip
+@@ -273,8 +340,31 @@ export function ChainBuilder() {
+     view?.rawInputs.filter((r) => r.cause === "natural") ?? [];
+   const constrainedRaws =
+     view?.rawInputs.filter((r) => r.cause === "constrained") ?? [];
++  // UNGATED on purpose (Axis 4 carve-out): gating this list would DELETE the
++  // checkbox for an already-excluded high-tier machine, stranding that id in
++  // excludedMachineIds with no way to clear it — and the recovery wording would
++  // then point at a control the user cannot reach.
+   const machines = excludableMachines(catalog);
+ 
++  // The TIER select's options: "all" plus 0..max, where max is DERIVED from the
++  // catalog's own unlock data — never hardcoded (the max tier actually present
++  // among unlock-bearing recipes may be lower than the game's nominal range).
++  const unlockTiers = Object.values(catalog.recipeUnlocks);
++  const tierOptions =
++    unlockTiers.length === 0
++      ? []
++      : Array.from({ length: Math.max(...unlockTiers) + 1 }, (_, i) => i);
++  // Render normalization (Axis 1): a persisted tier with no matching option —
++  // above the range, or an empty unlock map — renders as "all", which is what a
++  // too-high tier already BEHAVES as (it gates nothing). Bound EXPLICITLY
++  // rather than left to `value={unlockedTier}`: the select must carry a value
++  // some option actually matches. No clamp, no write-back — nothing persists a
++  // value the user did not choose.
++  const tierSelectValue =
++    unlockedTier !== null && tierOptions.includes(unlockedTier)
++      ? String(unlockedTier)
++      : "";
++
+   return (
+     <div className="chain-builder">
+       <div className="chain-builder-controls">
+@@ -310,6 +400,22 @@ export function ChainBuilder() {
+             onChange={(e) => setClockText(e.target.value)}
+           />
+         </label>
++        <label>
++          TIER
++          <select
++            className="chain-builder-tier"
++            aria-label="unlocked tier"
++            value={tierSelectValue}
++            onChange={(e) => onTierChange(e.target.value)}
++          >
++            <option value="">all</option>
++            {tierOptions.map((t) => (
++              <option key={t} value={String(t)}>
++                {t}
++              </option>
++            ))}
++          </select>
++        </label>
+         <button type="button" onClick={onPropose}>
+           Propose
+         </button>
+@@ -384,7 +490,7 @@ export function ChainBuilder() {
+                       </span>
+                     )}
+                     <RecipePicker
+-                      catalog={catalog}
++                      catalog={gated}
+                       itemId={itemId}
+                       candidateCount={row.candidateCount}
+                       currentRecipeId={stageRecipeId(preview.proposal, itemId)}
+@@ -415,8 +521,11 @@ export function ChainBuilder() {
+               current exclusions — their OWN labeled line, in the notice styling,
+               each with an inline recovery affordance. */}
+           {constrainedRaws.map((r) => {
++            // GATED: an ungated list here would offer recipes the gated solve
++            // then validate-and-ignores — a dead control contradicting the
++            // recovery wording's own "raise TIER" advice.
+             const options = producerRecipesFor(
+-              catalog,
++              gated,
+               r.itemId,
+               excludedMachineIds,
+             );
+@@ -437,21 +546,14 @@ export function ChainBuilder() {
+                       <option value="">pick recipe…</option>
+                       {options.map((o) => (
+                         <option key={o.id} value={o.id}>
+-                          {recipeLabel(
+-                            catalog,
+-                            o,
+-                            r.itemId,
+-                            excludedMachineIds,
+-                          )}
++                          {recipeLabel(gated, o, r.itemId, excludedMachineIds)}
+                         </option>
+                       ))}
+                     </select>
+                   </>
+                 ) : (
+                   <span className="chain-builder-constrained-hint">
+-                    {" "}
+-                    — every producer's machine is excluded; edit MACHINE
+-                    EXCLUSIONS to recover.
++                    {constrainedHintText(r.lever)}
+                   </span>
+                 )}
+               </p>
+@@ -510,6 +612,32 @@ export function ChainBuilder() {
+   );
+ }
+ 
++/**
++ * The recovery wording for a constrained raw whose inline picker is empty,
++ * chosen by WHICH lever actually recovers it (S20 P3's four-cell matrix). Every
++ * cell names a control that can really fix the row: a lone MACHINE EXCLUSIONS
++ * hint on a tier-blocked item would point at a control that cannot.
++ *
++ * The "machine" cell is P1's exact string. At tier "all" the tier lever can
++ * never fire, so that is the ONLY reachable cell and the pre-P3 wording is
++ * preserved byte-for-byte — an exact reduction, not a refinement. A null lever
++ * is unreachable here (a non-empty picker renders the select branch instead);
++ * it shares the machine wording so the function stays total.
++ */
++function constrainedHintText(lever: ConstrainedLever | null): string {
++  switch (lever) {
++    case "tier":
++      return " — locked behind the TIER gate; raise TIER to recover.";
++    case "either":
++      return " — raise TIER or edit MACHINE EXCLUSIONS to recover.";
++    case "both":
++      return " — blocked by BOTH the TIER gate and MACHINE EXCLUSIONS; change both.";
++    case "machine":
++    case null:
++      return " — every producer's machine is excluded; edit MACHINE EXCLUSIONS to recover.";
++  }
++}
++
+ /**
+  * The compose-able option label for a picker recipe (Axis 4): "(alt)" on an
+  * alternate, "(default)" on the effective default when non-null, "(machine
+diff --git a/src/ui/GraphCanvas.tsx b/src/ui/GraphCanvas.tsx
+index 58e6bc7..07f39d1 100644
+--- a/src/ui/GraphCanvas.tsx
++++ b/src/ui/GraphCanvas.tsx
+@@ -355,6 +355,7 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
+       machines: {},
+       recipes: {},
+       tiers: { belt: [], pipe: [] },
++      recipeUnlocks: {},
+     };
+     return graphToFlow(
+       cat,
+diff --git a/src/ui/app.css b/src/ui/app.css
+index 4d6ff5d..73bbc72 100644
+--- a/src/ui/app.css
++++ b/src/ui/app.css
+@@ -432,6 +432,12 @@ body {
+   gap: 6px;
+ }
+ 
++/* TIER gate (S20 P3) — a short numeric select beside Rate/Clock; the option
++   list is "all" plus 0..max, so it never needs the target select's width. */
++.chain-builder-tier {
++  min-width: 5em;
++}
++
+ .chain-builder-error {
+   margin: 8px 0 0;
+   color: var(--error);
+diff --git a/src/ui/chain-builder-adapter.test.ts b/src/ui/chain-builder-adapter.test.ts
+index 7673163..943e11b 100644
+--- a/src/ui/chain-builder-adapter.test.ts
++++ b/src/ui/chain-builder-adapter.test.ts
+@@ -33,6 +33,7 @@ import {
+   producerRecipesFor,
+   pickerOptionsFor,
+   excludableMachines,
++  gateCatalog,
+ } from "./chain-builder-adapter.ts";
+ // The real bundled snapshot as raw text (Vite ?raw), parsed through the SAME
+ // pipeline the app uses — the rows guard catalog drift (renamed ids, a new
+@@ -173,6 +174,9 @@ describe("adapter — preview shaping", () => {
+         itemName: "Iron Ore",
+         rate: "120",
+         cause: "constrained",
++        // No ungatedCatalog passed ⇒ gated ≡ ungated ⇒ the tier lever cannot
++        // fire, so the four-cell matrix reduces to exactly P1's machine case.
++        lever: "machine",
+       },
+     ]);
+   });
+@@ -241,12 +245,16 @@ function synthCatalog(
+   items: CatalogItem[],
+   machines: CatalogMachine[],
+   recipes: CatalogRecipe[],
++  // Recipe id → min unlock tier (S20 P3). Empty ⇒ no recipe is gated at any
++  // tier, which is what every pre-P3 fixture wants.
++  recipeUnlocks: Record<string, number> = {},
+ ): Catalog {
+   return {
+     items: Object.fromEntries(items.map((i) => [i.id, i])),
+     machines: Object.fromEntries(machines.map((m) => [m.id, m])),
+     recipes: Object.fromEntries(recipes.map((r) => [r.id, r])),
+     tiers: { belt: [F(60)], pipe: [F(300)] },
++    recipeUnlocks,
+   };
+ }
+ 
+@@ -986,6 +994,7 @@ describe("S20 P1 — excludableMachines", () => {
+         r: crecipe("r", "R", "sm", [["ingot", 30]], [["ore", 30]]),
+       },
+       tiers: { belt: [F(60)], pipe: [F(300)] },
++      recipeUnlocks: {},
+     };
+     expect(excludableMachines(cat)).toEqual([
+       { machineId: "sm", displayName: "Smelter" },
+@@ -1329,6 +1338,242 @@ describe("S20 P1 — rawInputs cause annotation", () => {
+   });
+ });
+ 
++// ---------------------------------------------------------------------------
++// S20 P3 — tier gating (ticket #102): gateCatalog, the both-worlds cause split,
++// and the four-cell recovery lever matrix.
++// ---------------------------------------------------------------------------
++
++/** ingotCatalog with unlock tiers attached. */
++function gatedIngotCatalog(recipeUnlocks: Record<string, number>): Catalog {
++  return { ...ingotCatalog(), recipeUnlocks };
++}
++
++/** ingot is produced ONLY by alternates (no non-alternate producer exists at
++ *  all) — the shape the v2 alternate-blind predicates dropped silently. */
++function altOnlyIngotCatalog(recipeUnlocks: Record<string, number>): Catalog {
++  return synthCatalog(
++    [item("plate", "Plate"), item("ingot", "Ingot"), item("ore", "Ore")],
++    [
++      machine("constructor", 4),
++      machine("foundry", 16),
++      machine("refinery", 30),
++    ],
++    [
++      crecipe(
++        "r_plate",
++        "Plate",
++        "constructor",
++        [["plate", 20]],
++        [["ingot", 30]],
++      ),
++      crecipe(
++        "r_alt_a",
++        "Alt A",
++        "foundry",
++        [["ingot", 45]],
++        [["ore", 40]],
++        true,
++      ),
++      crecipe(
++        "r_alt_z",
++        "Alt Z",
++        "refinery",
++        [["ingot", 30]],
++        [["ore", 35]],
++        true,
++      ),
++    ],
++    recipeUnlocks,
++  );
++}
++
++describe("S20 P3 — gateCatalog", () => {
++  it("returns the SAME REFERENCE at unlockedTier null (byte-stable no-gating path)", () => {
++    const cat = gatedIngotCatalog({ r_std: 5 });
++    // Identity, not a structural copy: this is what makes the null-tier path
++    // byte-stable and the render-time derivation trivially memoizable.
++    expect(gateCatalog(cat, null)).toBe(cat);
++  });
++
++  it("filters recipes whose min unlock tier exceeds the tier", () => {
++    const cat = gatedIngotCatalog({ r_std: 0, r_alt_a: 3, r_alt_z: 7 });
++    const gated = gateCatalog(cat, 3);
++    expect(Object.keys(gated.recipes).sort()).toEqual([
++      "r_alt_a", // unlock 3 ≤ 3 — available
++      "r_plate", // NO unlock entry — nothing gates it, always available
++      "r_std", // unlock 0
++    ]);
++  });
++
++  it("carries items/machines/tiers/recipeUnlocks through untouched", () => {
++    const cat = gatedIngotCatalog({ r_std: 9 });
++    const gated = gateCatalog(cat, 0);
++    expect(gated.items).toBe(cat.items);
++    expect(gated.machines).toBe(cat.machines);
++    expect(gated.tiers).toBe(cat.tiers);
++    expect(gated.recipeUnlocks).toBe(cat.recipeUnlocks);
++  });
++
++  it("builds the gated recipes map with a null prototype (#28, third construction site)", () => {
++    // The parse and revive boundaries are pinned elsewhere; gateCatalog is a
++    // THIRD site, and a natural Object.fromEntries/spread would silently
++    // regress it for every non-null tier with no existing test to catch it.
++    const gated = gateCatalog(gatedIngotCatalog({ r_std: 0 }), 5);
++    expect(Object.getPrototypeOf(gated.recipes)).toBeNull();
++    expect(gated.recipes["constructor"]).toBeUndefined();
++  });
++});
++
++describe("S20 P3 — cause classification across the two worlds", () => {
++  it("every producer tier-gated → 'constrained', NOT 'natural'", () => {
++    // hasAnyProducer must read the UNGATED world. Against the gated world this
++    // item would look producer-less and classify "natural", silently losing
++    // its recovery line — the whole reason causeOf takes both catalogs.
++    const cat = gatedIngotCatalog({ r_std: 5, r_alt_a: 5, r_alt_z: 5 });
++    const gated = gateCatalog(cat, 0);
++    const opts = { excludedMachineIds: [] as string[] };
++    const view = toProposalPreview(
++      proposeChainForCatalog(gated, "plate", F(60), opts),
++      gated,
++      { ...opts, ungatedCatalog: cat },
++    );
++    const ingot = view.rawInputs.find((r) => r.itemId === "ingot")!;
++    expect(ingot.cause).toBe("constrained");
++  });
++
++  it("an item with no producer in EITHER world stays 'natural'", () => {
++    const cat = gatedIngotCatalog({ r_std: 5 });
++    const gated = gateCatalog(cat, 0);
++    const view = toProposalPreview(
++      proposeChainForCatalog(gated, "plate", F(60)),
++      gated,
++      { ungatedCatalog: cat },
++    );
++    // ore is a genuine extraction leaf — gating cannot make it constrained.
++    const ore = view.rawInputs.find((r) => r.itemId === "ore");
++    if (ore) expect(ore.cause).toBe("natural");
++  });
++
++  it("at tier null the classification is byte-identical to P1 (regression)", () => {
++    // gated ≡ ungated ⇒ every P1 classification is reproduced exactly. This is
++    // an exact reduction, not a refinement.
++    const cat = gatedIngotCatalog({ r_std: 5, r_alt_a: 5, r_alt_z: 5 });
++    const opts = { excludedMachineIds: ["smelter", "foundry", "refinery"] };
++    const p1 = toProposalPreview(
++      proposeChainForCatalog(ingotCatalog(), "plate", F(60), opts),
++      ingotCatalog(),
++      opts,
++    );
++    const gated = gateCatalog(cat, null);
++    const p3 = toProposalPreview(
++      proposeChainForCatalog(gated, "plate", F(60), opts),
++      gated,
++      { ...opts, ungatedCatalog: cat },
++    );
++    expect(p3.rawInputs).toEqual(p1.rawInputs);
++  });
++});
++
++describe("S20 P3 — the four-cell recovery lever matrix", () => {
++  /** The constrained ingot row's lever under `unlocks` at `tier` + exclusions. */
++  function leverFor(
++    cat: Catalog,
++    tier: number | null,
++    excludedMachineIds: string[],
++  ) {
++    const gated = gateCatalog(cat, tier);
++    const opts = { excludedMachineIds };
++    const view = toProposalPreview(
++      proposeChainForCatalog(gated, "plate", F(60), opts),
++      gated,
++      { ...opts, ungatedCatalog: cat },
++    );
++    return view.rawInputs.find((r) => r.itemId === "ingot")!;
++  }
++
++  it("TIER-only: every producer is gated out, nothing is machine-excluded", () => {
++    const row = leverFor(
++      gatedIngotCatalog({ r_std: 5, r_alt_a: 5, r_alt_z: 5 }),
++      0,
++      [],
++    );
++    expect(row.cause).toBe("constrained");
++    expect(row.lever).toBe("tier");
++  });
++
++  it("MACHINE-only: every producer's machine is excluded, nothing is gated", () => {
++    const row = leverFor(
++      gatedIngotCatalog({ r_std: 0, r_alt_a: 0, r_alt_z: 0 }),
++      9,
++      ["smelter", "foundry", "refinery"],
++    );
++    expect(row.cause).toBe("constrained");
++    expect(row.lever).toBe("machine");
++  });
++
++  it("EITHER: producers split across the two levers, so each alone recovers", () => {
++    // r_std is tier-gated but its machine is free; r_alt_a is available but its
++    // machine is excluded. Raising the tier restores r_std; clearing exclusions
++    // restores r_alt_a. r_alt_z is blocked both ways so it forces neither cell.
++    const row = leverFor(
++      gatedIngotCatalog({ r_std: 5, r_alt_a: 0, r_alt_z: 5 }),
++      0,
++      ["foundry", "refinery"],
++    );
++    expect(row.cause).toBe("constrained");
++    expect(row.lever).toBe("either");
++  });
++
++  it("BOTH: a machine-excluded producer whose recipe is ALSO tier-gated", () => {
++    // The compound case. Neither lever alone recovers, so a lone MACHINE
++    // EXCLUSIONS hint would point at a control that cannot fix it.
++    const row = leverFor(
++      gatedIngotCatalog({ r_std: 5, r_alt_a: 5, r_alt_z: 5 }),
++      0,
++      ["smelter", "foundry", "refinery"],
++    );
++    expect(row.cause).toBe("constrained");
++    expect(row.lever).toBe("both");
++  });
++
++  it("ALTERNATE-ONLY with every alternate tier-gated → TIER, and raising the tier restores the picker", () => {
++    // v2's silent-drop cell: the branch entry is alternate-INCLUSIVE, so
++    // effectiveDefaultRecipe-based predicates left this item with NO line at
++    // all — regressing the message P1 always emits.
++    const cat = altOnlyIngotCatalog({ r_alt_a: 5, r_alt_z: 5 });
++    const row = leverFor(cat, 0, []);
++    expect(row.cause).toBe("constrained");
++    expect(row.lever).toBe("tier");
++    // "Recovery" means the inline picker becomes non-empty again — P1's actual
++    // affordance, which alternates participate in.
++    expect(producerRecipesFor(gateCatalog(cat, 0), "ingot", []).length).toBe(0);
++    expect(
++      producerRecipesFor(gateCatalog(cat, 5), "ingot", []).map((r) => r.id),
++    ).toEqual(["r_alt_a", "r_alt_z"]);
++  });
++
++  it("lever is null while the inline picker still has options (P1 recovery stands)", () => {
++    // Only the smelter is excluded, so the alternates remain offerable: the
++    // picker IS the recovery and no lever wording is needed.
++    const row = leverFor(
++      gatedIngotCatalog({ r_std: 0, r_alt_a: 0, r_alt_z: 0 }),
++      9,
++      ["smelter"],
++    );
++    expect(row.cause).toBe("constrained");
++    expect(row.lever).toBe(null);
++  });
++
++  it("lever is null on non-constrained rows", () => {
++    const cat = gatedIngotCatalog({});
++    const view = toProposalPreview(
++      proposeChainForCatalog(cat, "plate", F(60)),
++      cat,
++    );
++    expect(view.rawInputs.every((r) => r.lever === null)).toBe(true);
++  });
++});
++
+ // ---------------------------------------------------------------------------
+ // S20 P2 — powerAtClockMw: the float overclock-power sum, PER-STAGE with each
+ // stage's OWN exponent (non-uniform in the snapshot). null at exactly 100.
+diff --git a/src/ui/chain-builder-adapter.ts b/src/ui/chain-builder-adapter.ts
+index fcc2849..f26daad 100644
+--- a/src/ui/chain-builder-adapter.ts
++++ b/src/ui/chain-builder-adapter.ts
+@@ -141,10 +141,31 @@ export interface ItemRateRow {
+  */
+ export type RawCause = "natural" | "forced" | "constrained";
+ 
+-/** A raw-input row with its reconstructed cause (S20 P1). */
++/**
++ * WHICH lever recovers a constrained raw whose inline picker is empty (S20 P3).
++ * "Recovery" means the inline picker becomes non-empty again — P1's actual
++ * affordance, which alternates participate in, so both predicates are
++ * ALTERNATE-INCLUSIVE (`producerRecipesFor` non-emptiness, never
++ * `effectiveDefaultRecipe`: an alternate-blind predicate drops the line P1
++ * emits today for alternate-only items).
++ *
++ * - `"machine"` — clearing exclusions alone recovers (P1's only reachable case).
++ * - `"tier"`    — raising the tier alone recovers.
++ * - `"either"`  — either lever alone recovers.
++ * - `"both"`    — neither alone does; both must change. The JOINT recovery
++ *                 always exists: the row is constrained, so a producer exists
++ *                 in the ungated data with no exclusions.
++ */
++export type ConstrainedLever = "machine" | "tier" | "either" | "both";
++
++/** A raw-input row with its reconstructed cause (S20 P1) and, for a constrained
++ *  row with no inline options left, the lever(s) that recover it (S20 P3). */
+ export interface RawInputRow extends ItemRateRow {
+   itemId: string;
+   cause: RawCause;
++  /** Non-null ONLY when `cause` is "constrained" AND the inline picker is empty
++   *  — otherwise the picker itself is the recovery and needs no wording. */
++  lever: ConstrainedLever | null;
+ }
+ 
+ /**
+@@ -224,6 +245,15 @@ export interface PreviewOptions {
+   /** The proposal's overclock target (S20 P2), threaded to `proposalMetrics` so
+    *  the cost sheet can render `Σ POWER ≈ N MW` at ≠100. Absent ⇒ 100 (exact). */
+   clockPercent?: Fraction;
++  /**
++   * The UNGATED catalog (S20 P3), when the `catalog` argument is a tier-gated
++   * projection. Cause classification needs BOTH worlds: "natural" means no
++   * producer exists in the DATA AT ALL, which only the ungated world can
++   * answer — without the split, an item whose every producer is tier-gated
++   * would misclassify "natural" and silently lose its recovery line.
++   * ABSENT ⇒ the passed catalog, so null-tier callers are byte-identical.
++   */
++  ungatedCatalog?: Catalog;
+ }
+ 
+ /**
+@@ -244,6 +274,9 @@ export function toProposalPreview(
+ ): ProposalPreview {
+   const excludedMachineIds = options.excludedMachineIds ?? EXCLUDED_MACHINE_IDS;
+   const rawItemIds = options.rawItemIds ?? new Set<string>();
++  // The second world (S20 P3). Absent ⇒ the passed catalog, so at tier "all"
++  // gated ≡ ungated and every classification below is byte-identical to P1.
++  const ungated = options.ungatedCatalog ?? catalog;
+   const itemName = (id: string): string => catalog.items[id]?.displayName ?? id;
+   const machineNameFor = (stage: ProposedStage): string => {
+     const machineId = catalog.recipes[stage.recipeId]?.machineId;
+@@ -302,8 +335,12 @@ export function toProposalPreview(
+     // forces the target raw, so a stale target raw-mark must not label the
+     // target "forced" here (the strip would offer an inert x).
+     if (itemId !== targetItemId && rawItemIds.has(itemId)) return "forced";
+-    // Has ANY primary-producing recipe at all in the catalog?
+-    const hasAnyProducer = Object.values(catalog.recipes).some(
++    // Has ANY primary-producing recipe at all in the DATA? Read the UNGATED
++    // world (S20 P3): "natural" means the game has no producer for this item,
++    // which a tier-gated projection cannot answer. Reading the gated world here
++    // would label an item whose every producer is merely tier-locked "natural"
++    // — silently losing its recovery line.
++    const hasAnyProducer = Object.values(ungated.recipes).some(
+       (r) => r.primaryOutputId === itemId,
+     );
+     if (!hasAnyProducer) return "natural";
+@@ -321,14 +358,49 @@ export function toProposalPreview(
+       : "natural";
+   };
+ 
++  /**
++   * Which lever recovers a constrained raw (S20 P3). Null unless the row is
++   * constrained AND its inline picker is empty — while `producerRecipesFor`
++   * on the gated world still has entries, that picker IS the recovery (P1,
++   * unchanged) and no wording is needed.
++   *
++   * Both predicates are ALTERNATE-INCLUSIVE, matching the branch entry: an
++   * `effectiveDefaultRecipe`-based test is alternate-blind and would drop the
++   * line entirely for an alternate-only item.
++   */
++  const leverOf = (
++    itemId: string,
++    cause: RawCause,
++  ): ConstrainedLever | null => {
++    if (cause !== "constrained") return null;
++    if (producerRecipesFor(catalog, itemId, excludedMachineIds).length > 0) {
++      return null;
++    }
++    // Raising the tier alone restores producers.
++    const tierLever =
++      producerRecipesFor(ungated, itemId, excludedMachineIds).length > 0;
++    // Clearing exclusions alone restores producers.
++    const machineLever = producerRecipesFor(catalog, itemId, []).length > 0;
++    if (tierLever && machineLever) return "either";
++    if (tierLever) return "tier";
++    if (machineLever) return "machine";
++    // Neither alone — but the JOINT recovery always exists: constrained ⇒ a
++    // producer exists ungated, so producerRecipesFor(ungated, ∅) is non-empty.
++    return "both";
++  };
++
+   return {
+     rows,
+-    rawInputs: proposal.rawInputs.map((r) => ({
+-      itemId: r.itemId,
+-      itemName: itemName(r.itemId),
+-      rate: formatRate(r.rate),
+-      cause: causeOf(r.itemId),
+-    })),
++    rawInputs: proposal.rawInputs.map((r) => {
++      const cause = causeOf(r.itemId);
++      return {
++        itemId: r.itemId,
++        itemName: itemName(r.itemId),
++        rate: formatRate(r.rate),
++        cause,
++        lever: leverOf(r.itemId, cause),
++      };
++    }),
+     byproducts: proposal.byproducts.map((b) => ({
+       itemName: itemName(b.itemId),
+       rate: formatRate(b.rate),
+@@ -519,6 +591,45 @@ export function pickerOptionsFor(
+   return [...eligible, current];
+ }
+ 
++// ---------------------------------------------------------------------------
++// S20 P3 — tier gating (ticket #102). Gating is a CATALOG PROJECTION, derived
++// once per propose and passed explicitly, rather than a tier threaded through
++// every helper's options bag: the four helpers above keep their signatures and
++// simply receive whichever world the caller wants.
++// ---------------------------------------------------------------------------
++
++/**
++ * The catalog as seen at `unlockedTier`: recipes whose MIN unlock tier exceeds
++ * it are removed. A recipe with NO `recipeUnlocks` entry is never gated (no
++ * schematic unlocks it ⇒ nothing to unlock ⇒ always available).
++ *
++ * At `unlockedTier === null` ("all") this returns the SAME REFERENCE, so the
++ * no-gating path is byte-stable and the derivation is trivially memoizable.
++ * `items`, `machines`, `tiers` and `recipeUnlocks` are carried through
++ * untouched — only `recipes` is projected.
++ *
++ * Note this returns a plain `Catalog`, so passing the gated or the ungated
++ * world typechecks identically at every call site: the wiring is pinned by
++ * tests, not by the compiler (a branded type is ticket #106).
++ */
++export function gateCatalog(
++  catalog: Catalog,
++  unlockedTier: number | null,
++): Catalog {
++  if (unlockedTier === null) return catalog;
++  // Null-prototype container (#28): this is the THIRD construction site of the
++  // recipes map (after the parse and revive boundaries), and a natural
++  // Object.fromEntries/spread would silently regress it for every non-null
++  // tier — no pre-existing test covers this one.
++  const recipes: Catalog["recipes"] = Object.create(null);
++  for (const [id, recipe] of Object.entries(catalog.recipes)) {
++    const unlock = catalog.recipeUnlocks[id];
++    if (unlock !== undefined && unlock > unlockedTier) continue;
++    recipes[id] = recipe;
++  }
++  return { ...catalog, recipes };
++}
++
+ /**
+  * The exclusions panel's machine list (Axis 2): every machine referenced by ≥1
+  * recipe's `machineId`, name-resolved (falls back to id), sorted by display
+diff --git a/src/ui/graph-flow.test.ts b/src/ui/graph-flow.test.ts
+index 8698408..748a529 100644
+--- a/src/ui/graph-flow.test.ts
++++ b/src/ui/graph-flow.test.ts
+@@ -116,6 +116,7 @@ const catalog: Catalog = {
+   machines: {},
+   recipes,
+   tiers: { belt: [], pipe: [] },
++  recipeUnlocks: {},
+ };
+ 
+ /** A solved SolveState carrying the given output/feed totals for one item. The
+diff --git a/src/ui/smoke.test.tsx b/src/ui/smoke.test.tsx
+index c1b7d95..f4f4578 100644
+--- a/src/ui/smoke.test.tsx
++++ b/src/ui/smoke.test.tsx
+@@ -1325,6 +1325,7 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
+         },
+       },
+       tiers: { belt: [], pipe: [] },
++      recipeUnlocks: {},
+     };
+     const sel: Selection = {
+       recipeId: "ingot",

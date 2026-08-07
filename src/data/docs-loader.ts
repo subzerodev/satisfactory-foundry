@@ -32,6 +32,10 @@ const NATIVE_BUILDING_REGEX =
 const NATIVE_ITEM_REGEX =
   /FG(ItemDescriptor|ResourceDescriptor|ConsumableDescriptor|EquipmentDescriptor|PowerShardDescriptor|ChainsawFuelDescriptor|AmmoType)/;
 const NATIVE_RECIPE = "FGRecipe";
+// Progression data (S20 P3, ticket #102). FGSchematic is its own native class:
+// it matches none of the filters above (no "FGRecipe" substring, no descriptor
+// or buildable prefix), so it gets its own branch below.
+const NATIVE_SCHEMATIC = "FGSchematic";
 
 /** Raw recipe fields carried through extraction; strings stay strings until
  *  the exact-Fraction post-processing step (no float ever). */
@@ -42,6 +46,16 @@ interface RawRecipe {
   product: string;
   duration: string;
   producedIn: string;
+}
+
+/**
+ * One schematic's recipe unlocks, held until the recipes map exists: the refs
+ * are normalized to catalog ids and matched against that map, and Docs.json
+ * does not guarantee FGSchematic comes after FGRecipe.
+ */
+interface RawSchematic {
+  techTier: number;
+  recipeClassNames: string[];
 }
 
 export function parseDocsJson(raw: unknown): Catalog {
@@ -56,6 +70,7 @@ export function parseDocsJson(raw: unknown): Catalog {
   const items: Record<string, CatalogItem> = Object.create(null);
   const machines: Record<string, CatalogMachine> = Object.create(null);
   const recipesRaw: RawRecipe[] = [];
+  const schematicsRaw: RawSchematic[] = [];
 
   for (const group of raw) {
     if (typeof group !== "object" || group === null) continue;
@@ -117,6 +132,33 @@ export function parseDocsJson(raw: unknown): Catalog {
           producedIn: (c.mProducedIn as string | undefined) ?? "",
         });
       }
+    } else if (nativeClass.includes(NATIVE_SCHEMATIC)) {
+      // Progression unlocks (S20 P3). EVERY mType is visited — the type is read
+      // only to be counted during design, never stored: it was MEASURED that no
+      // catalog production recipe takes a lower min-tier from a non-progression
+      // type (their BP_UnlockRecipe_C refs are building/cosmetic recipes, which
+      // the unmatched-ref skip below drops). Non-recipe unlocks (tapes, emotes,
+      // inventory slots, …) are filtered by the BP_UnlockRecipe_C check.
+      for (const cls of classes) {
+        const c = cls as Record<string, unknown>;
+        const unlocks = Array.isArray(c.mUnlocks) ? c.mUnlocks : [];
+        const recipeClassNames: string[] = [];
+        for (const unlock of unlocks) {
+          if (typeof unlock !== "object" || unlock === null) continue;
+          const u = unlock as { Class?: unknown; mRecipes?: unknown };
+          if (u.Class !== UNLOCK_RECIPE_CLASS) continue;
+          if (typeof u.mRecipes !== "string") continue;
+          for (const m of u.mRecipes.matchAll(RECIPE_REF_REGEX)) {
+            if (m[1] !== undefined) recipeClassNames.push(m[1]);
+          }
+        }
+        // A schematic unlocking no recipe carries no tier information.
+        if (recipeClassNames.length === 0) continue;
+        schematicsRaw.push({
+          techTier: parseTechTier(c.mTechTier),
+          recipeClassNames,
+        });
+      }
     }
   }
 
@@ -154,7 +196,61 @@ export function parseDocsJson(raw: unknown): Catalog {
     };
   }
 
-  return { items, machines, recipes, tiers: TIER_TABLE };
+  // Min unlock tier per catalog recipe (S20 P3). Null-prototype container (#28)
+  // — see the items/machines/recipes seeds above; this map is read by bracket
+  // access at every gating site.
+  const recipeUnlocks: Record<string, number> = Object.create(null);
+  for (const s of schematicsRaw) {
+    for (const className of s.recipeClassNames) {
+      // The RAW trailing segment is NOT the catalog id: the same normalizer
+      // that keys `recipes` above must key this map, or nothing ever matches.
+      const id = normalizeClassName(className, "Recipe_");
+      // Refs that normalize to no catalog recipe (building/cosmetic recipes)
+      // are skipped silently — by design, not by oversight.
+      if (recipes[id] === undefined) continue;
+      const prev = recipeUnlocks[id];
+      // A recipe unlocked by several schematics takes the MINIMUM tier: the
+      // earliest availability, which is the honest gate.
+      if (prev === undefined || s.techTier < prev)
+        recipeUnlocks[id] = s.techTier;
+    }
+  }
+
+  return { items, machines, recipes, tiers: TIER_TABLE, recipeUnlocks };
+}
+
+/** The `mUnlocks` entry class that carries recipe unlocks. Every other unlock
+ *  kind (tapes, emotes, inventory slots, scannables, …) is skipped. */
+const UNLOCK_RECIPE_CLASS = "BP_UnlockRecipe_C";
+
+/**
+ * Recipe class names inside an `mRecipes` tuple string. Each ref reads
+ * `…'/Game/…/Recipe_<X>.Recipe_<X>_C'` — note it ENDS in an apostrophe, so the
+ * capture EXCLUDES the quote deliberately: `normalizeClassName` splits on
+ * `[./']` and takes the last segment, so handing it a whole ref would yield the
+ * EMPTY STRING, collapsing every id and making gating a silent no-op. The
+ * capture takes the bare class name only; `matchAll` clones the regex, so the
+ * module-level `/g` lastIndex is never shared across calls.
+ */
+const RECIPE_REF_REGEX = /\.(Recipe_[A-Za-z0-9_]+_C)'/g;
+
+/**
+ * A schematic's `mTechTier` as a NON-NEGATIVE INTEGER. The game exports it as a
+ * STRING ("0".."9"); absence, a non-string/number, un-parseable garbage, and a
+ * negative or fractional value all yield 0 — the tolerant-parse posture (a
+ * schematic with an unreadable tier gates at the earliest tier rather than
+ * becoming a new parse rejection).
+ *
+ * The integer/non-negative half mirrors the store-side `validTier` sibling, and
+ * for the same reason: these values flow into the TIER option list, derived as
+ * `Math.max(...) + 1`, where a fractional max truncates the list and a negative
+ * max empties it. Not reachable from the shipped snapshot — the symmetry is the
+ * point, so a future corrupt export cannot reach the UI.
+ */
+function parseTechTier(raw: unknown): number {
+  if (typeof raw !== "string" && typeof raw !== "number") return 0;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 ? n : 0;
 }
 
 /**

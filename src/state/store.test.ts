@@ -11,6 +11,7 @@ import type { StageLink, PlanBundle } from "./store.ts";
 import { proposeChain } from "../core/chain-builder.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
 import { applyDrawnDistance } from "../ui/chain-view.ts";
+import { EXCLUDED_MACHINE_IDS } from "../ui/chain-builder-adapter.ts";
 import type { StateStorage } from "zustand/middleware";
 
 // ---------------------------------------------------------------------------
@@ -585,17 +586,26 @@ describe("re-upload re-validation (spec row 3)", () => {
 // ---------------------------------------------------------------------------
 
 describe("persistence (spec row 7)", () => {
-  it("tiers survive a store re-create via the stub; stored value is exactly {unlockedTiers} under satis_foundry:tiers", async () => {
+  it("tiers survive a store re-create via the stub; stored value is exactly {unlockedTiers, proposePrefs} under satis_foundry:tiers", async () => {
     const { storage, backing } = makeStorageStub();
     const store = createAppStore(storage);
     store.getState().setUnlockedTiers({ belt: 3, pipe: 1 });
 
-    // The stored value is written under the pinned key and carries ONLY the
-    // projected slice: { state: { unlockedTiers }, version }.
+    // The stored value is written under the pinned key and carries exactly the
+    // projected slice: { state: { unlockedTiers, proposePrefs }, version }.
+    // S20 P3 WIDENED this projection from tiers alone — the untouched
+    // proposePrefs ride along at their defaults.
     const raw = backing["satis_foundry:tiers"];
     expect(raw).toBeDefined();
     const parsed = JSON.parse(raw!);
-    expect(parsed.state).toEqual({ unlockedTiers: { belt: 3, pipe: 1 } });
+    expect(parsed.state).toEqual({
+      unlockedTiers: { belt: 3, pipe: 1 },
+      proposePrefs: {
+        overrides: {},
+        excludedMachineIds: ["converter", "packager"],
+        unlockedTier: null,
+      },
+    });
 
     // Re-create the store against the SAME backing → hydration restores tiers
     // before any action runs.
@@ -631,6 +641,160 @@ describe("persistence (spec row 7)", () => {
       belt: 6,
       pipe: 1,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Propose preferences — persistence + read-validation (S20 P3, ticket #102)
+// ---------------------------------------------------------------------------
+
+describe("proposePrefs persistence (S20 P3)", () => {
+  it("defaults to no overrides, the converter/packager exclusions, and no tier gate", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    expect(store.getState().proposePrefs).toEqual({
+      overrides: {},
+      excludedMachineIds: ["converter", "packager"],
+      unlockedTier: null,
+    });
+  });
+
+  it("the default exclusions match the adapter's EXCLUDED_MACHINE_IDS", () => {
+    // The store cannot import from the UI layer, so the default is duplicated
+    // there. This pin is what stops the two copies drifting apart silently.
+    const store = createAppStore(makeStorageStub().storage);
+    expect(store.getState().proposePrefs.excludedMachineIds).toEqual([
+      ...EXCLUDED_MACHINE_IDS,
+    ]);
+  });
+
+  it("round-trips through storage: write → new store instance on the same backing → hydrated", () => {
+    const { storage } = makeStorageStub();
+    const store = createAppStore(storage);
+    store.getState().setProposePrefs({
+      overrides: { iron_plate: "alternate_coated_iron_plate" },
+      excludedMachineIds: ["converter"],
+      unlockedTier: 4,
+    });
+
+    const store2 = createAppStore(storage);
+    expect(store2.getState().proposePrefs).toEqual({
+      overrides: { iron_plate: "alternate_coated_iron_plate" },
+      excludedMachineIds: ["converter"],
+      unlockedTier: 4,
+    });
+  });
+
+  it("setProposePrefs is a PARTIAL update — untouched fields survive", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    store.getState().setProposePrefs({ unlockedTier: 2 });
+    expect(store.getState().proposePrefs).toEqual({
+      overrides: {},
+      excludedMachineIds: ["converter", "packager"],
+      unlockedTier: 2,
+    });
+  });
+
+  it("an empty exclusion array round-trips as empty (a legitimate user choice)", () => {
+    const { storage } = makeStorageStub();
+    createAppStore(storage).getState().setProposePrefs({
+      excludedMachineIds: [],
+    });
+    expect(
+      createAppStore(storage).getState().proposePrefs.excludedMachineIds,
+    ).toEqual([]);
+  });
+
+  it("corrupt stored prefs drop to defaults", () => {
+    const { storage } = makeStorageStub({
+      "satis_foundry:tiers": JSON.stringify({
+        state: {
+          unlockedTiers: { belt: 3, pipe: 1 },
+          proposePrefs: {
+            overrides: "not an object",
+            excludedMachineIds: 7,
+            unlockedTier: "high",
+          },
+        },
+        version: 0,
+      }),
+    });
+    expect(createAppStore(storage).getState().proposePrefs).toEqual({
+      overrides: {},
+      excludedMachineIds: ["converter", "packager"],
+      unlockedTier: null,
+    });
+  });
+
+  it("drops non-string entries inside otherwise well-shaped containers", () => {
+    const { storage } = makeStorageStub({
+      "satis_foundry:tiers": JSON.stringify({
+        state: {
+          unlockedTiers: { belt: 3, pipe: 1 },
+          proposePrefs: {
+            overrides: { good: "recipe_a", bad: 42 },
+            excludedMachineIds: ["converter", 9, null],
+            unlockedTier: 1,
+          },
+        },
+        version: 0,
+      }),
+    });
+    expect(createAppStore(storage).getState().proposePrefs).toEqual({
+      overrides: { good: "recipe_a" },
+      excludedMachineIds: ["converter"],
+      unlockedTier: 1,
+    });
+  });
+
+  it.each([
+    ["a negative tier", -1],
+    ["a fractional tier", 2.5],
+    ["a non-number tier", "3"],
+    ["null (already 'all')", null],
+  ])("validates %s to null on read", (_label, stored) => {
+    // Catalog-INDEPENDENT validation. Without it a persisted -1/2.5/NaN would
+    // survive, render as "all" (no such option exists) while gating filtered
+    // out every unlock-bearing recipe — and it would be STICKY, since nothing
+    // writes back and selecting "all" fires no change event.
+    const { storage } = makeStorageStub({
+      "satis_foundry:tiers": JSON.stringify({
+        state: {
+          unlockedTiers: { belt: 3, pipe: 1 },
+          proposePrefs: {
+            overrides: {},
+            excludedMachineIds: [],
+            unlockedTier: stored,
+          },
+        },
+        version: 0,
+      }),
+    });
+    expect(createAppStore(storage).getState().proposePrefs.unlockedTier).toBe(
+      null,
+    );
+  });
+
+  it("keeps an ABOVE-RANGE tier verbatim — no clamp on read", () => {
+    // Deliberately NOT clamped: a catalog-derived bound does not exist at merge
+    // time (persist hydrates while the catalog is still 'initializing'), and a
+    // too-high tier gates nothing, so it already behaves as "all". The RENDER
+    // normalizes it, with no write-back.
+    const { storage } = makeStorageStub({
+      "satis_foundry:tiers": JSON.stringify({
+        state: {
+          unlockedTiers: { belt: 3, pipe: 1 },
+          proposePrefs: {
+            overrides: {},
+            excludedMachineIds: [],
+            unlockedTier: 999,
+          },
+        },
+        version: 0,
+      }),
+    });
+    expect(createAppStore(storage).getState().proposePrefs.unlockedTier).toBe(
+      999,
+    );
   });
 });
 

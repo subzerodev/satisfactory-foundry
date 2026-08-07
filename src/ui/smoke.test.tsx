@@ -1325,6 +1325,7 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
         },
       },
       tiers: { belt: [], pipe: [] },
+      recipeUnlocks: {},
     };
     const sel: Selection = {
       recipeId: "ingot",

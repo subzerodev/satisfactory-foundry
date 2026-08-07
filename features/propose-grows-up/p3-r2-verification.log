@@ -1,0 +1,666 @@
+S20 P3 — bidirectionality verification log (ticket #102, epic #98)
+Frozen contract: features/propose-grows-up/p3-brainstorm.md (v12)
+
+METHOD
+------
+A test that passes while the code is present proves nothing on its own — it
+may be asserting something the code does not decide. So the production
+behaviors this phase adds were verified in BOTH directions: green with the
+code present, and RED with the code deliberately broken.
+
+For each behavior below, run from a CLEAN COMMITTED tree:
+  1. assert the mutation string occurs EXACTLY ONCE in the target file
+     (so the break is precise and cannot silently miss);
+  2. apply that one mutation;
+  3. run the naming test file under vitest and record the genuine failing
+     test names, verbatim;
+  4. restore with `git checkout -- <file>`.
+After the last entry the whole suite is re-run and `git status --porcelain
+-uno` is asserted clean — TRACKED paths only. Untracked files are out of
+scope deliberately: the worktree also holds this phase's review artifacts
+(prompts and diffs), which are not part of the implementation and are not
+mine to commit or remove.
+
+A MUTATION MUST COMPILE. This is not pedantry — it is the failure that
+produced the worst entry in an earlier revision of this file. That entry
+broke `excludableMachines(catalog)` into a `gated` identifier a refactor had
+already deleted, so `ChainBuilder` threw on every render and ALL SIXTEEN
+tests in the file went red. Sixteen reads as strong coverage, which is
+exactly why it was recorded instead of investigated — but the list included
+rows that mount at `unlockedTier: null`, where `gateCatalog` returns the same
+reference and gated-vs-ungated cannot possibly be observed. The honest
+mutation is the one a real regression would look like,
+`excludableMachines(preview?.gated ?? catalog)`, which compiles — and
+measured NOTHING, because the only row that could catch it never proposed,
+so the `?? catalog` fallback fired. The property is now genuinely pinned by a
+row that proposes first, and the entry records 1. This is the second-order
+form of the class this log exists to catch: red for the wrong reason.
+
+HAZARD, learned twice the hard way: step 4 restores to HEAD, so the sweep
+must only ever run against COMMITTED work — over an uncommitted edit it
+silently reverts that edit. (Both times the suite caught it immediately and
+the work was recovered; recorded so the next operator does not repeat it.)
+
+The sweep was run from a local scratchpad harness, which is NOT in the tree.
+It needs no reconstruction from memory, though: every entry below records its
+target file and its exact before/after strings, so the whole sweep is
+replayable from this log alone.
+
+RESULT: 48 behaviors exercised — 46 are PINNED (breaking them fails at least
+one named test) and 2 are CONFIRMED BEHAVIOURAL NO-OPS, recorded with their
+proofs below rather than given a phantom assertion. No behavior is unpinned.
+
+SCOPE OF THE CLAIM — what this log does NOT cover
+-------------------------------------------------
+The "verified in both directions" claim is scoped to the behaviors LISTED
+BELOW; it is not a universal claim over the diff. Excluded:
+
+  a. The TIER select's CSS RULE (`app.css`, `min-width`). The repo has no CSS
+     test harness, so the rule was verified by reading the cascade — it had
+     collided with the preview rows' depth-marker class, whose later
+     equal-specificity rule won, killing the width and imposing the marker's
+     accent colour, mono font and letter-spacing on the control.
+     The CLASS ATTRIBUTE is a different matter and IS pinned, hard: it is the
+     tests' selector, so reverting it reddens NINE rows (entry below). The
+     control's NAMING is pinned too — the wrapping <label>, and the absence of
+     an aria-label overriding it — and needed no accessibility harness.
+  b. The STRUCTURAL two-pass ordering guard ("the schematic group may come
+     FIRST"). It guards a shape, not a line: no single-line mutation expresses
+     the single-pass alternative, so its bite is against a future refactor
+     that resolves refs during the group walk.
+  c. One deliberate FORWARD CANARY, labeled as such in the test itself
+     ("carries only non-negative integer tiers"): `parseTechTier` forces the
+     invariant for every input and this snapshot has no bad values, so it
+     cannot fail in either direction today. It exists to catch a future export.
+  d. Comments and doc citations.
+
+THE STRUCTURAL REFACTOR, AND WHAT IT DID TO THIS LEDGER
+-------------------------------------------------------
+The gated catalog rides the `Preview` record, snapshotted by `repropose`
+alongside `clockText`, because every consumer was downstream of a live
+preview. An earlier revision carried an entry for "the body memo tracks the
+tier (not just the catalog)"; that memo no longer exists, so the entry is
+gone because the hazard is gone — not because it stopped being checked. Two
+entries replace it: "the preview CARRIES the gated world it was solved
+against" (four rows) and "the pickers read the SOLVED snapshot, not the live
+tier" (one row).
+
+The refactor's headline guarantee is now pinned rather than merely asserted:
+a tier change that cannot re-propose — `repropose` returns early on an
+unparseable Rate — leaves the pickers and constrained rows describing the
+world the proposal was solved in. The TIER `<select>` is the deliberate
+exception: it binds the live tier, so it leads the solved world until the
+next successful propose. Both halves are asserted in the same row.
+
+TWO CONFIRMED NO-OPS (deliberate, not gaps)
+-------------------------------------------
+(1) SEAM :441 — `recipeLabel`'s catalog argument in the CONSTRAINED row.
+    The frozen spec predicts this and forbids a pin for it; the sweep
+    confirms the prediction empirically. `recipeLabel` uses its catalog for
+    one thing, `dflt = effectiveDefaultRecipe(catalog, …)`, and that site
+    executes only inside `constrainedRaws.map`. A row is constrained exactly
+    when `effectiveDefaultRecipe(gated, …) === null`, so under correct wiring
+    no option can carry `(default)`. Under the missed edit `dflt` is the
+    ungated default D — but constrained implies D is gated out, and the
+    options come from `producerRecipesFor(gated, …)`, so D is absent from
+    them and the tag still never fires. The site is changed for consistency;
+    the `(default)` tag is pinned where it CAN fire, on a normal stage row.
+
+(2) The TIER select's `value` binding
+    (`tierOptions.includes(t) ? String(t) : ""`).
+    MEASURED: no client-DOM assertion can discriminate it. Rendering the same
+    select with `value=""` and with `value="999"` (no matching option) yields
+    a byte-identical DOM — value "", selectedIndex 0, per-option `selected`
+    flags [true,false,false], identical innerHTML — because React flags
+    `option.selected` rather than setting `select.value`, and an unmatched
+    value leaves the DOM's own "ask for a reset" algorithm to select the
+    first option, which IS "all". The difference is real only in React's
+    SERVER renderer, which this client-rendered SPA never takes. The binding
+    is kept (it is the specced shape and keeps a server-rendered string
+    honest) and the user-visible outcome — an above-range tier displays
+    "all", with no write-back — IS pinned; only the expression is unpinnable,
+    and no test pretends otherwise. This finding produced spec v12.
+
+=================================================================
+S20 P3 bidirectionality log — generated 2026-08-07T10:59:54Z
+HEAD: f67f7b2 on feature/s20-p3
+=================================================================
+
+BASELINE (all code present):
+   Test Files  32 passed (32)
+        Tests  896 passed (896)
+
+##### spec 2 — FGSchematic parse (docs-loader.ts)
+-----------------------------------------------------------------
+BEHAVIOR: Ref capture EXCLUDES the trailing apostrophe (r4 silent-total-failure)
+  FILE:   src/data/docs-loader.ts
+  BREAK (exact, asserted unique in file):
+    - /\.(Recipe_[A-Za-z0-9_]+_C)'/g
+    + /\.(Recipe_[A-Za-z0-9_]+_C')/g
+  BROKEN: 9 failing test(s):
+      × maps a real mRecipes ref (trailing apostrophe and all) to a real catalog id — NEVER the empty string
+      × takes the MINIMUM tier when several schematic types unlock one recipe
+      × matches refs regardless of GROUP ORDER — the schematic group may come first
+      × normalizes a negative tier to 0
+      × normalizes a fractional tier to 0
+      × normalizes a non-finite tier to 0
+      × normalizes un-parseable garbage to 0
+      × normalizes an absent mTechTier to 0
+      × skips refs that normalize to no catalog recipe
+  RESTORE: git checkout -- src/data/docs-loader.ts
+-----------------------------------------------------------------
+BEHAVIOR: Refs are normalized to catalog ids, not used raw
+  FILE:   src/data/docs-loader.ts
+  BREAK (exact, asserted unique in file):
+    - const id = normalizeClassName(className, "Recipe_");
+    + const id = className;
+  BROKEN: 9 failing test(s):
+      × maps a real mRecipes ref (trailing apostrophe and all) to a real catalog id — NEVER the empty string
+      × takes the MINIMUM tier when several schematic types unlock one recipe
+      × matches refs regardless of GROUP ORDER — the schematic group may come first
+      × normalizes a negative tier to 0
+      × normalizes a fractional tier to 0
+      × normalizes a non-finite tier to 0
+      × normalizes un-parseable garbage to 0
+      × normalizes an absent mTechTier to 0
+      × skips refs that normalize to no catalog recipe
+  RESTORE: git checkout -- src/data/docs-loader.ts
+-----------------------------------------------------------------
+BEHAVIOR: A recipe unlocked several times takes the MINIMUM tier
+  FILE:   src/data/docs-loader.ts
+  BREAK (exact, asserted unique in file):
+    - if (prev === undefined || s.techTier < prev)
+    + if (true)
+  BROKEN: 1 failing test(s):
+      × takes the MINIMUM tier when several schematic types unlock one recipe
+  RESTORE: git checkout -- src/data/docs-loader.ts
+-----------------------------------------------------------------
+BEHAVIOR: Garbage/absent mTechTier parses to 0
+  FILE:   src/data/docs-loader.ts
+  BREAK (exact, asserted unique in file):
+    - return Number.isInteger(n) && n >= 0 ? n : 0;
+    + return n;
+  BROKEN: 4 failing test(s):
+      × normalizes a negative tier to 0
+      × normalizes a fractional tier to 0
+      × normalizes a non-finite tier to 0
+      × normalizes un-parseable garbage to 0
+  RESTORE: git checkout -- src/data/docs-loader.ts
+-----------------------------------------------------------------
+BEHAVIOR: Only BP_UnlockRecipe_C entries are read
+  FILE:   src/data/docs-loader.ts
+  BREAK (exact, asserted unique in file):
+    - if (u.Class !== UNLOCK_RECIPE_CLASS) continue;
+    + <deleted>
+  BROKEN: 1 failing test(s):
+      × reads only BP_UnlockRecipe_C entries — other unlock kinds are ignored
+  RESTORE: git checkout -- src/data/docs-loader.ts
+-----------------------------------------------------------------
+BEHAVIOR: Refs matching no catalog recipe are skipped
+  FILE:   src/data/docs-loader.ts
+  BREAK (exact, asserted unique in file):
+    - if (recipes[id] === undefined) continue;
+    + <deleted>
+  BROKEN: 1 failing test(s):
+      × skips refs that normalize to no catalog recipe
+  RESTORE: git checkout -- src/data/docs-loader.ts
+-----------------------------------------------------------------
+BEHAVIOR: recipeUnlocks is a null-prototype map (#28)
+  FILE:   src/data/docs-loader.ts
+  BREAK (exact, asserted unique in file):
+    - const recipeUnlocks: Record<string, number> = Object.create(null);
+    + const recipeUnlocks: Record<string, number> = {};
+  BROKEN: 1 failing test(s):
+      × builds recipeUnlocks with a null prototype
+  RESTORE: git checkout -- src/data/docs-loader.ts
+-----------------------------------------------------------------
+BEHAVIOR: mTechTier normalizes to a NON-NEGATIVE INTEGER (validTier symmetry)
+  FILE:   src/data/docs-loader.ts
+  BREAK (exact, asserted unique in file):
+    - return Number.isInteger(n) && n >= 0 ? n : 0;
+    + return Number.isFinite(n) ? n : 0;
+  BROKEN: 2 failing test(s):
+      × normalizes a negative tier to 0
+      × normalizes a fractional tier to 0
+  RESTORE: git checkout -- src/data/docs-loader.ts
+
+##### spec 2 (real data) — the same parse, against the SHIPPED snapshot
+-----------------------------------------------------------------
+BEHAVIOR: unresolvable refs are skipped — measured on the REAL snapshot
+  FILE:   src/data/docs-loader.ts
+  BREAK (exact, asserted unique in file):
+    - if (recipes[id] === undefined) continue;
+    + <deleted>
+  BROKEN: 1 failing test(s):
+      × keys them by real catalog recipe ids — never the empty string
+  RESTORE: git checkout -- src/data/docs-loader.ts
+-----------------------------------------------------------------
+BEHAVIOR: the REAL bundled snapshot yields usable recipeUnlocks + live gating
+  FILE:   src/data/docs-loader.ts
+  BREAK (exact, asserted unique in file):
+    - /\.(Recipe_[A-Za-z0-9_]+_C)'/g
+    + /\.(Recipe_[A-Za-z0-9_]+_C')/g
+  BROKEN: 2 failing test(s):
+      × parses unlock tiers for most of the real catalog's recipes
+      × actually GATES most of the real catalog at tier 0
+  RESTORE: git checkout -- src/data/docs-loader.ts
+
+##### spec 3 — cache round-trip (catalog-store.ts)
+-----------------------------------------------------------------
+BEHAVIOR: serializeCatalog WRITES recipeUnlocks (r5 second-boot failure)
+  FILE:   src/data/catalog-store.ts
+  BREAK (exact, asserted unique in file):
+    -     recipeUnlocks: { ...catalog.recipeUnlocks },
+    + <deleted>
+  BROKEN: 5 failing test(s):
+      × save → load returns a hit with Fraction-equal catalog + records a hash
+      × round-trips a bundled source on the hit
+      × defaults the source to user when saveCatalog omits it
+      × revived items/machines/recipes maps have a null prototype
+      × save → load carries recipeUnlocks NON-EMPTY, with a null prototype (S20 P3)
+  RESTORE: git checkout -- src/data/catalog-store.ts
+-----------------------------------------------------------------
+BEHAVIOR: reviveCatalog's shape guard covers recipeUnlocks
+  FILE:   src/data/catalog-store.ts
+  BREAK (exact, asserted unique in file):
+    -     typeof data.recipeUnlocks !== "object"
+    +     false
+  BROKEN: 1 failing test(s):
+      × returns stale on a stored row whose recipeUnlocks is malformed (S20 P3)
+  RESTORE: git checkout -- src/data/catalog-store.ts
+-----------------------------------------------------------------
+BEHAVIOR: reviveCatalog rebuilds recipeUnlocks null-prototype (#28)
+  FILE:   src/data/catalog-store.ts
+  BREAK (exact, asserted unique in file):
+    - const recipeUnlocks: Catalog["recipeUnlocks"] = Object.create(null);
+    + const recipeUnlocks: Catalog["recipeUnlocks"] = {};
+  BROKEN: 1 failing test(s):
+      × save → load carries recipeUnlocks NON-EMPTY, with a null prototype (S20 P3)
+  RESTORE: git checkout -- src/data/catalog-store.ts
+-----------------------------------------------------------------
+BEHAVIOR: CATALOG_PARSER_VERSION bumped to 5
+  FILE:   src/data/catalog-store.ts
+  BREAK (exact, asserted unique in file):
+    - export const CATALOG_PARSER_VERSION = 5;
+    + export const CATALOG_PARSER_VERSION = 4;
+  BROKEN: 1 failing test(s):
+      × treats a version-2 cached row as stale under the current version
+  RESTORE: git checkout -- src/data/catalog-store.ts
+
+##### spec 4 — persisted prefs (store.ts)
+-----------------------------------------------------------------
+BEHAVIOR: partialize projects proposePrefs
+  FILE:   src/state/store.ts
+  BREAK (exact, asserted unique in file):
+    -           proposePrefs: s.proposePrefs,
+    + <deleted>
+  BROKEN: 3 failing test(s):
+      × tiers survive a store re-create via the stub; stored value is exactly {unlockedTiers, proposePrefs} under satis_foundry:tiers
+      × round-trips through storage: write → new store instance on the same backing → hydrated
+      × an empty exclusion array round-trips as empty (a legitimate user choice)
+  RESTORE: git checkout -- src/state/store.ts
+-----------------------------------------------------------------
+BEHAVIOR: merge validates prefs on read
+  FILE:   src/state/store.ts
+  BREAK (exact, asserted unique in file):
+    - proposePrefs: validateProposePrefs(p?.proposePrefs),
+    + proposePrefs: (p?.proposePrefs ?? defaultProposePrefs()) as ProposePrefs,
+  BROKEN: 5 failing test(s):
+      × corrupt stored prefs drop to defaults
+      × drops non-string entries inside otherwise well-shaped containers
+      × validates a negative tier to null on read
+      × validates a fractional tier to null on read
+      × validates a non-number tier to null on read
+  RESTORE: git checkout -- src/state/store.ts
+-----------------------------------------------------------------
+BEHAVIOR: unlockedTier validates to a non-negative integer or null
+  FILE:   src/state/store.ts
+  BREAK (exact, asserted unique in file):
+    -   return Number.isInteger(value) && (value as number) >= 0
+    -     ? (value as number)
+    -     : null;
+    +   return (value ?? null) as number | null;
+  BROKEN: 4 failing test(s):
+      × corrupt stored prefs drop to defaults
+      × validates a negative tier to null on read
+      × validates a fractional tier to null on read
+      × validates a non-number tier to null on read
+  RESTORE: git checkout -- src/state/store.ts
+-----------------------------------------------------------------
+BEHAVIOR: an above-range tier is NOT clamped on read
+  FILE:   src/state/store.ts
+  BREAK (exact, asserted unique in file):
+    -     ? (value as number)
+    +     ? Math.min(value as number, 9)
+  BROKEN: 1 failing test(s):
+      × keeps an ABOVE-RANGE tier verbatim — no clamp on read
+  RESTORE: git checkout -- src/state/store.ts
+-----------------------------------------------------------------
+BEHAVIOR: setProposePrefs is a partial update
+  FILE:   src/state/store.ts
+  BREAK (exact, asserted unique in file):
+    - set((s) => ({ proposePrefs: { ...s.proposePrefs, ...patch } }));
+    + set(() => ({ proposePrefs: patch as ProposePrefs }));
+  BROKEN: 1 failing test(s):
+      × setProposePrefs is a PARTIAL update — untouched fields survive
+  RESTORE: git checkout -- src/state/store.ts
+-----------------------------------------------------------------
+BEHAVIOR: the default exclusions match the adapter constant
+  FILE:   src/state/store.ts
+  BREAK (exact, asserted unique in file):
+    -     excludedMachineIds: ["converter", "packager"],
+    +     excludedMachineIds: ["converter"],
+  BROKEN: 5 failing test(s):
+      × tiers survive a store re-create via the stub; stored value is exactly {unlockedTiers, proposePrefs} under satis_foundry:tiers
+      × defaults to no overrides, the converter/packager exclusions, and no tier gate
+      × the default exclusions match the adapter's EXCLUDED_MACHINE_IDS
+      × setProposePrefs is a PARTIAL update — untouched fields survive
+      × corrupt stored prefs drop to defaults
+  RESTORE: git checkout -- src/state/store.ts
+
+##### spec 5 — gateCatalog + both-worlds (chain-builder-adapter.ts)
+-----------------------------------------------------------------
+BEHAVIOR: gateCatalog returns the SAME REFERENCE at tier null
+  FILE:   src/ui/chain-builder-adapter.ts
+  BREAK (exact, asserted unique in file):
+    - if (unlockedTier === null) return catalog;
+    + if (unlockedTier === null) return { ...catalog };
+  BROKEN: 1 failing test(s):
+      × returns the SAME REFERENCE at unlockedTier null (byte-stable no-gating path)
+  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
+-----------------------------------------------------------------
+BEHAVIOR: gateCatalog filters recipes above the tier
+  FILE:   src/ui/chain-builder-adapter.ts
+  BREAK (exact, asserted unique in file):
+    -     if (unlock !== undefined && unlock > unlockedTier) continue;
+    + <deleted>
+  BROKEN: 7 failing test(s):
+      × actually GATES most of the real catalog at tier 0
+      × filters recipes whose min unlock tier exceeds the tier
+      × every producer tier-gated → 'constrained', NOT 'natural'
+      × TIER-only: every producer is gated out, nothing is machine-excluded
+      × EITHER: producers split across the two levers, so each alone recovers
+      × BOTH: a machine-excluded producer whose recipe is ALSO tier-gated
+      × ALTERNATE-ONLY with every alternate tier-gated → TIER, and raising the tier restores the picker
+  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
+-----------------------------------------------------------------
+BEHAVIOR: gateCatalog seeds the filtered map null-prototype (#28, 3rd site)
+  FILE:   src/ui/chain-builder-adapter.ts
+  BREAK (exact, asserted unique in file):
+    -   const recipes: Catalog["recipes"] = Object.create(null);
+    -   for (const [id, recipe] of Object.entries(catalog.recipes)) {
+    +   const recipes: Catalog["recipes"] = {};
+    +   for (const [id, recipe] of Object.entries(catalog.recipes)) {
+  BROKEN: 1 failing test(s):
+      × builds the gated recipes map with a null prototype (#28, third construction site)
+  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
+-----------------------------------------------------------------
+BEHAVIOR: causeOf reads hasAnyProducer on the UNGATED world
+  FILE:   src/ui/chain-builder-adapter.ts
+  BREAK (exact, asserted unique in file):
+    - const hasAnyProducer = Object.values(ungated.recipes).some(
+    + const hasAnyProducer = Object.values(catalog.recipes).some(
+  BROKEN: 4 failing test(s):
+      × every producer tier-gated → 'constrained', NOT 'natural'
+      × TIER-only: every producer is gated out, nothing is machine-excluded
+      × BOTH: a machine-excluded producer whose recipe is ALSO tier-gated
+      × ALTERNATE-ONLY with every alternate tier-gated → TIER, and raising the tier restores the picker
+  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
+-----------------------------------------------------------------
+BEHAVIOR: the tier lever is alternate-inclusive producerRecipesFor on ungated
+  FILE:   src/ui/chain-builder-adapter.ts
+  BREAK (exact, asserted unique in file):
+    -     const tierLever =
+    -       producerRecipesFor(ungated, itemId, excludedMachineIds).length > 0;
+    +     const tierLever = false;
+  BROKEN: 3 failing test(s):
+      × TIER-only: every producer is gated out, nothing is machine-excluded
+      × EITHER: producers split across the two levers, so each alone recovers
+      × ALTERNATE-ONLY with every alternate tier-gated → TIER, and raising the tier restores the picker
+  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
+-----------------------------------------------------------------
+BEHAVIOR: the machine lever clears exclusions on the GATED world
+  FILE:   src/ui/chain-builder-adapter.ts
+  BREAK (exact, asserted unique in file):
+    -     const machineLever = producerRecipesFor(catalog, itemId, []).length > 0;
+    +     const machineLever = false;
+  BROKEN: 3 failing test(s):
+      × marks an all-raw proposal empty (the target itself is raw)
+      × MACHINE-only: every producer's machine is excluded, nothing is gated
+      × EITHER: producers split across the two levers, so each alone recovers
+  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
+-----------------------------------------------------------------
+BEHAVIOR: lever is null while the inline picker still has options
+  FILE:   src/ui/chain-builder-adapter.ts
+  BREAK (exact, asserted unique in file):
+    -     if (producerRecipesFor(catalog, itemId, excludedMachineIds).length > 0) {
+    -       return null;
+    -     }
+    + <deleted>
+  BROKEN: 1 failing test(s):
+      × lever is null while the inline picker still has options (P1 recovery stands)
+  RESTORE: git checkout -- src/ui/chain-builder-adapter.ts
+
+##### spec 6 — ChainBuilder seams (ChainBuilder.tsx), pinned in jsdom
+-----------------------------------------------------------------
+BEHAVIOR: SEAM :387 — RecipePicker receives the GATED catalog
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    - catalog={preview.gated}
+    + catalog={catalog}
+  BROKEN: 2 failing test(s):
+      × RecipePicker prop: a tier-gated recipe is ABSENT from the rendered picker options
+      × recipeLabel via the picker prop: the GATED default carries the (default) tag
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: SEAM :418 — the constrained recovery list is GATED
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -             const options = producerRecipesFor(
+    -               preview.gated,
+    +             const options = producerRecipesFor(
+    +               catalog,
+  BROKEN: 1 failing test(s):
+      × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: SEAM :237 — the clear rule resolves against the GATED default
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -     const dflt = effectiveDefaultRecipe(
+    -       preview.gated,
+    +     const dflt = effectiveDefaultRecipe(
+    +       catalog,
+  BROKEN: 1 failing test(s):
+      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: SEAM :441 — recipeLabel in the constrained row (SPEC SAYS NO-OP)
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -                           {recipeLabel(
+    -                             preview.gated,
+    +                           {recipeLabel(
+    +                             catalog,
+  RESULT: no test failed — CONFIRMED BEHAVIOURAL NO-OP (expected; see note)
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the tier rides the repropose PATCH with !== undefined, not ??
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    - patch.unlockedTier !== undefined ? patch.unlockedTier : unlockedTier;
+    + patch.unlockedTier ?? unlockedTier;
+  BROKEN: 1 failing test(s):
+      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: repropose solves against the GATED catalog
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -     const proposal = proposeChainForCatalog(
+    -       gatedCat,
+    +     const proposal = proposeChainForCatalog(
+    +       cat,
+  BROKEN: 3 failing test(s):
+      × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
+      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
+      × staleness: a TIER change re-proposes in the NEW tier's world on that same propose
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the pickers read the SOLVED snapshot, not the live tier
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    - catalog={preview.gated}
+    + catalog={gateCatalog(catalog, unlockedTier)}
+  BROKEN: 1 failing test(s):
+      × a tier change that CANNOT re-propose leaves the SOLVED world untouched
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the preview CARRIES the gated world it was solved against
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -       gated: gatedCat,
+    +       gated: cat,
+  BROKEN: 4 failing test(s):
+      × RecipePicker prop: a tier-gated recipe is ABSENT from the rendered picker options
+      × recipeLabel via the picker prop: the GATED default carries the (default) tag
+      × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
+      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: repropose passes the UNGATED world to the preview
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -         ungatedCatalog: cat,
+    + <deleted>
+  BROKEN: 1 failing test(s):
+      × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the TIER select value binding (DOM-level NO-OP, see note)
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -     unlockedTier !== null && tierOptions.includes(unlockedTier)
+    -       ? String(unlockedTier)
+    -       : "";
+    +     unlockedTier === null ? "" : String(unlockedTier);
+  RESULT: no test failed — CONFIRMED BEHAVIOURAL NO-OP (expected; see note)
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the TIER options are DERIVED from recipeUnlocks, never hardcoded
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    - Array.from({ length: Math.max(...unlockTiers) + 1 }, (_, i) => i);
+    + Array.from({ length: 10 }, (_, i) => i);
+  BROKEN: 1 failing test(s):
+      × derives its options from recipeUnlocks (all + 0..max), never hardcoded
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: a tier change MIRRORS back to the persisted prefs
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -     setProposePrefs({ unlockedTier: next });
+    + <deleted>
+  BROKEN: 1 failing test(s):
+      × mirrors a tier change back to the persisted prefs
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: a RECIPE CHOICE mirrors back to the persisted prefs
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -     setProposePrefs({ overrides: Object.fromEntries(next) });
+    + <deleted>
+  BROKEN: 1 failing test(s):
+      × mirrors a RECIPE CHOICE back to the persisted prefs
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: a MACHINE EXCLUSION toggle mirrors back to the persisted prefs
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -     setProposePrefs({ excludedMachineIds: [...next] });
+    + <deleted>
+  BROKEN: 2 failing test(s):
+      × keeps a machine's checkbox reachable when the tier gates its every recipe
+      × mirrors a MACHINE EXCLUSION toggle back to the persisted prefs
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the overrides map is SEEDED from the persisted prefs
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    - () => new Map(Object.entries(proposePrefs.overrides)),
+    + () => new Map(),
+  BROKEN: 1 failing test(s):
+      × SEEDS the overrides map from the persisted prefs
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the exclusions panel keeps the UNGATED catalog (Axis 4 carve-out)
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -   const machines = excludableMachines(catalog);
+    +   const machines = excludableMachines(preview?.gated ?? catalog);
+  BROKEN: 1 failing test(s):
+      × keeps a machine's checkbox reachable when the tier gates its every recipe
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the TIER select's CLASS ATTRIBUTE (the tests' hook)
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    - className="chain-builder-tier-select"
+    + className="chain-builder-tier"
+  BROKEN: 9 failing test(s):
+      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
+      × staleness: a TIER change re-proposes in the NEW tier's world on that same propose
+      × a tier change that CANNOT re-propose leaves the SOLVED world untouched
+      × takes its accessible name from the WRAPPING label, with nothing overriding it
+      × derives its options from recipeUnlocks (all + 0..max), never hardcoded
+      × renders 'all' when the persisted tier has no matching option
+      × renders 'all' when the catalog carries no unlock data at all
+      × mirrors a tier change back to the persisted prefs
+      × seeds its controls from the persisted prefs
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the TIER control is named by its VISIBLE wrapping label
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -         <label>
+    -           TIER
+    +         <label>
+    +           GATE
+  BROKEN: 1 failing test(s):
+      × takes its accessible name from the WRAPPING label, with nothing overriding it
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: no aria-label overrides that visible label
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -             className="chain-builder-tier-select"
+    +             className="chain-builder-tier-select"
+    +             aria-label="unlocked tier"
+  BROKEN: 1 failing test(s):
+      × takes its accessible name from the WRAPPING label, with nothing overriding it
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the constrained TIER wording
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    - return " — locked behind the TIER gate; raise TIER to recover.";
+    + return " — no producer.";
+  BROKEN: 1 failing test(s):
+      × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the null-tier (machine) wording is P1's exact string
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    - return " — every producer's machine is excluded; edit MACHINE EXCLUSIONS to recover.";
+    + return " — machines excluded.";
+  BROKEN: 1 failing test(s):
+      × constrained recovery: at tier null the wording is P1's exact string (regression)
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+
+=================================================================
+RESTORE + re-run (all mutations reverted):
+   Test Files  32 passed (32)
+        Tests  896 passed (896)
+git status, TRACKED paths (must be clean):
+=================================================================
