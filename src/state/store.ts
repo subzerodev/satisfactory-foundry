@@ -260,6 +260,33 @@ export interface AppState {
    * uploadError, whose semantics are catalog-specific.
    */
   planError: string | null;
+  /**
+   * User-global Propose preferences (S20 P3, ticket #102) — persisted beside
+   * `unlockedTiers`, and the SEED for ChainBuilder's component-local controls
+   * (which remain the live per-run truth; these are the seed + the sink).
+   *
+   * Deliberately NOT per-plan: the ticket's framing is "applied to every future
+   * Propose", so they are a property of the USER, not of the open plan.
+   */
+  proposePrefs: ProposePrefs;
+}
+
+/**
+ * The persisted Propose preferences. Only these three: raw markings are a
+ * per-plan boundary intent ("I make this elsewhere" — about a factory, not the
+ * user) and the clock is a per-run target, so both stay ephemeral.
+ */
+export interface ProposePrefs {
+  /** Item id → chosen recipe id. Stale ids need no validation — the core's
+   *  validate-and-ignore totality makes them inert (P1 frozen). */
+  overrides: Record<string, string>;
+  /** Machine ids the proposer may not use. An EMPTY array is a legitimate
+   *  user choice (both defaults unchecked), distinct from an absent field. */
+  excludedMachineIds: string[];
+  /** The propose tier gate: `null` = "all" (no gating, the default and the
+   *  byte-stable pre-P3 behavior); otherwise recipes whose min unlock tier
+   *  exceeds it are filtered out of the propose world. */
+  unlockedTier: number | null;
 }
 
 export interface Actions {
@@ -284,6 +311,9 @@ export interface Actions {
   ): void;
   setClockPercentText(text: string): void;
   setUnlockedTiers(t: { belt: number; pipe: number }): void;
+  /** Partial-update the persisted Propose preferences (S20 P3). ChainBuilder
+   *  mirrors each control change here from the same handler that re-proposes. */
+  setProposePrefs(patch: Partial<ProposePrefs>): void;
   setOverride(
     side: "feeds" | "outputs",
     itemId: string,
@@ -937,9 +967,83 @@ export function canLink(
 /** localStorage key for the persisted tiers slice (v1). */
 const PERSIST_KEY = "satis_foundry:tiers";
 
-/** The persisted projection: top-level `{ unlockedTiers }` only. */
+/** The persisted projection: `{ unlockedTiers, proposePrefs }` (S20 P3 widened
+ *  this from tiers alone; the localStorage key is unchanged). */
 interface PersistedShape {
   unlockedTiers: { belt: number; pipe: number };
+  proposePrefs: ProposePrefs;
+}
+
+/**
+ * The default Propose preferences: no overrides, today's converter/packager
+ * exclusions, no tier gate — i.e. byte-identical to pre-P3 Propose.
+ *
+ * The exclusion ids are duplicated from `EXCLUDED_MACHINE_IDS`
+ * (src/ui/chain-builder-adapter.ts) rather than imported: the store is a lower
+ * layer than the UI and imports nothing from it. store.test.ts pins the two
+ * lists equal, so the duplication cannot drift silently.
+ */
+function defaultProposePrefs(): ProposePrefs {
+  return {
+    overrides: {},
+    excludedMachineIds: ["converter", "packager"],
+    unlockedTier: null,
+  };
+}
+
+/**
+ * Validate persisted Propose preferences on read — the `clampTier` discipline
+ * applied per field: a field whose container is the wrong shape falls back to
+ * its default, and within a well-shaped container non-conforming entries are
+ * dropped. Total: any input yields a usable ProposePrefs.
+ */
+function validateProposePrefs(value: unknown): ProposePrefs {
+  const fallback = defaultProposePrefs();
+  if (typeof value !== "object" || value === null) return fallback;
+  const p = value as Partial<Record<keyof ProposePrefs, unknown>>;
+
+  const overrides: Record<string, string> = {};
+  if (
+    typeof p.overrides === "object" &&
+    p.overrides !== null &&
+    !Array.isArray(p.overrides)
+  ) {
+    for (const [itemId, recipeId] of Object.entries(p.overrides)) {
+      if (typeof recipeId === "string") overrides[itemId] = recipeId;
+    }
+  }
+
+  // An empty array survives as empty (the user unchecked everything); only a
+  // non-array falls back to the converter/packager default.
+  const excludedMachineIds = Array.isArray(p.excludedMachineIds)
+    ? p.excludedMachineIds.filter((id): id is string => typeof id === "string")
+    : fallback.excludedMachineIds;
+
+  return {
+    overrides,
+    excludedMachineIds,
+    unlockedTier: validTier(p.unlockedTier),
+  };
+}
+
+/**
+ * A persisted tier value, or `null` for "all". CATALOG-INDEPENDENT by design —
+ * module-level facts only, so it has none of the hydration-order problem a
+ * catalog-derived bound would have (persist hydrates during `createAppStore`,
+ * while the catalog is still `initializing`).
+ *
+ * This half is NOT optional: a persisted `-1`, `2.5` or `NaN` would otherwise
+ * survive, render as "all" (no such option exists) while gating filtered out
+ * every unlock-bearing recipe — the display lying about the world, and STICKY,
+ * since nothing writes back and selecting "all" fires no change event (the
+ * control already shows it). An ABOVE-range tier is deliberately NOT clamped
+ * here: it gates nothing, so it already behaves as "all", and the render
+ * normalizes it (no write-back, no catalog dependency).
+ */
+function validTier(value: unknown): number | null {
+  return Number.isInteger(value) && (value as number) >= 0
+    ? (value as number)
+    : null;
 }
 
 /** Clamp a tier count to `[1, TIER_TABLE.<kind>.length]`, defaulting a corrupt
@@ -1117,6 +1221,9 @@ export function createAppStore(storage?: StateStorage) {
           uploadError: null,
           plans: null,
           planError: null,
+          // Overwritten by persist's `merge` during createAppStore when a
+          // stored projection exists (validated on the way in).
+          proposePrefs: defaultProposePrefs(),
 
           async init() {
             const result = await loadCatalog();
@@ -1360,6 +1467,13 @@ export function createAppStore(storage?: StateStorage) {
                 unlockedTiers: clamped,
               })),
             );
+          },
+
+          setProposePrefs(patch: Partial<ProposePrefs>) {
+            // A plain merge — no derive: these are Propose-time preferences,
+            // not solver inputs, so no stage re-solves. The persist middleware
+            // writes the widened projection on the resulting state change.
+            set((s) => ({ proposePrefs: { ...s.proposePrefs, ...patch } }));
           },
 
           setOverride(
@@ -1935,6 +2049,8 @@ export function createAppStore(storage?: StateStorage) {
         // the tiers-global invariant, so the active stage's copy is canonical).
         partialize: (s): PersistedShape => ({
           unlockedTiers: s.stages[s.activeStageId]!.selection.unlockedTiers,
+          // User-global, already flat — projected verbatim (S20 P3).
+          proposePrefs: s.proposePrefs,
         }),
         // Validating merge (runs synchronously during createAppStore, before
         // init): write the persisted tiers, clamped/defaulted, into EVERY stage
@@ -1959,6 +2075,10 @@ export function createAppStore(storage?: StateStorage) {
           return {
             ...current,
             stages,
+            // Value-validated on read, exactly like the tiers above (S20 P3):
+            // a corrupt field falls back to its default rather than reaching
+            // the propose path.
+            proposePrefs: validateProposePrefs(p?.proposePrefs),
             selection: active.selection,
             solve: active.solve,
           };
