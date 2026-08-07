@@ -98,12 +98,18 @@ interface Preview {
   clockText: string;
   /**
    * The tier-gated catalog this proposal was SOLVED against — the same
-   * snapshot posture as `clockText`, for the same reason. Every gate-sensitive
-   * render site reads it, so the pickers, the constrained rows and the
-   * proposal are guaranteed to describe ONE world: a tier change that cannot
-   * re-propose (an unparseable Rate makes `repropose` return early) leaves
-   * this untouched, rather than skewing the controls into a world the rows
-   * were never solved in. Derived once, in `repropose`.
+   * snapshot posture as `clockText`, for the same reason. Derived once, in
+   * `repropose`, and read by every gate-sensitive render site, so the STAGE
+   * PICKERS, the CONSTRAINED ROWS and the proposal always describe ONE world:
+   * a tier change that cannot re-propose (an unparseable Rate makes
+   * `repropose` return early) leaves this untouched, rather than re-rendering
+   * those surfaces against a world the rows were never solved in.
+   *
+   * The TIER `<select>` is deliberately NOT covered: it binds the live
+   * `unlockedTier`, so in exactly that stalled case the control leads the
+   * solved world until the next successful propose. That is the honest
+   * reading — the control reports what the user chose, these surfaces report
+   * what was solved — and it is pinned by its own test.
    */
   gated: Catalog;
 }
