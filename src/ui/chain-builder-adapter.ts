@@ -390,10 +390,12 @@ export function toProposalPreview(
     //
     // ALTERNATE-INCLUSIVE by construction: `effectiveDefaultRecipe` is
     // alternate-blind and would wrongly natural-ize `coal`. The flag is read
-    // off the UNGATED `items` map with the `=== true` idiom its own comment
-    // mandates (data/types.ts) — `gateCatalog` filters only `recipes` and
-    // carries `items` through untouched, so both worlds agree, but pinning the
-    // source keeps that a stated invariant rather than a coincidence.
+    // off the UNGATED `items` map with `=== true`, the spelling its own comment
+    // RECOMMENDS (data/types.ts; what that comment actually requires is
+    // truthiness-safety — never distinguishing `false` from absent — which
+    // `=== true` satisfies). `gateCatalog` filters only `recipes` and carries
+    // `items` through untouched, so both worlds agree, but pinning the source
+    // keeps that a stated invariant rather than a coincidence.
     if (
       ungated.items[itemId]?.isRawResource === true &&
       producerRecipesFor(ungated, itemId, EXCLUDED_MACHINE_IDS).length === 0 &&

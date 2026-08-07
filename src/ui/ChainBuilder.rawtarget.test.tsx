@@ -169,10 +169,14 @@ describe("S21 P0 — proposing a natural-ized raw item as the target", () => {
     // all-raw ore_iron proposal before P0 (pinned unchanged at
     // chain-builder-adapter.test.ts "marks an all-raw proposal empty"), and
     // this diff alters `cause`, never `isEmpty`.
-    expect(container.textContent).not.toContain("120/min");
-    // Discriminating replacement: the rate is not merely absent from the
-    // metrics block, it is nowhere in the preview at all — including the RAW
-    // <dd> where a natural raw's rate would normally be listed.
+    // Asserted on the bare number, not "120/min": strictly stronger, and it
+    // holds wherever the rate could surface, including any future render path
+    // that formats it differently. (Boundary r2 — the first draft justified
+    // this as reaching the RAW <dd> that "120/min" missed, which was wrong:
+    // that <dd> renders through `itemRateLineText`, which appends "/min", so
+    // within this app the two forms are co-extensive and the separate
+    // "120/min" row was simply redundant. Dropped rather than kept on a false
+    // rationale.)
     expect(container.textContent).not.toContain("120");
   });
 
@@ -196,6 +200,17 @@ describe("S21 P0 — proposing a natural-ized raw item as the target", () => {
     // 90/min, not 60: Iron Plate 60/min draws 90 Iron Ore/min.
     expect($$(".chain-builder-constrained")).toHaveLength(0);
     expect(container.textContent).not.toContain("no eligible producer");
-    expect(container.textContent).toContain("Iron Ore 90/min");
+    // SCOPED to the metrics block, not the whole container (boundary r2): the
+    // constrained line emits the byte-identical "Iron Ore 90/min", so a
+    // container-wide match would pass even when Iron Ore renders on the WRONG
+    // line, discriminating only in concert with the assertion above. Against
+    // the RAW <dd> it stands alone — VERIFIED by isolating this row under the
+    // predicate-deleted mutant with its siblings disabled, where the cell
+    // reads "Σ POWER24 MWΣ MACHINES6RAW—" (ChainBuilder.tsx:466 renders "—"
+    // when there are no natural raws). Pins "on the plain RAW line" directly
+    // rather than by elimination.
+    expect(
+      container.querySelector(".chain-builder-metrics")!.textContent,
+    ).toContain("Iron Ore 90/min");
   });
 });

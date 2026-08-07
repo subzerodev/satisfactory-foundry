@@ -27,10 +27,13 @@ export interface CatalogItem {
    * Ground truth, not recipe inference — both recipe-set heuristics died
    * misclassifying byproduct-only items (Heavy Oil Residue) and byproduct
    * resources (Water). The docs-loader sets it only for FGResourceDescriptor
-   * groups. TWO readers as of S21 P0 (#104): the raw-feed display derive
-   * (graph-flow.ts) and the adapter's raw-cause classifier (`causeOf` in
-   * chain-builder-adapter.ts), which natural-izes an extraction resource whose
-   * producers are all excluded under both policies in play.
+   * groups. TWO SEMANTIC readers as of S21 P0 (#104) — sites that branch on
+   * the flag's meaning: the raw-feed display derive (graph-flow.ts) and the
+   * adapter's raw-cause classifier (`causeOf` in chain-builder-adapter.ts),
+   * which natural-izes an extraction resource whose producers are all excluded
+   * under both policies in play. `catalog-store.ts:247,333` is NOT one of them
+   * — it only round-trips the field through serialize/revive and decides
+   * nothing, which is why it appears in the spelling list above but not here.
    */
   isRawResource?: boolean;
 }

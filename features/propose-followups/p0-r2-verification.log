@@ -195,6 +195,26 @@ precise bite of one, not a cascade.
   that the ticket's naive framing is caught and that the v2-killer row does
   double duty against the blanket rule.
 
+## Boundary r2 — a pass-either-way ASSERTION inside a biting row
+
+Mutation testing scores whole TESTS, so a row that already fails a mutant can
+still harbour an assertion that never bites. [ui-natural]'s rate check was one:
+as first written it matched `container.textContent`, and under M5 the
+constrained line emits the byte-identical `"Iron Ore 90/min"`, so it could only
+discriminate in concert with its sibling `.chain-builder-constrained` check.
+
+Now scoped to the metrics block, it pins "on the plain RAW line" DIRECTLY
+rather than by elimination. Verified by isolation probe rather than by
+argument — siblings disabled, M5 applied — where it fails on its own with:
+
+> `expected 'Σ POWER24 MWΣ MACHINES6RAW—' to contain 'Iron Ore 90/min'`
+
+i.e. the RAW `<dd>` falling back to `"—"` (`ChainBuilder.tsx:466`) exactly as
+claimed. No mutant count moved, because the row's verdict was never in doubt;
+what changed is that each of its assertions now earns its place. Worth
+recording as a distinct failure MODE: "all mutants killed" is a statement about
+tests, not about the assertions inside them.
+
 ## Named sets, not counts
 
 The central row asserts the two sets by name:
