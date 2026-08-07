@@ -241,12 +241,16 @@ function synthCatalog(
   items: CatalogItem[],
   machines: CatalogMachine[],
   recipes: CatalogRecipe[],
+  // Recipe id → min unlock tier (S20 P3). Empty ⇒ no recipe is gated at any
+  // tier, which is what every pre-P3 fixture wants.
+  recipeUnlocks: Record<string, number> = {},
 ): Catalog {
   return {
     items: Object.fromEntries(items.map((i) => [i.id, i])),
     machines: Object.fromEntries(machines.map((m) => [m.id, m])),
     recipes: Object.fromEntries(recipes.map((r) => [r.id, r])),
     tiers: { belt: [F(60)], pipe: [F(300)] },
+    recipeUnlocks,
   };
 }
 
@@ -986,6 +990,7 @@ describe("S20 P1 — excludableMachines", () => {
         r: crecipe("r", "R", "sm", [["ingot", 30]], [["ore", 30]]),
       },
       tiers: { belt: [F(60)], pipe: [F(300)] },
+      recipeUnlocks: {},
     };
     expect(excludableMachines(cat)).toEqual([
       { machineId: "sm", displayName: "Smelter" },

@@ -634,3 +634,161 @@ describe("parseDocsJson — null-prototype maps resist prototype-key collision (
     expect(Object.getPrototypeOf(cat.recipes)).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// FGSchematic unlock tiers (S20 P3, ticket #102)
+// ---------------------------------------------------------------------------
+
+/**
+ * A REAL-shape `mRecipes` tuple string for the given recipe class names — the
+ * game's own serialization, path prefix and TRAILING APOSTROPHE included. The
+ * apostrophe is the whole point: it is what makes a whole-ref normalize return
+ * the empty string, so every fixture here must carry it.
+ */
+function mRecipesRefs(...classNames: string[]): string {
+  return `(${classNames
+    .map(
+      (cn) =>
+        `"/Script/Engine.BlueprintGeneratedClass'/Game/FactoryGame/Recipes/${cn.replace(
+          /_C$/,
+          "",
+        )}.${cn}'"`,
+    )
+    .join(",")})`;
+}
+
+/** One FGSchematic class entry unlocking `classNames` at `mTechTier`. */
+function schematic(
+  mTechTier: unknown,
+  classNames: string[],
+  mType = "EST_Milestone",
+): Record<string, unknown> {
+  return {
+    ClassName: `Schematic_${mType}_C`,
+    mType,
+    mTechTier,
+    mUnlocks: [
+      { Class: "BP_UnlockRecipe_C", mRecipes: mRecipesRefs(...classNames) },
+    ],
+  };
+}
+
+/** DOCS_FRAGMENT plus an FGSchematic group carrying `schematics`. */
+function withSchematics(schematics: Record<string, unknown>[]): unknown[] {
+  return [
+    ...DOCS_FRAGMENT,
+    {
+      NativeClass: "/Script/CoreUObject.Class'/Script/FactoryGame.FGSchematic'",
+      Classes: schematics,
+    },
+  ];
+}
+
+describe("parseDocsJson — FGSchematic unlock tiers (S20 P3, spec row 8)", () => {
+  it("maps a real mRecipes ref (trailing apostrophe and all) to a real catalog id — NEVER the empty string", () => {
+    const cat = parseDocsJson(
+      withSchematics([schematic("3", ["Recipe_IngotIron_C"])]),
+    );
+    // The r4 silent-total-failure guard. normalizeClassName splits on [./'] and
+    // takes the LAST segment, so handing it a whole ref (they end in ') returns
+    // "": every id would collapse to one empty key and gating would no-op
+    // invisibly, disguised by the "empty map ⇒ the select collapses to all"
+    // tolerance. A real ref must yield a real catalog id.
+    expect(cat.recipeUnlocks[""]).toBeUndefined();
+    expect(cat.recipeUnlocks["ingot_iron"]).toBe(3);
+    expect(cat.recipes["ingot_iron"]).toBeDefined();
+  });
+
+  it("keys by the NORMALIZED catalog id — a raw class name never matches", () => {
+    const cat = parseDocsJson(
+      withSchematics([schematic("2", ["Recipe_IngotIron_C"])]),
+    );
+    // `Recipe_IngotIron_C` is NOT the catalog id (`ingot_iron` is): a
+    // literal-key parse would gate nothing, since no lookup would ever hit.
+    expect(cat.recipeUnlocks["Recipe_IngotIron_C"]).toBeUndefined();
+    expect(cat.recipeUnlocks["ingot_iron"]).toBe(2);
+  });
+
+  it("takes the MINIMUM tier when several schematic types unlock one recipe", () => {
+    const cat = parseDocsJson(
+      withSchematics([
+        // Higher tier FIRST, so last-wins would give 5 and first-wins 5 too —
+        // only a real min-merge yields 1.
+        schematic("5", ["Recipe_IngotIron_C"], "EST_Milestone"),
+        schematic("1", ["Recipe_IngotIron_C"], "EST_MAM"),
+        schematic("7", ["Recipe_IngotIron_C"], "EST_Alternate"),
+      ]),
+    );
+    expect(cat.recipeUnlocks["ingot_iron"]).toBe(1);
+  });
+
+  it("parses a garbage or absent mTechTier as 0", () => {
+    const garbage = parseDocsJson(
+      withSchematics([schematic("banana", ["Recipe_IngotIron_C"])]),
+    );
+    expect(garbage.recipeUnlocks["ingot_iron"]).toBe(0);
+    const absent = parseDocsJson(
+      withSchematics([
+        {
+          ClassName: "Schematic_NoTier_C",
+          mType: "EST_Milestone",
+          mUnlocks: [
+            {
+              Class: "BP_UnlockRecipe_C",
+              mRecipes: mRecipesRefs("Recipe_IngotIron_C"),
+            },
+          ],
+        },
+      ]),
+    );
+    expect(absent.recipeUnlocks["ingot_iron"]).toBe(0);
+  });
+
+  it("yields an EMPTY map when no schematic group is present", () => {
+    // The tolerant-parse posture: absent progression data gates nothing.
+    const cat = parseDocsJson(DOCS_FRAGMENT);
+    expect(Object.keys(cat.recipeUnlocks)).toEqual([]);
+  });
+
+  it("skips refs that normalize to no catalog recipe", () => {
+    const cat = parseDocsJson(
+      withSchematics([
+        schematic("4", ["Recipe_IngotIron_C", "Recipe_ConveyorBeltMk1_C"]),
+      ]),
+    );
+    // Building/cosmetic recipes are unmatched and dropped silently by design —
+    // and the matched sibling in the SAME schematic still lands.
+    expect(cat.recipeUnlocks["conveyor_belt_mk1"]).toBeUndefined();
+    expect(cat.recipeUnlocks["ingot_iron"]).toBe(4);
+  });
+
+  it("reads only BP_UnlockRecipe_C entries — other unlock kinds are ignored", () => {
+    const cat = parseDocsJson(
+      withSchematics([
+        {
+          ClassName: "Schematic_Tape_C",
+          mType: "EST_Milestone",
+          mTechTier: "6",
+          mUnlocks: [
+            // A non-recipe unlock carrying a recipe-shaped payload must not
+            // register a tier (tape/info unlocks are not progression gates).
+            {
+              Class: "FGUnlockTape",
+              mRecipes: mRecipesRefs("Recipe_IngotIron_C"),
+            },
+          ],
+        },
+      ]),
+    );
+    expect(cat.recipeUnlocks["ingot_iron"]).toBeUndefined();
+  });
+
+  it("builds recipeUnlocks with a null prototype", () => {
+    const cat = parseDocsJson(
+      withSchematics([schematic("1", ["Recipe_IngotIron_C"])]),
+    );
+    expect(Object.getPrototypeOf(cat.recipeUnlocks)).toBeNull();
+    // A prototype-member id misses cleanly (#28).
+    expect(cat.recipeUnlocks["constructor"]).toBeUndefined();
+  });
+});

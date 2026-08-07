@@ -28,8 +28,17 @@ const CATALOG_KEY = "current";
  * no such trigger, so the raw-feed feature stayed invisible for existing
  * users (Michael's field report). This bump supersedes that decision and
  * forces the one re-parse.
+ *
+ * 4 → 5 (S20 P3, #102): the catalog gained `recipeUnlocks` (recipe id → min
+ * schematic unlock tier), parsed from FGSchematic. Same discard-and-re-parse
+ * semantics as every prior bump, disclosed honestly: no raw Docs text is
+ * stored (only a SHA-256 hash), so a BUNDLED-catalog user self-heals via the
+ * bundled re-fetch, while an UPLOADED-Docs user falls back to the bundled
+ * catalog (the banner flips, loudly) and re-uploads once. Uploaded Docs.json
+ * carries FGSchematic identically (same game-export format), so the re-upload
+ * lands with full tier data.
  */
-export const CATALOG_PARSER_VERSION = 4;
+export const CATALOG_PARSER_VERSION = 5;
 
 /**
  * JSON-safe CatalogItem: `stackSize` is a toString() string or null. Items
@@ -85,6 +94,17 @@ interface StoredCatalogData {
   items: Record<string, StoredCatalogItem>;
   machines: Record<string, StoredCatalogMachine>;
   recipes: Record<string, StoredRecipe>;
+  /**
+   * Mirrors Catalog.recipeUnlocks (S20 P3, #102) — plain numbers, so it stores
+   * verbatim. It MUST appear in all three enumerating functions
+   * (StoredCatalogData / serializeCatalog / reviveCatalog): `tiers` is
+   * re-attachable on revive only because it is a CONSTANT, which this is not.
+   * Omitting it from the serializer alone would revive an EMPTY map on every
+   * boot after the first, and by the absent-key rule every recipe would read
+   * "always available" — gating silently no-ops. Exactly the `isRawResource`
+   * scar recorded above (ticket #57).
+   */
+  recipeUnlocks: Record<string, number>;
 }
 
 /**
@@ -204,7 +224,15 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
   for (const [id, it] of Object.entries(catalog.items)) {
     items[id] = serializeItem(it);
   }
-  return { items, machines, recipes };
+  // Plain numbers — copied verbatim, no per-entry transform. This half is NOT
+  // tsc-forced (the literal below would typecheck without it were the field
+  // optional), which is precisely why the field is REQUIRED on StoredCatalogData.
+  return {
+    items,
+    machines,
+    recipes,
+    recipeUnlocks: { ...catalog.recipeUnlocks },
+  };
 }
 
 function serializeItem(item: CatalogItem): StoredCatalogItem {
@@ -241,7 +269,8 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
     typeof data !== "object" ||
     typeof data.items !== "object" ||
     typeof data.machines !== "object" ||
-    typeof data.recipes !== "object"
+    typeof data.recipes !== "object" ||
+    typeof data.recipeUnlocks !== "object"
   ) {
     throw new Error("catalog-store: corrupted stored catalog shape.");
   }
@@ -273,12 +302,20 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
   for (const [id, it] of Object.entries(data.items)) {
     items[id] = reviveItem(it);
   }
+  // Null-prototype container (#28) — same rebuild rationale as the three maps
+  // above: gating reads this map by bracket access on recipe ids.
+  const recipeUnlocks: Catalog["recipeUnlocks"] = Object.create(null);
+  for (const [id, tier] of Object.entries(data.recipeUnlocks)) {
+    recipeUnlocks[id] = tier;
+  }
   // Tiers are always the curated table, never round-tripped through storage.
+  // recipeUnlocks is NOT such a constant — it is parsed data, so it round-trips.
   return {
     items,
     machines,
     recipes,
     tiers: TIER_TABLE,
+    recipeUnlocks,
   };
 }
 

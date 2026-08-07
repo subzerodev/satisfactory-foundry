@@ -55,6 +55,10 @@ function sampleCatalog(): Catalog {
       },
     },
     tiers: TIER_TABLE,
+    // A non-empty unlock map so the cache round-trip has something to lose
+    // (S20 P3): an empty map would revive identically whether or not the
+    // serializer wrote the field.
+    recipeUnlocks: { ingot_iron: 3 },
   };
 }
 
@@ -125,7 +129,7 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     const db = await openDb();
     const stored = await db.get<Record<string, unknown>>("catalog", "current");
     await db.put("catalog", { ...stored, parser_version: 2 }, "current");
-    expect(CATALOG_PARSER_VERSION).toBe(4);
+    expect(CATALOG_PARSER_VERSION).toBe(5);
     expect((await loadCatalog()).status).toBe("stale");
   });
 
@@ -149,7 +153,17 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     await db.put(
       "catalog",
       {
-        catalog: { items: {}, machines: {}, recipes: { bad: null } },
+        // recipeUnlocks is present and WELL-FORMED on purpose (S20 P3): the
+        // reviver's shape guard now checks it, so omitting it would make this
+        // row throw at the GUARD before `recipes` is ever walked — the test
+        // would stay green (it asserts only "stale") while the corrupt-recipe
+        // path it exists to cover silently stopped being exercised.
+        catalog: {
+          items: {},
+          machines: {},
+          recipes: { bad: null },
+          recipeUnlocks: {},
+        },
         source_hash: "x",
         cached_at: new Date().toISOString(),
         parser_version: CATALOG_PARSER_VERSION,
@@ -248,6 +262,22 @@ describe("catalog cache — null-prototype maps survive revive (#28)", () => {
     expect(result.catalog.machines["constructor"]).toBeUndefined();
     expect(result.catalog.items["constructor"]).toBeUndefined();
   });
+
+  it("save → load carries recipeUnlocks NON-EMPTY, with a null prototype (S20 P3)", async () => {
+    // The second-boot pin. The cache is FIELD-WHITELISTED, and its two halves
+    // fail ASYMMETRICALLY: reviveCatalog's return is tsc-forced, serializeCatalog
+    // is NOT. Satisfying only the compiler writes no recipeUnlocks, so every
+    // boot after the first loads an EMPTY map — and by the absent-key rule every
+    // recipe then reads "always available", so gating silently no-ops on the
+    // DOMINANT runtime path (a cache hit). The pre-existing revive pin above
+    // cannot catch it: it never inspects a field the serializer never wrote.
+    await saveCatalog("raw docs text", sampleCatalog());
+    const result = await loadCatalog();
+    expect(result.status).toBe("hit");
+    if (result.status !== "hit") return;
+    expect(result.catalog.recipeUnlocks).toEqual({ ingot_iron: 3 });
+    expect(Object.getPrototypeOf(result.catalog.recipeUnlocks)).toBeNull();
+  });
 });
 
 /** The JSON-safe shape saveCatalog would write for `sampleCatalog()`, used to
@@ -286,5 +316,11 @@ function serializedSample() {
         primaryOutputId: "iron_ingot",
       },
     },
+    // Untyped factory, so tsc does NOT force this (S20 P3): without it the
+    // revived row would throw the shape guard → "stale" and the legacy-row
+    // HIT test below would go red. Fixing the FIXTURE is the ruling — making
+    // the reviver tolerant (`data.recipeUnlocks ?? {}`) would re-open the very
+    // empty-map path the required field exists to close.
+    recipeUnlocks: { ingot_iron: 3 },
   };
 }

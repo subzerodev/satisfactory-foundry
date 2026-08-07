@@ -95,4 +95,17 @@ export interface Catalog {
   machines: Record<string, CatalogMachine>;
   recipes: Record<string, CatalogRecipe>;
   tiers: TierTable;
+  /**
+   * Recipe id → the MINIMUM `mTechTier` across every FGSchematic that unlocks
+   * it (S20 P3, ticket #102). An ABSENT key means no schematic unlocks the
+   * recipe, so nothing gates it — always available. A recipe unlocked by
+   * several schematics takes the earliest (minimum) tier: the honest gate.
+   *
+   * REQUIRED, deliberately NOT optional like `isRawResource` above. Optional
+   * would un-force `reviveCatalog`'s return, and the cache round-trip is
+   * exactly what keeps gating alive past the first boot — the recorded
+   * `isRawResource` scar (catalog-store.ts:46-50, ticket #57) is a field that
+   * silently vanished on the second boot for want of that forcing.
+   */
+  recipeUnlocks: Record<string, number>;
 }

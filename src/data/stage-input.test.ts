@@ -13,7 +13,13 @@ function catalogWith(items: Record<string, { isFluid: boolean }>): Catalog {
     // stackSize is irrelevant to toStageInput (it reads only isFluid); null.
     full[id] = { id, displayName: id, isFluid, stackSize: null };
   }
-  return { items: full, machines: {}, recipes: {}, tiers: TIER_TABLE };
+  return {
+    items: full,
+    machines: {},
+    recipes: {},
+    tiers: TIER_TABLE,
+    recipeUnlocks: {},
+  };
 }
 
 function io(itemId: string, perMinute: Fraction) {
