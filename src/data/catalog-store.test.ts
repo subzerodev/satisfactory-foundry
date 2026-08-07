@@ -173,6 +173,29 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     expect((await loadCatalog()).status).toBe("stale");
   });
 
+  it("returns stale on a stored row whose recipeUnlocks is malformed (S20 P3)", async () => {
+    // The shape guard covers the new field too, so a malformed row fails loudly
+    // through the existing catch → 'stale' path rather than reviving a
+    // half-catalog whose empty unlock map would read as "nothing is gated".
+    const db = await openDb();
+    await db.put(
+      "catalog",
+      {
+        catalog: {
+          items: {},
+          machines: {},
+          recipes: {},
+          recipeUnlocks: "not a map",
+        },
+        source_hash: "x",
+        cached_at: new Date().toISOString(),
+        parser_version: CATALOG_PARSER_VERSION,
+      },
+      "current",
+    );
+    expect((await loadCatalog()).status).toBe("stale");
+  });
+
   it("returns unavailable (not stale) on an IDB access failure (boundary r1 fold)", async () => {
     // An IDB access failure is DISTINCT from stale: the row may still hold a
     // valid user catalog we merely couldn't read, so init must not overwrite
