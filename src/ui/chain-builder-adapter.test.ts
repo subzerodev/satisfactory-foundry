@@ -61,6 +61,46 @@ describe("adapter — exclusion ids", () => {
   });
 });
 
+describe("S20 P3 — recipeUnlocks against the REAL bundled snapshot", () => {
+  // Every other FGSchematic pin in the suite is synthetic, so a future Docs
+  // export that changed the mUnlocks/mRecipes shape would leave them all green
+  // while gating silently no-ops in production — precisely the failure class
+  // this phase exists to close, on the one path the synthetic fixtures cannot
+  // guard. These assertions are deliberately structural, not exact-value pins:
+  // they must survive a game rebalance but not a shape change.
+  const unlockIds = Object.keys(catalog.recipeUnlocks);
+
+  it("parses unlock tiers for most of the real catalog's recipes", () => {
+    expect(unlockIds.length).toBeGreaterThan(
+      Object.keys(catalog.recipes).length / 2,
+    );
+  });
+
+  it("keys them by real catalog recipe ids — never the empty string", () => {
+    // The r4 silent-total-failure, checked where it would actually bite: a
+    // whole-ref normalize collapses every id to "".
+    expect(catalog.recipeUnlocks[""]).toBeUndefined();
+    for (const id of unlockIds) expect(catalog.recipes[id]).toBeDefined();
+  });
+
+  it("carries only non-negative integer tiers", () => {
+    for (const id of unlockIds) {
+      const tier = catalog.recipeUnlocks[id]!;
+      expect(Number.isInteger(tier) && tier >= 0, `${id} → ${tier}`).toBe(true);
+    }
+  });
+
+  it("actually GATES real recipes at a low tier", () => {
+    // The end-to-end proof that gating bites on shipped data: tier 0 must
+    // remove a substantial share of the catalog, and "all" must remove none.
+    const atZero = Object.keys(gateCatalog(catalog, 0).recipes).length;
+    const all = Object.keys(catalog.recipes).length;
+    expect(atZero).toBeGreaterThan(0);
+    expect(atZero).toBeLessThan(all);
+    expect(Object.keys(gateCatalog(catalog, null).recipes)).toHaveLength(all);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Bundled-catalog full-closure smoke: a deep real target terminates, is
 // deterministic, and every link arrives supply ≥ demand exactly.

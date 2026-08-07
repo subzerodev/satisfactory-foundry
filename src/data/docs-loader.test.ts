@@ -722,6 +722,35 @@ describe("parseDocsJson — FGSchematic unlock tiers (S20 P3, spec row 8)", () =
     expect(cat.recipeUnlocks["ingot_iron"]).toBe(1);
   });
 
+  it("normalizes a negative or fractional mTechTier to 0", () => {
+    // Symmetric with the store-side validTier. These values reach the TIER
+    // option list via `Math.max(...) + 1`, where a fractional max truncates the
+    // list and a negative max empties it.
+    for (const bad of ["-3", "2.5", "Infinity"]) {
+      const cat = parseDocsJson(
+        withSchematics([schematic(bad, ["Recipe_IngotIron_C"])]),
+      );
+      expect(cat.recipeUnlocks["ingot_iron"], `mTechTier ${bad}`).toBe(0);
+    }
+  });
+
+  it("matches refs regardless of GROUP ORDER — the schematic group may come first", () => {
+    // The parse is two-pass precisely because Docs.json does not guarantee
+    // FGSchematic follows FGRecipe: refs are collected during the group walk
+    // and resolved against the recipes map only once that map is complete.
+    // Every other fixture here appends the schematic group last, so this is the
+    // one that exercises the ordering the design claims to tolerate.
+    const cat = parseDocsJson([
+      {
+        NativeClass:
+          "/Script/CoreUObject.Class'/Script/FactoryGame.FGSchematic'",
+        Classes: [schematic("4", ["Recipe_IngotIron_C"])],
+      },
+      ...DOCS_FRAGMENT,
+    ]);
+    expect(cat.recipeUnlocks["ingot_iron"]).toBe(4);
+  });
+
   it("parses a garbage or absent mTechTier as 0", () => {
     const garbage = parseDocsJson(
       withSchematics([schematic("banana", ["Recipe_IngotIron_C"])]),

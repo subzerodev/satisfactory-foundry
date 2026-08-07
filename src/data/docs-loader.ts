@@ -235,15 +235,22 @@ const UNLOCK_RECIPE_CLASS = "BP_UnlockRecipe_C";
 const RECIPE_REF_REGEX = /\.(Recipe_[A-Za-z0-9_]+_C)'/g;
 
 /**
- * A schematic's `mTechTier` as a number. The game exports it as a STRING
- * ("0".."9"); absence, a non-string/number, or un-parseable garbage yields 0 —
- * the tolerant-parse posture (a schematic with an unreadable tier gates at the
- * earliest tier rather than becoming a new parse rejection).
+ * A schematic's `mTechTier` as a NON-NEGATIVE INTEGER. The game exports it as a
+ * STRING ("0".."9"); absence, a non-string/number, un-parseable garbage, and a
+ * negative or fractional value all yield 0 — the tolerant-parse posture (a
+ * schematic with an unreadable tier gates at the earliest tier rather than
+ * becoming a new parse rejection).
+ *
+ * The integer/non-negative half mirrors the store-side `validTier` sibling, and
+ * for the same reason: these values flow into the TIER option list, derived as
+ * `Math.max(...) + 1`, where a fractional max truncates the list and a negative
+ * max empties it. Not reachable from the shipped snapshot — the symmetry is the
+ * point, so a future corrupt export cannot reach the UI.
  */
 function parseTechTier(raw: unknown): number {
   if (typeof raw !== "string" && typeof raw !== "number") return 0;
   const n = Number(raw);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isInteger(n) && n >= 0 ? n : 0;
 }
 
 /**
