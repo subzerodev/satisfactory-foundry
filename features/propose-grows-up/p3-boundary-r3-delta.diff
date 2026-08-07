@@ -1,0 +1,745 @@
+diff --git a/features/propose-grows-up/p3-r2-verification.log b/features/propose-grows-up/p3-r2-verification.log
+index ab3791e..1f0b0e8 100644
+--- a/features/propose-grows-up/p3-r2-verification.log
++++ b/features/propose-grows-up/p3-r2-verification.log
+@@ -8,45 +8,69 @@ may be asserting something the code does not decide. So the production
+ behaviors this phase adds were verified in BOTH directions: green with the
+ code present, and RED with the code deliberately broken.
+ 
+-For each behavior below the harness, run from a CLEAN COMMITTED tree:
+-  1. asserts the mutation string occurs EXACTLY ONCE in the target file
++For each behavior below, run from a CLEAN COMMITTED tree:
++  1. assert the mutation string occurs EXACTLY ONCE in the target file
+      (so the break is precise and cannot silently miss);
+-  2. applies that one mutation;
+-  3. runs the naming test file under vitest and records the genuine failing
++  2. apply that one mutation;
++  3. run the naming test file under vitest and record the genuine failing
+      test names, verbatim;
+-  4. restores with `git checkout -- <file>`.
++  4. restore with `git checkout -- <file>`.
+ After the last entry the whole suite is re-run and `git status` is asserted
+-clean, so nothing below leaked into the tree. (Step 4 restores to HEAD, so
+-the harness must only ever be run against committed work — running it over
+-an uncommitted edit silently reverts that edit.)
++clean, so nothing below leaked into the tree.
+ 
+-The harness is reproducible: scratchpad/bidi.sh + scratchpad/mutate.py.
++HAZARD, learned twice the hard way: step 4 restores to HEAD, so the sweep
++must only ever run against COMMITTED work — over an uncommitted edit it
++silently reverts that edit. (Both times the suite caught it immediately and
++the work was recovered; recorded so the next operator does not repeat it.)
+ 
+-RESULT: 43 behaviors exercised — 41 are PINNED (breaking them fails at least
++The sweep was run from a local scratchpad harness, which is NOT in the tree.
++It needs no reconstruction from memory, though: every entry below records its
++target file and its exact before/after strings, so the whole sweep is
++replayable from this log alone.
++
++RESULT: 47 behaviors exercised — 45 are PINNED (breaking them fails at least
+ one named test) and 2 are CONFIRMED BEHAVIOURAL NO-OPS, recorded with their
+ proofs below rather than given a phantom assertion. No behavior is unpinned.
+ 
+ SCOPE OF THE CLAIM — what this log does NOT cover
+ -------------------------------------------------
+-The "verified in both directions" claim above is deliberately scoped to the
+-behaviors LISTED BELOW; it is not a universal claim over the diff. Three
+-kinds of change in this phase are outside it:
++The "verified in both directions" claim is scoped to the behaviors LISTED
++BELOW; it is not a universal claim over the diff. Excluded:
+ 
+-  a. PRESENTATION — the TIER select's CSS class and the removal of its
+-     aria-label. The repo has no CSS or accessibility-tree test harness, so
+-     these were verified by reading the cascade (the class had collided with
+-     the preview rows' depth marker, whose later equal-specificity rule won)
+-     rather than by mutation.
+-  b. STRUCTURAL guards — the two-pass ordering row ("the schematic group may
+-     come FIRST"). It guards a shape, not a line: no single-line mutation
+-     expresses the single-pass alternative, so the row's bite is against a
+-     future refactor that resolves refs during the group walk, and it is not
+-     listed as a mutation entry below.
+-  c. COMMENTS AND DOC CITATIONS.
++  a. The TIER select's CSS RULE (`app.css`, `min-width`). The repo has no CSS
++     test harness, so the rule was verified by reading the cascade — it had
++     collided with the preview rows' depth-marker class, whose later
++     equal-specificity rule won, killing the width and imposing the marker's
++     accent colour, mono font and letter-spacing on the control.
++     NOTE the CLASS ATTRIBUTE is a different matter and IS pinned, hard: it is
++     the tests' selector, so reverting it reddens ten rows (entry below).
++     The control's NAMING is pinned too — the wrapping <label>, and the
++     absence of an aria-label overriding it — and needed no accessibility
++     harness (two entries below). An earlier revision of this file excused
++     both under one carve-out; that was wrong in both directions.
++  b. The STRUCTURAL two-pass ordering guard ("the schematic group may come
++     FIRST"). It guards a shape, not a line: no single-line mutation expresses
++     the single-pass alternative, so its bite is against a future refactor
++     that resolves refs during the group walk.
++  c. One deliberate FORWARD CANARY, labeled as such in the test itself
++     ("carries only non-negative integer tiers"): `parseTechTier` forces the
++     invariant for every input and this snapshot has no bad values, so it
++     cannot fail in either direction today. It exists to catch a future export.
++  d. Comments and doc citations.
+ 
+-An earlier revision of this file claimed "every production behavior … in
+-BOTH directions" without these carve-outs, which was broader than the
+-evidence. Corrected here.
++WHAT THE DIFF-STAGE SIMPLIFY PASS REMOVED FROM THIS LEDGER
++----------------------------------------------------------
++An earlier revision carried an entry for "the body memo tracks the tier (not
++just the catalog)". That memo no longer exists: the gated catalog now rides
++the `Preview` record, snapshotted by `repropose` alongside `clockText`, since
++every consumer was downstream of a live preview. The entry is gone because
++the hazard is gone — not because it stopped being checked. In its place is
++"the preview CARRIES the gated world it was solved against", which reddens
++four rows. That change also dissolved the question design rounds r4-r6 argued
++over (WHERE to derive `gated`) and made a real skew unrepresentable:
++`repropose` returns early on an unparseable Rate while the tier control has
++already updated, so the pickers could previously render a world the rows were
++never solved in.
+ 
+ TWO CONFIRMED NO-OPS (deliberate, not gaps)
+ -------------------------------------------
+@@ -78,13 +102,13 @@ TWO CONFIRMED NO-OPS (deliberate, not gaps)
+     and no test pretends otherwise. This finding produced spec v12.
+ 
+ =================================================================
+-S20 P3 bidirectionality log — generated 2026-08-07T10:28:36Z
+-HEAD: bb982ed on feature/s20-p3
++S20 P3 bidirectionality log — generated 2026-08-07T10:47:55Z
++HEAD: a917718 on feature/s20-p3
+ =================================================================
+ 
+ BASELINE (all code present):
+    Test Files  32 passed (32)
+-        Tests  893 passed (893)
++        Tests  894 passed (894)
+ 
+ ##### spec 2 — FGSchematic parse (docs-loader.ts)
+ -----------------------------------------------------------------
+@@ -93,13 +117,15 @@ BEHAVIOR: Ref capture EXCLUDES the trailing apostrophe (r4 silent-total-failure)
+   BREAK (exact, asserted unique in file):
+     - /\.(Recipe_[A-Za-z0-9_]+_C)'/g
+     + /\.(Recipe_[A-Za-z0-9_]+_C')/g
+-  BROKEN: 7 failing test(s):
++  BROKEN: 9 failing test(s):
+       × maps a real mRecipes ref (trailing apostrophe and all) to a real catalog id — NEVER the empty string
+-      × keys by the NORMALIZED catalog id — a raw class name never matches
+       × takes the MINIMUM tier when several schematic types unlock one recipe
+-      × normalizes a negative or fractional mTechTier to 0
+       × matches refs regardless of GROUP ORDER — the schematic group may come first
+-      × parses a garbage or absent mTechTier as 0
++      × normalizes a negative tier to 0
++      × normalizes a fractional tier to 0
++      × normalizes a non-finite tier to 0
++      × normalizes un-parseable garbage to 0
++      × normalizes an absent mTechTier to 0
+       × skips refs that normalize to no catalog recipe
+   RESTORE: git checkout -- src/data/docs-loader.ts
+ -----------------------------------------------------------------
+@@ -108,13 +134,15 @@ BEHAVIOR: Refs are normalized to catalog ids, not used raw
+   BREAK (exact, asserted unique in file):
+     - const id = normalizeClassName(className, "Recipe_");
+     + const id = className;
+-  BROKEN: 7 failing test(s):
++  BROKEN: 9 failing test(s):
+       × maps a real mRecipes ref (trailing apostrophe and all) to a real catalog id — NEVER the empty string
+-      × keys by the NORMALIZED catalog id — a raw class name never matches
+       × takes the MINIMUM tier when several schematic types unlock one recipe
+-      × normalizes a negative or fractional mTechTier to 0
+       × matches refs regardless of GROUP ORDER — the schematic group may come first
+-      × parses a garbage or absent mTechTier as 0
++      × normalizes a negative tier to 0
++      × normalizes a fractional tier to 0
++      × normalizes a non-finite tier to 0
++      × normalizes un-parseable garbage to 0
++      × normalizes an absent mTechTier to 0
+       × skips refs that normalize to no catalog recipe
+   RESTORE: git checkout -- src/data/docs-loader.ts
+ -----------------------------------------------------------------
+@@ -132,9 +160,11 @@ BEHAVIOR: Garbage/absent mTechTier parses to 0
+   BREAK (exact, asserted unique in file):
+     - return Number.isInteger(n) && n >= 0 ? n : 0;
+     + return n;
+-  BROKEN: 2 failing test(s):
+-      × normalizes a negative or fractional mTechTier to 0
+-      × parses a garbage or absent mTechTier as 0
++  BROKEN: 4 failing test(s):
++      × normalizes a negative tier to 0
++      × normalizes a fractional tier to 0
++      × normalizes a non-finite tier to 0
++      × normalizes un-parseable garbage to 0
+   RESTORE: git checkout -- src/data/docs-loader.ts
+ -----------------------------------------------------------------
+ BEHAVIOR: Only BP_UnlockRecipe_C entries are read
+@@ -169,12 +199,22 @@ BEHAVIOR: mTechTier normalizes to a NON-NEGATIVE INTEGER (validTier symmetry)
+   BREAK (exact, asserted unique in file):
+     - return Number.isInteger(n) && n >= 0 ? n : 0;
+     + return Number.isFinite(n) ? n : 0;
+-  BROKEN: 1 failing test(s):
+-      × normalizes a negative or fractional mTechTier to 0
++  BROKEN: 2 failing test(s):
++      × normalizes a negative tier to 0
++      × normalizes a fractional tier to 0
+   RESTORE: git checkout -- src/data/docs-loader.ts
+ 
+ ##### spec 2 (real data) — the same parse, against the SHIPPED snapshot
+ -----------------------------------------------------------------
++BEHAVIOR: unresolvable refs are skipped — measured on the REAL snapshot
++  FILE:   src/data/docs-loader.ts
++  BREAK (exact, asserted unique in file):
++    - if (recipes[id] === undefined) continue;
++    + <deleted>
++  BROKEN: 1 failing test(s):
++      × keys them by real catalog recipe ids — never the empty string
++  RESTORE: git checkout -- src/data/docs-loader.ts
++-----------------------------------------------------------------
+ BEHAVIOR: the REAL bundled snapshot yields usable recipeUnlocks + live gating
+   FILE:   src/data/docs-loader.ts
+   BREAK (exact, asserted unique in file):
+@@ -182,7 +222,7 @@ BEHAVIOR: the REAL bundled snapshot yields usable recipeUnlocks + live gating
+     + /\.(Recipe_[A-Za-z0-9_]+_C')/g
+   BROKEN: 2 failing test(s):
+       × parses unlock tiers for most of the real catalog's recipes
+-      × actually GATES real recipes at a low tier
++      × actually GATES most of the real catalog at tier 0
+   RESTORE: git checkout -- src/data/docs-loader.ts
+ 
+ ##### spec 3 — cache round-trip (catalog-store.ts)
+@@ -315,7 +355,7 @@ BEHAVIOR: gateCatalog filters recipes above the tier
+     -     if (unlock !== undefined && unlock > unlockedTier) continue;
+     + <deleted>
+   BROKEN: 7 failing test(s):
+-      × actually GATES real recipes at a low tier
++      × actually GATES most of the real catalog at tier 0
+       × filters recipes whose min unlock tier exceeds the tier
+       × every producer tier-gated → 'constrained', NOT 'natural'
+       × TIER-only: every producer is gated out, nothing is machine-excluded
+@@ -386,19 +426,18 @@ BEHAVIOR: lever is null while the inline picker still has options
+ BEHAVIOR: SEAM :387 — RecipePicker receives the GATED catalog
+   FILE:   src/ui/ChainBuilder.tsx
+   BREAK (exact, asserted unique in file):
+-    - catalog={gated}
++    - catalog={preview.gated}
+     + catalog={catalog}
+-  BROKEN: 3 failing test(s):
++  BROKEN: 2 failing test(s):
+       × RecipePicker prop: a tier-gated recipe is ABSENT from the rendered picker options
+       × recipeLabel via the picker prop: the GATED default carries the (default) tag
+-      × the render seams follow a TIER change too, not just the propose
+   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+ -----------------------------------------------------------------
+ BEHAVIOR: SEAM :418 — the constrained recovery list is GATED
+   FILE:   src/ui/ChainBuilder.tsx
+   BREAK (exact, asserted unique in file):
+     -             const options = producerRecipesFor(
+-    -               gated,
++    -               preview.gated,
+     +             const options = producerRecipesFor(
+     +               catalog,
+   BROKEN: 1 failing test(s):
+@@ -408,8 +447,10 @@ BEHAVIOR: SEAM :418 — the constrained recovery list is GATED
+ BEHAVIOR: SEAM :237 — the clear rule resolves against the GATED default
+   FILE:   src/ui/ChainBuilder.tsx
+   BREAK (exact, asserted unique in file):
+-    - const dflt = effectiveDefaultRecipe(gated, itemId, excludedMachineIds);
+-    + const dflt = effectiveDefaultRecipe(catalog, itemId, excludedMachineIds);
++    -     const dflt = effectiveDefaultRecipe(
++    -       preview.gated,
++    +     const dflt = effectiveDefaultRecipe(
++    +       catalog,
+   BROKEN: 1 failing test(s):
+       × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
+   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+@@ -417,8 +458,10 @@ BEHAVIOR: SEAM :237 — the clear rule resolves against the GATED default
+ BEHAVIOR: SEAM :441 — recipeLabel in the constrained row (SPEC SAYS NO-OP)
+   FILE:   src/ui/ChainBuilder.tsx
+   BREAK (exact, asserted unique in file):
+-    - {recipeLabel(gated, o, r.itemId, excludedMachineIds)}
+-    + {recipeLabel(catalog, o, r.itemId, excludedMachineIds)}
++    -                           {recipeLabel(
++    -                             preview.gated,
++    +                           {recipeLabel(
++    +                             catalog,
+   RESULT: no test failed — CONFIRMED BEHAVIOURAL NO-OP (expected; see note)
+   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+ -----------------------------------------------------------------
+@@ -444,22 +487,25 @@ BEHAVIOR: repropose solves against the GATED catalog
+       × staleness: a TIER change re-proposes in the NEW tier's world on that same propose
+   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+ -----------------------------------------------------------------
+-BEHAVIOR: repropose passes the UNGATED world to the preview
++BEHAVIOR: the preview CARRIES the gated world it was solved against
+   FILE:   src/ui/ChainBuilder.tsx
+   BREAK (exact, asserted unique in file):
+-    -         ungatedCatalog: cat,
+-    + <deleted>
+-  BROKEN: 1 failing test(s):
++    -       gated: gatedCat,
++    +       gated: cat,
++  BROKEN: 4 failing test(s):
++      × RecipePicker prop: a tier-gated recipe is ABSENT from the rendered picker options
++      × recipeLabel via the picker prop: the GATED default carries the (default) tag
+       × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
++      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
+   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+ -----------------------------------------------------------------
+-BEHAVIOR: the body memo tracks the tier (not just the catalog)
++BEHAVIOR: repropose passes the UNGATED world to the preview
+   FILE:   src/ui/ChainBuilder.tsx
+   BREAK (exact, asserted unique in file):
+-    -     [catalog, unlockedTier],
+-    +     [catalog],
++    -         ungatedCatalog: cat,
++    + <deleted>
+   BROKEN: 1 failing test(s):
+-      × the render seams follow a TIER change too, not just the propose
++      × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
+   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+ -----------------------------------------------------------------
+ BEHAVIOR: the TIER select value binding (DOM-level NO-OP, see note)
+@@ -522,10 +568,62 @@ BEHAVIOR: the exclusions panel keeps the UNGATED catalog (Axis 4 carve-out)
+   BREAK (exact, asserted unique in file):
+     -   const machines = excludableMachines(catalog);
+     +   const machines = excludableMachines(gated);
+-  BROKEN: 1 failing test(s):
++  BROKEN: 16 failing test(s):
++      × RecipePicker prop: a tier-gated recipe is ABSENT from the rendered picker options
++      × RecipePicker prop: the same recipes ARE offered at tier 'all'
++      × recipeLabel via the picker prop: the GATED default carries the (default) tag
++      × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
++      × constrained recovery: at tier null the wording is P1's exact string (regression)
++      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
++      × staleness: a TIER change re-proposes in the NEW tier's world on that same propose
++      × takes its accessible name from the WRAPPING label, with nothing overriding it
++      × derives its options from recipeUnlocks (all + 0..max), never hardcoded
++      × renders 'all' when the persisted tier has no matching option
++      × renders 'all' when the catalog carries no unlock data at all
++      × mirrors a tier change back to the persisted prefs
++      × mirrors a RECIPE CHOICE back to the persisted prefs
++      × mirrors a MACHINE EXCLUSION toggle back to the persisted prefs
++      × SEEDS the overrides map from the persisted prefs
+       × seeds its controls from the persisted prefs
+   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+ -----------------------------------------------------------------
++BEHAVIOR: the TIER select's CLASS ATTRIBUTE (the tests' hook)
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    - className="chain-builder-tier-select"
++    + className="chain-builder-tier"
++  BROKEN: 8 failing test(s):
++      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
++      × staleness: a TIER change re-proposes in the NEW tier's world on that same propose
++      × takes its accessible name from the WRAPPING label, with nothing overriding it
++      × derives its options from recipeUnlocks (all + 0..max), never hardcoded
++      × renders 'all' when the persisted tier has no matching option
++      × renders 'all' when the catalog carries no unlock data at all
++      × mirrors a tier change back to the persisted prefs
++      × seeds its controls from the persisted prefs
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: the TIER control is named by its VISIBLE wrapping label
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    -         <label>
++    -           TIER
++    +         <label>
++    +           GATE
++  BROKEN: 1 failing test(s):
++      × takes its accessible name from the WRAPPING label, with nothing overriding it
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
++BEHAVIOR: no aria-label overrides that visible label
++  FILE:   src/ui/ChainBuilder.tsx
++  BREAK (exact, asserted unique in file):
++    -             className="chain-builder-tier-select"
++    +             className="chain-builder-tier-select"
++    +             aria-label="unlocked tier"
++  BROKEN: 1 failing test(s):
++      × takes its accessible name from the WRAPPING label, with nothing overriding it
++  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
++-----------------------------------------------------------------
+ BEHAVIOR: the constrained TIER wording
+   FILE:   src/ui/ChainBuilder.tsx
+   BREAK (exact, asserted unique in file):
+@@ -547,6 +645,10 @@ BEHAVIOR: the null-tier (machine) wording is P1's exact string
+ =================================================================
+ RESTORE + re-run (all mutations reverted):
+    Test Files  32 passed (32)
+-        Tests  893 passed (893)
++        Tests  894 passed (894)
+ git status (must be clean):
++  ?? features/propose-grows-up/p3-boundary-r2-delta.diff
++  ?? features/propose-grows-up/p3-boundary-r2-prompt.md
++  ?? features/propose-grows-up/p3-boundary-r2.diff
++  ?? features/propose-grows-up/p3-diff-simplify-prompt.md
+ =================================================================
+diff --git a/src/data/docs-loader.test.ts b/src/data/docs-loader.test.ts
+index 2eb662f..6a0fd5b 100644
+--- a/src/data/docs-loader.test.ts
++++ b/src/data/docs-loader.test.ts
+@@ -697,16 +697,9 @@ describe("parseDocsJson — FGSchematic unlock tiers (S20 P3, spec row 8)", () =
+     expect(cat.recipeUnlocks[""]).toBeUndefined();
+     expect(cat.recipeUnlocks["ingot_iron"]).toBe(3);
+     expect(cat.recipes["ingot_iron"]).toBeDefined();
+-  });
+-
+-  it("keys by the NORMALIZED catalog id — a raw class name never matches", () => {
+-    const cat = parseDocsJson(
+-      withSchematics([schematic("2", ["Recipe_IngotIron_C"])]),
+-    );
+-    // `Recipe_IngotIron_C` is NOT the catalog id (`ingot_iron` is): a
++    // …and the RAW class name is not the catalog id, so it never matches: a
+     // literal-key parse would gate nothing, since no lookup would ever hit.
+     expect(cat.recipeUnlocks["Recipe_IngotIron_C"]).toBeUndefined();
+-    expect(cat.recipeUnlocks["ingot_iron"]).toBe(2);
+   });
+ 
+   it("takes the MINIMUM tier when several schematic types unlock one recipe", () => {
+@@ -722,18 +715,6 @@ describe("parseDocsJson — FGSchematic unlock tiers (S20 P3, spec row 8)", () =
+     expect(cat.recipeUnlocks["ingot_iron"]).toBe(1);
+   });
+ 
+-  it("normalizes a negative or fractional mTechTier to 0", () => {
+-    // Symmetric with the store-side validTier. These values reach the TIER
+-    // option list via `Math.max(...) + 1`, where a fractional max truncates the
+-    // list and a negative max empties it.
+-    for (const bad of ["-3", "2.5", "Infinity"]) {
+-      const cat = parseDocsJson(
+-        withSchematics([schematic(bad, ["Recipe_IngotIron_C"])]),
+-      );
+-      expect(cat.recipeUnlocks["ingot_iron"], `mTechTier ${bad}`).toBe(0);
+-    }
+-  });
+-
+   it("matches refs regardless of GROUP ORDER — the schematic group may come first", () => {
+     // The parse is two-pass precisely because Docs.json does not guarantee
+     // FGSchematic follows FGRecipe: refs are collected during the group walk
+@@ -751,26 +732,20 @@ describe("parseDocsJson — FGSchematic unlock tiers (S20 P3, spec row 8)", () =
+     expect(cat.recipeUnlocks["ingot_iron"]).toBe(4);
+   });
+ 
+-  it("parses a garbage or absent mTechTier as 0", () => {
+-    const garbage = parseDocsJson(
+-      withSchematics([schematic("banana", ["Recipe_IngotIron_C"])]),
+-    );
+-    expect(garbage.recipeUnlocks["ingot_iron"]).toBe(0);
+-    const absent = parseDocsJson(
+-      withSchematics([
+-        {
+-          ClassName: "Schematic_NoTier_C",
+-          mType: "EST_Milestone",
+-          mUnlocks: [
+-            {
+-              Class: "BP_UnlockRecipe_C",
+-              mRecipes: mRecipesRefs("Recipe_IngotIron_C"),
+-            },
+-          ],
+-        },
+-      ]),
++  it.each([
++    ["a negative tier", "-3"],
++    ["a fractional tier", "2.5"],
++    ["a non-finite tier", "Infinity"],
++    ["un-parseable garbage", "banana"],
++    ["an absent mTechTier", undefined],
++  ])("normalizes %s to 0", (_label, raw) => {
++    // One fallback branch, one row per input class. Non-negative INTEGER is the
++    // contract (mirroring the store-side validTier): a fractional tier would
++    // truncate the derived TIER option list and a negative one would empty it.
++    const cat = parseDocsJson(
++      withSchematics([schematic(raw, ["Recipe_IngotIron_C"])]),
+     );
+-    expect(absent.recipeUnlocks["ingot_iron"]).toBe(0);
++    expect(cat.recipeUnlocks["ingot_iron"]).toBe(0);
+   });
+ 
+   it("yields an EMPTY map when no schematic group is present", () => {
+diff --git a/src/ui/ChainBuilder.gating.test.tsx b/src/ui/ChainBuilder.gating.test.tsx
+index 9161bf2..179deb0 100644
+--- a/src/ui/ChainBuilder.gating.test.tsx
++++ b/src/ui/ChainBuilder.gating.test.tsx
+@@ -415,24 +415,6 @@ describe("S20 P3 seams — the gated world reaches the render (jsdom)", () => {
+     expect(appStore.getState().proposePrefs.overrides).toEqual({});
+   });
+ 
+-  it("the render seams follow a TIER change too, not just the propose", () => {
+-    // The body derivation is memoized on [catalog, unlockedTier]. Were the tier
+-    // dropped from those deps, `gated` would freeze at the tier of the first
+-    // render — the propose would still be correct (it derives its own world
+-    // from the patch), so ONLY a render-seam assertion catches it: the picker
+-    // would keep offering the old tier's recipes indefinitely.
+-    mount(splitCatalog(), { unlockedTier: null });
+-    propose();
+-    expect(openPickerOptions("Ingot").some((l) => l.startsWith("Delta"))).toBe(
+-      true,
+-    );
+-
+-    chooseOption(tierSelect(), "0");
+-    const afterLabels = openPickerOptions("Ingot");
+-    expect(afterLabels.some((l) => l.startsWith("Delta"))).toBe(false);
+-    expect(afterLabels.some((l) => l.startsWith("Bravo"))).toBe(true);
+-  });
+-
+   it("staleness: a TIER change re-proposes in the NEW tier's world on that same propose", () => {
+     // The r4 pin. `unlockedTier` is stale within the tick, so a `gated` derived
+     // from the state binding would gate at the OLD tier on the very propose the
+@@ -447,6 +429,19 @@ describe("S20 P3 seams — the gated world reaches the render (jsdom)", () => {
+ });
+ 
+ describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () => {
++  it("takes its accessible name from the WRAPPING label, with nothing overriding it", () => {
++    // The control is named the way its three sibling controls are — by the
++    // <label> it sits inside — rather than by an aria-label, which would win
++    // over the visible text. Both halves are pinned: lose the wrapper and
++    // `closest` returns null; re-add an aria-label and the last line fails.
++    // No accessibility-tree harness is needed for either.
++    mount(splitCatalog(), { unlockedTier: null });
++    const label = tierSelect().closest("label");
++    expect(label).not.toBeNull();
++    expect(label!.textContent!.startsWith("TIER")).toBe(true);
++    expect(tierSelect().getAttribute("aria-label")).toBeNull();
++  });
++
+   it("derives its options from recipeUnlocks (all + 0..max), never hardcoded", () => {
+     mount(splitCatalog(), { unlockedTier: null });
+     expect(
+@@ -484,11 +479,6 @@ describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () =>
+     ).toEqual(["all"]);
+   });
+ 
+-  it("renders the persisted tier when it IS among the options", () => {
+-    mount(splitCatalog(), { unlockedTier: 2 });
+-    expect(selectedTierLabel()).toBe("2");
+-  });
+-
+   it("mirrors a tier change back to the persisted prefs", () => {
+     mount(splitCatalog(), { unlockedTier: null });
+     chooseOption(tierSelect(), "3");
+diff --git a/src/ui/ChainBuilder.tsx b/src/ui/ChainBuilder.tsx
+index 81a74d6..46d39a6 100644
+--- a/src/ui/ChainBuilder.tsx
++++ b/src/ui/ChainBuilder.tsx
+@@ -17,7 +17,7 @@
+  * p1-brainstorm.md (v7), p3-brainstorm.md (v12).
+  */
+ 
+-import { useState, useMemo } from "react";
++import { useState } from "react";
+ 
+ import { Fraction } from "../core/fraction.ts";
+ import type { ChainProposal } from "../core/chain-builder.ts";
+@@ -96,6 +96,16 @@ interface Preview {
+    * for — the applied graph must carry the clock its counts assumed.
+    */
+   clockText: string;
++  /**
++   * The tier-gated catalog this proposal was SOLVED against — the same
++   * snapshot posture as `clockText`, for the same reason. Every gate-sensitive
++   * render site reads it, so the pickers, the constrained rows and the
++   * proposal are guaranteed to describe ONE world: a tier change that cannot
++   * re-propose (an unparseable Rate makes `repropose` return early) leaves
++   * this untouched, rather than skewing the controls into a world the rows
++   * were never solved in. Derived once, in `repropose`.
++   */
++  gated: Catalog;
+ }
+ 
+ /** The stage row for `itemId` in the current preview, or undefined. */
+@@ -145,26 +155,7 @@ export function ChainBuilder() {
+   // The one open picker at a time (component-local).
+   const [pickerItemId, setPickerItemId] = useState<string | null>(null);
+ 
+-  // Axis 4's FIRST derivation site: the gated world the RENDER seams read.
+-  // This hook MUST sit ABOVE the null-catalog guard below and tolerate a null
+-  // catalog — every other body derivation sits UNDER that guard, so the natural
+-  // placement here would be a CONDITIONAL hook, and the toolchain carries no
+-  // eslint-plugin-react-hooks to catch it (Blueprint.tsx:14-17 records the same
+-  // hazard). Memoized because it runs per RENDER, not per propose: at a
+-  // non-null tier it filters the whole recipe map on every Rate/Clock keystroke.
+-  const gatedOrNull = useMemo(
+-    () => (catalog === null ? null : gateCatalog(catalog, unlockedTier)),
+-    [catalog, unlockedTier],
+-  );
+-
+-  // `gatedOrNull` is non-null exactly when `catalog` is (same memo condition);
+-  // the second disjunct narrows the type, it does not add a second case.
+-  if (catalog === null || gatedOrNull === null) return null;
+-  // Re-bound with a non-null DECLARED type so the handlers below can use it:
+-  // narrowing does not flow into hoisted function declarations (which is why
+-  // each handler re-checks `catalog` too). This is the `gated` world every
+-  // gate-sensitive site reads.
+-  const gated: Catalog = gatedOrNull;
++  if (catalog === null) return null;
+ 
+   // All catalog items, sorted by display name (the select's option list).
+   const items = Object.values(catalog.items).sort((a, b) =>
+@@ -206,12 +197,13 @@ export function ChainBuilder() {
+       excludedMachineIds: patch.excludedMachineIds ?? excludedMachineIds,
+       clockPercent: parsedClock.value,
+     };
+-    // Axis 4's SECOND derivation site. The tier for THIS propose rides the
+-    // patch like every other control: a React binding is stale within the tick,
+-    // and here that skew is dangerous — the stale world's stage recipe can be
+-    // ABSENT from the new one, defeating pickerOptionsFor's force-include and
+-    // leaving the picker <select> with no matching option. `!== undefined`, NOT
+-    // `??`, because `null` is the meaningful "all" value.
++    // The ONE gating derivation. The tier for this propose rides the patch like
++    // every other control: a React binding is stale within the tick, and here
++    // that skew is dangerous — the stale world's stage recipe can be ABSENT
++    // from the new one, defeating pickerOptionsFor's force-include and leaving
++    // the picker <select> with no matching option. `!== undefined`, NOT `??`,
++    // because `null` is the meaningful "all" value. The result is snapshotted
++    // onto the preview below, so every render site reads this exact world.
+     const tier =
+       patch.unlockedTier !== undefined ? patch.unlockedTier : unlockedTier;
+     const gatedCat = gateCatalog(cat, tier);
+@@ -231,6 +223,7 @@ export function ChainBuilder() {
+         ungatedCatalog: cat,
+       }),
+       clockText,
++      gated: gatedCat,
+     });
+   }
+ 
+@@ -282,11 +275,20 @@ export function ChainBuilder() {
+    */
+   function chooseRecipe(itemId: string, recipeId: string): void {
+     if (catalog === null) return;
++    // Only ever reached from the picker or a constrained row, both of which
++    // render inside the preview block — so the preview (and its gated world)
++    // always exists here; the guard is for narrowing, in the same idiom as the
++    // catalog check above.
++    if (preview === null) return;
+     // The clear rule resolves against the GATED default: the user is choosing
+     // from the gated option list, so clearing must compare against what that
+     // list calls the default — otherwise picking the gated default would set a
+     // spurious override that outlives the tier change.
+-    const dflt = effectiveDefaultRecipe(gated, itemId, excludedMachineIds);
++    const dflt = effectiveDefaultRecipe(
++      preview.gated,
++      itemId,
++      excludedMachineIds,
++    );
+     const next = new Map(overrides);
+     if (dflt !== null && recipeId === dflt.id) {
+       next.delete(itemId);
+@@ -489,7 +491,7 @@ export function ChainBuilder() {
+                       </span>
+                     )}
+                     <RecipePicker
+-                      catalog={gated}
++                      catalog={preview.gated}
+                       itemId={itemId}
+                       candidateCount={row.candidateCount}
+                       currentRecipeId={stageRecipeId(preview.proposal, itemId)}
+@@ -524,7 +526,7 @@ export function ChainBuilder() {
+             // then validate-and-ignores — a dead control contradicting the
+             // recovery wording's own "raise TIER" advice.
+             const options = producerRecipesFor(
+-              gated,
++              preview.gated,
+               r.itemId,
+               excludedMachineIds,
+             );
+@@ -545,7 +547,12 @@ export function ChainBuilder() {
+                       <option value="">pick recipe…</option>
+                       {options.map((o) => (
+                         <option key={o.id} value={o.id}>
+-                          {recipeLabel(gated, o, r.itemId, excludedMachineIds)}
++                          {recipeLabel(
++                            preview.gated,
++                            o,
++                            r.itemId,
++                            excludedMachineIds,
++                          )}
+                         </option>
+                       ))}
+                     </select>
+diff --git a/src/ui/chain-builder-adapter.test.ts b/src/ui/chain-builder-adapter.test.ts
+index fe4b8f7..c8dfc83 100644
+--- a/src/ui/chain-builder-adapter.test.ts
++++ b/src/ui/chain-builder-adapter.test.ts
+@@ -66,8 +66,11 @@ describe("S20 P3 — recipeUnlocks against the REAL bundled snapshot", () => {
+   // export that changed the mUnlocks/mRecipes shape would leave them all green
+   // while gating silently no-ops in production — precisely the failure class
+   // this phase exists to close, on the one path the synthetic fixtures cannot
+-  // guard. These assertions are deliberately structural, not exact-value pins:
+-  // they must survive a game rebalance but not a shape change.
++  // guard. The assertions are deliberately structural, not exact-value: they
++  // must survive a game rebalance but not a shape change. Three of the four
++  // bite on a mutation TODAY (each recorded in the phase's verification log);
++  // the fourth is a FORWARD CANARY over data this snapshot cannot produce, and
++  // is labeled as one rather than claimed as a pin.
+   const unlockIds = Object.keys(catalog.recipeUnlocks);
+ 
+   it("parses unlock tiers for most of the real catalog's recipes", () => {
+@@ -77,26 +80,35 @@ describe("S20 P3 — recipeUnlocks against the REAL bundled snapshot", () => {
+   });
+ 
+   it("keys them by real catalog recipe ids — never the empty string", () => {
+-    // The r4 silent-total-failure, checked where it would actually bite: a
+-    // whole-ref normalize collapses every id to "".
++    // MEASURED bite: deleting the unresolvable-ref skip in docs-loader, which
++    // is what keeps building/cosmetic refs (and any id that normalizes to "")
++    // out of the map. NOT the r4 apostrophe bug — under r4 the map comes out
++    // EMPTY, so both assertions below hold vacuously and this row stays green;
++    // r4 is caught by the two rows that require the map to be populated.
+     expect(catalog.recipeUnlocks[""]).toBeUndefined();
+     for (const id of unlockIds) expect(catalog.recipes[id]).toBeDefined();
+   });
+ 
+-  it("carries only non-negative integer tiers", () => {
++  it("carries only non-negative integer tiers (FORWARD CANARY, not a pin)", () => {
++    // Cannot fail against this snapshot in either direction: parseTechTier
++    // forces the invariant for every input, and every mTechTier here is a
++    // plain "0".."9". Kept deliberately, to catch a FUTURE export carrying
++    // fractional/negative tiers — which would reach the TIER option list. It
++    // earns no entry in the verification log, because no mutation makes it red.
+     for (const id of unlockIds) {
+       const tier = catalog.recipeUnlocks[id]!;
+       expect(Number.isInteger(tier) && tier >= 0, `${id} → ${tier}`).toBe(true);
+     }
+   });
+ 
+-  it("actually GATES real recipes at a low tier", () => {
+-    // The end-to-end proof that gating bites on shipped data: tier 0 must
+-    // remove a substantial share of the catalog, and "all" must remove none.
++  it("actually GATES most of the real catalog at tier 0", () => {
++    // The end-to-end proof that gating bites on shipped data. The share is
++    // asserted, not just non-emptiness: tier 0 must leave under half the
++    // catalog standing (measured: 87 of 290 remain), while "all" removes none.
+     const atZero = Object.keys(gateCatalog(catalog, 0).recipes).length;
+     const all = Object.keys(catalog.recipes).length;
+     expect(atZero).toBeGreaterThan(0);
+-    expect(atZero).toBeLessThan(all);
++    expect(atZero * 2).toBeLessThan(all);
+     expect(Object.keys(gateCatalog(catalog, null).recipes)).toHaveLength(all);
+   });
+ });
+@@ -1482,7 +1494,11 @@ describe("S20 P3 — cause classification across the two worlds", () => {
+   });
+ 
+   it("an item with no producer in EITHER world stays 'natural'", () => {
+-    const cat = gatedIngotCatalog({ r_std: 5 });
++    // The ALTERNATES are gated, not the default — so ingot is still produced at
++    // tier 0 and the closure actually reaches ore. (Gating r_std instead would
++    // collapse ingot to raw, prune ore from the closure entirely, and leave
++    // this row asserting nothing at all.)
++    const cat = gatedIngotCatalog({ r_alt_a: 5, r_alt_z: 5 });
+     const gated = gateCatalog(cat, 0);
+     const view = toProposalPreview(
+       proposeChainForCatalog(gated, "plate", F(60)),
+@@ -1490,8 +1506,11 @@ describe("S20 P3 — cause classification across the two worlds", () => {
+       { ungatedCatalog: cat },
+     );
+     // ore is a genuine extraction leaf — gating cannot make it constrained.
+-    const ore = view.rawInputs.find((r) => r.itemId === "ore");
+-    if (ore) expect(ore.cause).toBe("natural");
++    // Asserted through optional chaining, not an `if`: were ore to stop
++    // appearing among the raw inputs, a guarded assertion would pass vacuously.
++    expect(view.rawInputs.find((r) => r.itemId === "ore")?.cause).toBe(
++      "natural",
++    );
+   });
+ 
+   it("at tier null the classification is byte-identical to P1 (regression)", () => {
