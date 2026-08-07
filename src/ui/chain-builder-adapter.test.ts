@@ -25,6 +25,7 @@ import {
   itemRateLineText,
   metricsPowerText,
   proposalMetrics,
+  byproductSuggestions,
   candidateRecipesFor,
   candidateRowsFor,
   swapMachineCountFor,
@@ -1325,5 +1326,296 @@ describe("S20 P1 — rawInputs cause annotation", () => {
     // is the forced ingot. The forced row is cleanly separable.
     expect(view.rawInputs.filter((r) => r.cause === "natural")).toEqual([]);
     expect(view.rawInputs.filter((r) => r.cause === "forced")).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S20 P2 — powerAtClockMw: the float overclock-power sum, PER-STAGE with each
+// stage's OWN exponent (non-uniform in the snapshot). null at exactly 100.
+// ---------------------------------------------------------------------------
+
+/** A machine with a SPECIFIC power exponent (the default helper flattens to 1);
+ *  needed to prove the per-stage-exponent sum uses each stage's own exponent. */
+function machineWithExponent(
+  id: string,
+  mw: number,
+  exponent: Fraction,
+): CatalogMachine {
+  return {
+    id,
+    displayName: id,
+    power: { mw: F(mw), variable: false, exponent },
+  };
+}
+
+describe("S20 P2 — proposalMetrics.powerAtClockMw (per-stage exponent)", () => {
+  // Two stages on machines with DIFFERENT exponents: smelter 1.321929, foundry
+  // 1.6 — the two the snapshot actually carries. The float sum must apply EACH
+  // stage's own exponent, never one chain-wide value.
+  const smelterExp = Fraction.of(1321929, 1000000);
+  const foundryExp = Fraction.of(16, 10);
+  const cat = synthCatalog(
+    [item("ingot", "Ingot"), item("plate", "Plate"), item("ore", "Ore")],
+    [
+      machineWithExponent("smelter", 4, smelterExp),
+      machineWithExponent("foundry", 16, foundryExp),
+    ],
+    [
+      crecipe("r_ingot", "Ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
+      crecipe("r_plate", "Plate", "foundry", [["plate", 20]], [["ingot", 45]]),
+    ],
+  );
+  const proposal: ChainProposal = {
+    stages: [
+      stage("plate", "r_plate", 2n, 40),
+      stage("ingot", "r_ingot", 3n, 90),
+    ],
+    links: [{ fromItemId: "ingot", toItemId: "plate" }],
+    rawInputs: [{ itemId: "ore", rate: F(120) }],
+    byproducts: [],
+  };
+
+  it("is null at exactly 100 (the exact powerMw stands, no float)", () => {
+    const m = proposalMetrics(proposal, cat, F(100));
+    expect(m.powerAtClockMw).toBeNull();
+    expect(m.clockPercent.eq(F(100))).toBe(true);
+    // The exact 100%-basis figure is unchanged: 3×4 + 2×16 = 44.
+    expect(m.powerMw.eq(F(44))).toBe(true);
+    // The default arg is also 100 → null.
+    expect(proposalMetrics(proposal, cat).powerAtClockMw).toBeNull();
+  });
+
+  it("at 150 sums each stage with its OWN exponent (not one chain-wide)", () => {
+    const m = proposalMetrics(proposal, cat, F(150));
+    const ratio = 1.5;
+    // Per-stage: smelter 3 × 4 × 1.5^1.321929 + foundry 2 × 16 × 1.5^1.6.
+    const expected =
+      3 * 4 * ratio ** (1321929 / 1000000) + 2 * 16 * ratio ** 1.6;
+    expect(m.powerAtClockMw).not.toBeNull();
+    expect(m.powerAtClockMw!).toBeCloseTo(expected, 6);
+    // The exact 100%-basis figures are UNTOUCHED by the clock.
+    expect(m.powerMw.eq(F(44))).toBe(true);
+    // A single chain-wide exponent (e.g. 1.6 for both) would give a DIFFERENT
+    // number — prove the per-stage sum is not that.
+    const uniform = 3 * 4 * ratio ** 1.6 + 2 * 16 * ratio ** 1.6;
+    expect(m.powerAtClockMw!).not.toBeCloseTo(uniform, 6);
+    // metricsPowerText renders the ≈ float idiom at ≠100.
+    expect(metricsPowerText(m)).toBe(`≈ ${expected.toFixed(1)} MW`);
+  });
+
+  it("renders exact (no ≈) at 100 via metricsPowerText", () => {
+    const m = proposalMetrics(proposal, cat, F(100));
+    expect(metricsPowerText(m)).toBe("44 MW");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S20 P2 — byproductSuggestions: aggregate-then-match, unique on (itemId,
+// toItemId) by construction. Match found / none / two-producers-one-consumer /
+// one-byproduct-two-consumers.
+// ---------------------------------------------------------------------------
+
+describe("S20 P2 — byproductSuggestions", () => {
+  it("emits a suggestion when a byproduct matches another stage's recipe input", () => {
+    // fuel stage makes a resin byproduct; a rubber stage consumes resin.
+    const cat = synthCatalog(
+      [
+        item("fuel", "Fuel"),
+        item("resin", "Resin"),
+        item("rubber", "Rubber"),
+        item("oil", "Oil"),
+      ],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_fuel",
+          "Fuel",
+          "refinery",
+          [
+            ["fuel", 20],
+            ["resin", 10],
+          ],
+          [["oil", 30]],
+        ),
+        crecipe(
+          "r_rubber",
+          "Rubber",
+          "refinery",
+          [["rubber", 20]],
+          [["resin", 30]],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [
+        stage("fuel", "r_fuel", 1n, 20),
+        stage("rubber", "r_rubber", 1n, 20),
+      ],
+      links: [],
+      byproducts: [{ itemId: "resin", rate: F(10) }],
+      rawInputs: [{ itemId: "oil", rate: F(30) }],
+    };
+    const s = byproductSuggestions(proposal, cat);
+    expect(s).toEqual([
+      {
+        itemId: "resin",
+        rate: F(10),
+        toItemId: "rubber",
+        toItemName: "Rubber",
+      },
+    ]);
+  });
+
+  it("returns empty when no proposed stage consumes the byproduct", () => {
+    const cat = synthCatalog(
+      [item("fuel", "Fuel"), item("resin", "Resin"), item("oil", "Oil")],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_fuel",
+          "Fuel",
+          "refinery",
+          [
+            ["fuel", 20],
+            ["resin", 10],
+          ],
+          [["oil", 30]],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [stage("fuel", "r_fuel", 1n, 20)],
+      links: [],
+      byproducts: [{ itemId: "resin", rate: F(10) }],
+      rawInputs: [{ itemId: "oil", rate: F(30) }],
+    };
+    expect(byproductSuggestions(proposal, cat)).toEqual([]);
+  });
+
+  it("TWO producers of one byproduct toward one consumer → ONE summed suggestion, keys unique", () => {
+    // Two stages each emit resin as a byproduct (the byproducts array has NO
+    // per-item merge — two entries for resin). One rubber stage consumes resin.
+    // Aggregate-then-match must sum the rates into ONE suggestion.
+    const cat = synthCatalog(
+      [
+        item("fuel", "Fuel"),
+        item("plastic", "Plastic"),
+        item("resin", "Resin"),
+        item("rubber", "Rubber"),
+        item("oil", "Oil"),
+      ],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_fuel",
+          "Fuel",
+          "refinery",
+          [
+            ["fuel", 20],
+            ["resin", 10],
+          ],
+          [["oil", 30]],
+        ),
+        crecipe(
+          "r_plastic",
+          "Plastic",
+          "refinery",
+          [
+            ["plastic", 20],
+            ["resin", 5],
+          ],
+          [["oil", 30]],
+        ),
+        crecipe(
+          "r_rubber",
+          "Rubber",
+          "refinery",
+          [["rubber", 20]],
+          [["resin", 30]],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [
+        stage("fuel", "r_fuel", 1n, 20),
+        stage("plastic", "r_plastic", 1n, 20),
+        stage("rubber", "r_rubber", 1n, 20),
+      ],
+      links: [],
+      // Two resin entries, no merge (as the core emits them).
+      byproducts: [
+        { itemId: "resin", rate: F(10) },
+        { itemId: "resin", rate: F(5) },
+      ],
+      rawInputs: [{ itemId: "oil", rate: F(60) }],
+    };
+    const s = byproductSuggestions(proposal, cat);
+    // ONE suggestion with the EXACT summed rate 10 + 5 = 15.
+    expect(s).toHaveLength(1);
+    expect(s[0]!.itemId).toBe("resin");
+    expect(s[0]!.toItemId).toBe("rubber");
+    expect(s[0]!.rate.eq(F(15))).toBe(true);
+    // The (itemId, toItemId) key is unique.
+    const keys = s.map((x) => `${x.itemId} ${x.toItemId}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("ONE byproduct feeding TWO consumers → two suggestions with distinct toItemId keys", () => {
+    // resin byproduct from fuel; TWO stages (rubber + plastic) consume resin.
+    const cat = synthCatalog(
+      [
+        item("fuel", "Fuel"),
+        item("resin", "Resin"),
+        item("rubber", "Rubber"),
+        item("plastic", "Plastic"),
+        item("oil", "Oil"),
+      ],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_fuel",
+          "Fuel",
+          "refinery",
+          [
+            ["fuel", 20],
+            ["resin", 10],
+          ],
+          [["oil", 30]],
+        ),
+        crecipe(
+          "r_rubber",
+          "Rubber",
+          "refinery",
+          [["rubber", 20]],
+          [["resin", 30]],
+        ),
+        crecipe(
+          "r_plastic",
+          "Plastic",
+          "refinery",
+          [["plastic", 20]],
+          [["resin", 20]],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [
+        stage("fuel", "r_fuel", 1n, 20),
+        stage("plastic", "r_plastic", 1n, 20),
+        stage("rubber", "r_rubber", 1n, 20),
+      ],
+      links: [],
+      byproducts: [{ itemId: "resin", rate: F(10) }],
+      rawInputs: [{ itemId: "oil", rate: F(30) }],
+    };
+    const s = byproductSuggestions(proposal, cat);
+    // Two suggestions, same itemId + rate, DISTINCT toItemId (the stable key).
+    expect(s).toHaveLength(2);
+    expect(s.every((x) => x.itemId === "resin" && x.rate.eq(F(10)))).toBe(true);
+    const toIds = s.map((x) => x.toItemId).sort();
+    expect(toIds).toEqual(["plastic", "rubber"]);
+    // Unique on (itemId, toItemId).
+    const keys = s.map((x) => `${x.itemId} ${x.toItemId}`);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });
