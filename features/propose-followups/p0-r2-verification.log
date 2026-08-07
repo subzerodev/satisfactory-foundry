@@ -1,0 +1,163 @@
+# S21 P0 (#104) — bidirectionality verification log
+
+Design of record: `features/propose-followups/p0-brainstorm.md` (v5 FROZEN).
+Branch `feature/s21-p0`, cut from `develop` @ e24b05c.
+Run 2026-08-07 against the bundled catalog `public/bundled-docs/en-US.json`.
+
+Baseline before the change: **896 tests / 32 files, green.**
+After: **908 tests / 33 files, green.** `npm run check` clean throughout.
+
+## Method
+
+Every mutation is applied to the ONE executable statement of the predicate
+(`causeOf`, `src/ui/chain-builder-adapter.ts`), then:
+
+1. **compiled** — `npx tsc -b --force` must exit 0. A mutation that does not
+   typecheck is discarded, not recorded: a crash is not a behavioural bite.
+   All 8 mutations below compiled.
+2. **run** — full `npx vitest run`, failures collected by test NAME.
+3. **sanity-checked** — the failing SET is read and explained, not just its
+   size. An unexpected result is investigated before it is written down
+   (the Stage 20 lesson: a ledger entry once recorded a crash's 16 red rows
+   as if they were a true bite of 1).
+4. **restored** — the harness rewrites the original text and rebuilds.
+   Verified afterwards: `git diff src/ui/chain-builder-adapter.ts` empty.
+
+Harness: `scratchpad/s21p0-mutate.py` (not committed — it patches tracked
+source and is only meaningful alongside this log).
+
+## The live predicate
+
+```ts
+ungated.items[itemId]?.isRawResource === true &&
+producerRecipesFor(ungated, itemId, EXCLUDED_MACHINE_IDS).length === 0 &&
+producerRecipesFor(ungated, itemId, excludedMachineIds).length === 0
+```
+
+## Results
+
+| # | mutation | compiles | failed | the failing set |
+|---|---|---|---|---|
+| M1 | blanket `isRawResource ⇒ natural` (both vacuity tests dropped) | yes | 5 | 4 coal rows + the eleven/one set row |
+| M2 | **live set only** — the DEAD v1 rule | yes | **1** | **coal + Constructor excluded** |
+| M3 | **constant only** — the DEAD v2 rule | yes | **1** | **ore_iron + Converter un-excluded @ TIER 8** |
+| M4 | `P(CONST ∪ live)` instead of the conjunction | yes | 2 | both pair rows |
+| M5 | predicate deleted entirely (pre-change behaviour) | yes | 5 | both UI rows + 2 adapter rows + the amended S20 pin |
+| M6 | `isRawResource` guard dropped | yes | 1 | packaged_water |
+| M7 | reads the GATED catalog instead of `ungated` | yes | 2 | coal @ TIER 2, ore_iron @ TIER 8 |
+| M8 | alternate-BLIND (`effectiveDefaultRecipe`) | yes | 4 | all four coal rows |
+
+**8 mutations, 8 killed. No survivors.**
+
+## The load-bearing pair — the point of the exercise
+
+The design killed two single-keyed rules by counterexample. These two rows
+exist so neither can return silently, and the mutation run confirms each
+bites its OWN dead rule and nothing else:
+
+- **M2 (live-set-only, dead v1) → exactly ONE failure**, and it is
+  `coal stays constrained when the user EXCLUDES Constructor`. Ticking
+  Constructor empties coal's live producer set; without the CONSTANT
+  conjunct coal natural-izes and the user silently loses both the
+  Charcoal/Biocoal picker and the "edit MACHINE EXCLUSIONS" hint — the
+  regression at the hero item that the whole refinement exists to prevent.
+- **M3 (constant-only, dead v2) → exactly ONE failure**, and it is
+  `ore_iron stays constrained with the TIER lever when the user UN-EXCLUDES
+  Converter below tier 9`. `iron_limestone` is a converter recipe unlocked at
+  tier 9, so at tier ≤ 8 with the Converter re-enabled "raise TIER" is a REAL
+  recovery; without the LIVE conjunct it is suppressed.
+
+Neither row passes under both dead rules, and neither is doing the other's
+job — the two failure sets are disjoint singletons. That is precisely the
+bidirectionality the design asked for.
+
+## Findings that required investigation
+
+### M4 came out STRONGER than the spec predicted — checked, not banked
+
+The spec says the union "is weaker (implied by either conjunct) and would
+re-admit the coal regression". Observed: M4 fails **both** pair rows, not
+just the coal one. Investigated rather than recorded as-is.
+
+It is correct, and it follows from the spec's own algebra. `P(S) ⟺ Prod ⊆ S`,
+so `P(CONST) ∨ P(live) ⇒ P(CONST ∪ live)` — the union fires wherever EITHER
+conjunct holds. Coal @ Constructor-excluded has `P(live)` true, so the union
+fires and coal natural-izes (the predicted regression). `ore_iron` @ Converter
+un-excluded @ TIER ≤ 8 has `P(CONST)` true, so the union fires there too and
+suppresses the tier lever. The union is weaker than the conjunction in both
+directions at once; the spec named one instance, not the whole set. No
+correction to the design is implied — the conjunction is what shipped.
+
+### M6 initially SURVIVED — a real gap in the test set, now closed
+
+**First run: M6 (drop the `isRawResource` guard) failed 0 of 907 tests.**
+A surviving mutant on a load-bearing conjunct, so it was investigated instead
+of being written up as a clean sweep.
+
+Cause: spec item 4 nominates `polymer_resin` as the non-raw spot-pin, and
+`polymer_resin` **cannot detect the guard's removal**. Its sole producer is
+the `oil_refinery`, which is in neither exclusion set, so BOTH vacuity
+conjuncts already fail for it — the rule is silent with or without the raw
+flag. The spec's chosen example is a true statement about the 20 non-raw
+items but a non-discriminating test.
+
+Measured: dropping the guard natural-izes **14 of the 20** non-raw
+constrained items — the ten packager-only packaged fluids (`packaged_water`,
+`packaged_oil`, `packaged_alumina`, `packaged_biofuel`, `packaged_ionized_fuel`,
+`packaged_nitric_acid`, `packaged_nitrogen_gas`, `packaged_oil_residue`,
+`packaged_rocket_fuel`, `packaged_sulfuric_acid`), `turbo_fuel`, and the
+converter-only `dark_energy`, `ficsite_ingot`, `quantum_energy`,
+`time_crystal`. The other six (`compacted_coal`, `fuel`, `heavy_oil_residue`,
+`liquid_turbo_fuel`, `polymer_resin`, plus the refinery/blender-backed rows)
+have a producer outside both exclusion sets and are safe either way.
+
+Closed by ADDING a discriminating pin — `packaged_water` must stay
+`constrained` with the `machine` lever — alongside the spec-mandated
+`polymer_resin` row, which is retained. This strengthens spec item 4 rather
+than departing from it: the spec's stated goal is "the 20 non-raw affected
+items are unchanged", and the added row is the one that actually enforces it.
+`packaged_water` is the right item on the merits too — unpackaging is a
+genuine recovery (enable the Packager, get the water back out of a canister),
+nothing like the degenerate ore→ore conversion this design suppresses.
+
+**Re-run after the addition: M6 fails exactly 1 test — the new pin.** A
+precise bite of one, not a cascade.
+
+## Corroborating mutants
+
+- **M5 (predicate deleted)** reproduces pre-change behaviour and fails 5 rows,
+  including BOTH `ChainBuilder.rawtarget` UI rows and the amended S20 pin
+  `marks an all-raw proposal empty`. This is the direct evidence that spec
+  item 2's accepted UI change is genuinely tested — the "Nothing to build"
+  assertions are not passing for some incidental reason.
+- **M7 (gated instead of ungated)** fails both tier rows, pinning the spec's
+  requirement that the predicate read the UNGATED world: gating alone must
+  never natural-ize anything.
+- **M8 (alternate-blind)** fails all four coal rows, pinning the spec's
+  "must use the ALTERNATE-INCLUSIVE `producerRecipesFor`" — `coal`'s
+  alternates are exactly what an `effectiveDefaultRecipe` test cannot see.
+- **M1 (blanket rule)** fails the 4 coal rows plus the named-set row,
+  confirming the ticket's naive framing is caught.
+
+## Named sets, not counts
+
+The central row asserts the two sets by name:
+
+- natural: `liquid_oil`, `nitrogen_gas`, `ore_bauxite`, `ore_copper`,
+  `ore_gold`, `ore_iron`, `ore_uranium`, `raw_quartz`, `sam`, `stone`,
+  `sulfur`, `water`
+- constrained: `coal`
+
+(`sam` is the 13th raw-flagged item and reaches "natural" through the
+pre-existing no-producer branch, not the new rule — 11 items move, matching
+the design's measured 11-of-12.) No row in this change asserts a bare count
+against the real catalog.
+
+## Independent re-measurement of the design's ground truth
+
+Re-derived from the bundled catalog before any code was written; every figure
+in the spec's "Ground truth" section reproduced exactly: 13 raw-flagged items;
+32 constrained under default exclusions, 12 of them raw-flagged; producers
+converter- and/or packager-only for all 12 EXCEPT `coal`, which also carries
+`alternate_coal_1` / `alternate_coal_2` on `constructor_mk1` at unlock tier 3;
+`iron_limestone` on the converter at unlock tier 9.

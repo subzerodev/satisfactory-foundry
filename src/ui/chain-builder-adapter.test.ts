@@ -2017,6 +2017,28 @@ describe("S21 P0 — vacuous raw resources classify natural", () => {
     expect(rawRowFor("polymer_resin").cause).toBe("constrained");
   });
 
+  it("keeps packaged_water constrained — the isRawResource guard is load-bearing", () => {
+    // The DISCRIMINATING non-raw pin. polymer_resin above cannot detect the
+    // guard's removal: its sole producer is the oil_refinery, which is never
+    // excluded, so BOTH vacuity conjuncts already fail for it and the rule is
+    // silent with or without the raw-flag test.
+    //
+    // packaged_water is packager-only, so both conjuncts HOLD and the flag is
+    // the only thing standing between it and a bogus "natural". Verified by
+    // mutation: dropping the guard natural-izes 14 of the 20 non-raw
+    // constrained items (every packager-only packaged fluid plus the
+    // converter-only dark_energy / ficsite_ingot / quantum_energy /
+    // time_crystal) while every other row in this file stays green.
+    //
+    // It MUST stay constrained: unpackaging IS a real recovery here — the user
+    // enables the Packager and gets their water back out of a canister, which
+    // is nothing like the degenerate ore→ore conversion this design suppresses.
+    expect(catalog.items["packaged_water"]!.isRawResource).toBeUndefined();
+    const row = rawRowFor("packaged_water");
+    expect(row.cause).toBe("constrained");
+    expect(row.lever).toBe("machine");
+  });
+
   // -- The load-bearing PAIR ------------------------------------------------
   // The rule is the CONJUNCTION of two vacuity tests. Two single-keyed rules
   // were proposed and killed during design; these two rows are what keep them
