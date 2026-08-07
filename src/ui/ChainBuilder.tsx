@@ -14,7 +14,7 @@
  * and seed every future Propose; raw markings and the clock stay ephemeral (a
  * per-plan boundary intent and a per-run target respectively). Solver runs are
  * a synchronous catalog-sized DFS. Frozen design: features/propose-grows-up/
- * p1-brainstorm.md (v7), p3-brainstorm.md (v11).
+ * p1-brainstorm.md (v7), p3-brainstorm.md (v12).
  */
 
 import { useState, useMemo } from "react";
