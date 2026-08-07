@@ -2021,8 +2021,10 @@ describe("S21 P0 — vacuous raw resources classify natural", () => {
     //
     // Verified by mutation: dropping the guard natural-izes fifteen of the 20
     // non-raw constrained items — the packager- and converter-only ones, named
-    // in full in p0-r2-verification.log §M6. The other five each have a
-    // producer outside both exclusion sets and are safe either way.
+    // in full in features/propose-followups/p0-r2-verification.log, section
+    // "M6 initially SURVIVED — a real gap in the test set, now closed". The
+    // other five each have a producer outside both exclusion sets and are safe
+    // either way.
     //
     // It MUST stay constrained: unpackaging IS a real recovery here — the user
     // enables the Packager and gets their water back out of a canister, which

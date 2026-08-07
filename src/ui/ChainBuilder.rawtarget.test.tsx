@@ -15,8 +15,10 @@
  * so suppressing that line removes it. The metrics `<dl>` is only where a
  * NATURAL raw's rate would otherwise have gone, and it is gated on
  * `!view.isEmpty` — which is `proposal.stages.length === 0`, already true for
- * an all-raw proposal and untouched by this change. So the `<dl>` is absent
- * either way and is not part of the delta.
+ * an all-raw proposal and untouched by this change. So FOR A RAW TARGET the
+ * `<dl>` is absent either way. (Scope matters: on a non-empty chain the `<dl>`
+ * very much IS part of the delta — its RAW `<dd>` is where the natural-ized
+ * rate now appears instead of `—`, which the third test below pins.)
  *
  * The flip is the honest answer to "propose me Iron Ore" and strictly better
  * than pointing the user at a machine the default excludes on purpose, but it
