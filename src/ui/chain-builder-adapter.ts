@@ -130,20 +130,26 @@ export interface ItemRateRow {
  *                     (excluded machines / alternate-only availability), so the
  *                     item collapsed to raw involuntarily — AND some policy
  *                     change could actually recover it (see the carve-out).
- * - `"natural"`     — a genuine extraction-level leaf (ores, water). TWO ways in
- *                     (S21 P0, #104 — this is no longer a plain "otherwise"):
- *                     no producer exists in the data at all, OR the item is
- *                     `isRawResource` and every producer it has is excluded
- *                     under BOTH the default policy and the live set, making
- *                     the constrained label technically true but useless — its
- *                     only "recovery" would be re-enabling a machine the
- *                     default excludes on purpose. So an item CAN satisfy the
- *                     `constrained` wording above verbatim and still report
- *                     "natural"; `causeOf` is the arbiter.
- *                     Either way this INCLUDES a raw produced by the core's
- *                     cycle-guard / malformed-primary backstops (the
- *                     reconstruction cannot see solver demotions — accepted
- *                     limitation, backstop path).
+ * - `"natural"`     — a genuine extraction-level leaf (ores, water). THREE ways
+ *                     in, matching `causeOf`'s three "natural" returns (S21 P0,
+ *                     #104 added the second; this is no longer a plain
+ *                     "otherwise", which had subsumed all of them):
+ *                       1. no producer exists in the data at all;
+ *                       2. the item is `isRawResource` and every producer it has
+ *                          is excluded under BOTH the default policy and the
+ *                          live set, making the constrained label technically
+ *                          true but useless — its only "recovery" would be
+ *                          re-enabling a machine the default excludes on
+ *                          purpose. So an item CAN satisfy the `constrained`
+ *                          wording above verbatim and still report "natural";
+ *                          `causeOf` is the arbiter;
+ *                       3. an eligible default recipe DOES exist, yet the core
+ *                          still emitted the item as raw — the cycle-guard /
+ *                          malformed-primary backstop path (the reconstruction
+ *                          cannot see solver demotions — accepted limitation).
+ *                          `water` with the Packager un-excluded is the worked
+ *                          example: `unpackage_water` resolves, so route 2 does
+ *                          not fire and control falls through to here.
  *
  * Precedence PINNED forced > constrained > natural (mirrors the core's raw >
  * override > default): a forced item that ALSO has no eligible producer reports

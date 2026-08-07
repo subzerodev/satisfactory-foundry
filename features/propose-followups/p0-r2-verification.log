@@ -36,18 +36,52 @@ producerRecipesFor(ungated, itemId, excludedMachineIds).length === 0
 
 ## Results
 
-| # | mutation | compiles | failed | the failing set |
+Row shorthand (each is a test in `chain-builder-adapter.test.ts` unless marked
+UI, which is `ChainBuilder.rawtarget.test.tsx`):
+
+- **[eleven/one]** — `natural-izes exactly the vacuous eleven — coal is the
+  sole holdout`
+- **[coal-alts]** — `coal still offers its constructor alternates`
+- **[coal-machine]** — `coal stays constrained when the user EXCLUDES
+  Constructor` — *the v1-killer*
+- **[coal-tier]** — `coal at TIER ≤ 2 classifies constrained with the TIER
+  lever`
+- **[iron-tier]** — `ore_iron stays constrained with the TIER lever when the
+  user UN-EXCLUDES Converter below tier 9` — *the v2-killer*
+- **[iron/water]** — `pins the CONVERTER case (ore_iron) and the PACKAGER case
+  (water)`
+- **[pkg-water]** — `keeps packaged_water constrained`
+- **[s20-pin]** — `adapter — preview shaping marks an all-raw proposal empty`
+- **[ui-empty]** — UI: `renders 'Nothing to build' instead of a constrained
+  raw line`
+- **[ui-rate]** — UI: `drops the rate line with it`
+- **[ui-natural]** — UI: `renders Iron Ore on the plain RAW line for an
+  ordinary chain` — *the headline improvement, added at boundary r1*
+
+| # | mutation | compiles | failed | the failing set (named) |
 |---|---|---|---|---|
-| M1 | blanket `isRawResource ⇒ natural` (both vacuity tests dropped) | yes | 5 | 4 coal rows + the eleven/one set row |
-| M2 | **live set only** — the DEAD v1 rule | yes | **1** | **coal + Constructor excluded** |
-| M3 | **constant only** — the DEAD v2 rule | yes | **1** | **ore_iron + Converter un-excluded @ TIER 8** |
-| M4 | `P(CONST ∪ live)` instead of the conjunction | yes | 2 | both pair rows |
-| M5 | predicate deleted entirely (pre-change behaviour) | yes | 5 | both UI rows + 2 adapter rows + the amended S20 pin |
-| M6 | `isRawResource` guard dropped | yes | 1 | packaged_water |
-| M7 | reads the GATED catalog instead of `ungated` | yes | 2 | coal @ TIER 2, ore_iron @ TIER 8 |
-| M8 | alternate-BLIND (`effectiveDefaultRecipe`) | yes | 4 | all four coal rows |
+| M1 | blanket `isRawResource ⇒ natural` (both vacuity tests dropped) | yes | 5 | [eleven/one] [coal-alts] [coal-machine] [coal-tier] **[iron-tier]** |
+| M2 | **live set only** — the DEAD v1 rule | yes | **1** | **[coal-machine]** |
+| M3 | **constant only** — the DEAD v2 rule | yes | **1** | **[iron-tier]** |
+| M4 | `P(CONST ∪ live)` instead of the conjunction | yes | 2 | [coal-machine] [iron-tier] |
+| M5 | predicate deleted entirely (pre-change behaviour) | yes | 6 | [eleven/one] [iron/water] [s20-pin] [ui-empty] [ui-rate] [ui-natural] |
+| M6 | `isRawResource` guard dropped | yes | 1 | [pkg-water] |
+| M7 | reads the GATED catalog instead of `ungated` | yes | 2 | [coal-tier] [iron-tier] |
+| M8 | alternate-BLIND (`effectiveDefaultRecipe`) | yes | 4 | [eleven/one] [coal-alts] [coal-machine] [coal-tier] |
 
 **8 mutations, 8 killed. No survivors.**
+
+**Boundary r1 correction to M1's set.** The first draft described M1 as
+"4 coal rows + the eleven/one set row" — a count of 5 over an enumeration of
+4 distinct tests, because [eleven/one] is itself one of the rows whose title
+mentions coal. The count was right and the SET was wrong, and the error
+suppressed a genuinely useful fact now visible above: **M1 also fails
+[iron-tier]**. A blanket rule returns `"natural"` before reaching any vacuity
+test, so the v2-killer pair row kills the blanket rule as well. Caught by the
+discipline in Method §3, which exists for exactly this. The loose "all four
+coal rows" phrasing previously used for M8 is replaced by named rows
+throughout — under it [eleven/one] counted as a coal row in one place and not
+in another.
 
 ## The load-bearing pair — the point of the exercise
 
@@ -101,15 +135,25 @@ conjuncts already fail for it — the rule is silent with or without the raw
 flag. The spec's chosen example is a true statement about the 20 non-raw
 items but a non-discriminating test.
 
-Measured: dropping the guard natural-izes **14 of the 20** non-raw
-constrained items — the ten packager-only packaged fluids (`packaged_water`,
-`packaged_oil`, `packaged_alumina`, `packaged_biofuel`, `packaged_ionized_fuel`,
-`packaged_nitric_acid`, `packaged_nitrogen_gas`, `packaged_oil_residue`,
-`packaged_rocket_fuel`, `packaged_sulfuric_acid`), `turbo_fuel`, and the
-converter-only `dark_energy`, `ficsite_ingot`, `quantum_energy`,
-`time_crystal`. The other six (`compacted_coal`, `fuel`, `heavy_oil_residue`,
-`liquid_turbo_fuel`, `polymer_resin`, plus the refinery/blender-backed rows)
-have a producer outside both exclusion sets and are safe either way.
+Measured: dropping the guard natural-izes **fifteen of the 20** non-raw
+constrained items. Named in full, because the names are the claim (boundary
+r1 — the first draft said "14 of the 20" and then listed fifteen, and the
+matching source comment silently dropped `turbo_fuel` from its parenthetical
+to make 14 work; both reviewers independently re-derived the true split as
+15/5, and this log's own closing section is titled "Named sets, not counts"):
+
+> `packaged_water`, `packaged_oil`, `packaged_alumina`, `packaged_biofuel`,
+> `packaged_ionized_fuel`, `packaged_nitric_acid`, `packaged_nitrogen_gas`,
+> `packaged_oil_residue`, `packaged_rocket_fuel`, `packaged_sulfuric_acid`
+> (the ten packager-only packaged fluids), `turbo_fuel`
+> (`Recipe_PackagedTurboFuel_C`, also on the packager — this is the one the
+> wrong count dropped), and the converter-only `dark_energy`,
+> `ficsite_ingot`, `quantum_energy`, `time_crystal`.
+
+The remaining **five** are safe either way, each having a producer outside
+both exclusion sets: `compacted_coal` (assembler); `polymer_resin`,
+`heavy_oil_residue`, `liquid_turbo_fuel` (oil refinery); and `fuel`, whose
+alternate sits on the oil refinery.
 
 Closed by ADDING a discriminating pin — `packaged_water` must stay
 `constrained` with the `machine` lever — alongside the spec-mandated
@@ -125,19 +169,31 @@ precise bite of one, not a cascade.
 
 ## Corroborating mutants
 
-- **M5 (predicate deleted)** reproduces pre-change behaviour and fails 5 rows,
-  including BOTH `ChainBuilder.rawtarget` UI rows and the amended S20 pin
-  `marks an all-raw proposal empty`. This is the direct evidence that spec
-  item 2's accepted UI change is genuinely tested — the "Nothing to build"
-  assertions are not passing for some incidental reason.
-- **M7 (gated instead of ungated)** fails both tier rows, pinning the spec's
-  requirement that the predicate read the UNGATED world: gating alone must
-  never natural-ize anything.
-- **M8 (alternate-blind)** fails all four coal rows, pinning the spec's
-  "must use the ALTERNATE-INCLUSIVE `producerRecipesFor`" — `coal`'s
-  alternates are exactly what an `effectiveDefaultRecipe` test cannot see.
-- **M1 (blanket rule)** fails the 4 coal rows plus the named-set row,
-  confirming the ticket's naive framing is caught.
+- **M5 (predicate deleted)** reproduces pre-change behaviour and fails
+  [eleven/one] [iron/water] [s20-pin] [ui-empty] [ui-rate] [ui-natural]. This
+  is the direct evidence that spec item 2's accepted UI change is genuinely
+  tested — the "Nothing to build" assertions are not passing for some
+  incidental reason — and, since boundary r1, that the IMPROVEMENT is pinned
+  too: under M5, Iron Ore reverts to a constrained line on an ordinary Iron
+  Plate chain and [ui-natural] goes red. (M5's count rose 5 → 6 when that row
+  gained its assertions, which is the evidence they are discriminating rather
+  than decorative.)
+  Note what M5 does NOT fail: the metrics-block absence. That is why an
+  assertion on it was dropped from [ui-rate] at boundary r1 as decorative —
+  `view.isEmpty` is `proposal.stages.length === 0`, already true for an
+  all-raw proposal before this change and untouched by it, so the `<dl>` was
+  absent either way. [ui-rate] bites through the rate TEXT, which the
+  CONSTRAINED LINE (`ChainBuilder.tsx:541`) used to emit.
+- **M7 (gated instead of ungated)** fails [coal-tier] [iron-tier], pinning the
+  spec's requirement that the predicate read the UNGATED world: gating alone
+  must never natural-ize anything.
+- **M8 (alternate-blind)** fails [eleven/one] [coal-alts] [coal-machine]
+  [coal-tier], pinning the spec's "must use the ALTERNATE-INCLUSIVE
+  `producerRecipesFor`" — `coal`'s alternates are exactly what an
+  `effectiveDefaultRecipe` test cannot see.
+- **M1 (blanket rule)** fails those same four PLUS [iron-tier], confirming both
+  that the ticket's naive framing is caught and that the v2-killer row does
+  double duty against the blanket rule.
 
 ## Named sets, not counts
 

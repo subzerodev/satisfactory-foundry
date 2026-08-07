@@ -18,9 +18,12 @@ export interface CatalogItem {
    * `FGResourceDescriptor` — an extraction-level resource (ores, Coal, Crude
    * Oil, Water, …). OPTIONAL with absent ⇒ non-raw: a required field would
    * TS2741-break the ~7 test fixtures that enumerate CatalogItem literals, and
-   * EVERY consumer reads `?.isRawResource === true` (truthiness-safe), so
-   * optional is behaviourally identical (Stage 11 / Phase 1, ticket #57).
-   * That idiom is REQUIRED of any new reader, for exactly this reason.
+   * every consumer's read is TRUTHINESS-SAFE, so optional is behaviourally
+   * identical (Stage 11 / Phase 1, ticket #57). The spellings differ — `=== true`
+   * (chain-builder-adapter.ts), `!== true` (graph-flow.ts:588), bare truthiness
+   * (catalog-store.ts:247,333) — so what a new reader MUST preserve is the
+   * property, not one idiom: never distinguish `false` from absent.
+   * `?.isRawResource === true` is the recommended spelling.
    * Ground truth, not recipe inference — both recipe-set heuristics died
    * misclassifying byproduct-only items (Heavy Oil Residue) and byproduct
    * resources (Water). The docs-loader sets it only for FGResourceDescriptor
