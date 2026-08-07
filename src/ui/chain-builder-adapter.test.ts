@@ -66,8 +66,11 @@ describe("S20 P3 — recipeUnlocks against the REAL bundled snapshot", () => {
   // export that changed the mUnlocks/mRecipes shape would leave them all green
   // while gating silently no-ops in production — precisely the failure class
   // this phase exists to close, on the one path the synthetic fixtures cannot
-  // guard. These assertions are deliberately structural, not exact-value pins:
-  // they must survive a game rebalance but not a shape change.
+  // guard. The assertions are deliberately structural, not exact-value: they
+  // must survive a game rebalance but not a shape change. Three of the four
+  // bite on a mutation TODAY (each recorded in the phase's verification log);
+  // the fourth is a FORWARD CANARY over data this snapshot cannot produce, and
+  // is labeled as one rather than claimed as a pin.
   const unlockIds = Object.keys(catalog.recipeUnlocks);
 
   it("parses unlock tiers for most of the real catalog's recipes", () => {
@@ -77,26 +80,35 @@ describe("S20 P3 — recipeUnlocks against the REAL bundled snapshot", () => {
   });
 
   it("keys them by real catalog recipe ids — never the empty string", () => {
-    // The r4 silent-total-failure, checked where it would actually bite: a
-    // whole-ref normalize collapses every id to "".
+    // MEASURED bite: deleting the unresolvable-ref skip in docs-loader, which
+    // is what keeps building/cosmetic refs (and any id that normalizes to "")
+    // out of the map. NOT the r4 apostrophe bug — under r4 the map comes out
+    // EMPTY, so both assertions below hold vacuously and this row stays green;
+    // r4 is caught by the two rows that require the map to be populated.
     expect(catalog.recipeUnlocks[""]).toBeUndefined();
     for (const id of unlockIds) expect(catalog.recipes[id]).toBeDefined();
   });
 
-  it("carries only non-negative integer tiers", () => {
+  it("carries only non-negative integer tiers (FORWARD CANARY, not a pin)", () => {
+    // Cannot fail against this snapshot in either direction: parseTechTier
+    // forces the invariant for every input, and every mTechTier here is a
+    // plain "0".."9". Kept deliberately, to catch a FUTURE export carrying
+    // fractional/negative tiers — which would reach the TIER option list. It
+    // earns no entry in the verification log, because no mutation makes it red.
     for (const id of unlockIds) {
       const tier = catalog.recipeUnlocks[id]!;
       expect(Number.isInteger(tier) && tier >= 0, `${id} → ${tier}`).toBe(true);
     }
   });
 
-  it("actually GATES real recipes at a low tier", () => {
-    // The end-to-end proof that gating bites on shipped data: tier 0 must
-    // remove a substantial share of the catalog, and "all" must remove none.
+  it("actually GATES most of the real catalog at tier 0", () => {
+    // The end-to-end proof that gating bites on shipped data. The share is
+    // asserted, not just non-emptiness: tier 0 must leave under half the
+    // catalog standing (measured: 87 of 290 remain), while "all" removes none.
     const atZero = Object.keys(gateCatalog(catalog, 0).recipes).length;
     const all = Object.keys(catalog.recipes).length;
     expect(atZero).toBeGreaterThan(0);
-    expect(atZero).toBeLessThan(all);
+    expect(atZero * 2).toBeLessThan(all);
     expect(Object.keys(gateCatalog(catalog, null).recipes)).toHaveLength(all);
   });
 });

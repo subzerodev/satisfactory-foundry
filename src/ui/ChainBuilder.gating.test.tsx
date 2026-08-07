@@ -447,6 +447,19 @@ describe("S20 P3 seams — the gated world reaches the render (jsdom)", () => {
 });
 
 describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () => {
+  it("takes its accessible name from the WRAPPING label, with nothing overriding it", () => {
+    // The control is named the way its three sibling controls are — by the
+    // <label> it sits inside — rather than by an aria-label, which would win
+    // over the visible text. Both halves are pinned: lose the wrapper and
+    // `closest` returns null; re-add an aria-label and the last line fails.
+    // No accessibility-tree harness is needed for either.
+    mount(splitCatalog(), { unlockedTier: null });
+    const label = tierSelect().closest("label");
+    expect(label).not.toBeNull();
+    expect(label!.textContent!.startsWith("TIER")).toBe(true);
+    expect(tierSelect().getAttribute("aria-label")).toBeNull();
+  });
+
   it("derives its options from recipeUnlocks (all + 0..max), never hardcoded", () => {
     mount(splitCatalog(), { unlockedTier: null });
     expect(
