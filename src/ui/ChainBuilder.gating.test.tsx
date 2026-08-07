@@ -284,9 +284,7 @@ function propose(): void {
 const tierSelect = (): HTMLSelectElement =>
   $<HTMLSelectElement>('select[aria-label="unlocked tier"]');
 
-/** The TIER select's SELECTED option label, or null when nothing is selected.
- *  Discriminating where `select.value` is not: an unmatched value reports ""
- *  and selectedIndex -1, which is indistinguishable from a real "all". */
+/** The TIER select's SELECTED option label — what the user actually sees. */
 function selectedTierLabel(): string | null {
   const el = tierSelect();
   return el.selectedIndex < 0
@@ -451,10 +449,14 @@ describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () => 
     // Render-level normalization: an above-range tier gates nothing, so it
     // already BEHAVES as "all" and is shown that way. No clamp, no write-back.
     //
-    // Asserted through the SELECTED OPTION, not `select.value`: with an
-    // unmatched value the DOM reports value "" and selectedIndex -1 anyway, so
-    // a `value === ""` assertion passes under the broken binding too — green
-    // and non-discriminating, the failure mode this design ate twice already.
+    // This locks the user-visible outcome, NOT the binding expression that
+    // produces it. Measured: `value={""}` and `value={"999"}` yield a
+    // byte-identical DOM here — value, selectedIndex, per-option selected flags
+    // and innerHTML all match — because the DOM's own "ask for a reset"
+    // algorithm selects the first option when none matches. The explicit
+    // binding in ChainBuilder is therefore defensive (it keeps a server-
+    // rendered string honest); on this client path it is a no-op, so no
+    // assertion here can discriminate it, and none pretends to.
     mount(splitCatalog(), { unlockedTier: 999 });
     expect(selectedTierLabel()).toBe("all");
     // Nothing was written back — the stored value is left exactly as found.
