@@ -217,18 +217,25 @@ describe("adapter — preview shaping", () => {
     expect(preview.rows).toEqual([]);
     // S20 P1 widened the raw-input row: it now carries itemId + the
     // reconstructed cause. Iron Ore's SOLE producer in the bundled catalog is a
-    // converter recipe (iron_limestone) — excluded by default policy — so it
-    // classifies "constrained" (a producer exists but none is eligible), not
-    // "natural". The honest label for an over-excluded degradation.
+    // converter recipe (iron_limestone), excluded by default policy — so
+    // through S20 this classified "constrained"/lever "machine".
+    //
+    // S21 P0 (#104) REVERSED that: Iron Ore is `isRawResource` and its only
+    // producer is excluded under BOTH the default constant AND the live set,
+    // so the constrained label was technically true but useless — its lone
+    // "recovery" was to re-enable the converter, the very machine the default
+    // excludes on purpose. It now classifies "natural" (lever null, since
+    // levers annotate constrained rows only), and Iron Ore renders on the
+    // plain RAW line. `coal` is the deliberate counterexample that keeps this
+    // from being a blanket `isRawResource ⇒ natural` rule — see the S21 P0
+    // block below.
     expect(preview.rawInputs).toEqual([
       {
         itemId: "ore_iron",
         itemName: "Iron Ore",
         rate: "120",
-        cause: "constrained",
-        // No ungatedCatalog passed ⇒ gated ≡ ungated ⇒ the tier lever cannot
-        // fire, so the four-cell matrix reduces to exactly P1's machine case.
-        lever: "machine",
+        cause: "natural",
+        lever: null,
       },
     ]);
   });

@@ -18,12 +18,16 @@ export interface CatalogItem {
    * `FGResourceDescriptor` — an extraction-level resource (ores, Coal, Crude
    * Oil, Water, …). OPTIONAL with absent ⇒ non-raw: a required field would
    * TS2741-break the ~7 test fixtures that enumerate CatalogItem literals, and
-   * the sole consumer reads `?.isRawResource === true` (truthiness-safe), so
+   * EVERY consumer reads `?.isRawResource === true` (truthiness-safe), so
    * optional is behaviourally identical (Stage 11 / Phase 1, ticket #57).
+   * That idiom is REQUIRED of any new reader, for exactly this reason.
    * Ground truth, not recipe inference — both recipe-set heuristics died
    * misclassifying byproduct-only items (Heavy Oil Residue) and byproduct
    * resources (Water). The docs-loader sets it only for FGResourceDescriptor
-   * groups; the raw-feed display derive is its only reader.
+   * groups. TWO readers as of S21 P0 (#104): the raw-feed display derive
+   * (graph-flow.ts) and the adapter's raw-cause classifier (`causeOf` in
+   * chain-builder-adapter.ts), which natural-izes an extraction resource whose
+   * producers are all excluded under both policies in play.
    */
   isRawResource?: boolean;
 }
