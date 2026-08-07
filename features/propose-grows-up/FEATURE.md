@@ -1,7 +1,7 @@
 # Propose grows up: info + customization (Stage 20 arc)
 
 **Started:** 2026-08-06
-**Status:** IN PROGRESS — P0 design
+**Status:** IN PROGRESS — P2 implementation
 **Epic:** #98 (board #21, Stage 20 milestone 91)
 **Directive:** Michael 2026-08-06 — "we can give more info and customisation
 there" → the full option menu → **"all of them as one arc."**
@@ -30,8 +30,15 @@ there" → the full option menu → **"all of them as one arc."**
   themes. Field note: converter-only ores (Iron/Copper Ore, Crude Oil)
   honestly classify "constrained" — polish question parked as #104.
 - **P2 (#101) — solver extensions** (clock-percent target, byproduct
-  routing suggestions): blocked-by P1. Overclock power-curve exponent is
-  research-gated at design.
+  feed suggestions): IMPLEMENTING. Research gate cleared in-repo
+  (per-machine `MachinePower.exponent`, non-uniform 1.321929/1.6).
+  Design v4 FROZEN after 4 rounds: r1 BLOCKER killed the byproduct
+  ROUTE-toggle rider (duplicate-lane apply-path defect + contested
+  partial-supply reconciliation) → routing descoped to #105,
+  suggestions display-only; r2 APPROVED_WITH_NITS×2; simplify caught
+  routing-residue payload fields; r3 caught the two-producers key
+  collision the narrowing regressed; r4 APPROVED + APPROVED_WITH_NITS
+  on the aggregate-then-match fix.
 - **P3 (#102) — persistence + gating** (saved alternate preferences,
   tier/unlock gating): blocked-by P2. Tier-data availability in the
   catalog is research-gated at design.
