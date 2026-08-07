@@ -141,10 +141,31 @@ export interface ItemRateRow {
  */
 export type RawCause = "natural" | "forced" | "constrained";
 
-/** A raw-input row with its reconstructed cause (S20 P1). */
+/**
+ * WHICH lever recovers a constrained raw whose inline picker is empty (S20 P3).
+ * "Recovery" means the inline picker becomes non-empty again — P1's actual
+ * affordance, which alternates participate in, so both predicates are
+ * ALTERNATE-INCLUSIVE (`producerRecipesFor` non-emptiness, never
+ * `effectiveDefaultRecipe`: an alternate-blind predicate drops the line P1
+ * emits today for alternate-only items).
+ *
+ * - `"machine"` — clearing exclusions alone recovers (P1's only reachable case).
+ * - `"tier"`    — raising the tier alone recovers.
+ * - `"either"`  — either lever alone recovers.
+ * - `"both"`    — neither alone does; both must change. The JOINT recovery
+ *                 always exists: the row is constrained, so a producer exists
+ *                 in the ungated data with no exclusions.
+ */
+export type ConstrainedLever = "machine" | "tier" | "either" | "both";
+
+/** A raw-input row with its reconstructed cause (S20 P1) and, for a constrained
+ *  row with no inline options left, the lever(s) that recover it (S20 P3). */
 export interface RawInputRow extends ItemRateRow {
   itemId: string;
   cause: RawCause;
+  /** Non-null ONLY when `cause` is "constrained" AND the inline picker is empty
+   *  — otherwise the picker itself is the recovery and needs no wording. */
+  lever: ConstrainedLever | null;
 }
 
 /**
@@ -224,6 +245,15 @@ export interface PreviewOptions {
   /** The proposal's overclock target (S20 P2), threaded to `proposalMetrics` so
    *  the cost sheet can render `Σ POWER ≈ N MW` at ≠100. Absent ⇒ 100 (exact). */
   clockPercent?: Fraction;
+  /**
+   * The UNGATED catalog (S20 P3), when the `catalog` argument is a tier-gated
+   * projection. Cause classification needs BOTH worlds: "natural" means no
+   * producer exists in the DATA AT ALL, which only the ungated world can
+   * answer — without the split, an item whose every producer is tier-gated
+   * would misclassify "natural" and silently lose its recovery line.
+   * ABSENT ⇒ the passed catalog, so null-tier callers are byte-identical.
+   */
+  ungatedCatalog?: Catalog;
 }
 
 /**
@@ -244,6 +274,9 @@ export function toProposalPreview(
 ): ProposalPreview {
   const excludedMachineIds = options.excludedMachineIds ?? EXCLUDED_MACHINE_IDS;
   const rawItemIds = options.rawItemIds ?? new Set<string>();
+  // The second world (S20 P3). Absent ⇒ the passed catalog, so at tier "all"
+  // gated ≡ ungated and every classification below is byte-identical to P1.
+  const ungated = options.ungatedCatalog ?? catalog;
   const itemName = (id: string): string => catalog.items[id]?.displayName ?? id;
   const machineNameFor = (stage: ProposedStage): string => {
     const machineId = catalog.recipes[stage.recipeId]?.machineId;
@@ -302,8 +335,12 @@ export function toProposalPreview(
     // forces the target raw, so a stale target raw-mark must not label the
     // target "forced" here (the strip would offer an inert x).
     if (itemId !== targetItemId && rawItemIds.has(itemId)) return "forced";
-    // Has ANY primary-producing recipe at all in the catalog?
-    const hasAnyProducer = Object.values(catalog.recipes).some(
+    // Has ANY primary-producing recipe at all in the DATA? Read the UNGATED
+    // world (S20 P3): "natural" means the game has no producer for this item,
+    // which a tier-gated projection cannot answer. Reading the gated world here
+    // would label an item whose every producer is merely tier-locked "natural"
+    // — silently losing its recovery line.
+    const hasAnyProducer = Object.values(ungated.recipes).some(
       (r) => r.primaryOutputId === itemId,
     );
     if (!hasAnyProducer) return "natural";
@@ -321,14 +358,49 @@ export function toProposalPreview(
       : "natural";
   };
 
+  /**
+   * Which lever recovers a constrained raw (S20 P3). Null unless the row is
+   * constrained AND its inline picker is empty — while `producerRecipesFor`
+   * on the gated world still has entries, that picker IS the recovery (P1,
+   * unchanged) and no wording is needed.
+   *
+   * Both predicates are ALTERNATE-INCLUSIVE, matching the branch entry: an
+   * `effectiveDefaultRecipe`-based test is alternate-blind and would drop the
+   * line entirely for an alternate-only item.
+   */
+  const leverOf = (
+    itemId: string,
+    cause: RawCause,
+  ): ConstrainedLever | null => {
+    if (cause !== "constrained") return null;
+    if (producerRecipesFor(catalog, itemId, excludedMachineIds).length > 0) {
+      return null;
+    }
+    // Raising the tier alone restores producers.
+    const tierLever =
+      producerRecipesFor(ungated, itemId, excludedMachineIds).length > 0;
+    // Clearing exclusions alone restores producers.
+    const machineLever = producerRecipesFor(catalog, itemId, []).length > 0;
+    if (tierLever && machineLever) return "either";
+    if (tierLever) return "tier";
+    if (machineLever) return "machine";
+    // Neither alone — but the JOINT recovery always exists: constrained ⇒ a
+    // producer exists ungated, so producerRecipesFor(ungated, ∅) is non-empty.
+    return "both";
+  };
+
   return {
     rows,
-    rawInputs: proposal.rawInputs.map((r) => ({
-      itemId: r.itemId,
-      itemName: itemName(r.itemId),
-      rate: formatRate(r.rate),
-      cause: causeOf(r.itemId),
-    })),
+    rawInputs: proposal.rawInputs.map((r) => {
+      const cause = causeOf(r.itemId);
+      return {
+        itemId: r.itemId,
+        itemName: itemName(r.itemId),
+        rate: formatRate(r.rate),
+        cause,
+        lever: leverOf(r.itemId, cause),
+      };
+    }),
     byproducts: proposal.byproducts.map((b) => ({
       itemName: itemName(b.itemId),
       rate: formatRate(b.rate),
@@ -517,6 +589,45 @@ export function pickerOptionsFor(
   // The override's machine is excluded (or its recipe is otherwise ineligible):
   // force-include it so the current selection is always a real, labeled option.
   return [...eligible, current];
+}
+
+// ---------------------------------------------------------------------------
+// S20 P3 — tier gating (ticket #102). Gating is a CATALOG PROJECTION, derived
+// once per propose and passed explicitly, rather than a tier threaded through
+// every helper's options bag: the four helpers above keep their signatures and
+// simply receive whichever world the caller wants.
+// ---------------------------------------------------------------------------
+
+/**
+ * The catalog as seen at `unlockedTier`: recipes whose MIN unlock tier exceeds
+ * it are removed. A recipe with NO `recipeUnlocks` entry is never gated (no
+ * schematic unlocks it ⇒ nothing to unlock ⇒ always available).
+ *
+ * At `unlockedTier === null` ("all") this returns the SAME REFERENCE, so the
+ * no-gating path is byte-stable and the derivation is trivially memoizable.
+ * `items`, `machines`, `tiers` and `recipeUnlocks` are carried through
+ * untouched — only `recipes` is projected.
+ *
+ * Note this returns a plain `Catalog`, so passing the gated or the ungated
+ * world typechecks identically at every call site: the wiring is pinned by
+ * tests, not by the compiler (a branded type is ticket #106).
+ */
+export function gateCatalog(
+  catalog: Catalog,
+  unlockedTier: number | null,
+): Catalog {
+  if (unlockedTier === null) return catalog;
+  // Null-prototype container (#28): this is the THIRD construction site of the
+  // recipes map (after the parse and revive boundaries), and a natural
+  // Object.fromEntries/spread would silently regress it for every non-null
+  // tier — no pre-existing test covers this one.
+  const recipes: Catalog["recipes"] = Object.create(null);
+  for (const [id, recipe] of Object.entries(catalog.recipes)) {
+    const unlock = catalog.recipeUnlocks[id];
+    if (unlock !== undefined && unlock > unlockedTier) continue;
+    recipes[id] = recipe;
+  }
+  return { ...catalog, recipes };
 }
 
 /**
