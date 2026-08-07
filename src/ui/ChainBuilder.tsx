@@ -403,8 +403,7 @@ export function ChainBuilder() {
         <label>
           TIER
           <select
-            className="chain-builder-tier"
-            aria-label="unlocked tier"
+            className="chain-builder-tier-select"
             value={tierSelectValue}
             onChange={(e) => onTierChange(e.target.value)}
           >

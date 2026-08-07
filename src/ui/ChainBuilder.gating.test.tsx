@@ -282,7 +282,7 @@ function propose(): void {
 }
 
 const tierSelect = (): HTMLSelectElement =>
-  $<HTMLSelectElement>('select[aria-label="unlocked tier"]');
+  $<HTMLSelectElement>("select.chain-builder-tier-select");
 
 /** The TIER select's SELECTED option label — what the user actually sees. */
 function selectedTierLabel(): string | null {
@@ -439,7 +439,7 @@ describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () => 
   it("derives its options from recipeUnlocks (all + 0..max), never hardcoded", () => {
     mount(splitCatalog(), { unlockedTier: null });
     expect(
-      $$<HTMLOptionElement>('select[aria-label="unlocked tier"] option').map(
+      $$<HTMLOptionElement>("select.chain-builder-tier-select option").map(
         (o) => o.textContent,
       ),
     ).toEqual(["all", "0", "1", "2", "3", "4", "5"]);
@@ -467,7 +467,7 @@ describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () => 
     mount(catalogOf([PLATE], {}), { unlockedTier: 3 });
     expect(selectedTierLabel()).toBe("all");
     expect(
-      $$<HTMLOptionElement>('select[aria-label="unlocked tier"] option').map(
+      $$<HTMLOptionElement>("select.chain-builder-tier-select option").map(
         (o) => o.textContent,
       ),
     ).toEqual(["all"]);

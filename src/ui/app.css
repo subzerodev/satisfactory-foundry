@@ -433,8 +433,13 @@ body {
 }
 
 /* TIER gate (S20 P3) — a short numeric select beside Rate/Clock; the option
-   list is "all" plus 0..max, so it never needs the target select's width. */
-.chain-builder-tier {
+   list is "all" plus 0..max, so it never needs the target select's width.
+   Named `-select`, NOT `.chain-builder-tier`: that class is the preview rows'
+   depth marker (T0/T1/…) further down this file. At equal specificity the
+   later rule wins, so sharing the name silently killed this width AND gave the
+   control the marker's accent colour, mono-numeric font and letter-spacing —
+   styling never authored for a select, in both themes. */
+.chain-builder-tier-select {
   min-width: 5em;
 }
 
