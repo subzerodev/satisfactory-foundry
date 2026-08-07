@@ -18,12 +18,22 @@ export interface CatalogItem {
    * `FGResourceDescriptor` — an extraction-level resource (ores, Coal, Crude
    * Oil, Water, …). OPTIONAL with absent ⇒ non-raw: a required field would
    * TS2741-break the ~7 test fixtures that enumerate CatalogItem literals, and
-   * the sole consumer reads `?.isRawResource === true` (truthiness-safe), so
-   * optional is behaviourally identical (Stage 11 / Phase 1, ticket #57).
+   * every consumer's read is TRUTHINESS-SAFE, so optional is behaviourally
+   * identical (Stage 11 / Phase 1, ticket #57). The spellings differ — `=== true`
+   * (chain-builder-adapter.ts), `!== true` (graph-flow.ts:588), bare truthiness
+   * (catalog-store.ts:247,333) — so what a new reader MUST preserve is the
+   * property, not one idiom: never distinguish `false` from absent.
+   * `?.isRawResource === true` is the recommended spelling.
    * Ground truth, not recipe inference — both recipe-set heuristics died
    * misclassifying byproduct-only items (Heavy Oil Residue) and byproduct
    * resources (Water). The docs-loader sets it only for FGResourceDescriptor
-   * groups; the raw-feed display derive is its only reader.
+   * groups. TWO SEMANTIC readers as of S21 P0 (#104) — sites that branch on
+   * the flag's meaning: the raw-feed display derive (graph-flow.ts) and the
+   * adapter's raw-cause classifier (`causeOf` in chain-builder-adapter.ts),
+   * which natural-izes an extraction resource whose producers are all excluded
+   * under both policies in play. `catalog-store.ts:247,333` is NOT one of them
+   * — it only round-trips the field through serialize/revive and decides
+   * nothing, which is why it appears in the spelling list above but not here.
    */
   isRawResource?: boolean;
 }

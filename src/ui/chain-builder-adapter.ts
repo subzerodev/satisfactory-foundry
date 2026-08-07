@@ -128,11 +128,28 @@ export interface ItemRateRow {
  * - `"constrained"` — the catalog HAS ≥1 producer recipe for the item but NONE
  *                     is eligible under the current exclusions + default policy
  *                     (excluded machines / alternate-only availability), so the
- *                     item collapsed to raw involuntarily.
- * - `"natural"`     — otherwise (a genuine extraction-level leaf: ores, water),
- *                     INCLUDING a raw produced by the core's cycle-guard /
- *                     malformed-primary backstops (the reconstruction cannot see
- *                     solver demotions — accepted limitation, backstop path).
+ *                     item collapsed to raw involuntarily — AND some policy
+ *                     change could actually recover it (see the carve-out).
+ * - `"natural"`     — a genuine extraction-level leaf (ores, water). THREE ways
+ *                     in, matching `causeOf`'s three "natural" returns (S21 P0,
+ *                     #104 added the second; this is no longer a plain
+ *                     "otherwise", which had subsumed all of them):
+ *                       1. no producer exists in the data at all;
+ *                       2. the item is `isRawResource` and every producer it has
+ *                          is excluded under BOTH the default policy and the
+ *                          live set, making the constrained label technically
+ *                          true but useless — its only "recovery" would be
+ *                          re-enabling a machine the default excludes on
+ *                          purpose. So an item CAN satisfy the `constrained`
+ *                          wording above verbatim and still report "natural";
+ *                          `causeOf` is the arbiter;
+ *                       3. an eligible default recipe DOES exist, yet the core
+ *                          still emitted the item as raw — the cycle-guard /
+ *                          malformed-primary backstop path (the reconstruction
+ *                          cannot see solver demotions — accepted limitation).
+ *                          `water` with the Packager un-excluded is the worked
+ *                          example: `unpackage_water` resolves, so route 2 does
+ *                          not fire and control falls through to here.
  *
  * Precedence PINNED forced > constrained > natural (mirrors the core's raw >
  * override > default): a forced item that ALSO has no eligible producer reports
@@ -248,9 +265,11 @@ export interface PreviewOptions {
   /**
    * The UNGATED catalog (S20 P3), when the `catalog` argument is a tier-gated
    * projection. Cause classification needs BOTH worlds: "natural" means no
-   * producer exists in the DATA AT ALL, which only the ungated world can
-   * answer — without the split, an item whose every producer is tier-gated
-   * would misclassify "natural" and silently lose its recovery line.
+   * producer exists in the DATA AT ALL — or, since S21 P0 (#104), none under
+   * EITHER exclusion policy in play for an extraction resource — and only the
+   * ungated world can answer either question. Without the split, an item whose
+   * every producer is tier-gated would misclassify "natural" and silently lose
+   * its recovery line.
    * ABSENT ⇒ the passed catalog, so null-tier callers are byte-identical.
    */
   ungatedCatalog?: Catalog;
@@ -329,21 +348,60 @@ export function toProposalPreview(
   // Reconstruct each raw leaf's cause (Axis 4). The core emits raw leaves with
   // no marker; precedence forced > constrained > natural (mirrors raw > override
   // > default). "constrained" = the catalog HAS a producer recipe but NONE is
-  // eligible under the current exclusions + default policy.
+  // eligible under the current exclusions + default policy — EXCEPT where the
+  // S21 P0 carve-out below natural-izes an extraction resource whose producers
+  // are vacuously unreachable under both policies.
   const causeOf = (itemId: string): RawCause => {
     // Target immunity mirrors the core (boundary r1 NIT): the core never
     // forces the target raw, so a stale target raw-mark must not label the
     // target "forced" here (the strip would offer an inert x).
     if (itemId !== targetItemId && rawItemIds.has(itemId)) return "forced";
     // Has ANY primary-producing recipe at all in the DATA? Read the UNGATED
-    // world (S20 P3): "natural" means the game has no producer for this item,
-    // which a tier-gated projection cannot answer. Reading the gated world here
-    // would label an item whose every producer is merely tier-locked "natural"
-    // — silently losing its recovery line.
+    // world (S20 P3): this branch's "natural" means the game has no producer
+    // for this item, which a tier-gated projection cannot answer. Reading the
+    // gated world here would label an item whose every producer is merely
+    // tier-locked "natural" — silently losing its recovery line.
     const hasAnyProducer = Object.values(ungated.recipes).some(
       (r) => r.primaryOutputId === itemId,
     );
     if (!hasAnyProducer) return "natural";
+    // NATURAL-IZE a VACUOUSLY constrained extraction resource (S21 P0, #104).
+    // An `isRawResource` item whose every producer is excluded under BOTH the
+    // default policy AND the user's live set has no recovery worth offering:
+    // the only advice a constrained line could give is "re-enable the
+    // converter/packager", which the default excludes on purpose (ore→ore
+    // conversion, package/unpackage 2-cycles). Every raw-flagged constrained
+    // item in the bundled catalog becomes "natural" here EXCEPT `coal`, which
+    // the design deliberately spares.
+    //
+    // The CONJUNCTION of two vacuity tests is load-bearing — it is NOT
+    // `P(EXCLUDED ∪ live)`, which is weaker (implied by either conjunct) and
+    // would re-admit `coal`, whose Charcoal/Biocoal constructor alternates are
+    // a REAL recovery. Each conjunct guards one of P3's levers, so no cell of
+    // the lever matrix is swallowed on any combination:
+    //   - the CONSTANT test falsifies whenever a producer sits outside the
+    //     default set, so a user-excluded producer keeps its `machine` lever;
+    //   - the LIVE test is definitionally `¬tierLever` — the identical call
+    //     with the identical arguments as `leverOf` below — so no row carrying
+    //     an actionable tier-ALONE recovery can ever natural-ize.
+    // When the rule DOES fire, every producer lies inside EXCLUDED_MACHINE_IDS,
+    // so the only recovery it can suppress is that degenerate one.
+    //
+    // ALTERNATE-INCLUSIVE by construction: `effectiveDefaultRecipe` is
+    // alternate-blind and would wrongly natural-ize `coal`. The flag is read
+    // off the UNGATED `items` map with `=== true`, the spelling its own comment
+    // RECOMMENDS (data/types.ts; what that comment actually requires is
+    // truthiness-safety — never distinguishing `false` from absent — which
+    // `=== true` satisfies). `gateCatalog` filters only `recipes` and carries
+    // `items` through untouched, so both worlds agree, but pinning the source
+    // keeps that a stated invariant rather than a coincidence.
+    if (
+      ungated.items[itemId]?.isRawResource === true &&
+      producerRecipesFor(ungated, itemId, EXCLUDED_MACHINE_IDS).length === 0 &&
+      producerRecipesFor(ungated, itemId, excludedMachineIds).length === 0
+    ) {
+      return "natural";
+    }
     // A producer exists — "constrained" mirrors the CORE's default policy
     // (boundary r1 fix): raw because no non-alternate, non-excluded producer
     // exists. This INCLUDES the alternate-only case — producerRecipesFor

@@ -3,6 +3,22 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-07 — Stage 21 P0: ores stop pretending to be a problem
+
+> Hey Michael — small one, but you'll see it on almost every chain. Iron
+> Ore, Copper Ore, Water and the rest used to show up under "no eligible
+> producer" with a note suggesting you edit your machine exclusions —
+> technically true (the Converter *can* make ore from limestone) but not
+> useful, since that machine is switched off on purpose. They now just
+> appear on the plain RAW line as the raw inputs they are.
+>
+> Coal is deliberately the exception: you really can make it from biomass
+> with Charcoal or Biocoal, so Coal still shows its recipe picker. And if
+> something genuinely *is* blocked by a choice you made — you switched a
+> machine off, or you're below the tier that unlocks it — the line still
+> appears and still tells you which lever fixes it. The only thing that
+> went away is advice that wouldn't have helped.
+
 ## 2026-08-07 — Stage 20 P3: Propose remembers you, and respects your tier
 
 > Hey Michael — two last things for the chain builder. First, it
