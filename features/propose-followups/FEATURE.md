@@ -1,15 +1,40 @@
 # Propose follow-ups: consolidation, type-safety, routing (Stage 21 arc)
 
 **Started:** 2026-08-07
-**Status:** IN PROGRESS — P0 design
+**Status:** IN PROGRESS — P0 DONE, P1 next
 **Epic:** #108 (board #21, Stage 21 milestone 92)
 **Directive:** Michael 2026-08-07, handed the four Stage 20 follow-ups:
 **"do them."** That delegates the #104 UX call the ticket had reserved for him.
 
 ## Phase status
 
-- **P0 (#104) — ore constrained-vs-natural UX**: DESIGN. The decision is
-  mine per the directive.
+- **P0 (#104) — ore constrained-vs-natural UX**: DONE 2026-08-07 (merge
+  `f34bbf6`; 907 tests trunk-verified). Design v5 FROZEN after FOUR rounds
+  in which THREE rules were proposed and TWO killed by counterexample:
+  each single-keyed rule is the exact negation of one of Stage 20's
+  recovery levers, so each silently ate a matrix cell — keying on the live
+  exclusions eats the `machine` lever (tick Constructor, coal loses its
+  picker AND its hint); keying on the default constant eats the `tier`
+  lever (un-tick Converter below tier 9, Iron Ore loses a real "raise
+  TIER"). The surviving rule is the CONJUNCTION: `isRawResource` ∧ no
+  eligible producer under the default constant ∧ none under the live set.
+  Both reviewers proved it holds and neither could break it.
+  Three boundary rounds + the simplify pass: r1 found the phase's EIGHTH
+  pass-either-way test (an assertion whose target was already absent
+  pre-change) and that the accepted regression was pinned while the
+  improvement it paid for was not; the simplify pass found ~45 lines of
+  process archaeology in live source and one fully subsumed test row,
+  whose deletion was proven free by the mutant count falling 6 → 5 with
+  every other set byte-identical.
+  **The spec itself contained a non-discriminating test** — the
+  implementer found that the `polymer_resin` row I nominated cannot fail
+  (its producer is in neither exclusion set), kept it, and added
+  `packaged_water`, which does enforce the claim. It also overruled two of
+  my relayed instructions and was right both times (90/min, not 60; 15/5,
+  not 14/6).
+  Walk: all five cases live, including both rule-killers — excluding
+  Constructor keeps coal's machine lever; un-excluding Converter at tier 8
+  keeps Iron Ore's tier lever.
 - **P1 (#103) — adapter consolidation + compare tier-awareness**: pending.
 - **P2 (#106) — branded `GatedCatalog`**: pending, blocked-by P1
   (consolidating first means fewer call sites to brand).
