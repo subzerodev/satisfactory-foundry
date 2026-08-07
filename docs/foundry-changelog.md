@@ -3,6 +3,25 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-07 — Stage 20 P3: Propose remembers you, and respects your tier
+
+> Hey Michael — two last things for the chain builder. First, it
+> remembers. The recipes you pick and the machines you untick now stay
+> picked and unticked across restarts, so you don't re-teach it your
+> preferences every session — and you can still change any of them
+> mid-plan, exactly as before. (Your RAW markings and the clock stay
+> per-run; those felt like decisions about one factory, not standing
+> preferences.)
+>
+> Second, there's a TIER box. Set it to where you actually are in the
+> game and Propose will only use recipes you've unlocked — read from
+> the real milestone and hard-drive data in the game files, not
+> guessed. If something can't be made at your tier, the line says so
+> and tells you exactly which lever fixes it: raise the tier, edit the
+> machine exclusions, or both — and it will never suggest a lever that
+> wouldn't actually help. Leave TIER on "all" and nothing changes from
+> before.
+
 ## 2026-08-07 — Stage 20 P2: the Propose button plans your overclock
 
 > Hey Michael — there's a CLOCK % box next to the rate now. Type 150

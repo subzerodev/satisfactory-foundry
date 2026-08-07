@@ -1,7 +1,7 @@
 # Propose grows up: info + customization (Stage 20 arc)
 
 **Started:** 2026-08-06
-**Status:** IN PROGRESS — P2 implementation
+**Status:** COMPLETE 2026-08-07 — all four phases shipped on develop
 **Epic:** #98 (board #21, Stage 20 milestone 91)
 **Directive:** Michael 2026-08-06 — "we can give more info and customisation
 there" → the full option menu → **"all of them as one arc."**
@@ -48,9 +48,48 @@ there" → the full option menu → **"all of them as one arc."**
   Ingot chain renders both suggestion lines (Water 120/min → Alumina
   Solution, Silica 100/min → Aluminum Ingot) display-only with
   aggregated rates; no-match chain shows no line; both themes.
-- **P3 (#102) — persistence + gating** (saved alternate preferences,
-  tier/unlock gating): blocked-by P2. Tier-data availability in the
-  catalog is research-gated at design.
+- **P3 (#102) — persistence + gating**: DONE 2026-08-07 (merge on
+  develop; 896 tests trunk-verified, +62 in-phase). Research gate
+  cleared by measurement: `tiers.ts` is TRANSPORT tiers, not
+  progression — the real data is 574 `FGSchematic` entries in the
+  bundled Docs.json, which the loader ignored. Design v12 FROZEN after
+  EIGHT rounds plus a post-freeze amendment with its own review.
+  The gate caught four SILENT failure modes before any code existed:
+  (1) schematic refs end in an apostrophe and the repo's normalizer
+  splits on it, so a whole ref yields `""` — gating would have matched
+  nothing, hidden behind the design's own "no unlock data ⇒ no gating"
+  tolerance; (2) `recipeUnlocks` is parsed data but the catalog cache
+  is field-whitelisted, and its halves fail asymmetrically (revive is
+  tsc-forced, serialize is not) — gating would have worked on first
+  load and died silently on every boot after, the same bug this repo
+  already paid a parser bump for with `isRawResource`; (3) two untyped
+  test fixtures are not tsc-forced, one of which would have kept
+  passing while losing the coverage it is named for; (4) a clamp I
+  added mid-loop would have persisted `-Infinity` and gated out
+  everything on a later boot. It also proved the `:441` seam
+  behaviourally unobservable and recorded the proof so no later round
+  re-adds a phantom pin.
+  Implementation: the agent HALTED before coding on a genuine
+  design-grounding failure — spec 8 required rendered-output
+  assertions for seams unreachable in this repo's node/SSR posture.
+  Resolved by scoping jsdom to one seam file (alternatives recorded as
+  rejected); the agent then corrected two of the amendment's own
+  mechanics BY MEASUREMENT (jsdom has no localStorage — opaque origin;
+  the TIER value binding is a client-DOM no-op that would have been
+  pinned non-discriminatingly).
+  Boundary: four rounds. r1 found the phase's HEADLINE feature
+  unpinned (the prefs mirror-backs — the sole assertion matched the
+  seeded value) and a CSS class collision; the diff-simplify MEDIUM
+  collapsed the two gated derivation sites onto the preview record,
+  dissolving the r4-r6 memo-placement argument and removing a real
+  skew; r3 found a ledger mutation that no longer COMPILED after that
+  refactor, recording a crash's 16 red rows as stronger evidence where
+  the true bite was 1 — and the regression a maintainer would actually
+  write failed nothing, so the property was genuinely unpinned. r4
+  APPROVED ×2, zero findings.
+  SIX tests that passed whether the code worked or not were found and
+  fixed across the phase; final ledger 48 behaviors, 46 pinned, 2
+  proven no-ops, none unpinned.
 
 ## Grounding (verified 2026-08-06 at arc start)
 

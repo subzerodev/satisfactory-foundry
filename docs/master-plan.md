@@ -388,9 +388,11 @@ process (all-Claude roster, opus implementers, per-phase gates).
   availability research-gated]).
 - **Epic:** #98 (milestone 91; children #99 #100 #101 #102, sequential
   blocked-by chain). Record: `features/propose-grows-up/FEATURE.md`.
-- **Status:** IN PROGRESS — P0 (#99) DONE 2026-08-06; P1 (#100) DONE
-  2026-08-07; P2 (#101) DONE 2026-08-07 (clock-percent shipped;
-  byproduct suggestions shipped DISPLAY-ONLY — explicit routing
-  descoped at design r1 to its own ticket #105 after both reviewers
-  converged on a lane-invariant defect in the rider design); P3 (#102)
-  next.
+- **Status:** COMPLETE 2026-08-07. P0 (#99) info layer; P1 (#100)
+  customization core; P2 (#101) clock-percent + byproduct suggestions
+  (shipped DISPLAY-ONLY — explicit routing descoped at design r1 to
+  #105 after both reviewers converged on a lane-invariant defect in
+  the rider design); P3 (#102) persistent preferences + tier gating
+  from real FGSchematic unlock data. Follow-ups: #103 (adapter
+  consolidation + compare tier-awareness), #104 (ore constrained-vs-
+  natural UX), #105 (byproduct routing), #106 (branded GatedCatalog).
