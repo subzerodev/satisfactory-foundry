@@ -19,6 +19,7 @@ import { useState } from "react";
 import { Fraction } from "../core/fraction.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
 import { useAppStore } from "../state/store.ts";
+import { formatRate } from "./format.ts";
 import {
   EXCLUDED_MACHINE_IDS,
   proposeChainForCatalog,
@@ -30,6 +31,7 @@ import {
   producerRecipesFor,
   pickerOptionsFor,
   excludableMachines,
+  byproductSuggestions,
 } from "./chain-builder-adapter.ts";
 import type { ProposalPreview } from "./chain-builder-adapter.ts";
 import type { Catalog, CatalogRecipe } from "../data/types.ts";
@@ -50,6 +52,29 @@ export function parseRateText(
   }
   if (value.lte(Fraction.from(0))) {
     return { ok: false, error: "rate must be greater than 0" };
+  }
+  return { ok: true, value };
+}
+
+/**
+ * Parse the CLOCK % text into a Fraction in (0, 250] — the game's shard-boosted
+ * max (S20 P2). Same raw-text-parsed-at-propose-time idiom as `parseRateText`;
+ * pure + exported so the node-env suite can pin the wording without rendering.
+ */
+export function parseClockText(
+  text: string,
+): { ok: true; value: Fraction } | { ok: false; error: string } {
+  let value: Fraction;
+  try {
+    value = Fraction.parse(text);
+  } catch {
+    return { ok: false, error: "clock % must be a number in (0, 250]" };
+  }
+  if (value.lte(Fraction.from(0))) {
+    return { ok: false, error: "clock % must be greater than 0" };
+  }
+  if (value.gt(Fraction.from(250))) {
+    return { ok: false, error: "clock % must be at most 250" };
   }
   return { ok: true, value };
 }
@@ -76,6 +101,8 @@ export function ChainBuilder() {
 
   const [targetItemId, setTargetItemId] = useState("");
   const [rateText, setRateText] = useState("");
+  // The global overclock target (S20 P2); default "100" ⇒ pre-P2 behavior.
+  const [clockText, setClockText] = useState("100");
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
 
@@ -124,10 +151,16 @@ export function ChainBuilder() {
     if (targetItemId === "") return;
     const parsed = parseRateText(rateText);
     if (!parsed.ok) return;
+    const parsedClock = parseClockText(clockText);
+    if (!parsedClock.ok) return;
+    // The clock joins the SAME options plumbing as the other controls (P1's
+    // single-path invariant): one bag threads to both the core solve and the
+    // preview's metrics, so they can never desync on the clock.
     const opts = {
       overrides: patch.overrides ?? overrides,
       rawItemIds: patch.rawItemIds ?? rawItemIds,
       excludedMachineIds: patch.excludedMachineIds ?? excludedMachineIds,
+      clockPercent: parsedClock.value,
     };
     const proposal = proposeChainForCatalog(
       cat,
@@ -140,6 +173,7 @@ export function ChainBuilder() {
       view: toProposalPreview(proposal, cat, {
         excludedMachineIds: opts.excludedMachineIds,
         rawItemIds: opts.rawItemIds,
+        clockPercent: opts.clockPercent,
       }),
     });
   }
@@ -157,12 +191,20 @@ export function ChainBuilder() {
       setError(parsed.error);
       return;
     }
+    const parsedClock = parseClockText(clockText);
+    if (!parsedClock.ok) {
+      setError(parsedClock.error);
+      return;
+    }
     repropose(catalog, {}, true);
   }
 
   function onApply() {
     if (preview === null) return;
-    applyChainProposal(preview.proposal);
+    // Seed the applied stages with the propose-time clock text (S20 P2). A live
+    // preview implies a valid clock (repropose bails on an invalid one), so the
+    // raw text carries straight through as the user-intent-text idiom.
+    applyChainProposal(preview.proposal, clockText);
     // Clear the preview so a double-apply is an explicit re-propose (Axis 6);
     // KEEP the customization choices (the user's session intent — Axis 3).
     setPreview(null);
@@ -249,6 +291,15 @@ export function ChainBuilder() {
             inputMode="decimal"
             value={rateText}
             onChange={(e) => setRateText(e.target.value)}
+          />
+        </label>
+        <label>
+          Clock %
+          <input
+            type="text"
+            inputMode="decimal"
+            value={clockText}
+            onChange={(e) => setClockText(e.target.value)}
           />
         </label>
         <button type="button" onClick={onPropose}>
@@ -425,6 +476,18 @@ export function ChainBuilder() {
               Byproducts: {itemRateLineText(view.byproducts)}
             </p>
           )}
+          {/* Byproduct-feed suggestions (S20 P2) — DISPLAY-ONLY: a surplus
+              byproduct that could feed a proposed stage. No toggle, no routing
+              (that is #105); recomputed per re-propose (pure derivation). */}
+          {byproductSuggestions(preview.proposal, catalog).map((s) => (
+            <p
+              key={`${s.itemId} ${s.toItemId}`}
+              className="chain-builder-suggestion"
+            >
+              {catalog.items[s.itemId]?.displayName ?? s.itemId}{" "}
+              {formatRate(s.rate)}/min could feed {s.toItemName}
+            </p>
+          ))}
           <div className="chain-builder-actions">
             <button type="button" onClick={onApply} disabled={view.isEmpty}>
               Apply
