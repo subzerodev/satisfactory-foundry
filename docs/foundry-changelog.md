@@ -3,6 +3,24 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-07 — Stage 20 P2: the Propose button plans your overclock
+
+> Hey Michael — there's a CLOCK % box next to the rate now. Type 150
+> and Propose, and the whole chain is planned as if every machine runs
+> at 150%: fewer machines where the faster rate covers the demand, and
+> the power total switches to a "≈" figure because overclocked power
+> follows the game's real curve (each machine's own exponent — it's
+> not linear). Leave it at 100 and everything is exactly as before.
+> When you Apply, the built stages carry your chosen clock with them,
+> so the canvas agrees with what the preview promised — and it always
+> applies the clock you Proposed with, even if you'd already typed a
+> new number in the box. One more thing: when a proposed chain makes a
+> byproduct that another of its own stages could drink — like the
+> water that aluminum scrap production gives off, right next to a
+> stage that needs water — the preview now points it out in a little
+> note. It's just a heads-up for now; wiring it up automatically is a
+> future feature.
+
 ## 2026-08-07 — Stage 20 P1: the Propose button takes direction
 
 > Hey Michael — the proposal is yours to shape now, before you commit

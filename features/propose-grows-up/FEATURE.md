@@ -29,16 +29,25 @@ there" → the full option menu → **"all of them as one arc."**
   returned as Foundry ×3; Apply landed the customized chain; both
   themes. Field note: converter-only ores (Iron/Copper Ore, Crude Oil)
   honestly classify "constrained" — polish question parked as #104.
-- **P2 (#101) — solver extensions** (clock-percent target, byproduct
-  feed suggestions): IMPLEMENTING. Research gate cleared in-repo
-  (per-machine `MachinePower.exponent`, non-uniform 1.321929/1.6).
-  Design v4 FROZEN after 4 rounds: r1 BLOCKER killed the byproduct
-  ROUTE-toggle rider (duplicate-lane apply-path defect + contested
-  partial-supply reconciliation) → routing descoped to #105,
-  suggestions display-only; r2 APPROVED_WITH_NITS×2; simplify caught
+- **P2 (#101) — solver extensions**: DONE 2026-08-07 (merge on develop;
+  834 tests trunk-verified, +27 in-phase). Design v4 FROZEN after 4 rounds: r1
+  BLOCKER killed the byproduct ROUTE-toggle rider (duplicate-lane
+  apply-path defect + contested partial-supply reconciliation) →
+  routing descoped to #105, suggestions display-only; simplify caught
   routing-residue payload fields; r3 caught the two-producers key
-  collision the narrowing regressed; r4 APPROVED + APPROVED_WITH_NITS
-  on the aggregate-then-match fix.
+  collision that narrowing regressed; r4 approved aggregate-then-match.
+  Implementation: zero drift, 5 commits. Boundary r1: adversarial MAJOR
+  — stale-clock at Apply (live clockText read; propose@100 → edit 150 →
+  Apply seeded 150 on 100-sized counts) — fixed via Preview clockText
+  snapshot; r2 APPROVED×2; diff-simplify APPROVED (0). 9-behavior
+  bidirectionality log. Walk: Computer 10/min — 100% byte-stable
+  (928 MW exact == P0 baseline); 150% counts drop (Manufacturer ×4→×3,
+  hand-checked ceil(10/3.75)=3), Σ POWER ≈ 1122.9; snapshot immunity
+  live (edit to 200 post-propose, applied node solves at 150 —
+  ≈282.0 MW = 55×3×1.5^1.321929); TitleBlock Σ ≈ 1123 agrees; Aluminum
+  Ingot chain renders both suggestion lines (Water 120/min → Alumina
+  Solution, Silica 100/min → Aluminum Ingot) display-only with
+  aggregated rates; no-match chain shows no line; both themes.
 - **P3 (#102) — persistence + gating** (saved alternate preferences,
   tier/unlock gating): blocked-by P2. Tier-data availability in the
   catalog is research-gated at design.
