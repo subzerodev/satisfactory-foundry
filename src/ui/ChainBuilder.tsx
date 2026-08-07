@@ -6,22 +6,24 @@
  * items treat-as-raw, and edit which machines the proposer may use. Every change
  * re-proposes synchronously; Apply is unchanged (applies the CUSTOMIZED chain).
  *
- * The proposal + the customization choices are ephemeral — component-local
- * state, no store field (the store only gains the apply action; choice
- * persistence is P3). Apply clears the preview but KEEPS the choices (session
- * intent); Discard likewise clears the preview, keeps the choices. Solver runs
- * are a synchronous catalog-sized DFS. Frozen design: features/propose-grows-up/
- * p1-brainstorm.md (v7).
+ * The proposal is ephemeral — component-local state, cleared by Apply and
+ * Discard alike (both KEEP the choices: session intent). The customization
+ * choices are component state too, but as of S20 P3 (#102) the overrides, the
+ * machine exclusions and the TIER gate are SEEDED from the persisted
+ * `proposePrefs` and MIRRORED back on every change, so they survive a restart
+ * and seed every future Propose; raw markings and the clock stay ephemeral (a
+ * per-plan boundary intent and a per-run target respectively). Solver runs are
+ * a synchronous catalog-sized DFS. Frozen design: features/propose-grows-up/
+ * p1-brainstorm.md (v7), p3-brainstorm.md (v11).
  */
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 import { Fraction } from "../core/fraction.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
 import { useAppStore } from "../state/store.ts";
 import { formatRate } from "./format.ts";
 import {
-  EXCLUDED_MACHINE_IDS,
   proposeChainForCatalog,
   toProposalPreview,
   previewRowText,
@@ -32,8 +34,12 @@ import {
   pickerOptionsFor,
   excludableMachines,
   byproductSuggestions,
+  gateCatalog,
 } from "./chain-builder-adapter.ts";
-import type { ProposalPreview } from "./chain-builder-adapter.ts";
+import type {
+  ProposalPreview,
+  ConstrainedLever,
+} from "./chain-builder-adapter.ts";
 import type { Catalog, CatalogRecipe } from "../data/types.ts";
 
 /**
@@ -105,6 +111,10 @@ export function ChainBuilder() {
     s.catalog.status === "ready" ? s.catalog.catalog : null,
   );
   const applyChainProposal = useAppStore((s) => s.applyChainProposal);
+  // The persisted Propose preferences (S20 P3): the SEED for the three
+  // persisted controls below, and the sink every change mirrors back to.
+  const proposePrefs = useAppStore((s) => s.proposePrefs);
+  const setProposePrefs = useAppStore((s) => s.setProposePrefs);
 
   const [targetItemId, setTargetItemId] = useState("");
   const [rateText, setRateText] = useState("");
@@ -113,22 +123,48 @@ export function ChainBuilder() {
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
 
-  // The three customization controls (component-local; no store surface, no
-  // persistence — P3). Stale entries are KEPT: the core validate-and-ignore
+  // The customization controls. Component state remains the live per-run truth;
+  // the three PERSISTED ones (overrides, exclusions, tier) are seeded from
+  // proposePrefs via lazy initializers and mirrored back in the same handlers
+  // that re-propose. Stale entries are KEPT: the core validate-and-ignore
   // totality makes an override/raw whose item has left the closure inert, and a
-  // choice "comes back" correctly if the item re-enters. excludedMachineIds is
-  // seeded from the module constant (converter/packager).
+  // choice "comes back" correctly if the item re-enters.
   const [overrides, setOverrides] = useState<Map<string, string>>(
-    () => new Map(),
+    () => new Map(Object.entries(proposePrefs.overrides)),
   );
+  // rawItemIds is deliberately NOT persisted — a raw marking is a statement
+  // about one factory ("I make this elsewhere"), not about the user.
   const [rawItemIds, setRawItemIds] = useState<Set<string>>(() => new Set());
   const [excludedMachineIds, setExcludedMachineIds] = useState<Set<string>>(
-    () => new Set(EXCLUDED_MACHINE_IDS),
+    () => new Set(proposePrefs.excludedMachineIds),
+  );
+  // The propose tier gate (S20 P3); null = "all", the byte-stable default.
+  const [unlockedTier, setUnlockedTier] = useState<number | null>(
+    () => proposePrefs.unlockedTier,
   );
   // The one open picker at a time (component-local).
   const [pickerItemId, setPickerItemId] = useState<string | null>(null);
 
-  if (catalog === null) return null;
+  // Axis 4's FIRST derivation site: the gated world the RENDER seams read.
+  // This hook MUST sit ABOVE the null-catalog guard below and tolerate a null
+  // catalog — every other body derivation sits UNDER that guard, so the natural
+  // placement here would be a CONDITIONAL hook, and the toolchain carries no
+  // eslint-plugin-react-hooks to catch it (Blueprint.tsx:14-17 records the same
+  // hazard). Memoized because it runs per RENDER, not per propose: at a
+  // non-null tier it filters the whole recipe map on every Rate/Clock keystroke.
+  const gatedOrNull = useMemo(
+    () => (catalog === null ? null : gateCatalog(catalog, unlockedTier)),
+    [catalog, unlockedTier],
+  );
+
+  // `gatedOrNull` is non-null exactly when `catalog` is (same memo condition);
+  // the second disjunct narrows the type, it does not add a second case.
+  if (catalog === null || gatedOrNull === null) return null;
+  // Re-bound with a non-null DECLARED type so the handlers below can use it:
+  // narrowing does not flow into hoisted function declarations (which is why
+  // each handler re-checks `catalog` too). This is the `gated` world every
+  // gate-sensitive site reads.
+  const gated: Catalog = gatedOrNull;
 
   // All catalog items, sorted by display name (the select's option list).
   const items = Object.values(catalog.items).sort((a, b) =>
@@ -148,6 +184,7 @@ export function ChainBuilder() {
       overrides?: Map<string, string>;
       rawItemIds?: Set<string>;
       excludedMachineIds?: Set<string>;
+      unlockedTier?: number | null;
     } = {},
     force = false,
   ): void {
@@ -169,18 +206,29 @@ export function ChainBuilder() {
       excludedMachineIds: patch.excludedMachineIds ?? excludedMachineIds,
       clockPercent: parsedClock.value,
     };
+    // Axis 4's SECOND derivation site. The tier for THIS propose rides the
+    // patch like every other control: a React binding is stale within the tick,
+    // and here that skew is dangerous — the stale world's stage recipe can be
+    // ABSENT from the new one, defeating pickerOptionsFor's force-include and
+    // leaving the picker <select> with no matching option. `!== undefined`, NOT
+    // `??`, because `null` is the meaningful "all" value.
+    const tier =
+      patch.unlockedTier !== undefined ? patch.unlockedTier : unlockedTier;
+    const gatedCat = gateCatalog(cat, tier);
     const proposal = proposeChainForCatalog(
-      cat,
+      gatedCat,
       targetItemId,
       parsed.value,
       opts,
     );
     setPreview({
       proposal,
-      view: toProposalPreview(proposal, cat, {
+      view: toProposalPreview(proposal, gatedCat, {
         excludedMachineIds: opts.excludedMachineIds,
         rawItemIds: opts.rawItemIds,
         clockPercent: opts.clockPercent,
+        // The UNGATED world, for the cause split + the lever matrix.
+        ungatedCatalog: cat,
       }),
       clockText,
     });
@@ -234,7 +282,11 @@ export function ChainBuilder() {
    */
   function chooseRecipe(itemId: string, recipeId: string): void {
     if (catalog === null) return;
-    const dflt = effectiveDefaultRecipe(catalog, itemId, excludedMachineIds);
+    // The clear rule resolves against the GATED default: the user is choosing
+    // from the gated option list, so clearing must compare against what that
+    // list calls the default — otherwise picking the gated default would set a
+    // spurious override that outlives the tier change.
+    const dflt = effectiveDefaultRecipe(gated, itemId, excludedMachineIds);
     const next = new Map(overrides);
     if (dflt !== null && recipeId === dflt.id) {
       next.delete(itemId);
@@ -242,6 +294,7 @@ export function ChainBuilder() {
       next.set(itemId, recipeId);
     }
     setOverrides(next);
+    setProposePrefs({ overrides: Object.fromEntries(next) });
     setPickerItemId(null);
     repropose(catalog, { overrides: next });
   }
@@ -261,7 +314,21 @@ export function ChainBuilder() {
     if (next.has(machineId)) next.delete(machineId);
     else next.add(machineId);
     setExcludedMachineIds(next);
+    setProposePrefs({ excludedMachineIds: [...next] });
     repropose(catalog, { excludedMachineIds: next });
+  }
+
+  /**
+   * Change the propose TIER gate. A discrete control, so it re-proposes
+   * immediately (the P1 auto-repropose idiom, not the Rate/Clock text idiom),
+   * and the new tier MUST ride the patch — see `repropose`.
+   */
+  function onTierChange(raw: string): void {
+    if (catalog === null) return;
+    const next = raw === "" ? null : Number(raw);
+    setUnlockedTier(next);
+    setProposePrefs({ unlockedTier: next });
+    repropose(catalog, { unlockedTier: next });
   }
 
   const view = preview?.view ?? null;
@@ -273,7 +340,30 @@ export function ChainBuilder() {
     view?.rawInputs.filter((r) => r.cause === "natural") ?? [];
   const constrainedRaws =
     view?.rawInputs.filter((r) => r.cause === "constrained") ?? [];
+  // UNGATED on purpose (Axis 4 carve-out): gating this list would DELETE the
+  // checkbox for an already-excluded high-tier machine, stranding that id in
+  // excludedMachineIds with no way to clear it — and the recovery wording would
+  // then point at a control the user cannot reach.
   const machines = excludableMachines(catalog);
+
+  // The TIER select's options: "all" plus 0..max, where max is DERIVED from the
+  // catalog's own unlock data — never hardcoded (the max tier actually present
+  // among unlock-bearing recipes may be lower than the game's nominal range).
+  const unlockTiers = Object.values(catalog.recipeUnlocks);
+  const tierOptions =
+    unlockTiers.length === 0
+      ? []
+      : Array.from({ length: Math.max(...unlockTiers) + 1 }, (_, i) => i);
+  // Render normalization (Axis 1): a persisted tier with no matching option —
+  // above the range, or an empty unlock map — renders as "all", which is what a
+  // too-high tier already BEHAVES as (it gates nothing). Bound EXPLICITLY
+  // rather than left to `value={unlockedTier}`: the select must carry a value
+  // some option actually matches. No clamp, no write-back — nothing persists a
+  // value the user did not choose.
+  const tierSelectValue =
+    unlockedTier !== null && tierOptions.includes(unlockedTier)
+      ? String(unlockedTier)
+      : "";
 
   return (
     <div className="chain-builder">
@@ -309,6 +399,22 @@ export function ChainBuilder() {
             value={clockText}
             onChange={(e) => setClockText(e.target.value)}
           />
+        </label>
+        <label>
+          TIER
+          <select
+            className="chain-builder-tier"
+            aria-label="unlocked tier"
+            value={tierSelectValue}
+            onChange={(e) => onTierChange(e.target.value)}
+          >
+            <option value="">all</option>
+            {tierOptions.map((t) => (
+              <option key={t} value={String(t)}>
+                {t}
+              </option>
+            ))}
+          </select>
         </label>
         <button type="button" onClick={onPropose}>
           Propose
@@ -384,7 +490,7 @@ export function ChainBuilder() {
                       </span>
                     )}
                     <RecipePicker
-                      catalog={catalog}
+                      catalog={gated}
                       itemId={itemId}
                       candidateCount={row.candidateCount}
                       currentRecipeId={stageRecipeId(preview.proposal, itemId)}
@@ -415,8 +521,11 @@ export function ChainBuilder() {
               current exclusions — their OWN labeled line, in the notice styling,
               each with an inline recovery affordance. */}
           {constrainedRaws.map((r) => {
+            // GATED: an ungated list here would offer recipes the gated solve
+            // then validate-and-ignores — a dead control contradicting the
+            // recovery wording's own "raise TIER" advice.
             const options = producerRecipesFor(
-              catalog,
+              gated,
               r.itemId,
               excludedMachineIds,
             );
@@ -437,21 +546,14 @@ export function ChainBuilder() {
                       <option value="">pick recipe…</option>
                       {options.map((o) => (
                         <option key={o.id} value={o.id}>
-                          {recipeLabel(
-                            catalog,
-                            o,
-                            r.itemId,
-                            excludedMachineIds,
-                          )}
+                          {recipeLabel(gated, o, r.itemId, excludedMachineIds)}
                         </option>
                       ))}
                     </select>
                   </>
                 ) : (
                   <span className="chain-builder-constrained-hint">
-                    {" "}
-                    — every producer's machine is excluded; edit MACHINE
-                    EXCLUSIONS to recover.
+                    {constrainedHintText(r.lever)}
                   </span>
                 )}
               </p>
@@ -508,6 +610,32 @@ export function ChainBuilder() {
       )}
     </div>
   );
+}
+
+/**
+ * The recovery wording for a constrained raw whose inline picker is empty,
+ * chosen by WHICH lever actually recovers it (S20 P3's four-cell matrix). Every
+ * cell names a control that can really fix the row: a lone MACHINE EXCLUSIONS
+ * hint on a tier-blocked item would point at a control that cannot.
+ *
+ * The "machine" cell is P1's exact string. At tier "all" the tier lever can
+ * never fire, so that is the ONLY reachable cell and the pre-P3 wording is
+ * preserved byte-for-byte — an exact reduction, not a refinement. A null lever
+ * is unreachable here (a non-empty picker renders the select branch instead);
+ * it shares the machine wording so the function stays total.
+ */
+function constrainedHintText(lever: ConstrainedLever | null): string {
+  switch (lever) {
+    case "tier":
+      return " — locked behind the TIER gate; raise TIER to recover.";
+    case "either":
+      return " — raise TIER or edit MACHINE EXCLUSIONS to recover.";
+    case "both":
+      return " — blocked by BOTH the TIER gate and MACHINE EXCLUSIONS; change both.";
+    case "machine":
+    case null:
+      return " — every producer's machine is excluded; edit MACHINE EXCLUSIONS to recover.";
+  }
 }
 
 /**

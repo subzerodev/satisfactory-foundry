@@ -432,6 +432,12 @@ body {
   gap: 6px;
 }
 
+/* TIER gate (S20 P3) — a short numeric select beside Rate/Clock; the option
+   list is "all" plus 0..max, so it never needs the target select's width. */
+.chain-builder-tier {
+  min-width: 5em;
+}
+
 .chain-builder-error {
   margin: 8px 0 0;
   color: var(--error);
