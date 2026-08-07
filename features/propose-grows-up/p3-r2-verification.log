@@ -1,14 +1,14 @@
 S20 P3 — bidirectionality verification log (ticket #102, epic #98)
-Frozen contract: features/propose-grows-up/p3-brainstorm.md (v11)
+Frozen contract: features/propose-grows-up/p3-brainstorm.md (v12)
 
 METHOD
 ------
 A test that passes while the code is present proves nothing on its own — it
-may be asserting something the code does not decide. So every production
-behavior this phase adds was verified in BOTH directions: green with the code
-present, and RED with the code deliberately broken.
+may be asserting something the code does not decide. So the production
+behaviors this phase adds were verified in BOTH directions: green with the
+code present, and RED with the code deliberately broken.
 
-For each behavior below the harness, run from a clean tree at HEAD:
+For each behavior below the harness, run from a CLEAN COMMITTED tree:
   1. asserts the mutation string occurs EXACTLY ONCE in the target file
      (so the break is precise and cannot silently miss);
   2. applies that one mutation;
@@ -16,13 +16,37 @@ For each behavior below the harness, run from a clean tree at HEAD:
      test names, verbatim;
   4. restores with `git checkout -- <file>`.
 After the last entry the whole suite is re-run and `git status` is asserted
-clean, so nothing below leaked into the tree.
+clean, so nothing below leaked into the tree. (Step 4 restores to HEAD, so
+the harness must only ever be run against committed work — running it over
+an uncommitted edit silently reverts that edit.)
 
 The harness is reproducible: scratchpad/bidi.sh + scratchpad/mutate.py.
 
-RESULT: 37 behaviors exercised — 35 are PINNED (breaking them fails at least
-one named test) and 2 are CONFIRMED BEHAVIOURAL NO-OPS, both recorded with
-their proofs below rather than given a phantom assertion.
+RESULT: 43 behaviors exercised — 41 are PINNED (breaking them fails at least
+one named test) and 2 are CONFIRMED BEHAVIOURAL NO-OPS, recorded with their
+proofs below rather than given a phantom assertion. No behavior is unpinned.
+
+SCOPE OF THE CLAIM — what this log does NOT cover
+-------------------------------------------------
+The "verified in both directions" claim above is deliberately scoped to the
+behaviors LISTED BELOW; it is not a universal claim over the diff. Three
+kinds of change in this phase are outside it:
+
+  a. PRESENTATION — the TIER select's CSS class and the removal of its
+     aria-label. The repo has no CSS or accessibility-tree test harness, so
+     these were verified by reading the cascade (the class had collided with
+     the preview rows' depth marker, whose later equal-specificity rule won)
+     rather than by mutation.
+  b. STRUCTURAL guards — the two-pass ordering row ("the schematic group may
+     come FIRST"). It guards a shape, not a line: no single-line mutation
+     expresses the single-pass alternative, so the row's bite is against a
+     future refactor that resolves refs during the group walk, and it is not
+     listed as a mutation entry below.
+  c. COMMENTS AND DOC CITATIONS.
+
+An earlier revision of this file claimed "every production behavior … in
+BOTH directions" without these carve-outs, which was broader than the
+evidence. Corrected here.
 
 TWO CONFIRMED NO-OPS (deliberate, not gaps)
 -------------------------------------------
@@ -40,30 +64,27 @@ TWO CONFIRMED NO-OPS (deliberate, not gaps)
 
 (2) The TIER select's `value` binding
     (`tierOptions.includes(t) ? String(t) : ""`).
-    This one departs from the v11 amendment, which asked for it to be pinned
-    in jsdom on `select.value === ""`. MEASURED: that assertion cannot
-    discriminate, and neither can any other client-DOM assertion. Rendering
-    the same select with `value=""` and with `value="999"` (no matching
-    option) yields a byte-identical DOM — value "", selectedIndex 0,
-    per-option `selected` flags [true,false,false], and identical innerHTML —
-    because the DOM's own "ask for a reset" algorithm selects the first
-    option when none matches, and that first option IS "all". The difference
-    the amendment reasoned about is real only in React's SERVER renderer,
-    which emits `selected` attributes; this app is a client-rendered SPA and
-    never takes that path. The explicit binding is kept (it is the specced
-    shape and keeps a server-rendered string honest) and the user-visible
-    outcome — an above-range tier displays "all", with no write-back — IS
-    pinned; only the binding expression is unpinnable, and no test pretends
-    otherwise.
+    MEASURED: no client-DOM assertion can discriminate it. Rendering the same
+    select with `value=""` and with `value="999"` (no matching option) yields
+    a byte-identical DOM — value "", selectedIndex 0, per-option `selected`
+    flags [true,false,false], identical innerHTML — because React flags
+    `option.selected` rather than setting `select.value`, and an unmatched
+    value leaves the DOM's own "ask for a reset" algorithm to select the
+    first option, which IS "all". The difference is real only in React's
+    SERVER renderer, which this client-rendered SPA never takes. The binding
+    is kept (it is the specced shape and keeps a server-rendered string
+    honest) and the user-visible outcome — an above-range tier displays
+    "all", with no write-back — IS pinned; only the expression is unpinnable,
+    and no test pretends otherwise. This finding produced spec v12.
 
 =================================================================
-S20 P3 bidirectionality log — generated 2026-08-07T10:05:59Z
-HEAD: c41c325 on feature/s20-p3
+S20 P3 bidirectionality log — generated 2026-08-07T10:28:36Z
+HEAD: bb982ed on feature/s20-p3
 =================================================================
 
 BASELINE (all code present):
    Test Files  32 passed (32)
-        Tests  884 passed (884)
+        Tests  893 passed (893)
 
 ##### spec 2 — FGSchematic parse (docs-loader.ts)
 -----------------------------------------------------------------
@@ -72,10 +93,12 @@ BEHAVIOR: Ref capture EXCLUDES the trailing apostrophe (r4 silent-total-failure)
   BREAK (exact, asserted unique in file):
     - /\.(Recipe_[A-Za-z0-9_]+_C)'/g
     + /\.(Recipe_[A-Za-z0-9_]+_C')/g
-  BROKEN: 5 failing test(s):
+  BROKEN: 7 failing test(s):
       × maps a real mRecipes ref (trailing apostrophe and all) to a real catalog id — NEVER the empty string
       × keys by the NORMALIZED catalog id — a raw class name never matches
       × takes the MINIMUM tier when several schematic types unlock one recipe
+      × normalizes a negative or fractional mTechTier to 0
+      × matches refs regardless of GROUP ORDER — the schematic group may come first
       × parses a garbage or absent mTechTier as 0
       × skips refs that normalize to no catalog recipe
   RESTORE: git checkout -- src/data/docs-loader.ts
@@ -85,10 +108,12 @@ BEHAVIOR: Refs are normalized to catalog ids, not used raw
   BREAK (exact, asserted unique in file):
     - const id = normalizeClassName(className, "Recipe_");
     + const id = className;
-  BROKEN: 5 failing test(s):
+  BROKEN: 7 failing test(s):
       × maps a real mRecipes ref (trailing apostrophe and all) to a real catalog id — NEVER the empty string
       × keys by the NORMALIZED catalog id — a raw class name never matches
       × takes the MINIMUM tier when several schematic types unlock one recipe
+      × normalizes a negative or fractional mTechTier to 0
+      × matches refs regardless of GROUP ORDER — the schematic group may come first
       × parses a garbage or absent mTechTier as 0
       × skips refs that normalize to no catalog recipe
   RESTORE: git checkout -- src/data/docs-loader.ts
@@ -105,9 +130,10 @@ BEHAVIOR: A recipe unlocked several times takes the MINIMUM tier
 BEHAVIOR: Garbage/absent mTechTier parses to 0
   FILE:   src/data/docs-loader.ts
   BREAK (exact, asserted unique in file):
-    - return Number.isFinite(n) ? n : 0;
+    - return Number.isInteger(n) && n >= 0 ? n : 0;
     + return n;
-  BROKEN: 1 failing test(s):
+  BROKEN: 2 failing test(s):
+      × normalizes a negative or fractional mTechTier to 0
       × parses a garbage or absent mTechTier as 0
   RESTORE: git checkout -- src/data/docs-loader.ts
 -----------------------------------------------------------------
@@ -136,6 +162,27 @@ BEHAVIOR: recipeUnlocks is a null-prototype map (#28)
     + const recipeUnlocks: Record<string, number> = {};
   BROKEN: 1 failing test(s):
       × builds recipeUnlocks with a null prototype
+  RESTORE: git checkout -- src/data/docs-loader.ts
+-----------------------------------------------------------------
+BEHAVIOR: mTechTier normalizes to a NON-NEGATIVE INTEGER (validTier symmetry)
+  FILE:   src/data/docs-loader.ts
+  BREAK (exact, asserted unique in file):
+    - return Number.isInteger(n) && n >= 0 ? n : 0;
+    + return Number.isFinite(n) ? n : 0;
+  BROKEN: 1 failing test(s):
+      × normalizes a negative or fractional mTechTier to 0
+  RESTORE: git checkout -- src/data/docs-loader.ts
+
+##### spec 2 (real data) — the same parse, against the SHIPPED snapshot
+-----------------------------------------------------------------
+BEHAVIOR: the REAL bundled snapshot yields usable recipeUnlocks + live gating
+  FILE:   src/data/docs-loader.ts
+  BREAK (exact, asserted unique in file):
+    - /\.(Recipe_[A-Za-z0-9_]+_C)'/g
+    + /\.(Recipe_[A-Za-z0-9_]+_C')/g
+  BROKEN: 2 failing test(s):
+      × parses unlock tiers for most of the real catalog's recipes
+      × actually GATES real recipes at a low tier
   RESTORE: git checkout -- src/data/docs-loader.ts
 
 ##### spec 3 — cache round-trip (catalog-store.ts)
@@ -267,7 +314,8 @@ BEHAVIOR: gateCatalog filters recipes above the tier
   BREAK (exact, asserted unique in file):
     -     if (unlock !== undefined && unlock > unlockedTier) continue;
     + <deleted>
-  BROKEN: 6 failing test(s):
+  BROKEN: 7 failing test(s):
+      × actually GATES real recipes at a low tier
       × filters recipes whose min unlock tier exceeds the tier
       × every producer tier-gated → 'constrained', NOT 'natural'
       × TIER-only: every producer is gated out, nothing is machine-excluded
@@ -442,6 +490,42 @@ BEHAVIOR: a tier change MIRRORS back to the persisted prefs
       × mirrors a tier change back to the persisted prefs
   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
 -----------------------------------------------------------------
+BEHAVIOR: a RECIPE CHOICE mirrors back to the persisted prefs
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -     setProposePrefs({ overrides: Object.fromEntries(next) });
+    + <deleted>
+  BROKEN: 1 failing test(s):
+      × mirrors a RECIPE CHOICE back to the persisted prefs
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: a MACHINE EXCLUSION toggle mirrors back to the persisted prefs
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -     setProposePrefs({ excludedMachineIds: [...next] });
+    + <deleted>
+  BROKEN: 1 failing test(s):
+      × mirrors a MACHINE EXCLUSION toggle back to the persisted prefs
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the overrides map is SEEDED from the persisted prefs
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    - () => new Map(Object.entries(proposePrefs.overrides)),
+    + () => new Map(),
+  BROKEN: 1 failing test(s):
+      × SEEDS the overrides map from the persisted prefs
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the exclusions panel keeps the UNGATED catalog (Axis 4 carve-out)
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -   const machines = excludableMachines(catalog);
+    +   const machines = excludableMachines(gated);
+  BROKEN: 1 failing test(s):
+      × seeds its controls from the persisted prefs
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
 BEHAVIOR: the constrained TIER wording
   FILE:   src/ui/ChainBuilder.tsx
   BREAK (exact, asserted unique in file):
@@ -463,6 +547,6 @@ BEHAVIOR: the null-tier (machine) wording is P1's exact string
 =================================================================
 RESTORE + re-run (all mutations reverted):
    Test Files  32 passed (32)
-        Tests  884 passed (884)
+        Tests  893 passed (893)
 git status (must be clean):
 =================================================================
