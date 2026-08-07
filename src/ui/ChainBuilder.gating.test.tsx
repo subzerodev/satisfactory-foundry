@@ -426,6 +426,55 @@ describe("S20 P3 seams — the gated world reaches the render (jsdom)", () => {
     chooseOption(tierSelect(), "0");
     expect(stageRow("Ingot").textContent).toContain("Ingot — Foundry");
   });
+
+  it("a tier change that CANNOT re-propose leaves the SOLVED world untouched", () => {
+    // The refactor's headline guarantee. `preview.gated` snapshots what the
+    // proposal was solved against, and `repropose` returns early on an
+    // unparseable Rate — so the pickers must keep describing the OLD world
+    // rather than skewing into one the rows were never solved in.
+    mount(splitCatalog(), { unlockedTier: null });
+    propose();
+    expect(openPickerOptions("Ingot").some((l) => l.startsWith("Delta"))).toBe(
+      true,
+    );
+
+    // Rate becomes unparseable, THEN the tier changes: repropose bails out.
+    typeInto(
+      $$<HTMLInputElement>(".chain-builder-controls input")[0]!,
+      "nonsense",
+    );
+    chooseOption(tierSelect(), "0");
+
+    // Delta is gated out at tier 0, yet still offered: the picker reads the
+    // solved snapshot, not the live tier.
+    expect(openPickerOptions("Ingot").some((l) => l.startsWith("Delta"))).toBe(
+      true,
+    );
+    // The CONTROL has moved, though — the documented caveat. The select binds
+    // the live tier, so it can lead the solved world until the next propose.
+    expect(selectedTierLabel()).toBe("0");
+  });
+
+  it("keeps a machine's checkbox reachable when the tier gates its every recipe", () => {
+    // The Axis 4 carve-out, at the case that motivates it. At tier 0 the
+    // Smelter's only recipe (Alpha) is gated out, so a GATED panel list would
+    // drop its checkbox while "smelter" stays in the persisted exclusions —
+    // stranded, with no control able to clear it.
+    //
+    // A LIVE PREVIEW is what makes this bite: the plausible regression is
+    // `excludableMachines(preview?.gated ?? catalog)`, which is inert until a
+    // preview exists, so a row that never proposes passes under it.
+    mount(splitCatalog(), { unlockedTier: 0, excludedMachineIds: ["smelter"] });
+    propose();
+    const box = exclusionCheckbox("Smelter");
+    expect(box.checked).toBe(true);
+    expect(
+      $$<HTMLInputElement>(".chain-builder-exclusions input[type=checkbox]"),
+    ).toHaveLength(4);
+    // …and it still WORKS: clicking clears the otherwise-stranded exclusion.
+    click(box);
+    expect(appStore.getState().proposePrefs.excludedMachineIds).toEqual([]);
+  });
 });
 
 describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () => {
