@@ -360,9 +360,7 @@ export function toProposalPreview(
     // world (S20 P3): this branch's "natural" means the game has no producer
     // for this item, which a tier-gated projection cannot answer. Reading the
     // gated world here would label an item whose every producer is merely
-    // tier-locked "natural" — silently losing its recovery line. (Since S21 P0
-    // this is no longer the ONLY route to "natural" — the carve-out below adds
-    // "no producer under either exclusion policy"; both still read `ungated`.)
+    // tier-locked "natural" — silently losing its recovery line.
     const hasAnyProducer = Object.values(ungated.recipes).some(
       (r) => r.primaryOutputId === itemId,
     );
@@ -372,8 +370,9 @@ export function toProposalPreview(
     // default policy AND the user's live set has no recovery worth offering:
     // the only advice a constrained line could give is "re-enable the
     // converter/packager", which the default excludes on purpose (ore→ore
-    // conversion, package/unpackage 2-cycles). 11 of the 12 raw-flagged
-    // constrained items become "natural" here; `coal` deliberately does not.
+    // conversion, package/unpackage 2-cycles). Every raw-flagged constrained
+    // item in the bundled catalog becomes "natural" here EXCEPT `coal`, which
+    // the design deliberately spares.
     //
     // The CONJUNCTION of two vacuity tests is load-bearing — it is NOT
     // `P(EXCLUDED ∪ live)`, which is weaker (implied by either conjunct) and

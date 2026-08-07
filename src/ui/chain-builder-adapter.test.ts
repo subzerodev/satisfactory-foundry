@@ -1976,6 +1976,12 @@ describe("S21 P0 — vacuous raw resources classify natural", () => {
     // Before S21 P0 all twelve of these classified "constrained"; `coal` is
     // the one the design deliberately spares, because its Charcoal/Biocoal
     // constructor alternates are a recovery worth offering.
+    //
+    // BOTH default-excluded machines must reach the rule, which is why the
+    // natural set is asserted whole rather than by example: `ore_iron` is the
+    // CONVERTER case (sole producer `iron_limestone`) and `water` the PACKAGER
+    // case (sole producer `unpackage_water`). A converter-only reading of this
+    // design would silently miss water / liquid_oil / nitrogen_gas.
     const byCause = (want: string): string[] =>
       rawFlagged.filter((id) => rawRowFor(id).cause === want).sort();
 
@@ -1996,19 +2002,6 @@ describe("S21 P0 — vacuous raw resources classify natural", () => {
     expect(byCause("constrained")).toEqual(["coal"]);
   });
 
-  it("pins the CONVERTER case (ore_iron) and the PACKAGER case (water)", () => {
-    // Both machines in EXCLUDED_MACHINE_IDS must reach the rule — an earlier
-    // draft of this design was glossed as "converter-only", which would have
-    // missed water/liquid_oil/nitrogen_gas entirely.
-    const iron = rawRowFor("ore_iron"); // sole producer: iron_limestone @ converter
-    expect(iron.cause).toBe("natural");
-    expect(iron.lever).toBe(null); // levers annotate constrained rows only
-
-    const water = rawRowFor("water"); // sole producer: unpackage_water @ packager
-    expect(water.cause).toBe("natural");
-    expect(water.lever).toBe(null);
-  });
-
   it("leaves the 20 non-raw constrained items alone (spot-pin: polymer_resin)", () => {
     // The rule can only reach isRawResource items, so the genuinely
     // constrained non-raw population is untouched by construction. Pinned
@@ -2026,19 +2019,10 @@ describe("S21 P0 — vacuous raw resources classify natural", () => {
     // packaged_water is packager-only, so both conjuncts HOLD and the flag is
     // the only thing standing between it and a bogus "natural".
     //
-    // Verified by mutation: dropping the guard natural-izes FIFTEEN of the 20
-    // non-raw constrained items, by name (boundary r1 — an earlier draft said
-    // "14" and then listed fifteen, dropping turbo_fuel from the parenthetical
-    // to make the number work; the names are the claim, not the count):
-    //   packaged_water, packaged_oil, packaged_alumina, packaged_biofuel,
-    //   packaged_ionized_fuel, packaged_nitric_acid, packaged_nitrogen_gas,
-    //   packaged_oil_residue, packaged_rocket_fuel, packaged_sulfuric_acid,
-    //   turbo_fuel (Recipe_PackagedTurboFuel_C, also on the packager),
-    //   dark_energy, ficsite_ingot, quantum_energy, time_crystal.
-    // The remaining five are safe either way, each having a producer outside
-    // both exclusion sets: compacted_coal (assembler), polymer_resin and
-    // heavy_oil_residue and liquid_turbo_fuel (oil refinery), fuel (its
-    // alternate is on the oil refinery).
+    // Verified by mutation: dropping the guard natural-izes fifteen of the 20
+    // non-raw constrained items — the packager- and converter-only ones, named
+    // in full in p0-r2-verification.log §M6. The other five each have a
+    // producer outside both exclusion sets and are safe either way.
     //
     // It MUST stay constrained: unpackaging IS a real recovery here — the user
     // enables the Packager and gets their water back out of a canister, which
@@ -2112,12 +2096,10 @@ describe("S21 P0 — vacuous raw resources classify natural", () => {
     // The pin the P1 boundary fix exists for, re-asserted against the NARROWED
     // biconditional. The operative clause is the isRawResource GUARD — the
     // synthetic fixture sets no flag, so the rule short-circuits before any
-    // vacuity test and the recovery line stays live. (Boundary r1: an earlier
-    // draft credited "the new conjuncts", which is the wrong clause. They
-    // would not have fired either — altOnlyIngotCatalog's producers sit on the
-    // foundry and refinery, both outside EXCLUDED_MACHINE_IDS, so P(CONST) is
-    // false as well — but the guard is what actually blocks it, and this
-    // design has a history of right-answer/wrong-reason findings.)
+    // vacuity test and the recovery line stays live. (The conjuncts would not
+    // have fired either: altOnlyIngotCatalog's producers sit on the foundry
+    // and refinery, both outside EXCLUDED_MACHINE_IDS. But the guard is what
+    // actually blocks it.)
     const cat = altOnlyIngotCatalog({});
     const view = toProposalPreview(
       proposeChainForCatalog(cat, "plate", F(60)),

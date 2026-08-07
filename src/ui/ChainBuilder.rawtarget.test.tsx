@@ -11,14 +11,12 @@
  * Iron Ore 120/min` to the `Nothing to build — the target is a raw input.`
  * message — and the rate goes with it.
  *
- * WHERE THE RATE ACTUALLY LIVED (boundary r1 — the first draft of this header
- * blamed the metrics `<dl>`, which is wrong): the rate was emitted by the
- * CONSTRAINED LINE itself (`ChainBuilder.tsx:541`), so suppressing that line
- * removes it. The metrics `<dl>` is merely where a NATURAL raw's rate would
- * otherwise have gone, and it is gated on `!view.isEmpty` — but `isEmpty` is
- * `proposal.stages.length === 0`, already true for an all-raw proposal BEFORE
- * this change and untouched by it. So the `<dl>` was absent either way; it
- * does not "go with" anything.
+ * WHERE THE RATE LIVES: the CONSTRAINED LINE emits it (`ChainBuilder.tsx:541`),
+ * so suppressing that line removes it. The metrics `<dl>` is only where a
+ * NATURAL raw's rate would otherwise have gone, and it is gated on
+ * `!view.isEmpty` — which is `proposal.stages.length === 0`, already true for
+ * an all-raw proposal and untouched by this change. So the `<dl>` is absent
+ * either way and is not part of the delta.
  *
  * The flip is the honest answer to "propose me Iron Ore" and strictly better
  * than pointing the user at a machine the default excludes on purpose, but it
@@ -158,25 +156,14 @@ describe("S21 P0 — proposing a natural-ized raw item as the target", () => {
     mount();
     propose("ore_iron", "120");
 
-    // The rate was rendered BY the constrained line (ChainBuilder.tsx:541,
+    // The rate is rendered BY the constrained line (ChainBuilder.tsx:541,
     // `{r.itemName} {r.rate}/min`), so suppressing that line takes the number
     // with it. Accepted: it is the value the user just typed, not something
     // the app computed for them.
     //
-    // A `.chain-builder-metrics` absence assertion used to sit here and was
-    // removed at boundary r1 as decorative — it cannot fail from this change.
-    // `view.isEmpty` is `proposal.stages.length === 0`, already true for an
-    // all-raw ore_iron proposal before P0 (pinned unchanged at
-    // chain-builder-adapter.test.ts "marks an all-raw proposal empty"), and
-    // this diff alters `cause`, never `isEmpty`.
-    // Asserted on the bare number, not "120/min": strictly stronger, and it
-    // holds wherever the rate could surface, including any future render path
-    // that formats it differently. (Boundary r2 — the first draft justified
-    // this as reaching the RAW <dd> that "120/min" missed, which was wrong:
-    // that <dd> renders through `itemRateLineText`, which appends "/min", so
-    // within this app the two forms are co-extensive and the separate
-    // "120/min" row was simply redundant. Dropped rather than kept on a false
-    // rationale.)
+    // Asserted on the bare number rather than "120/min" — strictly stronger,
+    // and it holds wherever the rate could surface, including a future render
+    // path that formats it differently.
     expect(container.textContent).not.toContain("120");
   });
 
@@ -189,25 +176,20 @@ describe("S21 P0 — proposing a natural-ized raw item as the target", () => {
     expect($$(".chain-builder-metrics")).toHaveLength(1);
     expect(container.textContent).toContain("Iron Plate — Constructor");
 
-    // THE HEADLINE OUTCOME (boundary r1 NIT — previously unpinned at the UI
-    // layer: the accepted regression was tested and the improvement it pays
-    // for was not). This is the design's opening walk step: propose Iron Plate
-    // and Iron Ore lands on the plain RAW line with NO "no eligible producer"
-    // pointer at a machine the default excludes on purpose.
+    // THE HEADLINE OUTCOME — the design's opening walk step: propose Iron
+    // Plate and Iron Ore lands on the plain RAW line with NO "no eligible
+    // producer" pointer at a machine the default excludes on purpose.
     //
     // Exercises the `naturalRaws` path (ChainBuilder.tsx:347-348 → the RAW
     // <dd> at :466), which no other test reaches for a NON-EMPTY chain.
     // 90/min, not 60: Iron Plate 60/min draws 90 Iron Ore/min.
     expect($$(".chain-builder-constrained")).toHaveLength(0);
     expect(container.textContent).not.toContain("no eligible producer");
-    // SCOPED to the metrics block, not the whole container (boundary r2): the
-    // constrained line emits the byte-identical "Iron Ore 90/min", so a
-    // container-wide match would pass even when Iron Ore renders on the WRONG
-    // line, discriminating only in concert with the assertion above. Against
-    // the RAW <dd> it stands alone — VERIFIED by isolating this row under the
-    // predicate-deleted mutant with its siblings disabled, where the cell
-    // reads "Σ POWER24 MWΣ MACHINES6RAW—" (ChainBuilder.tsx:466 renders "—"
-    // when there are no natural raws). Pins "on the plain RAW line" directly
+    // SCOPED to the metrics block, not the whole container: the constrained
+    // line emits the byte-identical "Iron Ore 90/min", so a container-wide
+    // match would pass even when Iron Ore renders on the WRONG line. Against
+    // the RAW <dd> this stands alone — with no natural raws that cell reads
+    // "—" (ChainBuilder.tsx:466) — pinning "on the plain RAW line" directly
     // rather than by elimination.
     expect(
       container.querySelector(".chain-builder-metrics")!.textContent,
