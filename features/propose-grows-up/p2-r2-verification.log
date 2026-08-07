@@ -1,0 +1,244 @@
+S20 P2 — Bidirectionality verification log (ticket #101)
+========================================================
+
+Per frozen spec item 6. For each distinct production behavior: (a) confirm the
+code is present, (b) break it with the exact command shown, (c) capture the
+genuine vitest FAIL line naming the new test, (d) `git checkout` restore the
+file (HEAD holds the four P2 feature commits, so checkout reverts to P2-present,
+never pre-P2), (e) re-run green. Branch feature/s20-p2 @ 9d63cee (post-commit).
+
+Test scoping note (repo memory: vitest worktree double-count): all runs are
+scoped to the specific test file(s) with `-t "<name>"`, inside the worktree.
+
+-------------------------------------------------------------------------------
+B1 — CORE clock scaling (per-machine rate scales perMinute × clock/100)
+-------------------------------------------------------------------------------
+Test:  proposeChain — clockPercent scaling (S20 P2) >
+       150% scales the per-machine rate so fewer machines cover the demand
+File:  src/core/chain-builder.ts
+
+CODE PRESENT (chain-builder.ts:312):
+    const count = plan.demand.ceilDiv(primary.perMinute.mul(clockScale));
+
+BREAK:
+    sed -i 's|const count = plan.demand.ceilDiv(primary.perMinute.mul(clockScale));|const count = plan.demand.ceilDiv(primary.perMinute);|' src/core/chain-builder.ts
+
+FAIL (genuine):
+    × 150% scales the per-machine rate so fewer machines cover the demand
+    FAIL  src/core/chain-builder.test.ts > proposeChain — clockPercent scaling (S20 P2) > 150% scales the per-machine rate so fewer machines cover the demand
+    AssertionError: expected 4n to be 3n // Object.is equality
+
+REVERT:
+    git checkout src/core/chain-builder.ts
+
+RE-RUN GREEN:
+    Tests  1 passed | 30 skipped (31)
+
+-------------------------------------------------------------------------------
+B2 — CORE default-100 byte-identical regression (100% is an identity multiply)
+-------------------------------------------------------------------------------
+Test:  proposeChain — clockPercent scaling (S20 P2) >
+       the 100% DEFAULT is byte-identical to the 6-arg call (regression pin)
+File:  src/core/chain-builder.ts
+
+CODE PRESENT (chain-builder.ts:202):
+    const clockScale = clockPercent.div(Fraction.from(100));
+
+BREAK (divide by 50 → at clock 100 the rate DOUBLES; count 4n → 2n):
+    sed -i 's|const clockScale = clockPercent.div(Fraction.from(100));|const clockScale = clockPercent.div(Fraction.from(50));|' src/core/chain-builder.ts
+
+FAIL (genuine):
+    × the 100% DEFAULT is byte-identical to the 6-arg call (regression pin)
+    FAIL  src/core/chain-builder.test.ts > proposeChain — clockPercent scaling (S20 P2) > the 100% DEFAULT is byte-identical to the 6-arg call (regression pin)
+    AssertionError: expected 2n to be 4n // Object.is equality
+
+    (Note: an earlier /99 break was too weak — ceil(120/(30×100/99)) still = 4n.
+     /50 forces an observable divergence, so the pin genuinely bites.)
+
+REVERT:
+    git checkout src/core/chain-builder.ts
+
+RE-RUN GREEN:
+    Tests  1 passed | 30 skipped (31)
+
+-------------------------------------------------------------------------------
+B3 — UI clock validation (parseClockText upper bound (0, 250])
+-------------------------------------------------------------------------------
+Test:  parseClockText (S20 P2, (0, 250]) >
+       rejects above 250 (past the shard-boosted max)
+File:  src/ui/ChainBuilder.tsx
+
+CODE PRESENT (ChainBuilder.tsx:76):
+    if (value.gt(Fraction.from(250))) {
+
+BREAK (raise the bound to 9999 → 300 is wrongly accepted):
+    sed -i 's|if (value.gt(Fraction.from(250))) {|if (value.gt(Fraction.from(9999))) {|' src/ui/ChainBuilder.tsx
+
+FAIL (genuine):
+    × rejects above 250 (past the shard-boosted max)
+    FAIL  src/ui/ChainBuilder.test.tsx > parseClockText (S20 P2, (0, 250]) > rejects above 250 (past the shard-boosted max)
+    AssertionError: expected { ok: true, value: Fraction{ …(2) } } to deeply equal { ok: false, …(1) }
+
+REVERT:
+    git checkout src/ui/ChainBuilder.tsx
+
+RE-RUN GREEN:
+    Tests  1 passed | 12 skipped (13)
+
+-------------------------------------------------------------------------------
+B4 — ADAPTER powerAtClockMw uses EACH stage's OWN exponent (non-uniform)
+-------------------------------------------------------------------------------
+Test:  S20 P2 — proposalMetrics.powerAtClockMw (per-stage exponent) >
+       at 150 sums each stage with its OWN exponent (not one chain-wide)
+File:  src/ui/chain-builder-adapter.ts
+
+CODE PRESENT (chain-builder-adapter.ts:630):
+    const factor = clockRatio ** fractionToNumber(power.exponent);
+
+BREAK (flatten every exponent to 1 — the subtreePowerText mistake the spec forbids):
+    sed -i 's|const factor = clockRatio \*\* fractionToNumber(power.exponent);|const factor = clockRatio ** 1;|' src/ui/chain-builder-adapter.ts
+
+FAIL (genuine):
+    × at 150 sums each stage with its OWN exponent (not one chain-wide)
+    FAIL  src/ui/chain-builder-adapter.test.ts > S20 P2 — proposalMetrics.powerAtClockMw (per-stage exponent) > at 150 sums each stage with its OWN exponent (not one chain-wide)
+    AssertionError: expected 66 to be close to 81.73017426595698, received difference is 15.730174265956975, but expected 5e-7
+
+REVERT:
+    git checkout src/ui/chain-builder-adapter.ts
+
+RE-RUN GREEN:
+    Tests  1 passed | 65 skipped (66)
+
+-------------------------------------------------------------------------------
+B5 — ADAPTER powerAtClockMw is null at exactly 100 (no float on the default)
+-------------------------------------------------------------------------------
+Test:  S20 P2 — proposalMetrics.powerAtClockMw (per-stage exponent) >
+       is null at exactly 100 (the exact powerMw stands, no float)
+File:  src/ui/chain-builder-adapter.ts
+
+CODE PRESENT (chain-builder-adapter.ts:643):
+    powerAtClockMw: atClock ? powerAtClockMw : null,
+
+BREAK (always return the float, never null):
+    sed -i 's|powerAtClockMw: atClock ? powerAtClockMw : null,|powerAtClockMw: powerAtClockMw,|' src/ui/chain-builder-adapter.ts
+
+FAIL (genuine):
+    × is null at exactly 100 (the exact powerMw stands, no float)
+    FAIL  src/ui/chain-builder-adapter.test.ts > S20 P2 — proposalMetrics.powerAtClockMw (per-stage exponent) > is null at exactly 100 (the exact powerMw stands, no float)
+    AssertionError: expected +0 to be null
+
+REVERT:
+    git checkout src/ui/chain-builder-adapter.ts
+
+RE-RUN GREEN:
+    Tests  1 passed | 65 skipped (66)
+
+-------------------------------------------------------------------------------
+B6 — ADAPTER byproductSuggestions: match found (recipe-inputs scan)
+-------------------------------------------------------------------------------
+Test:  S20 P2 — byproductSuggestions >
+       emits a suggestion when a byproduct matches another stage's recipe input
+File:  src/ui/chain-builder-adapter.ts
+
+CODE PRESENT (chain-builder-adapter.ts:709):
+    if (!recipe.inputs.some((i) => i.itemId === itemId)) continue;
+
+BREAK (invert the input match → the consumer is never found):
+    sed -i 's|if (!recipe.inputs.some((i) => i.itemId === itemId)) continue;|if (recipe.inputs.some((i) => i.itemId === itemId)) continue;|' src/ui/chain-builder-adapter.ts
+
+FAIL (genuine):
+    × emits a suggestion when a byproduct matches another stage's recipe input
+    FAIL  src/ui/chain-builder-adapter.test.ts > S20 P2 — byproductSuggestions > emits a suggestion when a byproduct matches another stage's recipe input
+    AssertionError: expected [ { itemId: 'resin', …(3) } ] to deeply equal [ { itemId: 'resin', …(3) } ]
+
+REVERT:
+    git checkout src/ui/chain-builder-adapter.ts
+
+RE-RUN GREEN:
+    Tests  1 passed | 65 skipped (66)
+
+    (Also pinned in the same describe, not separately broken here: "returns
+     empty when no proposed stage consumes the byproduct" — the none-match
+     direction, covered by B6's inverted-match producing the empty set.)
+
+-------------------------------------------------------------------------------
+B7 — ADAPTER byproductSuggestions: two producers → one EXACT summed suggestion
+-------------------------------------------------------------------------------
+Test:  S20 P2 — byproductSuggestions >
+       TWO producers of one byproduct toward one consumer → ONE summed
+       suggestion, keys unique
+File:  src/ui/chain-builder-adapter.ts
+
+CODE PRESENT (chain-builder-adapter.ts:696):
+    totals.set(bp.itemId, prev === undefined ? bp.rate : prev.add(bp.rate));
+
+BREAK (overwrite instead of Fraction-sum → last-seen 5, not 10+5=15):
+    sed -i 's|totals.set(bp.itemId, prev === undefined ? bp.rate : prev.add(bp.rate));|totals.set(bp.itemId, bp.rate);|' src/ui/chain-builder-adapter.ts
+
+FAIL (genuine):
+    × TWO producers of one byproduct toward one consumer → ONE summed suggestion, keys unique
+    FAIL  src/ui/chain-builder-adapter.test.ts > S20 P2 — byproductSuggestions > TWO producers of one byproduct toward one consumer → ONE summed suggestion, keys unique
+    AssertionError: expected false to be true // Object.is equality
+    (the `s[0].rate.eq(F(15))` assertion — the summed total is wrong)
+
+REVERT:
+    git checkout src/ui/chain-builder-adapter.ts
+
+RE-RUN GREEN:
+    Tests  1 passed | 65 skipped (66)
+
+-------------------------------------------------------------------------------
+B8 — ADAPTER byproductSuggestions: one byproduct → two distinct-toItemId rows
+-------------------------------------------------------------------------------
+Test:  S20 P2 — byproductSuggestions >
+       ONE byproduct feeding TWO consumers → two suggestions with distinct
+       toItemId keys
+File:  src/ui/chain-builder-adapter.ts
+
+CODE PRESENT (chain-builder-adapter.ts:713):
+        toItemId: stage.itemId,
+
+BREAK (source toItemId from the byproduct itemId, not the consumer stage):
+    sed -i 's|toItemId: stage.itemId,|toItemId: itemId,|' src/ui/chain-builder-adapter.ts
+
+FAIL (genuine):
+    × ONE byproduct feeding TWO consumers → two suggestions with distinct toItemId keys
+    FAIL  src/ui/chain-builder-adapter.test.ts > S20 P2 — byproductSuggestions > ONE byproduct feeding TWO consumers → two suggestions with distinct toItemId keys
+    AssertionError: expected [ 'resin', 'resin' ] to deeply equal [ 'plastic', 'rubber' ]
+
+REVERT:
+    git checkout src/ui/chain-builder-adapter.ts
+
+RE-RUN GREEN:
+    Tests  1 passed | 65 skipped (66)
+
+-------------------------------------------------------------------------------
+B9 — STORE applied clockPercentText seeding (from the propose-time clock text)
+-------------------------------------------------------------------------------
+Test:  applyChainProposal (Stage 8 / Phase 3) >
+       seeds every applied stage's clockPercentText from the passed clock (S20 P2)
+File:  src/state/store.ts
+
+CODE PRESENT (store.ts:828):
+      clockPercentText,
+
+BREAK (revert to the pre-P2 hardcoded "100", ignoring the passed text):
+    sed -i '828s|      clockPercentText,|      clockPercentText: "100",|' src/state/store.ts
+
+FAIL (genuine):
+    × seeds every applied stage's clockPercentText from the passed clock (S20 P2)
+    FAIL  src/state/store.test.ts > applyChainProposal (Stage 8 / Phase 3) > seeds every applied stage's clockPercentText from the passed clock (S20 P2)
+    AssertionError: expected '100' to be '150' // Object.is equality
+
+REVERT:
+    git checkout src/state/store.ts
+
+RE-RUN GREEN:
+    Tests  1 passed | 144 skipped (145)
+
+-------------------------------------------------------------------------------
+Post-verification state
+-------------------------------------------------------------------------------
+Working tree clean after all reverts (git status --short → empty).
+Full suite green:  npm test → Test Files 31 passed (31), Tests 834 passed (834).
+Lint clean:        npm run check → tsc -b + eslint + prettier, all pass.
