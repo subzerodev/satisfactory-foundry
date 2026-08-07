@@ -8,45 +8,69 @@ may be asserting something the code does not decide. So the production
 behaviors this phase adds were verified in BOTH directions: green with the
 code present, and RED with the code deliberately broken.
 
-For each behavior below the harness, run from a CLEAN COMMITTED tree:
-  1. asserts the mutation string occurs EXACTLY ONCE in the target file
+For each behavior below, run from a CLEAN COMMITTED tree:
+  1. assert the mutation string occurs EXACTLY ONCE in the target file
      (so the break is precise and cannot silently miss);
-  2. applies that one mutation;
-  3. runs the naming test file under vitest and records the genuine failing
+  2. apply that one mutation;
+  3. run the naming test file under vitest and record the genuine failing
      test names, verbatim;
-  4. restores with `git checkout -- <file>`.
+  4. restore with `git checkout -- <file>`.
 After the last entry the whole suite is re-run and `git status` is asserted
-clean, so nothing below leaked into the tree. (Step 4 restores to HEAD, so
-the harness must only ever be run against committed work — running it over
-an uncommitted edit silently reverts that edit.)
+clean, so nothing below leaked into the tree.
 
-The harness is reproducible: scratchpad/bidi.sh + scratchpad/mutate.py.
+HAZARD, learned twice the hard way: step 4 restores to HEAD, so the sweep
+must only ever run against COMMITTED work — over an uncommitted edit it
+silently reverts that edit. (Both times the suite caught it immediately and
+the work was recovered; recorded so the next operator does not repeat it.)
 
-RESULT: 43 behaviors exercised — 41 are PINNED (breaking them fails at least
+The sweep was run from a local scratchpad harness, which is NOT in the tree.
+It needs no reconstruction from memory, though: every entry below records its
+target file and its exact before/after strings, so the whole sweep is
+replayable from this log alone.
+
+RESULT: 47 behaviors exercised — 45 are PINNED (breaking them fails at least
 one named test) and 2 are CONFIRMED BEHAVIOURAL NO-OPS, recorded with their
 proofs below rather than given a phantom assertion. No behavior is unpinned.
 
 SCOPE OF THE CLAIM — what this log does NOT cover
 -------------------------------------------------
-The "verified in both directions" claim above is deliberately scoped to the
-behaviors LISTED BELOW; it is not a universal claim over the diff. Three
-kinds of change in this phase are outside it:
+The "verified in both directions" claim is scoped to the behaviors LISTED
+BELOW; it is not a universal claim over the diff. Excluded:
 
-  a. PRESENTATION — the TIER select's CSS class and the removal of its
-     aria-label. The repo has no CSS or accessibility-tree test harness, so
-     these were verified by reading the cascade (the class had collided with
-     the preview rows' depth marker, whose later equal-specificity rule won)
-     rather than by mutation.
-  b. STRUCTURAL guards — the two-pass ordering row ("the schematic group may
-     come FIRST"). It guards a shape, not a line: no single-line mutation
-     expresses the single-pass alternative, so the row's bite is against a
-     future refactor that resolves refs during the group walk, and it is not
-     listed as a mutation entry below.
-  c. COMMENTS AND DOC CITATIONS.
+  a. The TIER select's CSS RULE (`app.css`, `min-width`). The repo has no CSS
+     test harness, so the rule was verified by reading the cascade — it had
+     collided with the preview rows' depth-marker class, whose later
+     equal-specificity rule won, killing the width and imposing the marker's
+     accent colour, mono font and letter-spacing on the control.
+     NOTE the CLASS ATTRIBUTE is a different matter and IS pinned, hard: it is
+     the tests' selector, so reverting it reddens ten rows (entry below).
+     The control's NAMING is pinned too — the wrapping <label>, and the
+     absence of an aria-label overriding it — and needed no accessibility
+     harness (two entries below). An earlier revision of this file excused
+     both under one carve-out; that was wrong in both directions.
+  b. The STRUCTURAL two-pass ordering guard ("the schematic group may come
+     FIRST"). It guards a shape, not a line: no single-line mutation expresses
+     the single-pass alternative, so its bite is against a future refactor
+     that resolves refs during the group walk.
+  c. One deliberate FORWARD CANARY, labeled as such in the test itself
+     ("carries only non-negative integer tiers"): `parseTechTier` forces the
+     invariant for every input and this snapshot has no bad values, so it
+     cannot fail in either direction today. It exists to catch a future export.
+  d. Comments and doc citations.
 
-An earlier revision of this file claimed "every production behavior … in
-BOTH directions" without these carve-outs, which was broader than the
-evidence. Corrected here.
+WHAT THE DIFF-STAGE SIMPLIFY PASS REMOVED FROM THIS LEDGER
+----------------------------------------------------------
+An earlier revision carried an entry for "the body memo tracks the tier (not
+just the catalog)". That memo no longer exists: the gated catalog now rides
+the `Preview` record, snapshotted by `repropose` alongside `clockText`, since
+every consumer was downstream of a live preview. The entry is gone because
+the hazard is gone — not because it stopped being checked. In its place is
+"the preview CARRIES the gated world it was solved against", which reddens
+four rows. That change also dissolved the question design rounds r4-r6 argued
+over (WHERE to derive `gated`) and made a real skew unrepresentable:
+`repropose` returns early on an unparseable Rate while the tier control has
+already updated, so the pickers could previously render a world the rows were
+never solved in.
 
 TWO CONFIRMED NO-OPS (deliberate, not gaps)
 -------------------------------------------
@@ -78,13 +102,13 @@ TWO CONFIRMED NO-OPS (deliberate, not gaps)
     and no test pretends otherwise. This finding produced spec v12.
 
 =================================================================
-S20 P3 bidirectionality log — generated 2026-08-07T10:28:36Z
-HEAD: bb982ed on feature/s20-p3
+S20 P3 bidirectionality log — generated 2026-08-07T10:47:55Z
+HEAD: a917718 on feature/s20-p3
 =================================================================
 
 BASELINE (all code present):
    Test Files  32 passed (32)
-        Tests  893 passed (893)
+        Tests  894 passed (894)
 
 ##### spec 2 — FGSchematic parse (docs-loader.ts)
 -----------------------------------------------------------------
@@ -93,13 +117,15 @@ BEHAVIOR: Ref capture EXCLUDES the trailing apostrophe (r4 silent-total-failure)
   BREAK (exact, asserted unique in file):
     - /\.(Recipe_[A-Za-z0-9_]+_C)'/g
     + /\.(Recipe_[A-Za-z0-9_]+_C')/g
-  BROKEN: 7 failing test(s):
+  BROKEN: 9 failing test(s):
       × maps a real mRecipes ref (trailing apostrophe and all) to a real catalog id — NEVER the empty string
-      × keys by the NORMALIZED catalog id — a raw class name never matches
       × takes the MINIMUM tier when several schematic types unlock one recipe
-      × normalizes a negative or fractional mTechTier to 0
       × matches refs regardless of GROUP ORDER — the schematic group may come first
-      × parses a garbage or absent mTechTier as 0
+      × normalizes a negative tier to 0
+      × normalizes a fractional tier to 0
+      × normalizes a non-finite tier to 0
+      × normalizes un-parseable garbage to 0
+      × normalizes an absent mTechTier to 0
       × skips refs that normalize to no catalog recipe
   RESTORE: git checkout -- src/data/docs-loader.ts
 -----------------------------------------------------------------
@@ -108,13 +134,15 @@ BEHAVIOR: Refs are normalized to catalog ids, not used raw
   BREAK (exact, asserted unique in file):
     - const id = normalizeClassName(className, "Recipe_");
     + const id = className;
-  BROKEN: 7 failing test(s):
+  BROKEN: 9 failing test(s):
       × maps a real mRecipes ref (trailing apostrophe and all) to a real catalog id — NEVER the empty string
-      × keys by the NORMALIZED catalog id — a raw class name never matches
       × takes the MINIMUM tier when several schematic types unlock one recipe
-      × normalizes a negative or fractional mTechTier to 0
       × matches refs regardless of GROUP ORDER — the schematic group may come first
-      × parses a garbage or absent mTechTier as 0
+      × normalizes a negative tier to 0
+      × normalizes a fractional tier to 0
+      × normalizes a non-finite tier to 0
+      × normalizes un-parseable garbage to 0
+      × normalizes an absent mTechTier to 0
       × skips refs that normalize to no catalog recipe
   RESTORE: git checkout -- src/data/docs-loader.ts
 -----------------------------------------------------------------
@@ -132,9 +160,11 @@ BEHAVIOR: Garbage/absent mTechTier parses to 0
   BREAK (exact, asserted unique in file):
     - return Number.isInteger(n) && n >= 0 ? n : 0;
     + return n;
-  BROKEN: 2 failing test(s):
-      × normalizes a negative or fractional mTechTier to 0
-      × parses a garbage or absent mTechTier as 0
+  BROKEN: 4 failing test(s):
+      × normalizes a negative tier to 0
+      × normalizes a fractional tier to 0
+      × normalizes a non-finite tier to 0
+      × normalizes un-parseable garbage to 0
   RESTORE: git checkout -- src/data/docs-loader.ts
 -----------------------------------------------------------------
 BEHAVIOR: Only BP_UnlockRecipe_C entries are read
@@ -169,11 +199,21 @@ BEHAVIOR: mTechTier normalizes to a NON-NEGATIVE INTEGER (validTier symmetry)
   BREAK (exact, asserted unique in file):
     - return Number.isInteger(n) && n >= 0 ? n : 0;
     + return Number.isFinite(n) ? n : 0;
-  BROKEN: 1 failing test(s):
-      × normalizes a negative or fractional mTechTier to 0
+  BROKEN: 2 failing test(s):
+      × normalizes a negative tier to 0
+      × normalizes a fractional tier to 0
   RESTORE: git checkout -- src/data/docs-loader.ts
 
 ##### spec 2 (real data) — the same parse, against the SHIPPED snapshot
+-----------------------------------------------------------------
+BEHAVIOR: unresolvable refs are skipped — measured on the REAL snapshot
+  FILE:   src/data/docs-loader.ts
+  BREAK (exact, asserted unique in file):
+    - if (recipes[id] === undefined) continue;
+    + <deleted>
+  BROKEN: 1 failing test(s):
+      × keys them by real catalog recipe ids — never the empty string
+  RESTORE: git checkout -- src/data/docs-loader.ts
 -----------------------------------------------------------------
 BEHAVIOR: the REAL bundled snapshot yields usable recipeUnlocks + live gating
   FILE:   src/data/docs-loader.ts
@@ -182,7 +222,7 @@ BEHAVIOR: the REAL bundled snapshot yields usable recipeUnlocks + live gating
     + /\.(Recipe_[A-Za-z0-9_]+_C')/g
   BROKEN: 2 failing test(s):
       × parses unlock tiers for most of the real catalog's recipes
-      × actually GATES real recipes at a low tier
+      × actually GATES most of the real catalog at tier 0
   RESTORE: git checkout -- src/data/docs-loader.ts
 
 ##### spec 3 — cache round-trip (catalog-store.ts)
@@ -315,7 +355,7 @@ BEHAVIOR: gateCatalog filters recipes above the tier
     -     if (unlock !== undefined && unlock > unlockedTier) continue;
     + <deleted>
   BROKEN: 7 failing test(s):
-      × actually GATES real recipes at a low tier
+      × actually GATES most of the real catalog at tier 0
       × filters recipes whose min unlock tier exceeds the tier
       × every producer tier-gated → 'constrained', NOT 'natural'
       × TIER-only: every producer is gated out, nothing is machine-excluded
@@ -386,19 +426,18 @@ BEHAVIOR: lever is null while the inline picker still has options
 BEHAVIOR: SEAM :387 — RecipePicker receives the GATED catalog
   FILE:   src/ui/ChainBuilder.tsx
   BREAK (exact, asserted unique in file):
-    - catalog={gated}
+    - catalog={preview.gated}
     + catalog={catalog}
-  BROKEN: 3 failing test(s):
+  BROKEN: 2 failing test(s):
       × RecipePicker prop: a tier-gated recipe is ABSENT from the rendered picker options
       × recipeLabel via the picker prop: the GATED default carries the (default) tag
-      × the render seams follow a TIER change too, not just the propose
   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
 -----------------------------------------------------------------
 BEHAVIOR: SEAM :418 — the constrained recovery list is GATED
   FILE:   src/ui/ChainBuilder.tsx
   BREAK (exact, asserted unique in file):
     -             const options = producerRecipesFor(
-    -               gated,
+    -               preview.gated,
     +             const options = producerRecipesFor(
     +               catalog,
   BROKEN: 1 failing test(s):
@@ -408,8 +447,10 @@ BEHAVIOR: SEAM :418 — the constrained recovery list is GATED
 BEHAVIOR: SEAM :237 — the clear rule resolves against the GATED default
   FILE:   src/ui/ChainBuilder.tsx
   BREAK (exact, asserted unique in file):
-    - const dflt = effectiveDefaultRecipe(gated, itemId, excludedMachineIds);
-    + const dflt = effectiveDefaultRecipe(catalog, itemId, excludedMachineIds);
+    -     const dflt = effectiveDefaultRecipe(
+    -       preview.gated,
+    +     const dflt = effectiveDefaultRecipe(
+    +       catalog,
   BROKEN: 1 failing test(s):
       × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
@@ -417,8 +458,10 @@ BEHAVIOR: SEAM :237 — the clear rule resolves against the GATED default
 BEHAVIOR: SEAM :441 — recipeLabel in the constrained row (SPEC SAYS NO-OP)
   FILE:   src/ui/ChainBuilder.tsx
   BREAK (exact, asserted unique in file):
-    - {recipeLabel(gated, o, r.itemId, excludedMachineIds)}
-    + {recipeLabel(catalog, o, r.itemId, excludedMachineIds)}
+    -                           {recipeLabel(
+    -                             preview.gated,
+    +                           {recipeLabel(
+    +                             catalog,
   RESULT: no test failed — CONFIRMED BEHAVIOURAL NO-OP (expected; see note)
   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
 -----------------------------------------------------------------
@@ -444,6 +487,18 @@ BEHAVIOR: repropose solves against the GATED catalog
       × staleness: a TIER change re-proposes in the NEW tier's world on that same propose
   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
 -----------------------------------------------------------------
+BEHAVIOR: the preview CARRIES the gated world it was solved against
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -       gated: gatedCat,
+    +       gated: cat,
+  BROKEN: 4 failing test(s):
+      × RecipePicker prop: a tier-gated recipe is ABSENT from the rendered picker options
+      × recipeLabel via the picker prop: the GATED default carries the (default) tag
+      × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
+      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
 BEHAVIOR: repropose passes the UNGATED world to the preview
   FILE:   src/ui/ChainBuilder.tsx
   BREAK (exact, asserted unique in file):
@@ -451,15 +506,6 @@ BEHAVIOR: repropose passes the UNGATED world to the preview
     + <deleted>
   BROKEN: 1 failing test(s):
       × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
-  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
------------------------------------------------------------------
-BEHAVIOR: the body memo tracks the tier (not just the catalog)
-  FILE:   src/ui/ChainBuilder.tsx
-  BREAK (exact, asserted unique in file):
-    -     [catalog, unlockedTier],
-    +     [catalog],
-  BROKEN: 1 failing test(s):
-      × the render seams follow a TIER change too, not just the propose
   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
 -----------------------------------------------------------------
 BEHAVIOR: the TIER select value binding (DOM-level NO-OP, see note)
@@ -522,8 +568,60 @@ BEHAVIOR: the exclusions panel keeps the UNGATED catalog (Axis 4 carve-out)
   BREAK (exact, asserted unique in file):
     -   const machines = excludableMachines(catalog);
     +   const machines = excludableMachines(gated);
-  BROKEN: 1 failing test(s):
+  BROKEN: 16 failing test(s):
+      × RecipePicker prop: a tier-gated recipe is ABSENT from the rendered picker options
+      × RecipePicker prop: the same recipes ARE offered at tier 'all'
+      × recipeLabel via the picker prop: the GATED default carries the (default) tag
+      × constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
+      × constrained recovery: at tier null the wording is P1's exact string (regression)
+      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
+      × staleness: a TIER change re-proposes in the NEW tier's world on that same propose
+      × takes its accessible name from the WRAPPING label, with nothing overriding it
+      × derives its options from recipeUnlocks (all + 0..max), never hardcoded
+      × renders 'all' when the persisted tier has no matching option
+      × renders 'all' when the catalog carries no unlock data at all
+      × mirrors a tier change back to the persisted prefs
+      × mirrors a RECIPE CHOICE back to the persisted prefs
+      × mirrors a MACHINE EXCLUSION toggle back to the persisted prefs
+      × SEEDS the overrides map from the persisted prefs
       × seeds its controls from the persisted prefs
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the TIER select's CLASS ATTRIBUTE (the tests' hook)
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    - className="chain-builder-tier-select"
+    + className="chain-builder-tier"
+  BROKEN: 8 failing test(s):
+      × clear rule: choosing the GATED default sets no override — observable only after raising the tier back
+      × staleness: a TIER change re-proposes in the NEW tier's world on that same propose
+      × takes its accessible name from the WRAPPING label, with nothing overriding it
+      × derives its options from recipeUnlocks (all + 0..max), never hardcoded
+      × renders 'all' when the persisted tier has no matching option
+      × renders 'all' when the catalog carries no unlock data at all
+      × mirrors a tier change back to the persisted prefs
+      × seeds its controls from the persisted prefs
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: the TIER control is named by its VISIBLE wrapping label
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -         <label>
+    -           TIER
+    +         <label>
+    +           GATE
+  BROKEN: 1 failing test(s):
+      × takes its accessible name from the WRAPPING label, with nothing overriding it
+  RESTORE: git checkout -- src/ui/ChainBuilder.tsx
+-----------------------------------------------------------------
+BEHAVIOR: no aria-label overrides that visible label
+  FILE:   src/ui/ChainBuilder.tsx
+  BREAK (exact, asserted unique in file):
+    -             className="chain-builder-tier-select"
+    +             className="chain-builder-tier-select"
+    +             aria-label="unlocked tier"
+  BROKEN: 1 failing test(s):
+      × takes its accessible name from the WRAPPING label, with nothing overriding it
   RESTORE: git checkout -- src/ui/ChainBuilder.tsx
 -----------------------------------------------------------------
 BEHAVIOR: the constrained TIER wording
@@ -547,6 +645,10 @@ BEHAVIOR: the null-tier (machine) wording is P1's exact string
 =================================================================
 RESTORE + re-run (all mutations reverted):
    Test Files  32 passed (32)
-        Tests  893 passed (893)
+        Tests  894 passed (894)
 git status (must be clean):
+  ?? features/propose-grows-up/p3-boundary-r2-delta.diff
+  ?? features/propose-grows-up/p3-boundary-r2-prompt.md
+  ?? features/propose-grows-up/p3-boundary-r2.diff
+  ?? features/propose-grows-up/p3-diff-simplify-prompt.md
 =================================================================
