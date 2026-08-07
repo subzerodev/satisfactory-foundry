@@ -164,8 +164,27 @@ interface Plan {
  * an invalid entry is ignored (default policy applies). Absent/empty ⇒ the
  * proposal is byte-identical to the pre-P4 behavior.
  *
- * Determinism: same target + rate + recipes + exclusions + overrides ⇒
- * identical proposal.
+ * `rawItemIds` (S20 / P1) is an optional set of user-forced-raw item ids
+ * consulted BEFORE producer selection at each item: a member (other than the
+ * target — see below) is a raw leaf, exactly like a natural no-producer item —
+ * its demand aggregates into `rawInputs` and its subtree never enters the
+ * closure. Precedence is raw > override > default policy: raw is the stronger,
+ * later user intent, so it wins over an override for the same item. **The
+ * target is immune**: `targetItemId ∈ rawItemIds` is IGNORED (a chain that
+ * produces nothing is not a chain) — the guard keeps the function total and the
+ * UI honest, silently. Absent/empty ⇒ the proposal is byte-identical to the
+ * pre-P1 behavior.
+ *
+ * `clockPercent` (S20 / P2) is the GLOBAL overclock target for the whole
+ * proposal: each producer's per-machine primary rate becomes `perMinute ×
+ * clockPercent/100` — LINEAR and EXACT (the game scales item rates linearly
+ * with clock; only POWER follows the exponent, which is the adapter's float
+ * concern, never the core's). Counts stay `ceilDiv(demand, scaled rate)` —
+ * still exact integers. Default `Fraction.from(100)` ⇒ the scale factor is 1,
+ * so the proposal is BYTE-IDENTICAL to the pre-P2 output (regression-pinned).
+ *
+ * Determinism: same target + rate + recipes + exclusions + overrides +
+ * rawItemIds + clockPercent ⇒ identical proposal.
  */
 export function proposeChain(
   targetItemId: string,
@@ -173,8 +192,14 @@ export function proposeChain(
   recipes: BuilderRecipe[],
   excludedMachineIds: Iterable<string>,
   overrides: ReadonlyMap<string, string> = new Map(),
+  rawItemIds: ReadonlySet<string> = new Set(),
+  clockPercent: Fraction = Fraction.from(100),
 ): ChainProposal {
   const excluded = new Set(excludedMachineIds);
+  // The exact linear clock scale factor applied to every per-machine primary
+  // rate. At the 100% default this is 1/1, so `.mul(scale)` is an identity
+  // multiply and every downstream figure is byte-identical to pre-P2.
+  const clockScale = clockPercent.div(Fraction.from(100));
   // Every item that has appeared in the closure, produced or raw.
   const plans = new Map<string, Plan>();
   // Fixed machine count per produced item (sized consumers-first in phase 2).
@@ -196,6 +221,19 @@ export function proposeChain(
     const existing = plans.get(itemId);
     if (existing !== undefined) {
       return existing;
+    }
+
+    // Forced-raw guard (S20 P1): a user-forced-raw item is a raw leaf BEFORE
+    // any producer selection — its demand aggregates into rawInputs exactly
+    // like a natural no-producer leaf, and its subtree never enters the
+    // closure. Raw > override > default (raw is the later, stronger user
+    // intent). The TARGET is immune: forcing the target raw would produce an
+    // empty chain, so `targetItemId ∈ rawItemIds` is silently ignored (keeps
+    // the function total).
+    if (itemId !== targetItemId && rawItemIds.has(itemId)) {
+      const plan: Plan = { itemId, recipe: null, demand: Fraction.from(0) };
+      plans.set(itemId, plan);
+      return plan;
     }
 
     // Cycle guard: if selecting a producer would route back onto the current
@@ -268,12 +306,17 @@ export function proposeChain(
     const plan = plans.get(itemId)!;
     if (plan.recipe === null) continue; // raw: no count, demand just totals.
     const primary = plan.recipe.outputs.find((o) => o.itemId === itemId)!;
-    const count = plan.demand.ceilDiv(primary.perMinute);
+    // Size against the clock-SCALED per-machine output: at 150% one machine
+    // makes 1.5× its 100% rate, so fewer machines cover the same demand. Exact
+    // — ceilDiv over the scaled Fraction (e.g. ceil(120 / (30 × 3/2)) = 3).
+    const count = plan.demand.ceilDiv(primary.perMinute.mul(clockScale));
     counts.set(itemId, count);
-    // Propagate the CEIL'D consumption to each input's demand.
+    // Propagate the CEIL'D consumption to each input's demand. Consumption
+    // scales with clock too — a machine at 150% eats 1.5× its 100% input rate
+    // — so the scaled per-machine input rate is what flows downstream (exact).
     const nCount = Fraction.from(count);
     for (const input of plan.recipe.inputs) {
-      const consumed = nCount.mul(input.perMinute);
+      const consumed = nCount.mul(input.perMinute.mul(clockScale));
       const inPlan = plans.get(input.itemId)!;
       inPlan.demand = inPlan.demand.add(consumed);
     }
@@ -292,19 +335,25 @@ export function proposeChain(
     }
     const primary = plan.recipe.outputs.find((o) => o.itemId === itemId)!;
     const count = counts.get(itemId)!;
-    const outputRate = Fraction.from(count).mul(primary.perMinute);
+    // outputRate = machineCount × the clock-SCALED per-machine rate, so the
+    // "machineCount × scaled perMachine" invariant holds at any clock (and is
+    // byte-identical to `count × perMinute` at the 100% default).
+    const outputRate = Fraction.from(count).mul(
+      primary.perMinute.mul(clockScale),
+    );
     stages.push({
       itemId,
       recipeId: plan.recipe.id,
       machineCount: count,
       outputRate,
     });
-    // Byproducts: non-primary outputs, at the built rate. Reported, never routed.
+    // Byproducts: non-primary outputs, at the clock-scaled built rate. Reported,
+    // never routed.
     for (const out of plan.recipe.outputs) {
       if (out.itemId === itemId) continue;
       byproducts.push({
         itemId: out.itemId,
-        rate: Fraction.from(count).mul(out.perMinute),
+        rate: Fraction.from(count).mul(out.perMinute.mul(clockScale)),
       });
     }
   }

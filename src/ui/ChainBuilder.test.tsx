@@ -10,7 +10,11 @@ import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { Fraction } from "../core/fraction.ts";
-import { parseRateText, ChainBuilder } from "./ChainBuilder.tsx";
+import {
+  parseRateText,
+  parseClockText,
+  ChainBuilder,
+} from "./ChainBuilder.tsx";
 
 describe("parseRateText", () => {
   it("accepts a positive decimal → exact Fraction", () => {
@@ -42,6 +46,58 @@ describe("parseRateText", () => {
     expect(parseRateText("-5")).toEqual({
       ok: false,
       error: "rate must be greater than 0",
+    });
+  });
+});
+
+describe("parseClockText (S20 P2, (0, 250])", () => {
+  it("accepts the 100 default → exact Fraction", () => {
+    const r = parseClockText("100");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.eq(Fraction.from(100))).toBe(true);
+  });
+
+  it("accepts a fractional clock in range → exact Fraction", () => {
+    const r = parseClockText("133.5");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.eq(Fraction.of(267, 2))).toBe(true);
+  });
+
+  it("accepts the upper bound 250", () => {
+    const r = parseClockText("250");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.eq(Fraction.from(250))).toBe(true);
+  });
+
+  it("rejects garbage with the labeled error", () => {
+    expect(parseClockText("nope")).toEqual({
+      ok: false,
+      error: "clock % must be a number in (0, 250]",
+    });
+  });
+
+  it("rejects zero (non-positive)", () => {
+    expect(parseClockText("0")).toEqual({
+      ok: false,
+      error: "clock % must be greater than 0",
+    });
+  });
+
+  it("rejects a negative clock", () => {
+    expect(parseClockText("-10")).toEqual({
+      ok: false,
+      error: "clock % must be greater than 0",
+    });
+  });
+
+  it("rejects above 250 (past the shard-boosted max)", () => {
+    expect(parseClockText("250.5")).toEqual({
+      ok: false,
+      error: "clock % must be at most 250",
+    });
+    expect(parseClockText("300")).toEqual({
+      ok: false,
+      error: "clock % must be at most 250",
     });
   });
 });

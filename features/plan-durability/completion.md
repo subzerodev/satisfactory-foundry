@@ -62,4 +62,9 @@ verified in-worktree AND on trunk after worktree removal.
 - [x] persist() requested at boot, silent, feature-detected
 - [x] Export-all bundle + re-import through the existing Import
 - [x] Full gate + bidirectionality log + walk
-- [x] Live site update: rides the NEXT approved mirror push (policy)
+- [x] LIVE on Pages 2026-08-06 — deployed despite four false-failure runs
+  (deploy-pages 10-min cap vs slow Pages backend; the deployment landed
+  in the background; full account:
+  `docs/postmortems/2026-08-06-pages-deploy-false-failures.md`).
+  Live bundle verified byte-identical to the run artifact, all four
+  feature markers present.

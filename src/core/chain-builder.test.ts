@@ -504,3 +504,188 @@ describe("proposeChain — recipe overrides", () => {
     expect(emptyMap).toEqual(noArg);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Forced-raw items (S20 / P1, ticket #100): the optional 6th param marks an item
+// treat-as-raw BEFORE producer selection — a raw leaf whose demand aggregates
+// into rawInputs and whose subtree is pruned. Precedence raw > override; the
+// TARGET is immune (silently ignored); default-empty ⇒ byte-identical.
+// ---------------------------------------------------------------------------
+
+describe("proposeChain — forced-raw items (rawItemIds)", () => {
+  // plate ← ingot ← ore. Forcing ingot raw must vanish the ingot stage AND its
+  // ore subtree, aggregating the ingot demand into rawInputs.
+  const deep = [
+    recipe("r_plate", "constructor", [["plate", 20]], [["ingot", 30]]),
+    recipe("r_ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
+  ];
+
+  it("forces a mid-chain item raw: its subtree vanishes into rawInputs", () => {
+    // plate @ 60/min → 3 plate machines consuming 3×30 = 90 ingot.
+    const raw = new Set(["ingot"]);
+    const p = proposeChain("plate", F(60), deep, [], new Map(), raw);
+    // plate still built; ingot is now a raw leaf at its full demand (90).
+    expect(stageFor(p, "plate")).toMatchObject({
+      recipeId: "r_plate",
+      machineCount: 3n,
+    });
+    expect(stageFor(p, "ingot")).toBeUndefined();
+    // ore (ingot's input) never enters the closure — the subtree is pruned.
+    expect(stageFor(p, "ore")).toBeUndefined();
+    expect(p.rawInputs).toEqual([{ itemId: "ingot", rate: F(90) }]);
+    // No ingot→plate link (ingot is raw, exactly like a natural leaf).
+    expect(p.links).toEqual([]);
+  });
+
+  it("is byte-identical to a natural leaf: forced-raw ingot === no ingot recipe", () => {
+    // Dropping r_ingot makes ingot a NATURAL raw leaf. Forcing it raw with the
+    // recipe present must produce the SAME proposal (the guard mimics a leaf).
+    const raw = new Set(["ingot"]);
+    const forced = proposeChain("plate", F(60), deep, [], new Map(), raw);
+    const noRecipe = proposeChain(
+      "plate",
+      F(60),
+      [recipe("r_plate", "constructor", [["plate", 20]], [["ingot", 30]])],
+      [],
+    );
+    expect(forced).toEqual(noRecipe);
+  });
+
+  it("TARGET immunity: forcing the target raw is silently ignored", () => {
+    // targetItemId ∈ rawItemIds must NOT collapse the chain — the target is
+    // still produced normally (an empty chain is not a chain).
+    const raw = new Set(["plate"]);
+    const p = proposeChain("plate", F(60), deep, [], new Map(), raw);
+    expect(stageFor(p, "plate")).toMatchObject({ recipeId: "r_plate" });
+    // The rest of the chain is unaffected: ingot still built, ore still raw.
+    expect(stageFor(p, "ingot")).toMatchObject({ recipeId: "r_ingot" });
+    expect(p.rawInputs).toEqual([{ itemId: "ore", rate: F(90) }]);
+  });
+
+  it("raw > override: a forced-raw item ignores its override and is raw", () => {
+    // ingot has a std + an alternate; override it to the alternate AND force it
+    // raw. Raw is the stronger, later intent → ingot is raw, the override loses.
+    const withAlt = [
+      recipe("r_plate", "constructor", [["plate", 20]], [["ingot", 30]]),
+      recipe("r_std_ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
+      recipe("r_alt_ingot", "foundry", [["ingot", 45]], [["ore", 40]], true),
+    ];
+    const overrides = new Map([["ingot", "r_alt_ingot"]]);
+    const raw = new Set(["ingot"]);
+    const p = proposeChain("plate", F(60), withAlt, [], overrides, raw);
+    expect(stageFor(p, "ingot")).toBeUndefined();
+    expect(p.rawInputs).toEqual([{ itemId: "ingot", rate: F(90) }]);
+    // Proof the override WOULD have applied without the raw mark.
+    const noRaw = proposeChain("plate", F(60), withAlt, [], overrides);
+    expect(stageFor(noRaw, "ingot")).toMatchObject({ recipeId: "r_alt_ingot" });
+  });
+
+  it("an ABSENT/EMPTY rawItemIds set is byte-identical to the 5-arg call", () => {
+    const fiveArg = proposeChain("plate", F(60), deep, [], new Map());
+    const emptySet = proposeChain(
+      "plate",
+      F(60),
+      deep,
+      [],
+      new Map(),
+      new Set(),
+    );
+    expect(emptySet).toEqual(fiveArg);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S20 P2 — clockPercent (7th positional). Per-machine primary rates scale
+// `perMinute × clockPercent/100` (linear, exact) in BOTH the count-fix pass and
+// the outputRate; ceilDiv counts stay exact; the 100% default is byte-identical.
+// ---------------------------------------------------------------------------
+
+describe("proposeChain — clockPercent scaling (S20 P2)", () => {
+  const F32 = (n: number, d: number): Fraction => Fraction.of(n, d);
+  // ingot: 30/machine from 30 ore, at 100%.
+  const recipes = [
+    recipe("r_ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
+  ];
+
+  it("150% scales the per-machine rate so fewer machines cover the demand", () => {
+    // At 100%: ceil(120/30) = 4 machines. At 150%: each machine makes 45/min, so
+    // ceil(120 / (30 × 3/2)) = ceil(120/45) = 3 — the spec's exact example.
+    const at100 = proposeChain("ingot", F(120), recipes, []);
+    expect(stageFor(at100, "ingot")!.machineCount).toBe(4n);
+
+    const at150 = proposeChain(
+      "ingot",
+      F(120),
+      recipes,
+      [],
+      new Map(),
+      new Set(),
+      F(150),
+    );
+    expect(stageFor(at150, "ingot")!.machineCount).toBe(3n);
+    // outputRate = 3 × (30 × 3/2) = 3 × 45 = 135 (exact; the ceil overshoot).
+    expect(stageFor(at150, "ingot")!.outputRate.eq(F(135))).toBe(true);
+    // Input consumption also scales: 3 machines × (30 × 3/2) = 135 ore raw.
+    expect(at150.rawInputs).toEqual([{ itemId: "ore", rate: F(135) }]);
+  });
+
+  it("a non-integer clock keeps rates EXACT (no float creep)", () => {
+    // 133⅓% = 400/300 = 4/3. Per-machine ingot = 30 × 4/3 = 40/min.
+    // ceil(120 / 40) = 3; outputRate = 3 × 40 = 120 exactly.
+    const p = proposeChain(
+      "ingot",
+      F(120),
+      recipes,
+      [],
+      new Map(),
+      new Set(),
+      F32(400, 3),
+    );
+    expect(stageFor(p, "ingot")!.machineCount).toBe(3n);
+    expect(stageFor(p, "ingot")!.outputRate.eq(F(120))).toBe(true);
+  });
+
+  it("scales byproduct rates by the clock too", () => {
+    // A recipe with a byproduct: 20 primary + 10 byproduct per machine from ore.
+    const bp = [
+      recipe(
+        "r_fuel",
+        "refinery",
+        [
+          ["fuel", 20],
+          ["resin", 10],
+        ],
+        [["oil", 30]],
+      ),
+    ];
+    // At 150%: 1 machine makes 30 fuel (ceil(20/(20×3/2)) = ceil(20/30) = 1),
+    // and the byproduct resin scales to 10 × 3/2 = 15/min.
+    const p = proposeChain("fuel", F(20), bp, [], new Map(), new Set(), F(150));
+    expect(stageFor(p, "fuel")!.machineCount).toBe(1n);
+    expect(p.byproducts).toEqual([{ itemId: "resin", rate: F(15) }]);
+  });
+
+  it("the 100% DEFAULT is byte-identical to the 6-arg call (regression pin)", () => {
+    const sixArg = proposeChain(
+      "ingot",
+      F(120),
+      recipes,
+      [],
+      new Map(),
+      new Set(),
+    );
+    const explicit100 = proposeChain(
+      "ingot",
+      F(120),
+      recipes,
+      [],
+      new Map(),
+      new Set(),
+      F(100),
+    );
+    // The absent 7th arg and an explicit Fraction.from(100) must both equal the
+    // pre-P2 output exactly (the epic's byte-stability acceptance).
+    expect(explicit100).toEqual(sixArg);
+    expect(stageFor(sixArg, "ingot")!.machineCount).toBe(4n);
+  });
+});

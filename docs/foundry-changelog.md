@@ -3,6 +3,71 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-07 — Stage 20 P3: Propose remembers you, and respects your tier
+
+> Hey Michael — two last things for the chain builder. First, it
+> remembers. The recipes you pick and the machines you untick now stay
+> picked and unticked across restarts, so you don't re-teach it your
+> preferences every session — and you can still change any of them
+> mid-plan, exactly as before. (Your RAW markings and the clock stay
+> per-run; those felt like decisions about one factory, not standing
+> preferences.)
+>
+> Second, there's a TIER box. Set it to where you actually are in the
+> game and Propose will only use recipes you've unlocked — read from
+> the real milestone and hard-drive data in the game files, not
+> guessed. If something can't be made at your tier, the line says so
+> and tells you exactly which lever fixes it: raise the tier, edit the
+> machine exclusions, or both — and it will never suggest a lever that
+> wouldn't actually help. Leave TIER on "all" and nothing changes from
+> before.
+
+## 2026-08-07 — Stage 20 P2: the Propose button plans your overclock
+
+> Hey Michael — there's a CLOCK % box next to the rate now. Type 150
+> and Propose, and the whole chain is planned as if every machine runs
+> at 150%: fewer machines where the faster rate covers the demand, and
+> the power total switches to a "≈" figure because overclocked power
+> follows the game's real curve (each machine's own exponent — it's
+> not linear). Leave it at 100 and everything is exactly as before.
+> When you Apply, the built stages carry your chosen clock with them,
+> so the canvas agrees with what the preview promised — and it always
+> applies the clock you Proposed with, even if you'd already typed a
+> new number in the box. One more thing: when a proposed chain makes a
+> byproduct that another of its own stages could drink — like the
+> water that aluminum scrap production gives off, right next to a
+> stage that needs water — the preview now points it out in a little
+> note. It's just a heads-up for now; wiring it up automatically is a
+> future feature.
+
+## 2026-08-07 — Stage 20 P1: the Propose button takes direction
+
+> Hey Michael — the proposal is yours to shape now, before you commit
+> to it. Click the "N recipes" note on any line and pick a different
+> recipe — alternates included — and the whole chain instantly
+> re-plans around your choice, machine counts and power and all;
+> pick the default again and it's back to standard. Every line also
+> has a RAW button: press it to say "I already make this elsewhere"
+> and the chain stops there, listing it as a supply instead (a
+> little strip shows your raw markings with an × to undo). And
+> there's a MACHINE EXCLUSIONS panel — untick machines you haven't
+> built yet and the planner works around them; if that leaves
+> something unmakeable, it tells you plainly on its own line and
+> offers the alternate recipes that could still make it, right
+> there. Apply always builds exactly the chain you shaped.
+
+## 2026-08-06 — Stage 20 P0: the Propose button shows its work
+
+> Hey Michael — when you ask the chain builder to Propose now, it
+> tells you what you'd be signing up for before you hit Apply. A
+> summary up top shows total power, total machines, and the raw ores
+> and fluids the whole chain will drink per minute. The stage list is
+> now organised into tiers — your target first, then what feeds it,
+> then what feeds those — and each line says exactly where its output
+> goes, so branching chains read honestly. And where an item has
+> alternate recipes, its line shows a little "3 recipes" note — a
+> preview of the recipe picking that's coming next.
+
 ## 2026-08-06 — Stage 19: your plans are harder to lose
 
 > Hey Michael — two quiet protections for your saved factories. First,

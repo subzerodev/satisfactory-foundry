@@ -1,0 +1,172 @@
+S20 P1 — Propose customization core (ticket #100) · bidirectionality verification log
+====================================================================================
+
+Discipline: per NEW production behavior, break the production code, show a
+GENUINE vitest FAIL (the test caught it), restore, show green. A test that
+cannot fail proves nothing. Six new behaviors → six break/restore cycles.
+All runs in the worktree .worktrees/s20-p1 on branch feature/s20-p1.
+
+Baseline: `npx vitest run` → 812 passed (782 pre-existing + 30 P1 additions:
+5 core forced-raw + 25 adapter P1).
+Post-restore identity: `diff` of src/core/chain-builder.ts AND
+src/ui/chain-builder-adapter.ts against the pre-break backups → IDENTICAL
+(byte-for-byte, both files).
+
+----------------------------------------------------------------------------
+Cycle 1 — the forced-raw guard prunes a mid-chain item's subtree (core, Axis 1)
+----------------------------------------------------------------------------
+Behavior: proposeChain's closure walk consults `rawItemIds` BEFORE producer
+selection — a member (non-target) becomes a raw leaf, its demand aggregating
+into rawInputs and its subtree pruned from the closure.
+
+Break: delete the forced-raw guard block entirely from `visit`, so a raw-marked
+mid-chain item is selected/expanded normally.
+
+Test: "proposeChain — forced-raw items (rawItemIds) > forces a mid-chain item
+raw: its subtree vanishes into rawInputs"
+Result: FAIL (genuine) —
+  expect(stageFor(p, "ingot")).toBeUndefined()
+  AssertionError: expected { itemId: 'ingot', machineCount: 3n, … } to be
+  undefined
+Without the guard the ingot stage was still built (and its ore subtree kept).
+
+Restore: reinstate the forced-raw guard block.
+Result: PASS.
+
+----------------------------------------------------------------------------
+Cycle 2 — target immunity: forcing the target raw is silently ignored (core)
+----------------------------------------------------------------------------
+Behavior: `targetItemId ∈ rawItemIds` is IGNORED (an empty chain is not a
+chain) — the guard is `itemId !== targetItemId && rawItemIds.has(itemId)`.
+
+Break: drop the `itemId !== targetItemId` clause, so the target too collapses
+to raw when marked.
+
+Test: "proposeChain — forced-raw items (rawItemIds) > TARGET immunity: forcing
+the target raw is silently ignored"
+Result: FAIL (genuine) —
+  expect(stageFor(p, "plate")).toMatchObject({ recipeId: "r_plate" })
+  AssertionError: expected undefined to match object { recipeId: 'r_plate' }
+The target's own stage vanished — the chain produced nothing.
+
+Restore: reinstate the `itemId !== targetItemId` clause.
+Result: PASS.
+
+----------------------------------------------------------------------------
+Cycle 3 — cause precedence is forced-first (adapter, Axis 4)
+----------------------------------------------------------------------------
+Behavior: the rawInputs cause annotator evaluates forced > constrained >
+natural (mirroring the core's raw > override > default). A forced item that
+ALSO has no eligible producer reports "forced", never "constrained".
+
+Break: reorder `causeOf` to check the constrained condition (has-producer +
+no-eligible) BEFORE the forced (rawItemIds) check.
+
+Test: "S20 P1 — rawInputs cause annotation > OVERLAP: a forced item with NO
+eligible producer reports 'forced' (precedence)"
+Result: FAIL (genuine) —
+  expect(ingot.cause).toBe("forced")
+  AssertionError: expected 'constrained' to be 'forced'
+The overlap item mis-classified constrained under the reordered checks.
+
+Restore: revert to forced-first ordering.
+Result: PASS.
+
+----------------------------------------------------------------------------
+Cycle 4 — pickerOptionsFor force-includes an excluded current recipe (adapter)
+----------------------------------------------------------------------------
+Behavior: when `currentRecipeId` names a catalog recipe ABSENT from the
+eligible list (an excluded-machine override), it is force-included so the
+select's value always has a matching option AND the affordance stays reachable
+(the r4 dead-end fix).
+
+Break: drop the force-include — return the bare `eligible` list even when the
+current recipe is absent from it.
+
+Tests:
+  a) "S20 P1 — pickerOptionsFor (TOTAL + reachability) > force-includes a
+     current recipe absent from the eligible list (excluded machine)"
+     FAIL (genuine) — expected [ 'r_std', 'r_alt_z' ] to deeply equal
+     [ 'r_std', 'r_alt_z', 'r_alt_a' ] (the excluded override was dropped).
+  b) "S20 P1 — pickerOptionsFor (TOTAL + reachability) > REACHABILITY pin: at
+     0/1 eligible with an excluded override the affordance predicate is TRUE"
+     FAIL (genuine) — expected [] to deeply equal [ 'r_std' ]: Case A (zero
+     other eligible) collapsed to [], re-opening the r4 reachability dead-end.
+
+Restore: reinstate `return [...eligible, current]`.
+Result: PASS (both).
+
+----------------------------------------------------------------------------
+Cycle 5 — effectiveDefaultRecipe honors exclusions (null under exclusion)
+----------------------------------------------------------------------------
+Behavior: effectiveDefaultRecipe applies selectProducer's default policy
+EXACTLY, including the machine-exclusion filter — returning null when every
+non-alternate producer's machine is excluded (the clear-rule's null case, so an
+override under exclusions never clears wrongly).
+
+Break: remove the `if (excluded.has(r.machineId)) continue` filter, so an
+excluded default is still returned.
+
+Test: "S20 P1 — effectiveDefaultRecipe (matches selectProducer) > returns null
+when every non-alternate producer's machine is excluded"
+Result: FAIL (genuine) —
+  expect(effectiveDefaultRecipe(cat, "ingot", ["smelter"])).toBeNull()
+  AssertionError: expected { id: 'r_std', … } to be null
+The excluded r_std was returned as the default — the clear rule would then
+clear an override the picker still shows.
+
+Restore: reinstate the exclusion filter.
+Result: PASS.
+
+----------------------------------------------------------------------------
+Cycle 6 — candidateCount computed under the CURRENT exclusions (chip==picker)
+----------------------------------------------------------------------------
+Behavior: toProposalPreview computes each row's candidateCount with the CURRENT
+exclusions (design r1) — else the "N recipes" chip and the picker's option list
+disagree. Chip ≥2-gate semantics are unchanged from P0; only the exclusion set
+it reads is now live.
+
+Break: pass the module constant EXCLUDED_MACHINE_IDS to candidateRecipesFor in
+the row map instead of the live `excludedMachineIds`.
+
+Test: "S20 P1 — toProposalPreview candidateCount under exclusions > counts
+eligible candidates with the CURRENT exclusions (chip == picker)"
+Result: FAIL (genuine) —
+  expect(excl.rows.find(r => r.itemName === "Ingot").candidateCount).toBe(2)
+  AssertionError: expected 3 to be 2
+With the constant, excluding the foundry did not drop its candidate — the chip
+over-counted vs. what the picker would offer.
+
+Restore: pass the live `excludedMachineIds`.
+Result: PASS.
+
+----------------------------------------------------------------------------
+Regression guard — default-empty byte-identity + P0/AltCompare unchanged
+----------------------------------------------------------------------------
+- Core: "an ABSENT/EMPTY rawItemIds set is byte-identical to the 5-arg call"
+  and "is byte-identical to a natural leaf" pin the default-empty regression
+  (a forced-raw item mimics a natural no-producer leaf exactly).
+- Adapter: "absent options is byte-identical to the 3-arg call" +
+  "the default-arg call is unchanged (module constant — AltCompare/P0)" pin
+  the P0/P4 regression surface (candidateRecipesFor default arg, options arg).
+- The pre-existing alt-compare + P0 suites (unchanged) all pass — the P1
+  additions are additive.
+
+Final: `npx vitest run` → 812 passed (31 files); `npm run check` (tsc + eslint
++ prettier) clean. Both recorded in the dispatch report.
+
+=== Cycle 7 (boundary r1 fold): cause classifier mirrors the DEFAULT POLICY ===
+Behavior: an alternate-only collapse classifies "constrained" (with live
+recovery options), NOT "natural". The pre-fix classifier keyed on the
+alternates-INCLUSIVE producerRecipesFor and mislabeled this case.
+
+BREAK: revert causeOf's constrained test to
+  producerRecipesFor(catalog, itemId, excludedMachineIds).length === 0
+RESULT (verbatim):
+  × constrained (boundary r1 fix): an ALTERNATE-ONLY collapse is 'constrained', with live recovery options
+  FAIL  src/ui/chain-builder-adapter.test.ts > S20 P1 — rawInputs cause annotation > constrained (boundary r1 fix): ...
+  Tests  1 failed | 813 passed (814)
+
+RESTORE: effectiveDefaultRecipe(...) === null test reinstated.
+RESULT: Tests 814 passed (814). Adapter byte-identical to pre-break backup
+(cmp -s clean).

@@ -87,6 +87,10 @@ const CAT: Catalog = {
     ),
   },
   tiers: { belt: [F(60)], pipe: [F(300)] },
+  // AltCompare is deliberately UNGATED (S20 P3 Axis 4 carve-out): it serves the
+  // APPLIED graph, where a stage may legitimately run a recipe above the propose
+  // tier. An empty map keeps these fixtures gate-free.
+  recipeUnlocks: {},
 };
 
 function selection(recipeId: string | null): Selection {

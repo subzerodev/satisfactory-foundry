@@ -1,0 +1,1897 @@
+diff --git a/features/propose-grows-up/p1-r2-verification.log b/features/propose-grows-up/p1-r2-verification.log
+new file mode 100644
+index 0000000..22d5796
+--- /dev/null
++++ b/features/propose-grows-up/p1-r2-verification.log
+@@ -0,0 +1,172 @@
++S20 P1 — Propose customization core (ticket #100) · bidirectionality verification log
++====================================================================================
++
++Discipline: per NEW production behavior, break the production code, show a
++GENUINE vitest FAIL (the test caught it), restore, show green. A test that
++cannot fail proves nothing. Six new behaviors → six break/restore cycles.
++All runs in the worktree .worktrees/s20-p1 on branch feature/s20-p1.
++
++Baseline: `npx vitest run` → 812 passed (782 pre-existing + 30 P1 additions:
++5 core forced-raw + 25 adapter P1).
++Post-restore identity: `diff` of src/core/chain-builder.ts AND
++src/ui/chain-builder-adapter.ts against the pre-break backups → IDENTICAL
++(byte-for-byte, both files).
++
++----------------------------------------------------------------------------
++Cycle 1 — the forced-raw guard prunes a mid-chain item's subtree (core, Axis 1)
++----------------------------------------------------------------------------
++Behavior: proposeChain's closure walk consults `rawItemIds` BEFORE producer
++selection — a member (non-target) becomes a raw leaf, its demand aggregating
++into rawInputs and its subtree pruned from the closure.
++
++Break: delete the forced-raw guard block entirely from `visit`, so a raw-marked
++mid-chain item is selected/expanded normally.
++
++Test: "proposeChain — forced-raw items (rawItemIds) > forces a mid-chain item
++raw: its subtree vanishes into rawInputs"
++Result: FAIL (genuine) —
++  expect(stageFor(p, "ingot")).toBeUndefined()
++  AssertionError: expected { itemId: 'ingot', machineCount: 3n, … } to be
++  undefined
++Without the guard the ingot stage was still built (and its ore subtree kept).
++
++Restore: reinstate the forced-raw guard block.
++Result: PASS.
++
++----------------------------------------------------------------------------
++Cycle 2 — target immunity: forcing the target raw is silently ignored (core)
++----------------------------------------------------------------------------
++Behavior: `targetItemId ∈ rawItemIds` is IGNORED (an empty chain is not a
++chain) — the guard is `itemId !== targetItemId && rawItemIds.has(itemId)`.
++
++Break: drop the `itemId !== targetItemId` clause, so the target too collapses
++to raw when marked.
++
++Test: "proposeChain — forced-raw items (rawItemIds) > TARGET immunity: forcing
++the target raw is silently ignored"
++Result: FAIL (genuine) —
++  expect(stageFor(p, "plate")).toMatchObject({ recipeId: "r_plate" })
++  AssertionError: expected undefined to match object { recipeId: 'r_plate' }
++The target's own stage vanished — the chain produced nothing.
++
++Restore: reinstate the `itemId !== targetItemId` clause.
++Result: PASS.
++
++----------------------------------------------------------------------------
++Cycle 3 — cause precedence is forced-first (adapter, Axis 4)
++----------------------------------------------------------------------------
++Behavior: the rawInputs cause annotator evaluates forced > constrained >
++natural (mirroring the core's raw > override > default). A forced item that
++ALSO has no eligible producer reports "forced", never "constrained".
++
++Break: reorder `causeOf` to check the constrained condition (has-producer +
++no-eligible) BEFORE the forced (rawItemIds) check.
++
++Test: "S20 P1 — rawInputs cause annotation > OVERLAP: a forced item with NO
++eligible producer reports 'forced' (precedence)"
++Result: FAIL (genuine) —
++  expect(ingot.cause).toBe("forced")
++  AssertionError: expected 'constrained' to be 'forced'
++The overlap item mis-classified constrained under the reordered checks.
++
++Restore: revert to forced-first ordering.
++Result: PASS.
++
++----------------------------------------------------------------------------
++Cycle 4 — pickerOptionsFor force-includes an excluded current recipe (adapter)
++----------------------------------------------------------------------------
++Behavior: when `currentRecipeId` names a catalog recipe ABSENT from the
++eligible list (an excluded-machine override), it is force-included so the
++select's value always has a matching option AND the affordance stays reachable
++(the r4 dead-end fix).
++
++Break: drop the force-include — return the bare `eligible` list even when the
++current recipe is absent from it.
++
++Tests:
++  a) "S20 P1 — pickerOptionsFor (TOTAL + reachability) > force-includes a
++     current recipe absent from the eligible list (excluded machine)"
++     FAIL (genuine) — expected [ 'r_std', 'r_alt_z' ] to deeply equal
++     [ 'r_std', 'r_alt_z', 'r_alt_a' ] (the excluded override was dropped).
++  b) "S20 P1 — pickerOptionsFor (TOTAL + reachability) > REACHABILITY pin: at
++     0/1 eligible with an excluded override the affordance predicate is TRUE"
++     FAIL (genuine) — expected [] to deeply equal [ 'r_std' ]: Case A (zero
++     other eligible) collapsed to [], re-opening the r4 reachability dead-end.
++
++Restore: reinstate `return [...eligible, current]`.
++Result: PASS (both).
++
++----------------------------------------------------------------------------
++Cycle 5 — effectiveDefaultRecipe honors exclusions (null under exclusion)
++----------------------------------------------------------------------------
++Behavior: effectiveDefaultRecipe applies selectProducer's default policy
++EXACTLY, including the machine-exclusion filter — returning null when every
++non-alternate producer's machine is excluded (the clear-rule's null case, so an
++override under exclusions never clears wrongly).
++
++Break: remove the `if (excluded.has(r.machineId)) continue` filter, so an
++excluded default is still returned.
++
++Test: "S20 P1 — effectiveDefaultRecipe (matches selectProducer) > returns null
++when every non-alternate producer's machine is excluded"
++Result: FAIL (genuine) —
++  expect(effectiveDefaultRecipe(cat, "ingot", ["smelter"])).toBeNull()
++  AssertionError: expected { id: 'r_std', … } to be null
++The excluded r_std was returned as the default — the clear rule would then
++clear an override the picker still shows.
++
++Restore: reinstate the exclusion filter.
++Result: PASS.
++
++----------------------------------------------------------------------------
++Cycle 6 — candidateCount computed under the CURRENT exclusions (chip==picker)
++----------------------------------------------------------------------------
++Behavior: toProposalPreview computes each row's candidateCount with the CURRENT
++exclusions (design r1) — else the "N recipes" chip and the picker's option list
++disagree. Chip ≥2-gate semantics are unchanged from P0; only the exclusion set
++it reads is now live.
++
++Break: pass the module constant EXCLUDED_MACHINE_IDS to candidateRecipesFor in
++the row map instead of the live `excludedMachineIds`.
++
++Test: "S20 P1 — toProposalPreview candidateCount under exclusions > counts
++eligible candidates with the CURRENT exclusions (chip == picker)"
++Result: FAIL (genuine) —
++  expect(excl.rows.find(r => r.itemName === "Ingot").candidateCount).toBe(2)
++  AssertionError: expected 3 to be 2
++With the constant, excluding the foundry did not drop its candidate — the chip
++over-counted vs. what the picker would offer.
++
++Restore: pass the live `excludedMachineIds`.
++Result: PASS.
++
++----------------------------------------------------------------------------
++Regression guard — default-empty byte-identity + P0/AltCompare unchanged
++----------------------------------------------------------------------------
++- Core: "an ABSENT/EMPTY rawItemIds set is byte-identical to the 5-arg call"
++  and "is byte-identical to a natural leaf" pin the default-empty regression
++  (a forced-raw item mimics a natural no-producer leaf exactly).
++- Adapter: "absent options is byte-identical to the 3-arg call" +
++  "the default-arg call is unchanged (module constant — AltCompare/P0)" pin
++  the P0/P4 regression surface (candidateRecipesFor default arg, options arg).
++- The pre-existing alt-compare + P0 suites (unchanged) all pass — the P1
++  additions are additive.
++
++Final: `npx vitest run` → 812 passed (31 files); `npm run check` (tsc + eslint
+++ prettier) clean. Both recorded in the dispatch report.
++
++=== Cycle 7 (boundary r1 fold): cause classifier mirrors the DEFAULT POLICY ===
++Behavior: an alternate-only collapse classifies "constrained" (with live
++recovery options), NOT "natural". The pre-fix classifier keyed on the
++alternates-INCLUSIVE producerRecipesFor and mislabeled this case.
++
++BREAK: revert causeOf's constrained test to
++  producerRecipesFor(catalog, itemId, excludedMachineIds).length === 0
++RESULT (verbatim):
++  × constrained (boundary r1 fix): an ALTERNATE-ONLY collapse is 'constrained', with live recovery options
++  FAIL  src/ui/chain-builder-adapter.test.ts > S20 P1 — rawInputs cause annotation > constrained (boundary r1 fix): ...
++  Tests  1 failed | 813 passed (814)
++
++RESTORE: effectiveDefaultRecipe(...) === null test reinstated.
++RESULT: Tests 814 passed (814). Adapter byte-identical to pre-break backup
++(cmp -s clean).
+diff --git a/src/core/chain-builder.test.ts b/src/core/chain-builder.test.ts
+index 82cec6b..8d978ba 100644
+--- a/src/core/chain-builder.test.ts
++++ b/src/core/chain-builder.test.ts
+@@ -504,3 +504,92 @@ describe("proposeChain — recipe overrides", () => {
+     expect(emptyMap).toEqual(noArg);
+   });
+ });
++
++// ---------------------------------------------------------------------------
++// Forced-raw items (S20 / P1, ticket #100): the optional 6th param marks an item
++// treat-as-raw BEFORE producer selection — a raw leaf whose demand aggregates
++// into rawInputs and whose subtree is pruned. Precedence raw > override; the
++// TARGET is immune (silently ignored); default-empty ⇒ byte-identical.
++// ---------------------------------------------------------------------------
++
++describe("proposeChain — forced-raw items (rawItemIds)", () => {
++  // plate ← ingot ← ore. Forcing ingot raw must vanish the ingot stage AND its
++  // ore subtree, aggregating the ingot demand into rawInputs.
++  const deep = [
++    recipe("r_plate", "constructor", [["plate", 20]], [["ingot", 30]]),
++    recipe("r_ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
++  ];
++
++  it("forces a mid-chain item raw: its subtree vanishes into rawInputs", () => {
++    // plate @ 60/min → 3 plate machines consuming 3×30 = 90 ingot.
++    const raw = new Set(["ingot"]);
++    const p = proposeChain("plate", F(60), deep, [], new Map(), raw);
++    // plate still built; ingot is now a raw leaf at its full demand (90).
++    expect(stageFor(p, "plate")).toMatchObject({
++      recipeId: "r_plate",
++      machineCount: 3n,
++    });
++    expect(stageFor(p, "ingot")).toBeUndefined();
++    // ore (ingot's input) never enters the closure — the subtree is pruned.
++    expect(stageFor(p, "ore")).toBeUndefined();
++    expect(p.rawInputs).toEqual([{ itemId: "ingot", rate: F(90) }]);
++    // No ingot→plate link (ingot is raw, exactly like a natural leaf).
++    expect(p.links).toEqual([]);
++  });
++
++  it("is byte-identical to a natural leaf: forced-raw ingot === no ingot recipe", () => {
++    // Dropping r_ingot makes ingot a NATURAL raw leaf. Forcing it raw with the
++    // recipe present must produce the SAME proposal (the guard mimics a leaf).
++    const raw = new Set(["ingot"]);
++    const forced = proposeChain("plate", F(60), deep, [], new Map(), raw);
++    const noRecipe = proposeChain(
++      "plate",
++      F(60),
++      [recipe("r_plate", "constructor", [["plate", 20]], [["ingot", 30]])],
++      [],
++    );
++    expect(forced).toEqual(noRecipe);
++  });
++
++  it("TARGET immunity: forcing the target raw is silently ignored", () => {
++    // targetItemId ∈ rawItemIds must NOT collapse the chain — the target is
++    // still produced normally (an empty chain is not a chain).
++    const raw = new Set(["plate"]);
++    const p = proposeChain("plate", F(60), deep, [], new Map(), raw);
++    expect(stageFor(p, "plate")).toMatchObject({ recipeId: "r_plate" });
++    // The rest of the chain is unaffected: ingot still built, ore still raw.
++    expect(stageFor(p, "ingot")).toMatchObject({ recipeId: "r_ingot" });
++    expect(p.rawInputs).toEqual([{ itemId: "ore", rate: F(90) }]);
++  });
++
++  it("raw > override: a forced-raw item ignores its override and is raw", () => {
++    // ingot has a std + an alternate; override it to the alternate AND force it
++    // raw. Raw is the stronger, later intent → ingot is raw, the override loses.
++    const withAlt = [
++      recipe("r_plate", "constructor", [["plate", 20]], [["ingot", 30]]),
++      recipe("r_std_ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
++      recipe("r_alt_ingot", "foundry", [["ingot", 45]], [["ore", 40]], true),
++    ];
++    const overrides = new Map([["ingot", "r_alt_ingot"]]);
++    const raw = new Set(["ingot"]);
++    const p = proposeChain("plate", F(60), withAlt, [], overrides, raw);
++    expect(stageFor(p, "ingot")).toBeUndefined();
++    expect(p.rawInputs).toEqual([{ itemId: "ingot", rate: F(90) }]);
++    // Proof the override WOULD have applied without the raw mark.
++    const noRaw = proposeChain("plate", F(60), withAlt, [], overrides);
++    expect(stageFor(noRaw, "ingot")).toMatchObject({ recipeId: "r_alt_ingot" });
++  });
++
++  it("an ABSENT/EMPTY rawItemIds set is byte-identical to the 5-arg call", () => {
++    const fiveArg = proposeChain("plate", F(60), deep, [], new Map());
++    const emptySet = proposeChain(
++      "plate",
++      F(60),
++      deep,
++      [],
++      new Map(),
++      new Set(),
++    );
++    expect(emptySet).toEqual(fiveArg);
++  });
++});
+diff --git a/src/core/chain-builder.ts b/src/core/chain-builder.ts
+index 634cc90..10686a0 100644
+--- a/src/core/chain-builder.ts
++++ b/src/core/chain-builder.ts
+@@ -164,8 +164,19 @@ interface Plan {
+  * an invalid entry is ignored (default policy applies). Absent/empty ⇒ the
+  * proposal is byte-identical to the pre-P4 behavior.
+  *
+- * Determinism: same target + rate + recipes + exclusions + overrides ⇒
+- * identical proposal.
++ * `rawItemIds` (S20 / P1) is an optional set of user-forced-raw item ids
++ * consulted BEFORE producer selection at each item: a member (other than the
++ * target — see below) is a raw leaf, exactly like a natural no-producer item —
++ * its demand aggregates into `rawInputs` and its subtree never enters the
++ * closure. Precedence is raw > override > default policy: raw is the stronger,
++ * later user intent, so it wins over an override for the same item. **The
++ * target is immune**: `targetItemId ∈ rawItemIds` is IGNORED (a chain that
++ * produces nothing is not a chain) — the guard keeps the function total and the
++ * UI honest, silently. Absent/empty ⇒ the proposal is byte-identical to the
++ * pre-P1 behavior.
++ *
++ * Determinism: same target + rate + recipes + exclusions + overrides +
++ * rawItemIds ⇒ identical proposal.
+  */
+ export function proposeChain(
+   targetItemId: string,
+@@ -173,6 +184,7 @@ export function proposeChain(
+   recipes: BuilderRecipe[],
+   excludedMachineIds: Iterable<string>,
+   overrides: ReadonlyMap<string, string> = new Map(),
++  rawItemIds: ReadonlySet<string> = new Set(),
+ ): ChainProposal {
+   const excluded = new Set(excludedMachineIds);
+   // Every item that has appeared in the closure, produced or raw.
+@@ -198,6 +210,19 @@ export function proposeChain(
+       return existing;
+     }
+ 
++    // Forced-raw guard (S20 P1): a user-forced-raw item is a raw leaf BEFORE
++    // any producer selection — its demand aggregates into rawInputs exactly
++    // like a natural no-producer leaf, and its subtree never enters the
++    // closure. Raw > override > default (raw is the later, stronger user
++    // intent). The TARGET is immune: forcing the target raw would produce an
++    // empty chain, so `targetItemId ∈ rawItemIds` is silently ignored (keeps
++    // the function total).
++    if (itemId !== targetItemId && rawItemIds.has(itemId)) {
++      const plan: Plan = { itemId, recipe: null, demand: Fraction.from(0) };
++      plans.set(itemId, plan);
++      return plan;
++    }
++
+     // Cycle guard: if selecting a producer would route back onto the current
+     // DFS path — INCLUDING the item itself (a self-consuming recipe would
+     // otherwise emit a from===to link, bypassing addLink's self-link refusal
+diff --git a/src/ui/ChainBuilder.tsx b/src/ui/ChainBuilder.tsx
+index 203fcc5..4ef72d1 100644
+--- a/src/ui/ChainBuilder.tsx
++++ b/src/ui/ChainBuilder.tsx
+@@ -1,12 +1,17 @@
+ /**
+- * Build-chain panel (Stage 8 / Phase 3, ticket #39). Pick a target item + a
+- * rate, Propose → a component-local PREVIEW (one row per proposed stage + the
+- * raw-inputs / byproducts lines), then Apply (bulk store action) or discard.
++ * Build-chain panel (Stage 8 / Phase 3, ticket #39; S20 P1 customization, #100).
++ * Pick a target item + a rate, Propose → a component-local PREVIEW (one row per
++ * proposed stage + the raw-inputs / byproducts lines + the cost sheet), then
++ * shape it before Apply: pick the recipe per stage (incl. alternates), mark
++ * items treat-as-raw, and edit which machines the proposer may use. Every change
++ * re-proposes synchronously; Apply is unchanged (applies the CUSTOMIZED chain).
+  *
+- * The proposal is ephemeral — component-local state, no store field (the store
+- * only gains the apply action). Apply clears the preview, so a double-apply is
+- * an explicit re-propose (frozen Axis 6). Solver runs are a synchronous
+- * catalog-sized DFS. Frozen design Axis 6.
++ * The proposal + the customization choices are ephemeral — component-local
++ * state, no store field (the store only gains the apply action; choice
++ * persistence is P3). Apply clears the preview but KEEPS the choices (session
++ * intent); Discard likewise clears the preview, keeps the choices. Solver runs
++ * are a synchronous catalog-sized DFS. Frozen design: features/propose-grows-up/
++ * p1-brainstorm.md (v7).
+  */
+ 
+ import { useState } from "react";
+@@ -15,13 +20,19 @@ import { Fraction } from "../core/fraction.ts";
+ import type { ChainProposal } from "../core/chain-builder.ts";
+ import { useAppStore } from "../state/store.ts";
+ import {
++  EXCLUDED_MACHINE_IDS,
+   proposeChainForCatalog,
+   toProposalPreview,
+   previewRowText,
+   itemRateLineText,
+   metricsPowerText,
++  effectiveDefaultRecipe,
++  producerRecipesFor,
++  pickerOptionsFor,
++  excludableMachines,
+ } from "./chain-builder-adapter.ts";
+ import type { ProposalPreview } from "./chain-builder-adapter.ts";
++import type { Catalog, CatalogRecipe } from "../data/types.ts";
+ 
+ /**
+  * Parse the raw rate text into a positive Fraction, or a labeled error (the
+@@ -49,6 +60,14 @@ interface Preview {
+   view: ProposalPreview;
+ }
+ 
++/** The stage row for `itemId` in the current preview, or undefined. */
++function stageRecipeId(
++  proposal: ChainProposal,
++  itemId: string,
++): string | undefined {
++  return proposal.stages.find((s) => s.itemId === itemId)?.recipeId;
++}
++
+ export function ChainBuilder() {
+   const catalog = useAppStore((s) =>
+     s.catalog.status === "ready" ? s.catalog.catalog : null,
+@@ -60,6 +79,21 @@ export function ChainBuilder() {
+   const [error, setError] = useState<string | null>(null);
+   const [preview, setPreview] = useState<Preview | null>(null);
+ 
++  // The three customization controls (component-local; no store surface, no
++  // persistence — P3). Stale entries are KEPT: the core validate-and-ignore
++  // totality makes an override/raw whose item has left the closure inert, and a
++  // choice "comes back" correctly if the item re-enters. excludedMachineIds is
++  // seeded from the module constant (converter/packager).
++  const [overrides, setOverrides] = useState<Map<string, string>>(
++    () => new Map(),
++  );
++  const [rawItemIds, setRawItemIds] = useState<Set<string>>(() => new Set());
++  const [excludedMachineIds, setExcludedMachineIds] = useState<Set<string>>(
++    () => new Set(EXCLUDED_MACHINE_IDS),
++  );
++  // The one open picker at a time (component-local).
++  const [pickerItemId, setPickerItemId] = useState<string | null>(null);
++
+   if (catalog === null) return null;
+ 
+   // All catalog items, sorted by display name (the select's option list).
+@@ -67,6 +101,32 @@ export function ChainBuilder() {
+     a.displayName.localeCompare(b.displayName),
+   );
+ 
++  /**
++   * Re-run the solver with the current target/rate/choices and set the preview.
++   * The single call Propose and every control change both make — deterministic,
++   * synchronous, no debounce (a catalog-sized DFS per click). Returns silently
++   * when there is no valid target/rate (nothing to re-propose against yet).
++   */
++  function repropose(cat: Catalog): void {
++    if (targetItemId === "") return;
++    const parsed = parseRateText(rateText);
++    if (!parsed.ok) return;
++    const options = { overrides, rawItemIds, excludedMachineIds };
++    const proposal = proposeChainForCatalog(
++      cat,
++      targetItemId,
++      parsed.value,
++      options,
++    );
++    setPreview({
++      proposal,
++      view: toProposalPreview(proposal, cat, {
++        excludedMachineIds,
++        rawItemIds,
++      }),
++    });
++  }
++
+   function onPropose() {
+     setError(null);
+     setPreview(null);
+@@ -80,21 +140,111 @@ export function ChainBuilder() {
+       setError(parsed.error);
+       return;
+     }
+-    const proposal = proposeChainForCatalog(
+-      catalog,
+-      targetItemId,
+-      parsed.value,
+-    );
+-    setPreview({ proposal, view: toProposalPreview(proposal, catalog) });
++    repropose(catalog);
+   }
+ 
+   function onApply() {
+     if (preview === null) return;
+     applyChainProposal(preview.proposal);
+-    // Clear the preview so a double-apply is an explicit re-propose (Axis 6).
++    // Clear the preview so a double-apply is an explicit re-propose (Axis 6);
++    // KEEP the customization choices (the user's session intent — Axis 3).
++    setPreview(null);
++    setPickerItemId(null);
++  }
++
++  function onDiscard() {
++    // Clear the preview, KEEP the choices (Axis 3).
+     setPreview(null);
++    setPickerItemId(null);
++  }
++
++  /**
++   * Choose `recipeId` for `itemId` from the picker. SET an override UNLESS the
++   * chosen id equals the effective default's id (then CLEAR — the map holds only
++   * true deviations, and clearing can never move the proposal away from the shown
++   * selection). A null effective default (fully-excluded / alternate-only) ⇒
++   * EVERY choice is an explicit override, nothing clears. Then re-propose.
++   */
++  function chooseRecipe(itemId: string, recipeId: string): void {
++    if (catalog === null) return;
++    const dflt = effectiveDefaultRecipe(catalog, itemId, excludedMachineIds);
++    const next = new Map(overrides);
++    if (dflt !== null && recipeId === dflt.id) {
++      next.delete(itemId);
++    } else {
++      next.set(itemId, recipeId);
++    }
++    setOverrides(next);
++    setPickerItemId(null);
++    reproposeWith(catalog, { overrides: next });
++  }
++
++  function toggleRaw(itemId: string): void {
++    if (catalog === null) return;
++    const next = new Set(rawItemIds);
++    if (next.has(itemId)) next.delete(itemId);
++    else next.add(itemId);
++    setRawItemIds(next);
++    reproposeWith(catalog, { rawItemIds: next });
+   }
+ 
++  function toggleExclusion(machineId: string): void {
++    if (catalog === null) return;
++    const next = new Set(excludedMachineIds);
++    if (next.has(machineId)) next.delete(machineId);
++    else next.add(machineId);
++    setExcludedMachineIds(next);
++    reproposeWith(catalog, { excludedMachineIds: next });
++  }
++
++  /**
++   * Re-propose using a mix of the current state and the just-computed override
++   * of ONE control (React state updates are async, so the setter's value is not
++   * yet readable — pass it explicitly). Only re-proposes if a preview is live.
++   */
++  function reproposeWith(
++    cat: Catalog,
++    patch: {
++      overrides?: Map<string, string>;
++      rawItemIds?: Set<string>;
++      excludedMachineIds?: Set<string>;
++    },
++  ): void {
++    if (preview === null) return;
++    if (targetItemId === "") return;
++    const parsed = parseRateText(rateText);
++    if (!parsed.ok) return;
++    const opts = {
++      overrides: patch.overrides ?? overrides,
++      rawItemIds: patch.rawItemIds ?? rawItemIds,
++      excludedMachineIds: patch.excludedMachineIds ?? excludedMachineIds,
++    };
++    const proposal = proposeChainForCatalog(
++      cat,
++      targetItemId,
++      parsed.value,
++      opts,
++    );
++    setPreview({
++      proposal,
++      view: toProposalPreview(proposal, cat, {
++        excludedMachineIds: opts.excludedMachineIds,
++        rawItemIds: opts.rawItemIds,
++      }),
++    });
++  }
++
++  const view = preview?.view ?? null;
++  // The forced (user-raw) rows drive the RAW OVERRIDES strip; natural and
++  // constrained rows render on their own lines (forced rows excluded — the strip
++  // is their sole surface, no double display).
++  const forcedRaws = view?.rawInputs.filter((r) => r.cause === "forced") ?? [];
++  const naturalRaws =
++    view?.rawInputs.filter((r) => r.cause === "natural") ?? [];
++  const constrainedRaws =
++    view?.rawInputs.filter((r) => r.cause === "constrained") ?? [];
++  const machines = excludableMachines(catalog);
++
+   return (
+     <div className="chain-builder">
+       <div className="chain-builder-controls">
+@@ -125,76 +275,181 @@ export function ChainBuilder() {
+           Propose
+         </button>
+       </div>
++
++      {/* Machine exclusions — the <details> disclosure; changes re-propose. */}
++      <details className="chain-builder-exclusions">
++        <summary>MACHINE EXCLUSIONS ({excludedMachineIds.size})</summary>
++        <ul>
++          {machines.map((m) => (
++            <li key={m.machineId}>
++              <label>
++                <input
++                  type="checkbox"
++                  checked={excludedMachineIds.has(m.machineId)}
++                  onChange={() => toggleExclusion(m.machineId)}
++                />
++                {m.displayName}
++              </label>
++            </li>
++          ))}
++        </ul>
++      </details>
++
+       {error !== null && <p className="chain-builder-error">{error}</p>}
+-      {preview !== null && (
++      {preview !== null && view !== null && (
+         <div className="chain-builder-preview">
+-          {!preview.view.isEmpty && (
++          {!view.isEmpty && (
+             <dl className="chain-builder-metrics">
+               <div>
+                 <dt>Σ POWER</dt>
+-                <dd>{metricsPowerText(preview.view.metrics)}</dd>
++                <dd>{metricsPowerText(view.metrics)}</dd>
+               </div>
+               <div>
+                 <dt>Σ MACHINES</dt>
+-                <dd>{preview.view.metrics.machineCount.toString()}</dd>
++                <dd>{view.metrics.machineCount.toString()}</dd>
+               </div>
+               <div>
+                 <dt>RAW</dt>
+                 <dd>
+-                  {preview.view.rawInputs.length > 0
+-                    ? itemRateLineText(preview.view.rawInputs)
+-                    : "—"}
++                  {naturalRaws.length > 0 ? itemRateLineText(naturalRaws) : "—"}
+                 </dd>
+               </div>
+             </dl>
+           )}
+-          {preview.view.isEmpty ? (
+-            <p className="chain-builder-empty">
+-              Nothing to build — the target is a raw input.
+-            </p>
++          {view.isEmpty ? (
++            /* Constrained/forced targets already render on their labeled raw
++               line with a recovery surface — a second generic message would
++               double-speak (boundary r1 NIT). Only a NATURAL raw target gets
++               the plain explanation. */
++            view.rawInputs.every((r) => r.cause === "natural") ? (
++              <p className="chain-builder-empty">
++                Nothing to build — the target is a raw input.
++              </p>
++            ) : null
+           ) : (
+             <ul className="chain-builder-rows">
+-              {preview.view.rows.map((row, i) => (
+-                <li key={row.itemName}>
+-                  {/* Tier marker on the first row of each depth (the rows are
+-                      ordered depth-asc, so a depth change === a new tier). */}
+-                  {(i === 0 ||
+-                    preview.view.rows[i - 1]!.depth !== row.depth) && (
+-                    <span className="chain-builder-tier">T{row.depth}</span>
+-                  )}
+-                  {previewRowText(row)}
+-                  {row.feeds.length > 0 && (
+-                    <span className="chain-builder-feeds">
+-                      {" → feeds "}
+-                      {row.feeds.join(", ")}
+-                    </span>
+-                  )}
+-                  {row.candidateCount > 0 && (
+-                    <span className="chain-builder-alt">
+-                      {" "}
+-                      {row.candidateCount} recipes
+-                    </span>
+-                  )}
+-                </li>
+-              ))}
++              {view.rows.map((row, i) => {
++                const itemId = row.itemId;
++                return (
++                  <li key={row.itemId}>
++                    {/* Tier marker on the first row of each depth (rows are
++                        depth-asc, so a depth change === a new tier). */}
++                    {(i === 0 || view.rows[i - 1]!.depth !== row.depth) && (
++                      <span className="chain-builder-tier">T{row.depth}</span>
++                    )}
++                    {previewRowText(row)}
++                    {row.feeds.length > 0 && (
++                      <span className="chain-builder-feeds">
++                        {" → feeds "}
++                        {row.feeds.join(", ")}
++                      </span>
++                    )}
++                    <RecipePicker
++                      catalog={catalog}
++                      itemId={itemId}
++                      candidateCount={row.candidateCount}
++                      currentRecipeId={stageRecipeId(preview.proposal, itemId)}
++                      excludedMachineIds={excludedMachineIds}
++                      open={pickerItemId === itemId}
++                      onToggle={() =>
++                        setPickerItemId(pickerItemId === itemId ? null : itemId)
++                      }
++                      onChoose={(recipeId) => chooseRecipe(itemId, recipeId)}
++                    />
++                    {/* RAW toggle — never on the T0 target row (depth 0). */}
++                    {row.depth !== 0 && (
++                      <button
++                        type="button"
++                        className="chain-builder-rawtoggle"
++                        onClick={() => toggleRaw(itemId)}
++                      >
++                        RAW
++                      </button>
++                    )}
++                  </li>
++                );
++              })}
+             </ul>
+           )}
+-          {/* Raw inputs now live in the cost sheet's RAW line above (S20 P0
+-              Axis 4); byproducts stay their own note here. */}
+-          {preview.view.byproducts.length > 0 && (
++
++          {/* Constrained raws: a producer exists but none is eligible under the
++              current exclusions — their OWN labeled line, in the notice styling,
++              each with an inline recovery affordance. */}
++          {constrainedRaws.map((r) => {
++            const options = producerRecipesFor(
++              catalog,
++              r.itemId,
++              excludedMachineIds,
++            );
++            return (
++              <p key={r.itemId} className="chain-builder-constrained">
++                RAW (no eligible producer): {r.itemName} {r.rate}/min
++                {options.length > 0 ? (
++                  <>
++                    {" — "}
++                    <select
++                      aria-label={`pick a recipe for ${r.itemName}`}
++                      defaultValue=""
++                      onChange={(e) => {
++                        if (e.target.value !== "")
++                          chooseRecipe(r.itemId, e.target.value);
++                      }}
++                    >
++                      <option value="">pick recipe…</option>
++                      {options.map((o) => (
++                        <option key={o.id} value={o.id}>
++                          {recipeLabel(
++                            catalog,
++                            o,
++                            r.itemId,
++                            excludedMachineIds,
++                          )}
++                        </option>
++                      ))}
++                    </select>
++                  </>
++                ) : (
++                  <span className="chain-builder-constrained-hint">
++                    {" "}
++                    — every producer's machine is excluded; edit MACHINE
++                    EXCLUSIONS to recover.
++                  </span>
++                )}
++              </p>
++            );
++          })}
++
++          {/* RAW OVERRIDES strip — user-forced raws only; × to remove. Visible
++              only when nonempty; also where a stale raw mark is removed. */}
++          {forcedRaws.length > 0 && (
++            <p className="chain-builder-rawstrip">
++              RAW OVERRIDES:{" "}
++              {forcedRaws.map((r, i) => (
++                <span key={r.itemId}>
++                  {i > 0 && ", "}
++                  {r.itemName} {r.rate}/min
++                  <button
++                    type="button"
++                    aria-label={`remove raw override for ${r.itemName}`}
++                    onClick={() => toggleRaw(r.itemId)}
++                  >
++                    ×
++                  </button>
++                </span>
++              ))}
++            </p>
++          )}
++
++          {view.byproducts.length > 0 && (
+             <p className="chain-builder-byproducts">
+-              Byproducts: {itemRateLineText(preview.view.byproducts)}
++              Byproducts: {itemRateLineText(view.byproducts)}
+             </p>
+           )}
+           <div className="chain-builder-actions">
+-            <button
+-              type="button"
+-              onClick={onApply}
+-              disabled={preview.view.isEmpty}
+-            >
++            <button type="button" onClick={onApply} disabled={view.isEmpty}>
+               Apply
+             </button>
+-            <button type="button" onClick={() => setPreview(null)}>
++            <button type="button" onClick={onDiscard}>
+               Discard
+             </button>
+           </div>
+@@ -203,3 +458,114 @@ export function ChainBuilder() {
+     </div>
+   );
+ }
++
++/**
++ * The compose-able option label for a picker recipe (Axis 4): "(alt)" on an
++ * alternate, "(default)" on the effective default when non-null, "(machine
++ * excluded)" on a force-included recipe whose machine is excluded — labels
++ * COMPOSE ("(alt) (machine excluded)" is the one reachable pairing). The
++ * recipe's display name leads.
++ */
++function recipeLabel(
++  catalog: Catalog,
++  recipe: CatalogRecipe,
++  itemId: string,
++  excludedMachineIds: ReadonlySet<string>,
++): string {
++  const dflt = effectiveDefaultRecipe(catalog, itemId, excludedMachineIds);
++  const tags: string[] = [];
++  if (recipe.isAlternate) tags.push("(alt)");
++  if (dflt !== null && recipe.id === dflt.id) tags.push("(default)");
++  if (excludedMachineIds.has(recipe.machineId)) tags.push("(machine excluded)");
++  return tags.length > 0
++    ? `${recipe.displayName} ${tags.join(" ")}`
++    : recipe.displayName;
++}
++
++interface RecipePickerProps {
++  catalog: Catalog;
++  itemId: string;
++  candidateCount: number;
++  currentRecipeId: string | undefined;
++  excludedMachineIds: ReadonlySet<string>;
++  open: boolean;
++  onToggle: () => void;
++  onChoose: (recipeId: string) => void;
++}
++
++/**
++ * The per-stage recipe picker (Axis 4). The affordance renders iff
++ * pickerOptionsFor(...).length ≥ 2 OR the current recipe is force-included —
++ * NEVER gated on candidateCount (so an excluded override is always reachable
++ * from its row). The chip reads "N recipes" when candidateCount ≥ 2 (P0
++ * semantics unchanged); when the affordance must render WITHOUT a ≥2 count chip
++ * it renders as a "machine excluded" chip in notice styling. Clicking toggles an
++ * inline <select> whose options come from pickerOptionsFor ALONE, labeled on the
++ * unified list; current selection = the stage's recipeId.
++ */
++function RecipePicker(props: RecipePickerProps) {
++  const {
++    catalog,
++    itemId,
++    candidateCount,
++    currentRecipeId,
++    excludedMachineIds,
++    open,
++    onToggle,
++    onChoose,
++  } = props;
++
++  const options = pickerOptionsFor(
++    catalog,
++    itemId,
++    excludedMachineIds,
++    currentRecipeId,
++  );
++  const forceIncluded =
++    currentRecipeId !== undefined &&
++    catalog.recipes[currentRecipeId] !== undefined &&
++    !producerRecipesFor(catalog, itemId, excludedMachineIds).some(
++      (r) => r.id === currentRecipeId,
++    );
++
++  // Affordance reachability (r4): options ≥ 2 OR the current recipe is
++  // force-included. Decoupled from candidateCount.
++  if (options.length < 2 && !forceIncluded) return null;
++
++  // The chip: the P0 "N recipes" count when candidateCount ≥ 2; otherwise (the
++  // affordance renders without a ≥2 count chip — e.g. an excluded override with
++  // ≤1 other eligible producer) a "machine excluded" notice chip.
++  const chipLabel =
++    candidateCount >= 2 ? `${candidateCount} recipes` : "machine excluded";
++  const chipClass =
++    candidateCount >= 2
++      ? "chain-builder-picker"
++      : "chain-builder-picker-notice";
++
++  return (
++    <span className="chain-builder-picker-wrap">
++      {" "}
++      <button
++        type="button"
++        className={chipClass}
++        onClick={onToggle}
++        aria-expanded={open}
++      >
++        {chipLabel}
++      </button>
++      {open && (
++        <select
++          aria-label="pick a recipe for this stage"
++          value={currentRecipeId ?? ""}
++          onChange={(e) => onChoose(e.target.value)}
++        >
++          {options.map((o) => (
++            <option key={o.id} value={o.id}>
++              {recipeLabel(catalog, o, itemId, excludedMachineIds)}
++            </option>
++          ))}
++        </select>
++      )}
++    </span>
++  );
++}
+diff --git a/src/ui/app.css b/src/ui/app.css
+index ddd459c..12a63fa 100644
+--- a/src/ui/app.css
++++ b/src/ui/app.css
+@@ -506,6 +506,94 @@ body {
+   font-style: italic;
+ }
+ 
++/* S20 P1 — Propose customization controls (ticket #100). Existing tokens only;
++   both themes follow because the tokens redefine per theme. */
++
++/* The recipe picker: the P0 "N recipes" chip becomes a button (same muted,
++   italic count look), plus a wrapper for its inline <select>. */
++.chain-builder-picker-wrap {
++  white-space: nowrap;
++}
++
++.chain-builder-picker {
++  padding: 0 4px;
++  color: var(--fg-muted);
++  font-style: italic;
++  font-family: inherit;
++  cursor: pointer;
++}
++
++/* The notice-styled chip: shown when the picker affordance must render without
++   a ≥2 count chip (an excluded override reachable from its row). */
++.chain-builder-picker-notice {
++  padding: 0 4px;
++  color: var(--notice);
++  font-style: italic;
++  font-family: inherit;
++  cursor: pointer;
++}
++
++/* The per-row RAW toggle — a compact drawing-idiom button. */
++.chain-builder-rawtoggle {
++  margin-left: 6px;
++  padding: 0 4px;
++  font-family: var(--font-mono-num);
++  font-size: 11px;
++  letter-spacing: 0.04em;
++}
++
++/* The RAW OVERRIDES strip — user-forced raws with a remove ×, under the cost
++   sheet. Muted, with the × as a bare inline button. */
++.chain-builder-rawstrip {
++  margin: 4px 0 0;
++  color: var(--fg-muted);
++}
++
++.chain-builder-rawstrip button {
++  margin-left: 2px;
++  padding: 0 3px;
++  border: none;
++  background: transparent;
++  color: var(--fg-muted);
++  cursor: pointer;
++}
++
++/* Constrained raws — their own labeled line, in the notice styling (a producer
++   exists but none is eligible; the honest degradation). */
++.chain-builder-constrained {
++  margin: 4px 0 0;
++  color: var(--notice);
++}
++
++.chain-builder-constrained-hint {
++  color: var(--fg-muted);
++}
++
++/* Machine exclusions <details> disclosure — a compact checkbox list. */
++.chain-builder-exclusions {
++  margin-top: 8px;
++  color: var(--fg-muted);
++}
++
++.chain-builder-exclusions summary {
++  cursor: pointer;
++  font-family: var(--font-mono-num);
++  letter-spacing: 0.04em;
++}
++
++.chain-builder-exclusions ul {
++  margin: 4px 0 0;
++  padding-left: 1.2em;
++  list-style: none;
++  columns: 2;
++}
++
++.chain-builder-exclusions label {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++}
++
+ .tier-controls {
+   display: flex;
+   align-items: center;
+diff --git a/src/ui/chain-builder-adapter.test.ts b/src/ui/chain-builder-adapter.test.ts
+index e472e16..b883471 100644
+--- a/src/ui/chain-builder-adapter.test.ts
++++ b/src/ui/chain-builder-adapter.test.ts
+@@ -28,6 +28,10 @@ import {
+   candidateRecipesFor,
+   candidateRowsFor,
+   swapMachineCountFor,
++  effectiveDefaultRecipe,
++  producerRecipesFor,
++  pickerOptionsFor,
++  excludableMachines,
+ } from "./chain-builder-adapter.ts";
+ // The real bundled snapshot as raw text (Vite ?raw), parsed through the SAME
+ // pipeline the app uses — the rows guard catalog drift (renamed ids, a new
+@@ -157,7 +161,19 @@ describe("adapter — preview shaping", () => {
+     const preview = toProposalPreview(p, catalog);
+     expect(preview.isEmpty).toBe(true);
+     expect(preview.rows).toEqual([]);
+-    expect(preview.rawInputs).toEqual([{ itemName: "Iron Ore", rate: "120" }]);
++    // S20 P1 widened the raw-input row: it now carries itemId + the
++    // reconstructed cause. Iron Ore's SOLE producer in the bundled catalog is a
++    // converter recipe (iron_limestone) — excluded by default policy — so it
++    // classifies "constrained" (a producer exists but none is eligible), not
++    // "natural". The honest label for an over-excluded degradation.
++    expect(preview.rawInputs).toEqual([
++      {
++        itemId: "ore_iron",
++        itemName: "Iron Ore",
++        rate: "120",
++        cause: "constrained",
++      },
++    ]);
+   });
+ 
+   it("itemRateLineText joins multiple items with commas", () => {
+@@ -797,3 +813,517 @@ describe("S20 P0 — compare-path regression (candidateRowsFor unchanged)", () =
+     expect(alt.machines).toBe("2");
+   });
+ });
++
++// ===========================================================================
++// S20 P1 — Propose customization core (ticket #100). Adapter families per the
++// frozen spec item 5: options plumbing, candidateRecipesFor exclusions param,
++// excludableMachines, effectiveDefaultRecipe (incl. null), producerRecipesFor
++// (UNGATED), pickerOptionsFor (TOTAL + the reachability pin), toProposalPreview
++// candidateCount under exclusions, and the rawInputs cause annotation.
++// ===========================================================================
++
++// A three-producer ingot catalog reused across the picker/helper families:
++//   r_std   — smelter, non-alternate  (the effective default)
++//   r_alt_a — foundry, alternate
++//   r_alt_z — refinery, alternate
++// plus a plate that consumes ingot, so a full chain exists.
++function ingotCatalog(): Catalog {
++  return synthCatalog(
++    [item("plate", "Plate"), item("ingot", "Ingot"), item("ore", "Ore")],
++    [
++      machine("constructor", 4),
++      machine("smelter", 4),
++      machine("foundry", 16),
++      machine("refinery", 30),
++    ],
++    [
++      crecipe(
++        "r_plate",
++        "Plate",
++        "constructor",
++        [["plate", 20]],
++        [["ingot", 30]],
++      ),
++      crecipe(
++        "r_std",
++        "Standard Ingot",
++        "smelter",
++        [["ingot", 30]],
++        [["ore", 30]],
++      ),
++      crecipe(
++        "r_alt_a",
++        "Alt A Ingot",
++        "foundry",
++        [["ingot", 45]],
++        [["ore", 40]],
++        true,
++      ),
++      crecipe(
++        "r_alt_z",
++        "Alt Z Ingot",
++        "refinery",
++        [["ingot", 60]],
++        [["ore", 50]],
++        true,
++      ),
++    ],
++  );
++}
++
++describe("S20 P1 — proposeChainForCatalog options plumbing", () => {
++  it("an override + a raw + an exclusion each deterministically change the proposal", () => {
++    const cat = ingotCatalog();
++    const base = proposeChainForCatalog(cat, "plate", F(60));
++    // Baseline: ingot produced by the default (r_std).
++    expect(base.stages.find((s) => s.itemId === "ingot")!.recipeId).toBe(
++      "r_std",
++    );
++
++    // Override ingot → an alternate.
++    const overridden = proposeChainForCatalog(cat, "plate", F(60), {
++      overrides: new Map([["ingot", "r_alt_a"]]),
++    });
++    expect(overridden.stages.find((s) => s.itemId === "ingot")!.recipeId).toBe(
++      "r_alt_a",
++    );
++
++    // Force ingot raw → its stage vanishes, its subtree pruned.
++    const forced = proposeChainForCatalog(cat, "plate", F(60), {
++      rawItemIds: new Set(["ingot"]),
++    });
++    expect(forced.stages.find((s) => s.itemId === "ingot")).toBeUndefined();
++    expect(forced.rawInputs.some((r) => r.itemId === "ingot")).toBe(true);
++
++    // Exclude the smelter → the default (r_std, smelter) is gone; ingot falls to
++    // its next non-alternate producer — none exists here, so ingot is raw.
++    const excluded = proposeChainForCatalog(cat, "plate", F(60), {
++      excludedMachineIds: ["smelter"],
++    });
++    expect(excluded.stages.find((s) => s.itemId === "ingot")).toBeUndefined();
++    expect(excluded.rawInputs.some((r) => r.itemId === "ingot")).toBe(true);
++
++    // Determinism: same options ⇒ byte-identical.
++    const again = proposeChainForCatalog(cat, "plate", F(60), {
++      overrides: new Map([["ingot", "r_alt_a"]]),
++    });
++    expect(again).toEqual(overridden);
++  });
++
++  it("absent options is byte-identical to the 3-arg call (P0 unchanged)", () => {
++    const cat = ingotCatalog();
++    const threeArg = proposeChainForCatalog(cat, "plate", F(60));
++    const emptyOpts = proposeChainForCatalog(cat, "plate", F(60), {});
++    expect(emptyOpts).toEqual(threeArg);
++  });
++});
++
++describe("S20 P1 — candidateRecipesFor custom exclusions", () => {
++  it("an excluded machine's recipe drops out of candidacy", () => {
++    // ingot has 3 producers (std + 2 alternates). Excluding the foundry drops
++    // r_alt_a → 2 remain (still ≥2, so a non-empty list).
++    const cat = ingotCatalog();
++    const all = candidateRecipesFor(cat, "ingot").map((r) => r.id);
++    expect(all).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
++    const excl = candidateRecipesFor(cat, "ingot", ["foundry"]).map(
++      (r) => r.id,
++    );
++    expect(excl).toEqual(["r_std", "r_alt_z"]);
++  });
++
++  it("the default-arg call is unchanged (module constant — AltCompare/P0)", () => {
++    // The default exclusion set is the module constant (converter/packager);
++    // an unexcluded synthetic catalog is unaffected either way.
++    const cat = ingotCatalog();
++    const dflt = candidateRecipesFor(cat, "ingot").map((r) => r.id);
++    const explicit = candidateRecipesFor(
++      cat,
++      "ingot",
++      EXCLUDED_MACHINE_IDS,
++    ).map((r) => r.id);
++    expect(dflt).toEqual(explicit);
++  });
++});
++
++describe("S20 P1 — excludableMachines", () => {
++  it("lists only recipe-referenced machines, name-resolved, sorted by name", () => {
++    const cat = synthCatalog(
++      [item("ingot", "Ingot"), item("ore", "Ore")],
++      [
++        machine("smelter", 4),
++        machine("foundry", 16),
++        // An UNREFERENCED machine (no recipe uses it) — must be omitted.
++        machine("orphan", 0),
++      ],
++      [
++        crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]]),
++        crecipe(
++          "r_alt",
++          "Alt",
++          "foundry",
++          [["ingot", 60]],
++          [["ore", 45]],
++          true,
++        ),
++      ],
++    );
++    // displayName falls back to id (the synth machine() sets displayName = id).
++    const list = excludableMachines(cat);
++    expect(list.map((m) => m.machineId)).toEqual(["foundry", "smelter"]);
++    expect(list.every((m) => m.displayName === m.machineId)).toBe(true);
++    // orphan is never listed (no recipe references it).
++    expect(list.some((m) => m.machineId === "orphan")).toBe(false);
++  });
++
++  it("resolves display names from the catalog machines", () => {
++    const cat: Catalog = {
++      items: { ingot: item("ingot", "Ingot"), ore: item("ore", "Ore") },
++      machines: {
++        sm: { id: "sm", displayName: "Smelter", power: machine("sm", 4).power },
++      },
++      recipes: {
++        r: crecipe("r", "R", "sm", [["ingot", 30]], [["ore", 30]]),
++      },
++      tiers: { belt: [F(60)], pipe: [F(300)] },
++    };
++    expect(excludableMachines(cat)).toEqual([
++      { machineId: "sm", displayName: "Smelter" },
++    ]);
++  });
++});
++
++describe("S20 P1 — effectiveDefaultRecipe (matches selectProducer)", () => {
++  it("picks the non-alternate, non-excluded, ascending-id recipe", () => {
++    const cat = ingotCatalog();
++    expect(effectiveDefaultRecipe(cat, "ingot")!.id).toBe("r_std");
++  });
++
++  it("returns null when every non-alternate producer's machine is excluded", () => {
++    // Excluding the smelter removes r_std (the only non-alternate) → the default
++    // policy has no candidate (alternates never default) → null.
++    const cat = ingotCatalog();
++    expect(effectiveDefaultRecipe(cat, "ingot", ["smelter"])).toBeNull();
++  });
++
++  it("returns null for an alternate-only item (alternates never default)", () => {
++    const cat = synthCatalog(
++      [item("ingot", "Ingot"), item("ore", "Ore")],
++      [machine("foundry", 16)],
++      [
++        crecipe(
++          "r_alt",
++          "Alt",
++          "foundry",
++          [["ingot", 60]],
++          [["ore", 45]],
++          true,
++        ),
++      ],
++    );
++    expect(effectiveDefaultRecipe(cat, "ingot")).toBeNull();
++  });
++});
++
++describe("S20 P1 — producerRecipesFor (UNGATED eligible list)", () => {
++  it("lists a LONE eligible candidate (no ≥2 gate, unlike candidateRecipesFor)", () => {
++    const cat = synthCatalog(
++      [item("ingot", "Ingot"), item("ore", "Ore")],
++      [machine("smelter", 4)],
++      [crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]])],
++    );
++    // candidateRecipesFor gates at ≥2 → []; producerRecipesFor lists the one.
++    expect(candidateRecipesFor(cat, "ingot")).toEqual([]);
++    expect(producerRecipesFor(cat, "ingot").map((r) => r.id)).toEqual([
++      "r_std",
++    ]);
++  });
++
++  it("orders effective-default first, then ascending id", () => {
++    const cat = ingotCatalog();
++    // Default (r_std) leads; the two alternates ascending (r_alt_a, r_alt_z).
++    expect(producerRecipesFor(cat, "ingot").map((r) => r.id)).toEqual([
++      "r_std",
++      "r_alt_a",
++      "r_alt_z",
++    ]);
++  });
++
++  it("an alternate-only item returns its alternates (null default → ascending id)", () => {
++    const cat = synthCatalog(
++      [item("ingot", "Ingot"), item("ore", "Ore")],
++      [machine("foundry", 16), machine("refinery", 30)],
++      [
++        crecipe(
++          "r_alt_z",
++          "Alt Z",
++          "refinery",
++          [["ingot", 60]],
++          [["ore", 50]],
++          true,
++        ),
++        crecipe(
++          "r_alt_a",
++          "Alt A",
++          "foundry",
++          [["ingot", 45]],
++          [["ore", 40]],
++          true,
++        ),
++      ],
++    );
++    // No effective default (all alternate) → the ordering degenerates to plain
++    // ascending id (r_alt_a before r_alt_z), NOT array order.
++    expect(producerRecipesFor(cat, "ingot").map((r) => r.id)).toEqual([
++      "r_alt_a",
++      "r_alt_z",
++    ]);
++  });
++
++  it("a fully-excluded item returns [] (every producer's machine excluded)", () => {
++    const cat = ingotCatalog();
++    expect(
++      producerRecipesFor(cat, "ingot", ["smelter", "foundry", "refinery"]),
++    ).toEqual([]);
++  });
++});
++
++describe("S20 P1 — pickerOptionsFor (TOTAL + reachability)", () => {
++  it("in-list current recipe adds nothing (bare eligible list)", () => {
++    const cat = ingotCatalog();
++    // current = r_std, which IS in the eligible list → no force-include.
++    expect(
++      pickerOptionsFor(cat, "ingot", EXCLUDED_MACHINE_IDS, "r_std").map(
++        (r) => r.id,
++      ),
++    ).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
++  });
++
++  it("force-includes a current recipe absent from the eligible list (excluded machine)", () => {
++    const cat = ingotCatalog();
++    // Exclude the foundry AND make r_alt_a the current recipe. It is no longer
++    // eligible → force-included (appended last).
++    const opts = pickerOptionsFor(cat, "ingot", ["foundry"], "r_alt_a");
++    expect(opts.map((r) => r.id)).toEqual(["r_std", "r_alt_z", "r_alt_a"]);
++    // The force-included recipe is the last entry (the deviation, not a default).
++    expect(opts[opts.length - 1]!.id).toBe("r_alt_a");
++  });
++
++  it("TOTAL: undefined currentRecipeId → the bare eligible list", () => {
++    const cat = ingotCatalog();
++    expect(
++      pickerOptionsFor(cat, "ingot", EXCLUDED_MACHINE_IDS, undefined).map(
++        (r) => r.id,
++      ),
++    ).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
++  });
++
++  it("TOTAL: a catalog-absent currentRecipeId fabricates nothing → bare list", () => {
++    const cat = ingotCatalog();
++    expect(
++      pickerOptionsFor(
++        cat,
++        "ingot",
++        EXCLUDED_MACHINE_IDS,
++        "r_does_not_exist",
++      ).map((r) => r.id),
++    ).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
++  });
++
++  it("REACHABILITY pin: at 0/1 eligible with an excluded override the predicate is TRUE", () => {
++    // The dead-end the r4 fold killed: an override to an excluded-machine recipe
++    // with ≤1 OTHER eligible producer. The affordance predicate
++    // (options.length ≥ 2 OR current force-included) must be TRUE so the row is
++    // reachable and fixable.
++
++    // Case A — ZERO other eligible producers. Single-producer catalog; exclude
++    // its machine; override to it. Eligible = [] but the current is force-
++    // included → options = [current], force-included = true.
++    const single = synthCatalog(
++      [item("ingot", "Ingot"), item("ore", "Ore")],
++      [machine("smelter", 4)],
++      [crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]])],
++    );
++    const optsA = pickerOptionsFor(single, "ingot", ["smelter"], "r_std");
++    expect(optsA.map((r) => r.id)).toEqual(["r_std"]); // just the force-include
++    const forceIncludedA = !producerRecipesFor(single, "ingot", [
++      "smelter",
++    ]).some((r) => r.id === "r_std");
++    expect(optsA.length >= 2 || forceIncludedA).toBe(true);
++
++    // Case B — ONE other eligible producer. ingot has r_std (smelter) + r_alt_a
++    // (foundry); exclude the foundry, override to the (now-ineligible) r_alt_a.
++    // Eligible = [r_std] (length 1), current force-included → predicate TRUE.
++    const two = synthCatalog(
++      [item("ingot", "Ingot"), item("ore", "Ore")],
++      [machine("smelter", 4), machine("foundry", 16)],
++      [
++        crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]]),
++        crecipe(
++          "r_alt_a",
++          "Alt A",
++          "foundry",
++          [["ingot", 45]],
++          [["ore", 40]],
++          true,
++        ),
++      ],
++    );
++    const optsB = pickerOptionsFor(two, "ingot", ["foundry"], "r_alt_a");
++    expect(optsB.map((r) => r.id)).toEqual(["r_std", "r_alt_a"]);
++    const eligibleB = producerRecipesFor(two, "ingot", ["foundry"]);
++    const forceIncludedB = !eligibleB.some((r) => r.id === "r_alt_a");
++    expect(eligibleB.length).toBe(1); // only ONE other eligible
++    expect(optsB.length >= 2 || forceIncludedB).toBe(true);
++  });
++});
++
++describe("S20 P1 — toProposalPreview candidateCount under exclusions", () => {
++  it("counts eligible candidates with the CURRENT exclusions (chip == picker)", () => {
++    // ingot has 3 candidates by default. Excluding the foundry drops one → 2.
++    // The chip must reflect the CURRENT set, else it disagrees with the picker.
++    const cat = ingotCatalog();
++    const base = toProposalPreview(
++      proposeChainForCatalog(cat, "plate", F(60)),
++      cat,
++    );
++    expect(base.rows.find((r) => r.itemName === "Ingot")!.candidateCount).toBe(
++      3,
++    );
++
++    const excludedOpts = { excludedMachineIds: ["foundry"] };
++    const excl = toProposalPreview(
++      proposeChainForCatalog(cat, "plate", F(60), excludedOpts),
++      cat,
++      excludedOpts,
++    );
++    expect(excl.rows.find((r) => r.itemName === "Ingot")!.candidateCount).toBe(
++      2,
++    );
++  });
++
++  it("keeps the P0 ≥2-gate semantics (a lone candidate → 0)", () => {
++    // Excluding two of the three producers leaves ONE eligible → the ≥2 gate in
++    // candidateRecipesFor returns [] → candidateCount 0 (P0 chip semantics).
++    const cat = ingotCatalog();
++    const opts = { excludedMachineIds: ["foundry", "refinery"] };
++    const view = toProposalPreview(
++      proposeChainForCatalog(cat, "plate", F(60), opts),
++      cat,
++      opts,
++    );
++    expect(view.rows.find((r) => r.itemName === "Ingot")!.candidateCount).toBe(
++      0,
++    );
++  });
++});
++
++describe("S20 P1 — rawInputs cause annotation", () => {
++  it("natural: a genuine no-producer leaf (ore) is 'natural'", () => {
++    const cat = ingotCatalog();
++    const view = toProposalPreview(
++      proposeChainForCatalog(cat, "plate", F(60)),
++      cat,
++    );
++    const ore = view.rawInputs.find((r) => r.itemId === "ore")!;
++    expect(ore.cause).toBe("natural");
++  });
++
++  it("forced: a user-raw-marked item is 'forced'", () => {
++    const cat = ingotCatalog();
++    const opts = { rawItemIds: new Set(["ingot"]) };
++    const view = toProposalPreview(
++      proposeChainForCatalog(cat, "plate", F(60), opts),
++      cat,
++      opts,
++    );
++    const ingot = view.rawInputs.find((r) => r.itemId === "ingot")!;
++    expect(ingot.cause).toBe("forced");
++  });
++
++  it("constrained: a producer exists but none is eligible under exclusions", () => {
++    // Exclude every ingot producer → ingot has recipes but none eligible → its
++    // demand collapses to raw, classified 'constrained' (NOT natural, NOT forced).
++    const cat = ingotCatalog();
++    const opts = { excludedMachineIds: ["smelter", "foundry", "refinery"] };
++    const view = toProposalPreview(
++      proposeChainForCatalog(cat, "plate", F(60), opts),
++      cat,
++      opts,
++    );
++    const ingot = view.rawInputs.find((r) => r.itemId === "ingot")!;
++    expect(ingot.cause).toBe("constrained");
++  });
++
++  it("constrained (boundary r1 fix): an ALTERNATE-ONLY collapse is 'constrained', with live recovery options", () => {
++    // Exclude only the smelter (the default r_std's machine): ingot's remaining
++    // producers are the two ALTERNATES on non-excluded machines. The core's
++    // default policy skips alternates → ingot collapses to raw. The classifier
++    // must mirror that policy: effective default null + producers exist ⇒
++    // "constrained" — and producerRecipesFor must still OFFER those alternates
++    // (the constrained row's inline recovery is live, not dead code). The
++    // pre-fix classifier keyed on the alternates-INCLUSIVE list and mislabeled
++    // this exact case "natural" with no recovery surface.
++    const cat = ingotCatalog();
++    const opts = { excludedMachineIds: ["smelter"] };
++    const view = toProposalPreview(
++      proposeChainForCatalog(cat, "plate", F(60), opts),
++      cat,
++      opts,
++    );
++    const ingot = view.rawInputs.find((r) => r.itemId === "ingot")!;
++    expect(ingot.cause).toBe("constrained");
++    const recovery = producerRecipesFor(cat, "ingot", new Set(["smelter"]));
++    expect(recovery.map((r) => r.id)).toEqual(["r_alt_a", "r_alt_z"]);
++  });
++
++  it("target immunity in causeOf: a stale target raw-mark never labels the target 'forced'", () => {
++    // The core ignores a target raw-mark; the adapter must mirror it, or the
++    // RAW OVERRIDES strip would offer an inert x for the target (boundary r1
++    // NIT). ore has no producers, so a raw-target proposal exercises the path.
++    const cat = ingotCatalog();
++    const opts = { rawItemIds: new Set(["ore"]) };
++    const view = toProposalPreview(
++      proposeChainForCatalog(cat, "ore", F(60), opts),
++      cat,
++      opts,
++    );
++    const ore = view.rawInputs.find((r) => r.itemId === "ore")!;
++    expect(ore.cause).toBe("natural");
++  });
++
++  it("OVERLAP: a forced item with NO eligible producer reports 'forced' (precedence)", () => {
++    // ingot is BOTH force-marked raw AND fully excluded. Precedence forced >
++    // constrained → 'forced' (the strip carries its ×, not the constrained line).
++    const cat = ingotCatalog();
++    const opts = {
++      rawItemIds: new Set(["ingot"]),
++      excludedMachineIds: ["smelter", "foundry", "refinery"],
++    };
++    const view = toProposalPreview(
++      proposeChainForCatalog(cat, "plate", F(60), opts),
++      cat,
++      opts,
++    );
++    const ingot = view.rawInputs.find((r) => r.itemId === "ingot")!;
++    expect(ingot.cause).toBe("forced");
++  });
++
++  it("forced raws are DISTINGUISHABLE so the caller excludes them from other lines", () => {
++    // The natural/constrained display lines filter by cause !== 'forced'. Verify
++    // the forced row is present with cause 'forced' AND the natural ore row is
++    // present with cause 'natural' — the two are separable by the consumer.
++    const cat = ingotCatalog();
++    const opts = { rawItemIds: new Set(["ingot"]) };
++    const view = toProposalPreview(
++      proposeChainForCatalog(cat, "plate", F(60), opts),
++      cat,
++      opts,
++    );
++    const byCause = new Map(view.rawInputs.map((r) => [r.itemId, r.cause]));
++    expect(byCause.get("ingot")).toBe("forced");
++    // ore is no longer in the closure (ingot's subtree pruned) — so the only raw
++    // is the forced ingot. The forced row is cleanly separable.
++    expect(view.rawInputs.filter((r) => r.cause === "natural")).toEqual([]);
++    expect(view.rawInputs.filter((r) => r.cause === "forced")).toHaveLength(1);
++  });
++});
+diff --git a/src/ui/chain-builder-adapter.ts b/src/ui/chain-builder-adapter.ts
+index 4a73aac..7987659 100644
+--- a/src/ui/chain-builder-adapter.ts
++++ b/src/ui/chain-builder-adapter.ts
+@@ -33,27 +33,48 @@ export const EXCLUDED_MACHINE_IDS: readonly string[] = [
+   "packager",
+ ];
+ 
++/**
++ * The customization inputs a P1 caller may pass to `proposeChainForCatalog` —
++ * the three component-local ChainBuilder controls, each optional so P0 callers
++ * (which pass none) are byte-identical to the pre-P1 behavior. `excludedMachineIds`
++ * defaults to the module constant, `overrides`/`rawItemIds` to empty.
++ */
++export interface ProposeOptions {
++  overrides?: ReadonlyMap<string, string>;
++  rawItemIds?: ReadonlySet<string>;
++  excludedMachineIds?: Iterable<string>;
++}
++
+ /**
+  * Propose a chain for `targetItemId` at `rate` against the catalog. A thin
+  * pass-through: catalog recipes ARE BuilderRecipes structurally, so no copying.
+- * The exclusion set is resolved from the module constant (intersected with the
+- * catalog's actual machines is unnecessary — an absent id simply never matches).
++ * The exclusion set defaults to the module constant (intersected with the
++ * catalog's actual machines is unnecessary — an absent id simply never matches);
++ * `options` (S20 P1) carries the user's overrides / forced-raw / edited-exclusion
++ * choices straight through to the core. Absent options ⇒ pre-P1 behavior.
+  */
+ export function proposeChainForCatalog(
+   catalog: Catalog,
+   targetItemId: string,
+   rate: Fraction,
++  options: ProposeOptions = {},
+ ): ChainProposal {
+   return proposeChain(
+     targetItemId,
+     rate,
+     Object.values(catalog.recipes),
+-    EXCLUDED_MACHINE_IDS,
++    options.excludedMachineIds ?? EXCLUDED_MACHINE_IDS,
++    options.overrides ?? new Map(),
++    options.rawItemIds ?? new Set(),
+   );
+ }
+ 
+ /** One preview row per proposed stage — pure data → display strings. */
+ export interface PreviewRow {
++  /** The produced item's id — the key the P1 controls (picker / RAW toggle)
++   *  attach to. Rows are depth-sorted, so index alignment with `proposal.stages`
++   *  (id-sorted) is unsafe; the row carries its own id. */
++  itemId: string;
+   /** The produced item's display name (falls back to id). */
+   itemName: string;
+   /** The producing machine's display name (falls back to id). */
+@@ -94,6 +115,34 @@ export interface ItemRateRow {
+   rate: string;
+ }
+ 
++/**
++ * The cause of a raw-input row (S20 P1, Axis 4) — the core emits every raw leaf
++ * as a bare `{ itemId, rate }` with no marker, so the class is reconstructed
++ * adapter-side from the current exclusions + forced-raw set:
++ *
++ * - `"forced"`      — the USER marked the item treat-as-raw (rawItemIds).
++ * - `"constrained"` — the catalog HAS ≥1 producer recipe for the item but NONE
++ *                     is eligible under the current exclusions + default policy
++ *                     (excluded machines / alternate-only availability), so the
++ *                     item collapsed to raw involuntarily.
++ * - `"natural"`     — otherwise (a genuine extraction-level leaf: ores, water),
++ *                     INCLUDING a raw produced by the core's cycle-guard /
++ *                     malformed-primary backstops (the reconstruction cannot see
++ *                     solver demotions — accepted limitation, backstop path).
++ *
++ * Precedence PINNED forced > constrained > natural (mirrors the core's raw >
++ * override > default): a forced item that ALSO has no eligible producer reports
++ * "forced" (its recovery lives on the RAW OVERRIDES strip's ×), never
++ * "constrained".
++ */
++export type RawCause = "natural" | "forced" | "constrained";
++
++/** A raw-input row with its reconstructed cause (S20 P1). */
++export interface RawInputRow extends ItemRateRow {
++  itemId: string;
++  cause: RawCause;
++}
++
+ /**
+  * The whole proposal shaped for the preview list: stage rows + the raw-inputs
+  * line + the byproducts line, plus an emptiness flag (an all-raw proposal — the
+@@ -103,7 +152,10 @@ export interface ProposalPreview {
+   /** Stage rows in (depth asc, existing order); tier boundaries are derivable
+    *  from consecutive rows' `depth`. */
+   rows: PreviewRow[];
+-  rawInputs: ItemRateRow[];
++  /** Raw-input rows, each carrying its reconstructed `cause` (S20 P1). Forced
++   *  raws are INCLUDED here (cause "forced") so the RAW OVERRIDES strip can list
++   *  them; the caller filters by cause for the natural / constrained lines. */
++  rawInputs: RawInputRow[];
+   byproducts: ItemRateRow[];
+   /** true ⇒ nothing to build (no proposed stages); Apply is a no-op. */
+   isEmpty: boolean;
+@@ -155,17 +207,36 @@ function depthsFromTarget(
+   return depth;
+ }
+ 
++/**
++ * Options for `toProposalPreview` (S20 P1) — the CURRENT exclusions and
++ * forced-raw set, so `candidateCount` matches what Propose would use (design r1:
++ * else the chip and picker disagree) and the raw-input cause annotation can
++ * compute "forced" (design r2: the core emits raw leaves with no marker). Both
++ * optional — P0 callers pass none and are byte-identical.
++ */
++export interface PreviewOptions {
++  excludedMachineIds?: Iterable<string>;
++  rawItemIds?: ReadonlySet<string>;
++}
++
+ /**
+  * Build the display-ready preview from a proposal + the catalog for names.
+  * Rows gain depth (longest-path tier from the target), feeds (direct-consumer
+  * display names), and candidateCount (alternate-recipe count) — S20 P0. Rows are
+  * ordered by (depth asc, existing stage order); the target unique sink is the
+  * root, so it renders T0 first. `metrics` carries the cost-sheet totals.
++ *
++ * `options` (S20 P1): `candidateCount` is computed under the CURRENT exclusions,
++ * and each raw-input row is annotated with its `cause` (natural / forced /
++ * constrained) reconstructed from `rawItemIds` + the current exclusions.
+  */
+ export function toProposalPreview(
+   proposal: ChainProposal,
+   catalog: Catalog,
++  options: PreviewOptions = {},
+ ): ProposalPreview {
++  const excludedMachineIds = options.excludedMachineIds ?? EXCLUDED_MACHINE_IDS;
++  const rawItemIds = options.rawItemIds ?? new Set<string>();
+   const itemName = (id: string): string => catalog.items[id]?.displayName ?? id;
+   const machineNameFor = (stage: ProposedStage): string => {
+     const machineId = catalog.recipes[stage.recipeId]?.machineId;
+@@ -182,6 +253,10 @@ export function toProposalPreview(
+   const targetItemId =
+     proposal.stages.find((s) => !producedIds.has(s.itemId))?.itemId ??
+     proposal.stages[0]?.itemId ??
++    // All-raw proposal (zero stages): the DFS stopped at the target itself, so
++    // the sole rawInputs entry IS the target (boundary r1 fix — the empty
++    // string fallback broke causeOf's target-immunity guard for raw targets).
++    proposal.rawInputs[0]?.itemId ??
+     "";
+   const depthOf = depthsFromTarget(targetItemId, proposal.links);
+   // Direct consumers per producer item (from → to): the "feeds" adjacency.
+@@ -193,23 +268,59 @@ export function toProposalPreview(
+   }
+ 
+   const rows: PreviewRow[] = proposal.stages.map((s) => ({
++    itemId: s.itemId,
+     itemName: itemName(s.itemId),
+     machineName: machineNameFor(s),
+     machineCount: s.machineCount.toString(),
+     outputRate: formatRate(s.outputRate),
+     depth: depthOf.get(s.itemId) ?? Number.MAX_SAFE_INTEGER,
+     feeds: (consumersOf.get(s.itemId) ?? []).map(itemName),
+-    candidateCount: candidateRecipesFor(catalog, s.itemId).length,
++    // The "N recipes" chip counts eligible candidates under the CURRENT
++    // exclusions (design r1) — else the chip and the picker's list disagree.
++    // Chip semantics (≥2 gate) are unchanged from P0; only the exclusion set
++    // it reads is now the live one.
++    candidateCount: candidateRecipesFor(catalog, s.itemId, excludedMachineIds)
++      .length,
+   }));
+   // Stable sort by depth (asc); Array.prototype.sort is stable, so equal-depth
+   // rows keep their existing stage order (frozen: ties broken by row order).
+   rows.sort((a, b) => a.depth - b.depth);
+ 
++  // Reconstruct each raw leaf's cause (Axis 4). The core emits raw leaves with
++  // no marker; precedence forced > constrained > natural (mirrors raw > override
++  // > default). "constrained" = the catalog HAS a producer recipe but NONE is
++  // eligible under the current exclusions + default policy.
++  const causeOf = (itemId: string): RawCause => {
++    // Target immunity mirrors the core (boundary r1 NIT): the core never
++    // forces the target raw, so a stale target raw-mark must not label the
++    // target "forced" here (the strip would offer an inert x).
++    if (itemId !== targetItemId && rawItemIds.has(itemId)) return "forced";
++    // Has ANY primary-producing recipe at all in the catalog?
++    const hasAnyProducer = Object.values(catalog.recipes).some(
++      (r) => r.primaryOutputId === itemId,
++    );
++    if (!hasAnyProducer) return "natural";
++    // A producer exists — "constrained" mirrors the CORE's default policy
++    // (boundary r1 fix): raw because no non-alternate, non-excluded producer
++    // exists. This INCLUDES the alternate-only case — producerRecipesFor
++    // still lists those alternates, so the constrained row's inline recovery
++    // offers them as overrides. Testing the alternates-inclusive list here
++    // instead would mislabel alternate-only collapses "natural" and
++    // dead-code that recovery branch. A raw produced by a solver backstop
++    // (cycle guard) still classifies "natural" — accepted limitation, the
++    // adapter cannot see solver demotions.
++    return effectiveDefaultRecipe(catalog, itemId, excludedMachineIds) === null
++      ? "constrained"
++      : "natural";
++  };
++
+   return {
+     rows,
+     rawInputs: proposal.rawInputs.map((r) => ({
++      itemId: r.itemId,
+       itemName: itemName(r.itemId),
+       rate: formatRate(r.rate),
++      cause: causeOf(r.itemId),
+     })),
+     byproducts: proposal.byproducts.map((b) => ({
+       itemName: itemName(b.itemId),
+@@ -288,8 +399,9 @@ export interface CandidateRow {
+ export function candidateRecipesFor(
+   catalog: Catalog,
+   itemId: string,
++  excludedMachineIds: Iterable<string> = EXCLUDED_MACHINE_IDS,
+ ): CatalogRecipe[] {
+-  const excluded = new Set(EXCLUDED_MACHINE_IDS);
++  const excluded = new Set(excludedMachineIds);
+   const candidates = Object.values(catalog.recipes).filter(
+     (r) => r.primaryOutputId === itemId && !excluded.has(r.machineId),
+   );
+@@ -302,6 +414,112 @@ export function candidateRecipesFor(
+   });
+ }
+ 
++// ---------------------------------------------------------------------------
++// S20 P1 — Propose customization core (ticket #100). The picker's clear rule,
++// the constrained-row recovery list, the option-source helper, and the
++// exclusions-panel machine list. All pure catalog → data helpers, each with its
++// own tests (the picker's set/clear + force-include rules are no longer
++// untested UI). Precedence + totality pins per the frozen design (Axis 2/4).
++// ---------------------------------------------------------------------------
++
++/**
++ * The picker's CLEAR rule (Axis 4): the recipe the default producer policy would
++ * pick for `itemId` under `exclusions` — EXACTLY selectProducer's default (a
++ * primary-producing, non-alternate, non-excluded recipe; ascending recipe id;
++ * alternates NEVER default), or `null` when no such producer exists under the
++ * current exclusions. The picker CLEARS an override iff the chosen id equals this
++ * recipe's id — so clearing can never move the proposal away from what the list
++ * shows. `null` ⇒ every choice is an explicit override, nothing clears.
++ */
++export function effectiveDefaultRecipe(
++  catalog: Catalog,
++  itemId: string,
++  excludedMachineIds: Iterable<string> = EXCLUDED_MACHINE_IDS,
++): CatalogRecipe | null {
++  const excluded = new Set(excludedMachineIds);
++  let chosen: CatalogRecipe | null = null;
++  for (const r of Object.values(catalog.recipes)) {
++    if (r.primaryOutputId !== itemId) continue;
++    if (r.isAlternate) continue;
++    if (excluded.has(r.machineId)) continue;
++    if (chosen === null || r.id < chosen.id) chosen = r;
++  }
++  return chosen;
++}
++
++/**
++ * The UNGATED eligible producer list for `itemId` under `exclusions` (Axis 4):
++ * EVERY primary-producing recipe on a non-excluded machine — alternates
++ * INCLUDED, NO ≥2 gate (unlike candidateRecipesFor, which is a comparison
++ * affordance that hides a lone option). This is the picker's option source and
++ * the constrained-row recovery list. Ordering: the effective default FIRST when
++ * it is non-null (its id leads), then the remaining recipes ascending by id;
++ * when the effective default is null (alternate-only / fully-excluded) the list
++ * degenerates cleanly to plain ascending id.
++ */
++export function producerRecipesFor(
++  catalog: Catalog,
++  itemId: string,
++  excludedMachineIds: Iterable<string> = EXCLUDED_MACHINE_IDS,
++): CatalogRecipe[] {
++  const excluded = new Set(excludedMachineIds);
++  const eligible = Object.values(catalog.recipes).filter(
++    (r) => r.primaryOutputId === itemId && !excluded.has(r.machineId),
++  );
++  const defaultId = effectiveDefaultRecipe(catalog, itemId, excluded)?.id;
++  return eligible.sort((a, b) => {
++    // The effective default leads (when non-null); everything else ascending id.
++    if (a.id === defaultId) return b.id === defaultId ? 0 : -1;
++    if (b.id === defaultId) return 1;
++    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
++  });
++}
++
++/**
++ * The picker's SOLE option source (Axis 4, r4/r5): the UNGATED eligible list
++ * from `producerRecipesFor` PLUS — when `currentRecipeId` names a catalog recipe
++ * that is ABSENT from that list (an override to an excluded-machine recipe) — the
++ * current recipe force-included so the select's value always has a matching,
++ * honestly-labeled option. TOTAL: `currentRecipeId` undefined, or not a catalog
++ * recipe id ⇒ the bare eligible list, NO force-include, NO fabricated entry.
++ * The force-included recipe is appended last (it is the deviation, not a default).
++ */
++export function pickerOptionsFor(
++  catalog: Catalog,
++  itemId: string,
++  excludedMachineIds: Iterable<string> | undefined,
++  currentRecipeId: string | undefined,
++): CatalogRecipe[] {
++  const excluded = excludedMachineIds ?? EXCLUDED_MACHINE_IDS;
++  const eligible = producerRecipesFor(catalog, itemId, excluded);
++  if (currentRecipeId === undefined) return eligible;
++  const current = catalog.recipes[currentRecipeId];
++  // Totality: an unknown id fabricates nothing — the bare eligible list stands.
++  if (current === undefined) return eligible;
++  if (eligible.some((r) => r.id === currentRecipeId)) return eligible;
++  // The override's machine is excluded (or its recipe is otherwise ineligible):
++  // force-include it so the current selection is always a real, labeled option.
++  return [...eligible, current];
++}
++
++/**
++ * The exclusions panel's machine list (Axis 2): every machine referenced by ≥1
++ * recipe's `machineId`, name-resolved (falls back to id), sorted by display
++ * name. Machines no recipe uses are noise and never listed. Pure — the panel
++ * renders a checkbox per entry (checked = excluded).
++ */
++export function excludableMachines(
++  catalog: Catalog,
++): { machineId: string; displayName: string }[] {
++  const referenced = new Set<string>();
++  for (const r of Object.values(catalog.recipes)) referenced.add(r.machineId);
++  const list = [...referenced].map((machineId) => ({
++    machineId,
++    displayName: catalog.machines[machineId]?.displayName ?? machineId,
++  }));
++  return list.sort((a, b) => a.displayName.localeCompare(b.displayName));
++}
++
+ /**
+  * The whole-proposal metrics — the cost-sheet totals for a ChainProposal.
+  *

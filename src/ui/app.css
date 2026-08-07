@@ -432,6 +432,17 @@ body {
   gap: 6px;
 }
 
+/* TIER gate (S20 P3) — a short numeric select beside Rate/Clock; the option
+   list is "all" plus 0..max, so it never needs the target select's width.
+   Named `-select`, NOT `.chain-builder-tier`: that class is the preview rows'
+   depth marker (T0/T1/…) further down this file. At equal specificity the
+   later rule wins, so sharing the name silently killed this width AND gave the
+   control the marker's accent colour, mono-numeric font and letter-spacing —
+   styling never authored for a select, in both themes. */
+.chain-builder-tier-select {
+  min-width: 5em;
+}
+
 .chain-builder-error {
   margin: 8px 0 0;
   color: var(--error);
@@ -446,17 +457,162 @@ body {
   padding-left: 1.2em;
 }
 
-.chain-builder-raw,
 .chain-builder-byproducts,
 .chain-builder-empty {
   margin: 4px 0 0;
   color: var(--fg-muted);
 }
 
+/* S20 P2 — byproduct-feed suggestion lines under the byproducts line
+   (display-only). Muted like the byproducts note, slightly indented to read as
+   a sub-item of it. Existing tokens only; both themes follow (--fg-muted
+   redefines per theme). */
+.chain-builder-suggestion {
+  margin: 2px 0 0 1.2em;
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
 .chain-builder-actions {
   display: flex;
   gap: 8px;
   margin-top: 8px;
+}
+
+/* S20 P0 cost sheet — the title-block idiom (mono numerics, muted labels) in a
+   compact block above the tiered rows. Existing tokens only; both themes follow
+   because --fg/--fg-muted/--font-mono-num redefine per theme (no local override
+   needed). */
+.chain-builder-metrics {
+  margin: 0 0 8px;
+  font-family: var(--font-mono-num);
+}
+
+.chain-builder-metrics > div {
+  display: flex;
+  gap: 8px;
+}
+
+.chain-builder-metrics dt {
+  min-width: 7.5em;
+  color: var(--fg-muted);
+  letter-spacing: 0.04em;
+}
+
+.chain-builder-metrics dd {
+  margin: 0;
+  color: var(--fg);
+}
+
+/* Depth tier marker ("T0/T1/…") — the mono drawing-idiom label leading the
+   first row of each tier. */
+.chain-builder-tier {
+  display: inline-block;
+  min-width: 2.2em;
+  font-family: var(--font-mono-num);
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+
+/* The "→ feeds …" named-adjacency suffix — secondary text (the DAG structure
+   signal, subordinate to the row itself). */
+.chain-builder-feeds {
+  color: var(--fg-muted);
+}
+
+/* The "N recipes" alternates chip — a muted count, the hook P1's picker
+   attaches to (display-only in P0). */
+.chain-builder-alt {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+/* S20 P1 — Propose customization controls (ticket #100). Existing tokens only;
+   both themes follow because the tokens redefine per theme. */
+
+/* The recipe picker: the P0 "N recipes" chip becomes a button (same muted,
+   italic count look), plus a wrapper for its inline <select>. */
+.chain-builder-picker-wrap {
+  white-space: nowrap;
+}
+
+.chain-builder-picker {
+  padding: 0 4px;
+  color: var(--fg-muted);
+  font-style: italic;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* The notice-styled chip: shown when the picker affordance must render without
+   a ≥2 count chip (an excluded override reachable from its row). */
+.chain-builder-picker-notice {
+  padding: 0 4px;
+  color: var(--notice);
+  font-style: italic;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* The per-row RAW toggle — a compact drawing-idiom button. */
+.chain-builder-rawtoggle {
+  margin-left: 6px;
+  padding: 0 4px;
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+/* The RAW OVERRIDES strip — user-forced raws with a remove ×, under the cost
+   sheet. Muted, with the × as a bare inline button. */
+.chain-builder-rawstrip {
+  margin: 4px 0 0;
+  color: var(--fg-muted);
+}
+
+.chain-builder-rawstrip button {
+  margin-left: 2px;
+  padding: 0 3px;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+/* Constrained raws — their own labeled line, in the notice styling (a producer
+   exists but none is eligible; the honest degradation). */
+.chain-builder-constrained {
+  margin: 4px 0 0;
+  color: var(--notice);
+}
+
+.chain-builder-constrained-hint {
+  color: var(--fg-muted);
+}
+
+/* Machine exclusions <details> disclosure — a compact checkbox list. */
+.chain-builder-exclusions {
+  margin-top: 8px;
+  color: var(--fg-muted);
+}
+
+.chain-builder-exclusions summary {
+  cursor: pointer;
+  font-family: var(--font-mono-num);
+  letter-spacing: 0.04em;
+}
+
+.chain-builder-exclusions ul {
+  margin: 4px 0 0;
+  padding-left: 1.2em;
+  list-style: none;
+  columns: 2;
+}
+
+.chain-builder-exclusions label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .tier-controls {
