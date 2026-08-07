@@ -17,6 +17,7 @@ import type {
   CatalogMachine,
   CatalogRecipe,
 } from "../data/types.ts";
+import type { RawInputRow } from "./chain-builder-adapter.ts";
 import {
   EXCLUDED_MACHINE_IDS,
   proposeChainForCatalog,
@@ -1928,5 +1929,165 @@ describe("S20 P2 — byproductSuggestions", () => {
     // Unique on (itemId, toItemId).
     const keys = s.map((x) => `${x.itemId} ${x.toItemId}`);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S21 P0 (ticket #104): vacuously-constrained extraction resources classify
+// "natural". Every row here runs against the REAL bundled catalog — the claim
+// is data-shaped ("which ores does the game only let you make in a Converter")
+// and a synthetic fixture would pin the rule's algebra while proving nothing
+// about the items the user actually sees.
+//
+// Sets are asserted BY NAME, never by count: a `length === 11` row would go
+// green on the wrong eleven items and would churn on every catalog update.
+// ---------------------------------------------------------------------------
+
+describe("S21 P0 — vacuous raw resources classify natural", () => {
+  /**
+   * The raw-input row for `itemId` proposed AS THE TARGET (an all-raw
+   * proposal, so the item is its own sole raw leaf). Mirrors the app's wiring:
+   * propose + preview both see the GATED world, and the ungated one is threaded
+   * through so the two-world classification is exercised, not bypassed.
+   */
+  function rawRowFor(
+    itemId: string,
+    tier: number | null = null,
+    excludedMachineIds: string[] = [...EXCLUDED_MACHINE_IDS],
+  ): RawInputRow {
+    const gated = gateCatalog(catalog, tier);
+    const opts = { excludedMachineIds };
+    const view = toProposalPreview(
+      proposeChainForCatalog(gated, itemId, F(60), opts),
+      gated,
+      { ...opts, ungatedCatalog: catalog },
+    );
+    return view.rawInputs.find((r) => r.itemId === itemId)!;
+  }
+
+  /** Every `isRawResource` item in the bundled catalog, by id. */
+  const rawFlagged = Object.values(catalog.items)
+    .filter((i) => i.isRawResource === true)
+    .map((i) => i.id)
+    .sort();
+
+  it("natural-izes exactly the vacuous eleven — coal is the sole holdout", () => {
+    // THE central pin, stated as two named sets over the raw-flagged items.
+    // Before S21 P0 all twelve of these classified "constrained"; `coal` is
+    // the one the design deliberately spares, because its Charcoal/Biocoal
+    // constructor alternates are a recovery worth offering.
+    const byCause = (want: string): string[] =>
+      rawFlagged.filter((id) => rawRowFor(id).cause === want).sort();
+
+    expect(byCause("natural")).toEqual([
+      "liquid_oil",
+      "nitrogen_gas",
+      "ore_bauxite",
+      "ore_copper",
+      "ore_gold",
+      "ore_iron",
+      "ore_uranium",
+      "raw_quartz",
+      "sam", // no producer at all — "natural" via the pre-existing branch
+      "stone",
+      "sulfur",
+      "water",
+    ]);
+    expect(byCause("constrained")).toEqual(["coal"]);
+  });
+
+  it("pins the CONVERTER case (ore_iron) and the PACKAGER case (water)", () => {
+    // Both machines in EXCLUDED_MACHINE_IDS must reach the rule — an earlier
+    // draft of this design was glossed as "converter-only", which would have
+    // missed water/liquid_oil/nitrogen_gas entirely.
+    const iron = rawRowFor("ore_iron"); // sole producer: iron_limestone @ converter
+    expect(iron.cause).toBe("natural");
+    expect(iron.lever).toBe(null); // levers annotate constrained rows only
+
+    const water = rawRowFor("water"); // sole producer: unpackage_water @ packager
+    expect(water.cause).toBe("natural");
+    expect(water.lever).toBe(null);
+  });
+
+  it("leaves the 20 non-raw constrained items alone (spot-pin: polymer_resin)", () => {
+    // The rule can only reach isRawResource items, so the genuinely
+    // constrained non-raw population is untouched by construction. Pinned
+    // anyway — "by construction" is what the two dead rules also claimed.
+    expect(catalog.items["polymer_resin"]!.isRawResource).toBeUndefined();
+    expect(rawRowFor("polymer_resin").cause).toBe("constrained");
+  });
+
+  // -- The load-bearing PAIR ------------------------------------------------
+  // The rule is the CONJUNCTION of two vacuity tests. Two single-keyed rules
+  // were proposed and killed during design; these two rows are what keep them
+  // from returning silently. Each MUST fail against its respective dead rule:
+  // drop the constant conjunct and the first goes red; drop the live conjunct
+  // and the second does.
+
+  it("coal stays constrained when the user EXCLUDES Constructor (kills the live-set-only rule)", () => {
+    // Under a live-set-keyed rule, ticking Constructor empties coal's live
+    // producer set, coal natural-izes, and the user silently loses BOTH the
+    // picker and the "edit MACHINE EXCLUSIONS" hint — the exact regression at
+    // the hero item that the refinement exists to prevent. The CONSTANT
+    // conjunct is what saves it: charcoal/biocoal sit outside
+    // EXCLUDED_MACHINE_IDS, so P(CONST) is false and the rule stays silent.
+    const row = rawRowFor("coal", null, [
+      ...EXCLUDED_MACHINE_IDS,
+      "constructor_mk1",
+    ]);
+    expect(row.cause).toBe("constrained");
+    expect(row.lever).toBe("machine");
+  });
+
+  it("ore_iron stays constrained with the TIER lever when the user UN-EXCLUDES Converter below tier 9 (kills the constant-only rule)", () => {
+    // iron_limestone is a converter recipe unlocked at tier 9. With the
+    // Converter re-enabled at tier ≤ 8 the user has a REAL "raise TIER"
+    // recovery, which a constant-only rule would suppress (the converter is
+    // still inside EXCLUDED_MACHINE_IDS, so P(CONST) holds). The LIVE conjunct
+    // is what saves it — and it is definitionally ¬tierLever, which is why no
+    // row with a tier-ALONE recovery can ever natural-ize.
+    const row = rawRowFor("ore_iron", 8, ["packager"]);
+    expect(row.cause).toBe("constrained");
+    expect(row.lever).toBe("tier");
+  });
+
+  it("coal at TIER ≤ 2 classifies constrained with the TIER lever", () => {
+    // The Axis 3 tier pin, and the only construction the shipped data allows:
+    // both coal alternates unlock at tier 3, so tier 2 gates them out while
+    // leaving them present in the ungated world. The rule stays silent because
+    // it reads the UNGATED catalog for both conjuncts — gating alone must never
+    // natural-ize anything.
+    const row = rawRowFor("coal", 2);
+    expect(row.cause).toBe("constrained");
+    expect(row.lever).toBe("tier");
+  });
+
+  it("coal still offers its constructor alternates (kills the blanket isRawResource rule)", () => {
+    // The picker IS the recovery here, hence lever null — which is precisely
+    // why a blanket "raw ⇒ natural" rule would be a regression rather than
+    // polish: it would delete a live, useful choice.
+    const row = rawRowFor("coal");
+    expect(row.cause).toBe("constrained");
+    expect(row.lever).toBe(null);
+    expect(
+      producerRecipesFor(catalog, "coal", EXCLUDED_MACHINE_IDS).map(
+        (r) => r.id,
+      ),
+    ).toEqual(["alternate_coal_1", "alternate_coal_2"]);
+  });
+
+  it("the P1 alternate-only collapse still classifies constrained (S20, unchanged)", () => {
+    // The pin the P1 boundary fix exists for, re-asserted against the NARROWED
+    // biconditional: the synthetic fixture sets no isRawResource, so the new
+    // conjuncts cannot reach it and the recovery line stays live.
+    const cat = altOnlyIngotCatalog({});
+    const view = toProposalPreview(
+      proposeChainForCatalog(cat, "plate", F(60)),
+      cat,
+      { ungatedCatalog: cat },
+    );
+    expect(view.rawInputs.find((r) => r.itemId === "ingot")!.cause).toBe(
+      "constrained",
+    );
   });
 });
