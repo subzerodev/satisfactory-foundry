@@ -322,8 +322,13 @@ export interface Actions {
    * proposal's target stage becomes active. Existing stages/links are untouched
    * (append-only, collision-free by construction — all new links are between
    * fresh ids). An empty proposal (no stages) is a no-op.
+   *
+   * `clockPercentText` (S20 P2) seeds every applied stage's per-stage clock —
+   * the raw user text validated at propose time (e.g. "150"), preserving the
+   * user-intent-text idiom. The applied graph then solves each stage at that
+   * clock natively (existing per-stage clock support). Defaults to "100".
    */
-  applyChainProposal(proposal: ChainProposal): void;
+  applyChainProposal(proposal: ChainProposal, clockPercentText?: string): void;
   refreshPlans(): Promise<void>;
   savePlanAs(name: string): Promise<void>;
   loadPlan(id: string): Promise<void>;
@@ -787,6 +792,7 @@ function applyProposalToSlice(
   slice: GraphSlice,
   placementSeq: number,
   proposal: ChainProposal,
+  clockPercentText: string,
 ): GraphSlice & { placementSeq: number } {
   if (proposal.stages.length === 0) {
     return { ...slice, placementSeq };
@@ -816,7 +822,10 @@ function applyProposalToSlice(
     const selection: Selection = {
       recipeId: stage.recipeId,
       machineCount: machineCountToNumber(stage.machineCount),
-      clockPercentText: "100",
+      // S20 P2: seed the propose-time clock (was hardcoded "100"). The proposal
+      // was solved at this clock, so the applied graph re-solves each stage at
+      // the same clock and the two agree.
+      clockPercentText,
       unlockedTiers: { ...globalTiers },
       overrides: { feeds: {}, outputs: {} },
     };
@@ -1600,12 +1609,23 @@ export function createAppStore(storage?: StateStorage) {
             });
           },
 
-          applyChainProposal(proposal: ChainProposal) {
+          applyChainProposal(
+            proposal: ChainProposal,
+            clockPercentText = "100",
+          ) {
             // Append the proposed stages/links (fresh uuids), derive + reconcile
             // + mirror, and focus the target stage. Additive rebuildFromPlan
             // idiom; empty proposal is a no-op. Threads placementSeq through the
-            // helper so the monotonic counter stays never-reused.
-            set((s) => applyProposalToSlice(s, s.placementSeq, proposal));
+            // helper so the monotonic counter stays never-reused. The clock text
+            // (S20 P2) seeds every applied stage's clockPercentText.
+            set((s) =>
+              applyProposalToSlice(
+                s,
+                s.placementSeq,
+                proposal,
+                clockPercentText,
+              ),
+            );
           },
 
           // --- Plan lifecycle (frozen Axis 3) --------------------------------

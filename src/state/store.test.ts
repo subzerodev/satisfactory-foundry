@@ -3055,6 +3055,31 @@ describe("applyChainProposal (Stage 8 / Phase 3)", () => {
     expect(s.reconciliation).toHaveLength(0);
   });
 
+  it("seeds every applied stage's clockPercentText from the passed clock (S20 P2)", async () => {
+    const store = await chainCatalogStore();
+    const orderBefore = store.getState().stageOrder.length;
+    const proposal = propose(store, "iron_plate", 60);
+    // Pass the propose-time clock text; every appended stage carries it.
+    store.getState().applyChainProposal(proposal, "150");
+    const s = store.getState();
+    const appended = s.stageOrder.slice(orderBefore);
+    expect(appended).toHaveLength(2);
+    for (const id of appended) {
+      expect(s.stages[id]!.selection.clockPercentText).toBe("150");
+    }
+  });
+
+  it("defaults clockPercentText to '100' when no clock text is passed (regression)", async () => {
+    const store = await chainCatalogStore();
+    const orderBefore = store.getState().stageOrder.length;
+    const proposal = propose(store, "iron_plate", 60);
+    store.getState().applyChainProposal(proposal);
+    const s = store.getState();
+    for (const id of s.stageOrder.slice(orderBefore)) {
+      expect(s.stages[id]!.selection.clockPercentText).toBe("100");
+    }
+  });
+
   it("empty proposal is a no-op", async () => {
     const store = await chainCatalogStore();
     store.getState().selectRecipe("iron_plate");
