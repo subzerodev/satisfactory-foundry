@@ -452,6 +452,16 @@ body {
   color: var(--fg-muted);
 }
 
+/* S20 P2 — byproduct-feed suggestion lines under the byproducts line
+   (display-only). Muted like the byproducts note, slightly indented to read as
+   a sub-item of it. Existing tokens only; both themes follow (--fg-muted
+   redefines per theme). */
+.chain-builder-suggestion {
+  margin: 2px 0 0 1.2em;
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
 .chain-builder-actions {
   display: flex;
   gap: 8px;

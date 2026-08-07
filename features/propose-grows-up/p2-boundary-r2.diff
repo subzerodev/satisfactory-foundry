@@ -1,0 +1,1328 @@
+diff --git a/features/propose-grows-up/p2-r2-verification.log b/features/propose-grows-up/p2-r2-verification.log
+new file mode 100644
+index 0000000..2f9214c
+--- /dev/null
++++ b/features/propose-grows-up/p2-r2-verification.log
+@@ -0,0 +1,244 @@
++S20 P2 — Bidirectionality verification log (ticket #101)
++========================================================
++
++Per frozen spec item 6. For each distinct production behavior: (a) confirm the
++code is present, (b) break it with the exact command shown, (c) capture the
++genuine vitest FAIL line naming the new test, (d) `git checkout` restore the
++file (HEAD holds the four P2 feature commits, so checkout reverts to P2-present,
++never pre-P2), (e) re-run green. Branch feature/s20-p2 @ 9d63cee (post-commit).
++
++Test scoping note (repo memory: vitest worktree double-count): all runs are
++scoped to the specific test file(s) with `-t "<name>"`, inside the worktree.
++
++-------------------------------------------------------------------------------
++B1 — CORE clock scaling (per-machine rate scales perMinute × clock/100)
++-------------------------------------------------------------------------------
++Test:  proposeChain — clockPercent scaling (S20 P2) >
++       150% scales the per-machine rate so fewer machines cover the demand
++File:  src/core/chain-builder.ts
++
++CODE PRESENT (chain-builder.ts:312):
++    const count = plan.demand.ceilDiv(primary.perMinute.mul(clockScale));
++
++BREAK:
++    sed -i 's|const count = plan.demand.ceilDiv(primary.perMinute.mul(clockScale));|const count = plan.demand.ceilDiv(primary.perMinute);|' src/core/chain-builder.ts
++
++FAIL (genuine):
++    × 150% scales the per-machine rate so fewer machines cover the demand
++    FAIL  src/core/chain-builder.test.ts > proposeChain — clockPercent scaling (S20 P2) > 150% scales the per-machine rate so fewer machines cover the demand
++    AssertionError: expected 4n to be 3n // Object.is equality
++
++REVERT:
++    git checkout src/core/chain-builder.ts
++
++RE-RUN GREEN:
++    Tests  1 passed | 30 skipped (31)
++
++-------------------------------------------------------------------------------
++B2 — CORE default-100 byte-identical regression (100% is an identity multiply)
++-------------------------------------------------------------------------------
++Test:  proposeChain — clockPercent scaling (S20 P2) >
++       the 100% DEFAULT is byte-identical to the 6-arg call (regression pin)
++File:  src/core/chain-builder.ts
++
++CODE PRESENT (chain-builder.ts:202):
++    const clockScale = clockPercent.div(Fraction.from(100));
++
++BREAK (divide by 50 → at clock 100 the rate DOUBLES; count 4n → 2n):
++    sed -i 's|const clockScale = clockPercent.div(Fraction.from(100));|const clockScale = clockPercent.div(Fraction.from(50));|' src/core/chain-builder.ts
++
++FAIL (genuine):
++    × the 100% DEFAULT is byte-identical to the 6-arg call (regression pin)
++    FAIL  src/core/chain-builder.test.ts > proposeChain — clockPercent scaling (S20 P2) > the 100% DEFAULT is byte-identical to the 6-arg call (regression pin)
++    AssertionError: expected 2n to be 4n // Object.is equality
++
++    (Note: an earlier /99 break was too weak — ceil(120/(30×100/99)) still = 4n.
++     /50 forces an observable divergence, so the pin genuinely bites.)
++
++REVERT:
++    git checkout src/core/chain-builder.ts
++
++RE-RUN GREEN:
++    Tests  1 passed | 30 skipped (31)
++
++-------------------------------------------------------------------------------
++B3 — UI clock validation (parseClockText upper bound (0, 250])
++-------------------------------------------------------------------------------
++Test:  parseClockText (S20 P2, (0, 250]) >
++       rejects above 250 (past the shard-boosted max)
++File:  src/ui/ChainBuilder.tsx
++
++CODE PRESENT (ChainBuilder.tsx:76):
++    if (value.gt(Fraction.from(250))) {
++
++BREAK (raise the bound to 9999 → 300 is wrongly accepted):
++    sed -i 's|if (value.gt(Fraction.from(250))) {|if (value.gt(Fraction.from(9999))) {|' src/ui/ChainBuilder.tsx
++
++FAIL (genuine):
++    × rejects above 250 (past the shard-boosted max)
++    FAIL  src/ui/ChainBuilder.test.tsx > parseClockText (S20 P2, (0, 250]) > rejects above 250 (past the shard-boosted max)
++    AssertionError: expected { ok: true, value: Fraction{ …(2) } } to deeply equal { ok: false, …(1) }
++
++REVERT:
++    git checkout src/ui/ChainBuilder.tsx
++
++RE-RUN GREEN:
++    Tests  1 passed | 12 skipped (13)
++
++-------------------------------------------------------------------------------
++B4 — ADAPTER powerAtClockMw uses EACH stage's OWN exponent (non-uniform)
++-------------------------------------------------------------------------------
++Test:  S20 P2 — proposalMetrics.powerAtClockMw (per-stage exponent) >
++       at 150 sums each stage with its OWN exponent (not one chain-wide)
++File:  src/ui/chain-builder-adapter.ts
++
++CODE PRESENT (chain-builder-adapter.ts:630):
++    const factor = clockRatio ** fractionToNumber(power.exponent);
++
++BREAK (flatten every exponent to 1 — the subtreePowerText mistake the spec forbids):
++    sed -i 's|const factor = clockRatio \*\* fractionToNumber(power.exponent);|const factor = clockRatio ** 1;|' src/ui/chain-builder-adapter.ts
++
++FAIL (genuine):
++    × at 150 sums each stage with its OWN exponent (not one chain-wide)
++    FAIL  src/ui/chain-builder-adapter.test.ts > S20 P2 — proposalMetrics.powerAtClockMw (per-stage exponent) > at 150 sums each stage with its OWN exponent (not one chain-wide)
++    AssertionError: expected 66 to be close to 81.73017426595698, received difference is 15.730174265956975, but expected 5e-7
++
++REVERT:
++    git checkout src/ui/chain-builder-adapter.ts
++
++RE-RUN GREEN:
++    Tests  1 passed | 65 skipped (66)
++
++-------------------------------------------------------------------------------
++B5 — ADAPTER powerAtClockMw is null at exactly 100 (no float on the default)
++-------------------------------------------------------------------------------
++Test:  S20 P2 — proposalMetrics.powerAtClockMw (per-stage exponent) >
++       is null at exactly 100 (the exact powerMw stands, no float)
++File:  src/ui/chain-builder-adapter.ts
++
++CODE PRESENT (chain-builder-adapter.ts:643):
++    powerAtClockMw: atClock ? powerAtClockMw : null,
++
++BREAK (always return the float, never null):
++    sed -i 's|powerAtClockMw: atClock ? powerAtClockMw : null,|powerAtClockMw: powerAtClockMw,|' src/ui/chain-builder-adapter.ts
++
++FAIL (genuine):
++    × is null at exactly 100 (the exact powerMw stands, no float)
++    FAIL  src/ui/chain-builder-adapter.test.ts > S20 P2 — proposalMetrics.powerAtClockMw (per-stage exponent) > is null at exactly 100 (the exact powerMw stands, no float)
++    AssertionError: expected +0 to be null
++
++REVERT:
++    git checkout src/ui/chain-builder-adapter.ts
++
++RE-RUN GREEN:
++    Tests  1 passed | 65 skipped (66)
++
++-------------------------------------------------------------------------------
++B6 — ADAPTER byproductSuggestions: match found (recipe-inputs scan)
++-------------------------------------------------------------------------------
++Test:  S20 P2 — byproductSuggestions >
++       emits a suggestion when a byproduct matches another stage's recipe input
++File:  src/ui/chain-builder-adapter.ts
++
++CODE PRESENT (chain-builder-adapter.ts:709):
++    if (!recipe.inputs.some((i) => i.itemId === itemId)) continue;
++
++BREAK (invert the input match → the consumer is never found):
++    sed -i 's|if (!recipe.inputs.some((i) => i.itemId === itemId)) continue;|if (recipe.inputs.some((i) => i.itemId === itemId)) continue;|' src/ui/chain-builder-adapter.ts
++
++FAIL (genuine):
++    × emits a suggestion when a byproduct matches another stage's recipe input
++    FAIL  src/ui/chain-builder-adapter.test.ts > S20 P2 — byproductSuggestions > emits a suggestion when a byproduct matches another stage's recipe input
++    AssertionError: expected [ { itemId: 'resin', …(3) } ] to deeply equal [ { itemId: 'resin', …(3) } ]
++
++REVERT:
++    git checkout src/ui/chain-builder-adapter.ts
++
++RE-RUN GREEN:
++    Tests  1 passed | 65 skipped (66)
++
++    (Also pinned in the same describe, not separately broken here: "returns
++     empty when no proposed stage consumes the byproduct" — the none-match
++     direction, covered by B6's inverted-match producing the empty set.)
++
++-------------------------------------------------------------------------------
++B7 — ADAPTER byproductSuggestions: two producers → one EXACT summed suggestion
++-------------------------------------------------------------------------------
++Test:  S20 P2 — byproductSuggestions >
++       TWO producers of one byproduct toward one consumer → ONE summed
++       suggestion, keys unique
++File:  src/ui/chain-builder-adapter.ts
++
++CODE PRESENT (chain-builder-adapter.ts:696):
++    totals.set(bp.itemId, prev === undefined ? bp.rate : prev.add(bp.rate));
++
++BREAK (overwrite instead of Fraction-sum → last-seen 5, not 10+5=15):
++    sed -i 's|totals.set(bp.itemId, prev === undefined ? bp.rate : prev.add(bp.rate));|totals.set(bp.itemId, bp.rate);|' src/ui/chain-builder-adapter.ts
++
++FAIL (genuine):
++    × TWO producers of one byproduct toward one consumer → ONE summed suggestion, keys unique
++    FAIL  src/ui/chain-builder-adapter.test.ts > S20 P2 — byproductSuggestions > TWO producers of one byproduct toward one consumer → ONE summed suggestion, keys unique
++    AssertionError: expected false to be true // Object.is equality
++    (the `s[0].rate.eq(F(15))` assertion — the summed total is wrong)
++
++REVERT:
++    git checkout src/ui/chain-builder-adapter.ts
++
++RE-RUN GREEN:
++    Tests  1 passed | 65 skipped (66)
++
++-------------------------------------------------------------------------------
++B8 — ADAPTER byproductSuggestions: one byproduct → two distinct-toItemId rows
++-------------------------------------------------------------------------------
++Test:  S20 P2 — byproductSuggestions >
++       ONE byproduct feeding TWO consumers → two suggestions with distinct
++       toItemId keys
++File:  src/ui/chain-builder-adapter.ts
++
++CODE PRESENT (chain-builder-adapter.ts:713):
++        toItemId: stage.itemId,
++
++BREAK (source toItemId from the byproduct itemId, not the consumer stage):
++    sed -i 's|toItemId: stage.itemId,|toItemId: itemId,|' src/ui/chain-builder-adapter.ts
++
++FAIL (genuine):
++    × ONE byproduct feeding TWO consumers → two suggestions with distinct toItemId keys
++    FAIL  src/ui/chain-builder-adapter.test.ts > S20 P2 — byproductSuggestions > ONE byproduct feeding TWO consumers → two suggestions with distinct toItemId keys
++    AssertionError: expected [ 'resin', 'resin' ] to deeply equal [ 'plastic', 'rubber' ]
++
++REVERT:
++    git checkout src/ui/chain-builder-adapter.ts
++
++RE-RUN GREEN:
++    Tests  1 passed | 65 skipped (66)
++
++-------------------------------------------------------------------------------
++B9 — STORE applied clockPercentText seeding (from the propose-time clock text)
++-------------------------------------------------------------------------------
++Test:  applyChainProposal (Stage 8 / Phase 3) >
++       seeds every applied stage's clockPercentText from the passed clock (S20 P2)
++File:  src/state/store.ts
++
++CODE PRESENT (store.ts:828):
++      clockPercentText,
++
++BREAK (revert to the pre-P2 hardcoded "100", ignoring the passed text):
++    sed -i '828s|      clockPercentText,|      clockPercentText: "100",|' src/state/store.ts
++
++FAIL (genuine):
++    × seeds every applied stage's clockPercentText from the passed clock (S20 P2)
++    FAIL  src/state/store.test.ts > applyChainProposal (Stage 8 / Phase 3) > seeds every applied stage's clockPercentText from the passed clock (S20 P2)
++    AssertionError: expected '100' to be '150' // Object.is equality
++
++REVERT:
++    git checkout src/state/store.ts
++
++RE-RUN GREEN:
++    Tests  1 passed | 144 skipped (145)
++
++-------------------------------------------------------------------------------
++Post-verification state
++-------------------------------------------------------------------------------
++Working tree clean after all reverts (git status --short → empty).
++Full suite green:  npm test → Test Files 31 passed (31), Tests 834 passed (834).
++Lint clean:        npm run check → tsc -b + eslint + prettier, all pass.
+diff --git a/src/core/chain-builder.test.ts b/src/core/chain-builder.test.ts
+index 8d978ba..db71480 100644
+--- a/src/core/chain-builder.test.ts
++++ b/src/core/chain-builder.test.ts
+@@ -593,3 +593,99 @@ describe("proposeChain — forced-raw items (rawItemIds)", () => {
+     expect(emptySet).toEqual(fiveArg);
+   });
+ });
++
++// ---------------------------------------------------------------------------
++// S20 P2 — clockPercent (7th positional). Per-machine primary rates scale
++// `perMinute × clockPercent/100` (linear, exact) in BOTH the count-fix pass and
++// the outputRate; ceilDiv counts stay exact; the 100% default is byte-identical.
++// ---------------------------------------------------------------------------
++
++describe("proposeChain — clockPercent scaling (S20 P2)", () => {
++  const F32 = (n: number, d: number): Fraction => Fraction.of(n, d);
++  // ingot: 30/machine from 30 ore, at 100%.
++  const recipes = [
++    recipe("r_ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
++  ];
++
++  it("150% scales the per-machine rate so fewer machines cover the demand", () => {
++    // At 100%: ceil(120/30) = 4 machines. At 150%: each machine makes 45/min, so
++    // ceil(120 / (30 × 3/2)) = ceil(120/45) = 3 — the spec's exact example.
++    const at100 = proposeChain("ingot", F(120), recipes, []);
++    expect(stageFor(at100, "ingot")!.machineCount).toBe(4n);
++
++    const at150 = proposeChain(
++      "ingot",
++      F(120),
++      recipes,
++      [],
++      new Map(),
++      new Set(),
++      F(150),
++    );
++    expect(stageFor(at150, "ingot")!.machineCount).toBe(3n);
++    // outputRate = 3 × (30 × 3/2) = 3 × 45 = 135 (exact; the ceil overshoot).
++    expect(stageFor(at150, "ingot")!.outputRate.eq(F(135))).toBe(true);
++    // Input consumption also scales: 3 machines × (30 × 3/2) = 135 ore raw.
++    expect(at150.rawInputs).toEqual([{ itemId: "ore", rate: F(135) }]);
++  });
++
++  it("a non-integer clock keeps rates EXACT (no float creep)", () => {
++    // 133⅓% = 400/300 = 4/3. Per-machine ingot = 30 × 4/3 = 40/min.
++    // ceil(120 / 40) = 3; outputRate = 3 × 40 = 120 exactly.
++    const p = proposeChain(
++      "ingot",
++      F(120),
++      recipes,
++      [],
++      new Map(),
++      new Set(),
++      F32(400, 3),
++    );
++    expect(stageFor(p, "ingot")!.machineCount).toBe(3n);
++    expect(stageFor(p, "ingot")!.outputRate.eq(F(120))).toBe(true);
++  });
++
++  it("scales byproduct rates by the clock too", () => {
++    // A recipe with a byproduct: 20 primary + 10 byproduct per machine from ore.
++    const bp = [
++      recipe(
++        "r_fuel",
++        "refinery",
++        [
++          ["fuel", 20],
++          ["resin", 10],
++        ],
++        [["oil", 30]],
++      ),
++    ];
++    // At 150%: 1 machine makes 30 fuel (ceil(20/(20×3/2)) = ceil(20/30) = 1),
++    // and the byproduct resin scales to 10 × 3/2 = 15/min.
++    const p = proposeChain("fuel", F(20), bp, [], new Map(), new Set(), F(150));
++    expect(stageFor(p, "fuel")!.machineCount).toBe(1n);
++    expect(p.byproducts).toEqual([{ itemId: "resin", rate: F(15) }]);
++  });
++
++  it("the 100% DEFAULT is byte-identical to the 6-arg call (regression pin)", () => {
++    const sixArg = proposeChain(
++      "ingot",
++      F(120),
++      recipes,
++      [],
++      new Map(),
++      new Set(),
++    );
++    const explicit100 = proposeChain(
++      "ingot",
++      F(120),
++      recipes,
++      [],
++      new Map(),
++      new Set(),
++      F(100),
++    );
++    // The absent 7th arg and an explicit Fraction.from(100) must both equal the
++    // pre-P2 output exactly (the epic's byte-stability acceptance).
++    expect(explicit100).toEqual(sixArg);
++    expect(stageFor(sixArg, "ingot")!.machineCount).toBe(4n);
++  });
++});
+diff --git a/src/core/chain-builder.ts b/src/core/chain-builder.ts
+index 10686a0..c4a9fb5 100644
+--- a/src/core/chain-builder.ts
++++ b/src/core/chain-builder.ts
+@@ -175,8 +175,16 @@ interface Plan {
+  * UI honest, silently. Absent/empty ⇒ the proposal is byte-identical to the
+  * pre-P1 behavior.
+  *
++ * `clockPercent` (S20 / P2) is the GLOBAL overclock target for the whole
++ * proposal: each producer's per-machine primary rate becomes `perMinute ×
++ * clockPercent/100` — LINEAR and EXACT (the game scales item rates linearly
++ * with clock; only POWER follows the exponent, which is the adapter's float
++ * concern, never the core's). Counts stay `ceilDiv(demand, scaled rate)` —
++ * still exact integers. Default `Fraction.from(100)` ⇒ the scale factor is 1,
++ * so the proposal is BYTE-IDENTICAL to the pre-P2 output (regression-pinned).
++ *
+  * Determinism: same target + rate + recipes + exclusions + overrides +
+- * rawItemIds ⇒ identical proposal.
++ * rawItemIds + clockPercent ⇒ identical proposal.
+  */
+ export function proposeChain(
+   targetItemId: string,
+@@ -185,8 +193,13 @@ export function proposeChain(
+   excludedMachineIds: Iterable<string>,
+   overrides: ReadonlyMap<string, string> = new Map(),
+   rawItemIds: ReadonlySet<string> = new Set(),
++  clockPercent: Fraction = Fraction.from(100),
+ ): ChainProposal {
+   const excluded = new Set(excludedMachineIds);
++  // The exact linear clock scale factor applied to every per-machine primary
++  // rate. At the 100% default this is 1/1, so `.mul(scale)` is an identity
++  // multiply and every downstream figure is byte-identical to pre-P2.
++  const clockScale = clockPercent.div(Fraction.from(100));
+   // Every item that has appeared in the closure, produced or raw.
+   const plans = new Map<string, Plan>();
+   // Fixed machine count per produced item (sized consumers-first in phase 2).
+@@ -293,12 +306,17 @@ export function proposeChain(
+     const plan = plans.get(itemId)!;
+     if (plan.recipe === null) continue; // raw: no count, demand just totals.
+     const primary = plan.recipe.outputs.find((o) => o.itemId === itemId)!;
+-    const count = plan.demand.ceilDiv(primary.perMinute);
++    // Size against the clock-SCALED per-machine output: at 150% one machine
++    // makes 1.5× its 100% rate, so fewer machines cover the same demand. Exact
++    // — ceilDiv over the scaled Fraction (e.g. ceil(120 / (30 × 3/2)) = 3).
++    const count = plan.demand.ceilDiv(primary.perMinute.mul(clockScale));
+     counts.set(itemId, count);
+-    // Propagate the CEIL'D consumption to each input's demand.
++    // Propagate the CEIL'D consumption to each input's demand. Consumption
++    // scales with clock too — a machine at 150% eats 1.5× its 100% input rate
++    // — so the scaled per-machine input rate is what flows downstream (exact).
+     const nCount = Fraction.from(count);
+     for (const input of plan.recipe.inputs) {
+-      const consumed = nCount.mul(input.perMinute);
++      const consumed = nCount.mul(input.perMinute.mul(clockScale));
+       const inPlan = plans.get(input.itemId)!;
+       inPlan.demand = inPlan.demand.add(consumed);
+     }
+@@ -317,19 +335,25 @@ export function proposeChain(
+     }
+     const primary = plan.recipe.outputs.find((o) => o.itemId === itemId)!;
+     const count = counts.get(itemId)!;
+-    const outputRate = Fraction.from(count).mul(primary.perMinute);
++    // outputRate = machineCount × the clock-SCALED per-machine rate, so the
++    // "machineCount × scaled perMachine" invariant holds at any clock (and is
++    // byte-identical to `count × perMinute` at the 100% default).
++    const outputRate = Fraction.from(count).mul(
++      primary.perMinute.mul(clockScale),
++    );
+     stages.push({
+       itemId,
+       recipeId: plan.recipe.id,
+       machineCount: count,
+       outputRate,
+     });
+-    // Byproducts: non-primary outputs, at the built rate. Reported, never routed.
++    // Byproducts: non-primary outputs, at the clock-scaled built rate. Reported,
++    // never routed.
+     for (const out of plan.recipe.outputs) {
+       if (out.itemId === itemId) continue;
+       byproducts.push({
+         itemId: out.itemId,
+-        rate: Fraction.from(count).mul(out.perMinute),
++        rate: Fraction.from(count).mul(out.perMinute.mul(clockScale)),
+       });
+     }
+   }
+diff --git a/src/state/store.test.ts b/src/state/store.test.ts
+index 20fd3ce..77ab5ed 100644
+--- a/src/state/store.test.ts
++++ b/src/state/store.test.ts
+@@ -3055,6 +3055,31 @@ describe("applyChainProposal (Stage 8 / Phase 3)", () => {
+     expect(s.reconciliation).toHaveLength(0);
+   });
+ 
++  it("seeds every applied stage's clockPercentText from the passed clock (S20 P2)", async () => {
++    const store = await chainCatalogStore();
++    const orderBefore = store.getState().stageOrder.length;
++    const proposal = propose(store, "iron_plate", 60);
++    // Pass the propose-time clock text; every appended stage carries it.
++    store.getState().applyChainProposal(proposal, "150");
++    const s = store.getState();
++    const appended = s.stageOrder.slice(orderBefore);
++    expect(appended).toHaveLength(2);
++    for (const id of appended) {
++      expect(s.stages[id]!.selection.clockPercentText).toBe("150");
++    }
++  });
++
++  it("defaults clockPercentText to '100' when no clock text is passed (regression)", async () => {
++    const store = await chainCatalogStore();
++    const orderBefore = store.getState().stageOrder.length;
++    const proposal = propose(store, "iron_plate", 60);
++    store.getState().applyChainProposal(proposal);
++    const s = store.getState();
++    for (const id of s.stageOrder.slice(orderBefore)) {
++      expect(s.stages[id]!.selection.clockPercentText).toBe("100");
++    }
++  });
++
+   it("empty proposal is a no-op", async () => {
+     const store = await chainCatalogStore();
+     store.getState().selectRecipe("iron_plate");
+diff --git a/src/state/store.ts b/src/state/store.ts
+index 0bc4d42..088c65e 100644
+--- a/src/state/store.ts
++++ b/src/state/store.ts
+@@ -322,8 +322,13 @@ export interface Actions {
+    * proposal's target stage becomes active. Existing stages/links are untouched
+    * (append-only, collision-free by construction — all new links are between
+    * fresh ids). An empty proposal (no stages) is a no-op.
++   *
++   * `clockPercentText` (S20 P2) seeds every applied stage's per-stage clock —
++   * the raw user text validated at propose time (e.g. "150"), preserving the
++   * user-intent-text idiom. The applied graph then solves each stage at that
++   * clock natively (existing per-stage clock support). Defaults to "100".
+    */
+-  applyChainProposal(proposal: ChainProposal): void;
++  applyChainProposal(proposal: ChainProposal, clockPercentText?: string): void;
+   refreshPlans(): Promise<void>;
+   savePlanAs(name: string): Promise<void>;
+   loadPlan(id: string): Promise<void>;
+@@ -787,6 +792,7 @@ function applyProposalToSlice(
+   slice: GraphSlice,
+   placementSeq: number,
+   proposal: ChainProposal,
++  clockPercentText: string,
+ ): GraphSlice & { placementSeq: number } {
+   if (proposal.stages.length === 0) {
+     return { ...slice, placementSeq };
+@@ -816,7 +822,10 @@ function applyProposalToSlice(
+     const selection: Selection = {
+       recipeId: stage.recipeId,
+       machineCount: machineCountToNumber(stage.machineCount),
+-      clockPercentText: "100",
++      // S20 P2: seed the propose-time clock (was hardcoded "100"). The proposal
++      // was solved at this clock, so the applied graph re-solves each stage at
++      // the same clock and the two agree.
++      clockPercentText,
+       unlockedTiers: { ...globalTiers },
+       overrides: { feeds: {}, outputs: {} },
+     };
+@@ -1600,12 +1609,23 @@ export function createAppStore(storage?: StateStorage) {
+             });
+           },
+ 
+-          applyChainProposal(proposal: ChainProposal) {
++          applyChainProposal(
++            proposal: ChainProposal,
++            clockPercentText = "100",
++          ) {
+             // Append the proposed stages/links (fresh uuids), derive + reconcile
+             // + mirror, and focus the target stage. Additive rebuildFromPlan
+             // idiom; empty proposal is a no-op. Threads placementSeq through the
+-            // helper so the monotonic counter stays never-reused.
+-            set((s) => applyProposalToSlice(s, s.placementSeq, proposal));
++            // helper so the monotonic counter stays never-reused. The clock text
++            // (S20 P2) seeds every applied stage's clockPercentText.
++            set((s) =>
++              applyProposalToSlice(
++                s,
++                s.placementSeq,
++                proposal,
++                clockPercentText,
++              ),
++            );
+           },
+ 
+           // --- Plan lifecycle (frozen Axis 3) --------------------------------
+diff --git a/src/ui/ChainBuilder.test.tsx b/src/ui/ChainBuilder.test.tsx
+index 4d3ed2b..8c1b46e 100644
+--- a/src/ui/ChainBuilder.test.tsx
++++ b/src/ui/ChainBuilder.test.tsx
+@@ -10,7 +10,11 @@ import { describe, it, expect } from "vitest";
+ import { renderToStaticMarkup } from "react-dom/server";
+ 
+ import { Fraction } from "../core/fraction.ts";
+-import { parseRateText, ChainBuilder } from "./ChainBuilder.tsx";
++import {
++  parseRateText,
++  parseClockText,
++  ChainBuilder,
++} from "./ChainBuilder.tsx";
+ 
+ describe("parseRateText", () => {
+   it("accepts a positive decimal → exact Fraction", () => {
+@@ -46,6 +50,58 @@ describe("parseRateText", () => {
+   });
+ });
+ 
++describe("parseClockText (S20 P2, (0, 250])", () => {
++  it("accepts the 100 default → exact Fraction", () => {
++    const r = parseClockText("100");
++    expect(r.ok).toBe(true);
++    if (r.ok) expect(r.value.eq(Fraction.from(100))).toBe(true);
++  });
++
++  it("accepts a fractional clock in range → exact Fraction", () => {
++    const r = parseClockText("133.5");
++    expect(r.ok).toBe(true);
++    if (r.ok) expect(r.value.eq(Fraction.of(267, 2))).toBe(true);
++  });
++
++  it("accepts the upper bound 250", () => {
++    const r = parseClockText("250");
++    expect(r.ok).toBe(true);
++    if (r.ok) expect(r.value.eq(Fraction.from(250))).toBe(true);
++  });
++
++  it("rejects garbage with the labeled error", () => {
++    expect(parseClockText("nope")).toEqual({
++      ok: false,
++      error: "clock % must be a number in (0, 250]",
++    });
++  });
++
++  it("rejects zero (non-positive)", () => {
++    expect(parseClockText("0")).toEqual({
++      ok: false,
++      error: "clock % must be greater than 0",
++    });
++  });
++
++  it("rejects a negative clock", () => {
++    expect(parseClockText("-10")).toEqual({
++      ok: false,
++      error: "clock % must be greater than 0",
++    });
++  });
++
++  it("rejects above 250 (past the shard-boosted max)", () => {
++    expect(parseClockText("250.5")).toEqual({
++      ok: false,
++      error: "clock % must be at most 250",
++    });
++    expect(parseClockText("300")).toEqual({
++      ok: false,
++      error: "clock % must be at most 250",
++    });
++  });
++});
++
+ describe("ChainBuilder render smoke", () => {
+   it("renders nothing (null) when the singleton store's catalog isn't ready", () => {
+     // In node the app-wide store boots to `initializing`, so the component
+diff --git a/src/ui/ChainBuilder.tsx b/src/ui/ChainBuilder.tsx
+index ab39583..64b606c 100644
+--- a/src/ui/ChainBuilder.tsx
++++ b/src/ui/ChainBuilder.tsx
+@@ -19,6 +19,7 @@ import { useState } from "react";
+ import { Fraction } from "../core/fraction.ts";
+ import type { ChainProposal } from "../core/chain-builder.ts";
+ import { useAppStore } from "../state/store.ts";
++import { formatRate } from "./format.ts";
+ import {
+   EXCLUDED_MACHINE_IDS,
+   proposeChainForCatalog,
+@@ -30,6 +31,7 @@ import {
+   producerRecipesFor,
+   pickerOptionsFor,
+   excludableMachines,
++  byproductSuggestions,
+ } from "./chain-builder-adapter.ts";
+ import type { ProposalPreview } from "./chain-builder-adapter.ts";
+ import type { Catalog, CatalogRecipe } from "../data/types.ts";
+@@ -54,10 +56,40 @@ export function parseRateText(
+   return { ok: true, value };
+ }
+ 
++/**
++ * Parse the CLOCK % text into a Fraction in (0, 250] — the game's shard-boosted
++ * max (S20 P2). Same raw-text-parsed-at-propose-time idiom as `parseRateText`;
++ * pure + exported so the node-env suite can pin the wording without rendering.
++ */
++export function parseClockText(
++  text: string,
++): { ok: true; value: Fraction } | { ok: false; error: string } {
++  let value: Fraction;
++  try {
++    value = Fraction.parse(text);
++  } catch {
++    return { ok: false, error: "clock % must be a number in (0, 250]" };
++  }
++  if (value.lte(Fraction.from(0))) {
++    return { ok: false, error: "clock % must be greater than 0" };
++  }
++  if (value.gt(Fraction.from(250))) {
++    return { ok: false, error: "clock % must be at most 250" };
++  }
++  return { ok: true, value };
++}
++
+ /** The preview + the proposal it came from (Apply hands the proposal to the store). */
+ interface Preview {
+   proposal: ChainProposal;
+   view: ProposalPreview;
++  /**
++   * The raw clock text the proposal was SOLVED at. Apply seeds from this
++   * snapshot, never the live input: clock (like Rate) does not re-propose on
++   * edit, so the live text can drift from the counts the proposal was sized
++   * for — the applied graph must carry the clock its counts assumed.
++   */
++  clockText: string;
+ }
+ 
+ /** The stage row for `itemId` in the current preview, or undefined. */
+@@ -76,6 +108,8 @@ export function ChainBuilder() {
+ 
+   const [targetItemId, setTargetItemId] = useState("");
+   const [rateText, setRateText] = useState("");
++  // The global overclock target (S20 P2); default "100" ⇒ pre-P2 behavior.
++  const [clockText, setClockText] = useState("100");
+   const [error, setError] = useState<string | null>(null);
+   const [preview, setPreview] = useState<Preview | null>(null);
+ 
+@@ -124,10 +158,16 @@ export function ChainBuilder() {
+     if (targetItemId === "") return;
+     const parsed = parseRateText(rateText);
+     if (!parsed.ok) return;
++    const parsedClock = parseClockText(clockText);
++    if (!parsedClock.ok) return;
++    // The clock joins the SAME options plumbing as the other controls (P1's
++    // single-path invariant): one bag threads to both the core solve and the
++    // preview's metrics, so they can never desync on the clock.
+     const opts = {
+       overrides: patch.overrides ?? overrides,
+       rawItemIds: patch.rawItemIds ?? rawItemIds,
+       excludedMachineIds: patch.excludedMachineIds ?? excludedMachineIds,
++      clockPercent: parsedClock.value,
+     };
+     const proposal = proposeChainForCatalog(
+       cat,
+@@ -140,7 +180,9 @@ export function ChainBuilder() {
+       view: toProposalPreview(proposal, cat, {
+         excludedMachineIds: opts.excludedMachineIds,
+         rawItemIds: opts.rawItemIds,
++        clockPercent: opts.clockPercent,
+       }),
++      clockText,
+     });
+   }
+ 
+@@ -157,12 +199,20 @@ export function ChainBuilder() {
+       setError(parsed.error);
+       return;
+     }
++    const parsedClock = parseClockText(clockText);
++    if (!parsedClock.ok) {
++      setError(parsedClock.error);
++      return;
++    }
+     repropose(catalog, {}, true);
+   }
+ 
+   function onApply() {
+     if (preview === null) return;
+-    applyChainProposal(preview.proposal);
++    // Seed the applied stages with the SNAPSHOT clock text (S20 P2) — the one
++    // the proposal's counts were solved at. The live input may have drifted
++    // since propose (clock, like Rate, only takes effect on the next Propose).
++    applyChainProposal(preview.proposal, preview.clockText);
+     // Clear the preview so a double-apply is an explicit re-propose (Axis 6);
+     // KEEP the customization choices (the user's session intent — Axis 3).
+     setPreview(null);
+@@ -251,6 +301,15 @@ export function ChainBuilder() {
+             onChange={(e) => setRateText(e.target.value)}
+           />
+         </label>
++        <label>
++          Clock %
++          <input
++            type="text"
++            inputMode="decimal"
++            value={clockText}
++            onChange={(e) => setClockText(e.target.value)}
++          />
++        </label>
+         <button type="button" onClick={onPropose}>
+           Propose
+         </button>
+@@ -425,6 +484,18 @@ export function ChainBuilder() {
+               Byproducts: {itemRateLineText(view.byproducts)}
+             </p>
+           )}
++          {/* Byproduct-feed suggestions (S20 P2) — DISPLAY-ONLY: a surplus
++              byproduct that could feed a proposed stage. No toggle, no routing
++              (that is #105); recomputed per re-propose (pure derivation). */}
++          {byproductSuggestions(preview.proposal, catalog).map((s) => (
++            <p
++              key={`${s.itemId} ${s.toItemId}`}
++              className="chain-builder-suggestion"
++            >
++              {catalog.items[s.itemId]?.displayName ?? s.itemId}{" "}
++              {formatRate(s.rate)}/min could feed {s.toItemName}
++            </p>
++          ))}
+           <div className="chain-builder-actions">
+             <button type="button" onClick={onApply} disabled={view.isEmpty}>
+               Apply
+diff --git a/src/ui/app.css b/src/ui/app.css
+index 12a63fa..4d6ff5d 100644
+--- a/src/ui/app.css
++++ b/src/ui/app.css
+@@ -452,6 +452,16 @@ body {
+   color: var(--fg-muted);
+ }
+ 
++/* S20 P2 — byproduct-feed suggestion lines under the byproducts line
++   (display-only). Muted like the byproducts note, slightly indented to read as
++   a sub-item of it. Existing tokens only; both themes follow (--fg-muted
++   redefines per theme). */
++.chain-builder-suggestion {
++  margin: 2px 0 0 1.2em;
++  color: var(--fg-muted);
++  font-style: italic;
++}
++
+ .chain-builder-actions {
+   display: flex;
+   gap: 8px;
+diff --git a/src/ui/chain-builder-adapter.test.ts b/src/ui/chain-builder-adapter.test.ts
+index b883471..7673163 100644
+--- a/src/ui/chain-builder-adapter.test.ts
++++ b/src/ui/chain-builder-adapter.test.ts
+@@ -25,6 +25,7 @@ import {
+   itemRateLineText,
+   metricsPowerText,
+   proposalMetrics,
++  byproductSuggestions,
+   candidateRecipesFor,
+   candidateRowsFor,
+   swapMachineCountFor,
+@@ -1327,3 +1328,294 @@ describe("S20 P1 — rawInputs cause annotation", () => {
+     expect(view.rawInputs.filter((r) => r.cause === "forced")).toHaveLength(1);
+   });
+ });
++
++// ---------------------------------------------------------------------------
++// S20 P2 — powerAtClockMw: the float overclock-power sum, PER-STAGE with each
++// stage's OWN exponent (non-uniform in the snapshot). null at exactly 100.
++// ---------------------------------------------------------------------------
++
++/** A machine with a SPECIFIC power exponent (the default helper flattens to 1);
++ *  needed to prove the per-stage-exponent sum uses each stage's own exponent. */
++function machineWithExponent(
++  id: string,
++  mw: number,
++  exponent: Fraction,
++): CatalogMachine {
++  return {
++    id,
++    displayName: id,
++    power: { mw: F(mw), variable: false, exponent },
++  };
++}
++
++describe("S20 P2 — proposalMetrics.powerAtClockMw (per-stage exponent)", () => {
++  // Two stages on machines with DIFFERENT exponents: smelter 1.321929, foundry
++  // 1.6 — the two the snapshot actually carries. The float sum must apply EACH
++  // stage's own exponent, never one chain-wide value.
++  const smelterExp = Fraction.of(1321929, 1000000);
++  const foundryExp = Fraction.of(16, 10);
++  const cat = synthCatalog(
++    [item("ingot", "Ingot"), item("plate", "Plate"), item("ore", "Ore")],
++    [
++      machineWithExponent("smelter", 4, smelterExp),
++      machineWithExponent("foundry", 16, foundryExp),
++    ],
++    [
++      crecipe("r_ingot", "Ingot", "smelter", [["ingot", 30]], [["ore", 30]]),
++      crecipe("r_plate", "Plate", "foundry", [["plate", 20]], [["ingot", 45]]),
++    ],
++  );
++  const proposal: ChainProposal = {
++    stages: [
++      stage("plate", "r_plate", 2n, 40),
++      stage("ingot", "r_ingot", 3n, 90),
++    ],
++    links: [{ fromItemId: "ingot", toItemId: "plate" }],
++    rawInputs: [{ itemId: "ore", rate: F(120) }],
++    byproducts: [],
++  };
++
++  it("is null at exactly 100 (the exact powerMw stands, no float)", () => {
++    const m = proposalMetrics(proposal, cat, F(100));
++    expect(m.powerAtClockMw).toBeNull();
++    expect(m.clockPercent.eq(F(100))).toBe(true);
++    // The exact 100%-basis figure is unchanged: 3×4 + 2×16 = 44.
++    expect(m.powerMw.eq(F(44))).toBe(true);
++    // The default arg is also 100 → null.
++    expect(proposalMetrics(proposal, cat).powerAtClockMw).toBeNull();
++  });
++
++  it("at 150 sums each stage with its OWN exponent (not one chain-wide)", () => {
++    const m = proposalMetrics(proposal, cat, F(150));
++    const ratio = 1.5;
++    // Per-stage: smelter 3 × 4 × 1.5^1.321929 + foundry 2 × 16 × 1.5^1.6.
++    const expected =
++      3 * 4 * ratio ** (1321929 / 1000000) + 2 * 16 * ratio ** 1.6;
++    expect(m.powerAtClockMw).not.toBeNull();
++    expect(m.powerAtClockMw!).toBeCloseTo(expected, 6);
++    // The exact 100%-basis figures are UNTOUCHED by the clock.
++    expect(m.powerMw.eq(F(44))).toBe(true);
++    // A single chain-wide exponent (e.g. 1.6 for both) would give a DIFFERENT
++    // number — prove the per-stage sum is not that.
++    const uniform = 3 * 4 * ratio ** 1.6 + 2 * 16 * ratio ** 1.6;
++    expect(m.powerAtClockMw!).not.toBeCloseTo(uniform, 6);
++    // metricsPowerText renders the ≈ float idiom at ≠100.
++    expect(metricsPowerText(m)).toBe(`≈ ${expected.toFixed(1)} MW`);
++  });
++
++  it("renders exact (no ≈) at 100 via metricsPowerText", () => {
++    const m = proposalMetrics(proposal, cat, F(100));
++    expect(metricsPowerText(m)).toBe("44 MW");
++  });
++});
++
++// ---------------------------------------------------------------------------
++// S20 P2 — byproductSuggestions: aggregate-then-match, unique on (itemId,
++// toItemId) by construction. Match found / none / two-producers-one-consumer /
++// one-byproduct-two-consumers.
++// ---------------------------------------------------------------------------
++
++describe("S20 P2 — byproductSuggestions", () => {
++  it("emits a suggestion when a byproduct matches another stage's recipe input", () => {
++    // fuel stage makes a resin byproduct; a rubber stage consumes resin.
++    const cat = synthCatalog(
++      [
++        item("fuel", "Fuel"),
++        item("resin", "Resin"),
++        item("rubber", "Rubber"),
++        item("oil", "Oil"),
++      ],
++      [machine("refinery", 30)],
++      [
++        crecipe(
++          "r_fuel",
++          "Fuel",
++          "refinery",
++          [
++            ["fuel", 20],
++            ["resin", 10],
++          ],
++          [["oil", 30]],
++        ),
++        crecipe(
++          "r_rubber",
++          "Rubber",
++          "refinery",
++          [["rubber", 20]],
++          [["resin", 30]],
++        ),
++      ],
++    );
++    const proposal: ChainProposal = {
++      stages: [
++        stage("fuel", "r_fuel", 1n, 20),
++        stage("rubber", "r_rubber", 1n, 20),
++      ],
++      links: [],
++      byproducts: [{ itemId: "resin", rate: F(10) }],
++      rawInputs: [{ itemId: "oil", rate: F(30) }],
++    };
++    const s = byproductSuggestions(proposal, cat);
++    expect(s).toEqual([
++      {
++        itemId: "resin",
++        rate: F(10),
++        toItemId: "rubber",
++        toItemName: "Rubber",
++      },
++    ]);
++  });
++
++  it("returns empty when no proposed stage consumes the byproduct", () => {
++    const cat = synthCatalog(
++      [item("fuel", "Fuel"), item("resin", "Resin"), item("oil", "Oil")],
++      [machine("refinery", 30)],
++      [
++        crecipe(
++          "r_fuel",
++          "Fuel",
++          "refinery",
++          [
++            ["fuel", 20],
++            ["resin", 10],
++          ],
++          [["oil", 30]],
++        ),
++      ],
++    );
++    const proposal: ChainProposal = {
++      stages: [stage("fuel", "r_fuel", 1n, 20)],
++      links: [],
++      byproducts: [{ itemId: "resin", rate: F(10) }],
++      rawInputs: [{ itemId: "oil", rate: F(30) }],
++    };
++    expect(byproductSuggestions(proposal, cat)).toEqual([]);
++  });
++
++  it("TWO producers of one byproduct toward one consumer → ONE summed suggestion, keys unique", () => {
++    // Two stages each emit resin as a byproduct (the byproducts array has NO
++    // per-item merge — two entries for resin). One rubber stage consumes resin.
++    // Aggregate-then-match must sum the rates into ONE suggestion.
++    const cat = synthCatalog(
++      [
++        item("fuel", "Fuel"),
++        item("plastic", "Plastic"),
++        item("resin", "Resin"),
++        item("rubber", "Rubber"),
++        item("oil", "Oil"),
++      ],
++      [machine("refinery", 30)],
++      [
++        crecipe(
++          "r_fuel",
++          "Fuel",
++          "refinery",
++          [
++            ["fuel", 20],
++            ["resin", 10],
++          ],
++          [["oil", 30]],
++        ),
++        crecipe(
++          "r_plastic",
++          "Plastic",
++          "refinery",
++          [
++            ["plastic", 20],
++            ["resin", 5],
++          ],
++          [["oil", 30]],
++        ),
++        crecipe(
++          "r_rubber",
++          "Rubber",
++          "refinery",
++          [["rubber", 20]],
++          [["resin", 30]],
++        ),
++      ],
++    );
++    const proposal: ChainProposal = {
++      stages: [
++        stage("fuel", "r_fuel", 1n, 20),
++        stage("plastic", "r_plastic", 1n, 20),
++        stage("rubber", "r_rubber", 1n, 20),
++      ],
++      links: [],
++      // Two resin entries, no merge (as the core emits them).
++      byproducts: [
++        { itemId: "resin", rate: F(10) },
++        { itemId: "resin", rate: F(5) },
++      ],
++      rawInputs: [{ itemId: "oil", rate: F(60) }],
++    };
++    const s = byproductSuggestions(proposal, cat);
++    // ONE suggestion with the EXACT summed rate 10 + 5 = 15.
++    expect(s).toHaveLength(1);
++    expect(s[0]!.itemId).toBe("resin");
++    expect(s[0]!.toItemId).toBe("rubber");
++    expect(s[0]!.rate.eq(F(15))).toBe(true);
++    // The (itemId, toItemId) key is unique.
++    const keys = s.map((x) => `${x.itemId} ${x.toItemId}`);
++    expect(new Set(keys).size).toBe(keys.length);
++  });
++
++  it("ONE byproduct feeding TWO consumers → two suggestions with distinct toItemId keys", () => {
++    // resin byproduct from fuel; TWO stages (rubber + plastic) consume resin.
++    const cat = synthCatalog(
++      [
++        item("fuel", "Fuel"),
++        item("resin", "Resin"),
++        item("rubber", "Rubber"),
++        item("plastic", "Plastic"),
++        item("oil", "Oil"),
++      ],
++      [machine("refinery", 30)],
++      [
++        crecipe(
++          "r_fuel",
++          "Fuel",
++          "refinery",
++          [
++            ["fuel", 20],
++            ["resin", 10],
++          ],
++          [["oil", 30]],
++        ),
++        crecipe(
++          "r_rubber",
++          "Rubber",
++          "refinery",
++          [["rubber", 20]],
++          [["resin", 30]],
++        ),
++        crecipe(
++          "r_plastic",
++          "Plastic",
++          "refinery",
++          [["plastic", 20]],
++          [["resin", 20]],
++        ),
++      ],
++    );
++    const proposal: ChainProposal = {
++      stages: [
++        stage("fuel", "r_fuel", 1n, 20),
++        stage("plastic", "r_plastic", 1n, 20),
++        stage("rubber", "r_rubber", 1n, 20),
++      ],
++      links: [],
++      byproducts: [{ itemId: "resin", rate: F(10) }],
++      rawInputs: [{ itemId: "oil", rate: F(30) }],
++    };
++    const s = byproductSuggestions(proposal, cat);
++    // Two suggestions, same itemId + rate, DISTINCT toItemId (the stable key).
++    expect(s).toHaveLength(2);
++    expect(s.every((x) => x.itemId === "resin" && x.rate.eq(F(10)))).toBe(true);
++    const toIds = s.map((x) => x.toItemId).sort();
++    expect(toIds).toEqual(["plastic", "rubber"]);
++    // Unique on (itemId, toItemId).
++    const keys = s.map((x) => `${x.itemId} ${x.toItemId}`);
++    expect(new Set(keys).size).toBe(keys.length);
++  });
++});
+diff --git a/src/ui/chain-builder-adapter.ts b/src/ui/chain-builder-adapter.ts
+index 7987659..fcc2849 100644
+--- a/src/ui/chain-builder-adapter.ts
++++ b/src/ui/chain-builder-adapter.ts
+@@ -43,6 +43,9 @@ export interface ProposeOptions {
+   overrides?: ReadonlyMap<string, string>;
+   rawItemIds?: ReadonlySet<string>;
+   excludedMachineIds?: Iterable<string>;
++  /** The global overclock target (S20 P2). Absent ⇒ the core's 100% default,
++   *  byte-identical to pre-P2. Threaded to `proposeChain`'s 7th param. */
++  clockPercent?: Fraction;
+ }
+ 
+ /**
+@@ -66,6 +69,7 @@ export function proposeChainForCatalog(
+     options.excludedMachineIds ?? EXCLUDED_MACHINE_IDS,
+     options.overrides ?? new Map(),
+     options.rawItemIds ?? new Set(),
++    options.clockPercent ?? Fraction.from(100),
+   );
+ }
+ 
+@@ -217,6 +221,9 @@ function depthsFromTarget(
+ export interface PreviewOptions {
+   excludedMachineIds?: Iterable<string>;
+   rawItemIds?: ReadonlySet<string>;
++  /** The proposal's overclock target (S20 P2), threaded to `proposalMetrics` so
++   *  the cost sheet can render `Σ POWER ≈ N MW` at ≠100. Absent ⇒ 100 (exact). */
++  clockPercent?: Fraction;
+ }
+ 
+ /**
+@@ -327,7 +334,11 @@ export function toProposalPreview(
+       rate: formatRate(b.rate),
+     })),
+     isEmpty: proposal.stages.length === 0,
+-    metrics: proposalMetrics(proposal, catalog),
++    metrics: proposalMetrics(
++      proposal,
++      catalog,
++      options.clockPercent ?? Fraction.from(100),
++    ),
+   };
+ }
+ 
+@@ -342,14 +353,20 @@ export function itemRateLineText(rows: ItemRateRow[]): string {
+ }
+ 
+ /**
+- * The cost sheet's Σ POWER line: "<n> MW" exact (the 100%-clock exact branch —
+- * proposal stages are always 100% clock, so `formatRate` renders the Fraction
+- * verbatim), with a bare " (varies)" flag when any machine is variable-power.
+- * The flag is a warning, not the bounds range (the compare rows carry the full
+- * "(varies A–B MW)"; the sheet stays compact). S20 P0 Axis 4.
++ * The cost sheet's Σ POWER line. At 100% clock (`powerAtClockMw === null`):
++ * "<n> MW" EXACT — `formatRate` renders the Fraction verbatim, unchanged from
++ * S20 P0. At any other clock (S20 P2): "≈ <n> MW" — the per-stage-exponent
++ * float sum with the `≈` honesty prefix (the S6 discipline: overclock power is
++ * irrational, so it is approximated and LABELED). The " (varies)" flag rides
++ * either branch when any machine is variable-power (a warning, not the bounds
++ * range — the compare rows carry the full "(varies A–B MW)").
+  */
+ export function metricsPowerText(metrics: ProposalMetrics): string {
+-  return `${formatRate(metrics.powerMw)} MW${metrics.powerVaries ? " (varies)" : ""}`;
++  const varies = metrics.powerVaries ? " (varies)" : "";
++  if (metrics.powerAtClockMw === null) {
++    return `${formatRate(metrics.powerMw)} MW${varies}`;
++  }
++  return `≈ ${metrics.powerAtClockMw.toFixed(1)} MW${varies}`;
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -543,6 +560,17 @@ export function excludableMachines(
+  * A stage whose recipe/machine/power does not resolve contributes nothing to the
+  * power sums (defensive — a proposal stage always resolves in practice); its
+  * machineCount still counts.
++ *
++ * `clockPercent` + `powerAtClockMw` (S20 P2): `powerMw`/`minMw`/`maxMw` stay the
++ * EXACT 100%-basis figures regardless of clock (they are the exact-rational
++ * envelope). `clockPercent` records the proposal's overclock target;
++ * `powerAtClockMw` is `null` at exactly 100 (no float needed — the exact figure
++ * stands) and, at any other clock, the FLOAT sum
++ * `Σ over stages of machineCount × fractionToNumber(power.mw) ×
++ * (clock/100)^fractionToNumber(power.exponent)` — computed PER STAGE with THAT
++ * stage's OWN exponent (the snapshot exponents are non-uniform: 1.321929 vs
++ * 1.6), NOT one chain-wide exponent. This is the single approved float boundary
++ * in the adapter; `subtreePowerText` is unusable here (it flattens exponent = 1).
+  */
+ export interface ProposalMetrics {
+   powerMw: Fraction;
+@@ -551,11 +579,24 @@ export interface ProposalMetrics {
+   maxMw: Fraction;
+   machineCount: bigint;
+   rawInputs: ItemRate[];
++  /** The proposal's global overclock target (S20 P2); 100 on the default path. */
++  clockPercent: Fraction;
++  /** The float Σ power at `clockPercent` (per-stage exponent); `null` at 100 —
++   *  the exact `powerMw` is the truthful figure there, no approximation needed. */
++  powerAtClockMw: number | null;
++}
++
++/** Exact Fraction → JS number, confined to the ONE adapter float boundary
++ *  (`powerAtClockMw`). Mirrors advice.ts's module-private helper; never used in
++ *  any count/rate decision — those stay exact. */
++function fractionToNumber(f: Fraction): number {
++  return Number(f.num) / Number(f.den);
+ }
+ 
+ export function proposalMetrics(
+   proposal: ChainProposal,
+   catalog: Catalog,
++  clockPercent: Fraction = Fraction.from(100),
+ ): ProposalMetrics {
+   let powerMw = Fraction.from(0);
+   let powerVaries = false;
+@@ -566,6 +607,12 @@ export function proposalMetrics(
+   let minMw = Fraction.from(0);
+   let maxMw = Fraction.from(0);
+   let machineCount = 0n;
++  // The float overclock-power sum (Axis 2). Only computed at clock ≠ 100 — at
++  // 100 the factor is 1 for every exponent, so the exact powerMw is the answer
++  // and powerAtClockMw stays null (no float leaks on the default path).
++  const atClock = !clockPercent.eq(Fraction.from(100));
++  const clockRatio = fractionToNumber(clockPercent) / 100;
++  let powerAtClockMw = 0;
+   for (const stage of proposal.stages) {
+     machineCount += stage.machineCount;
+     const machineId = catalog.recipes[stage.recipeId]?.machineId;
+@@ -577,6 +624,13 @@ export function proposalMetrics(
+     if (power.variable) powerVaries = true;
+     minMw = minMw.add(count.mul(power.minMw ?? power.mw));
+     maxMw = maxMw.add(count.mul(power.maxMw ?? power.mw));
++    if (atClock) {
++      // Per-stage OWN exponent — the snapshot exponents are non-uniform, so a
++      // single chain-wide exponent would be silently wrong for the minority.
++      const factor = clockRatio ** fractionToNumber(power.exponent);
++      powerAtClockMw +=
++        fractionToNumber(count) * fractionToNumber(power.mw) * factor;
++    }
+   }
+   return {
+     powerMw,
+@@ -585,9 +639,85 @@ export function proposalMetrics(
+     maxMw,
+     machineCount,
+     rawInputs: proposal.rawInputs,
++    clockPercent,
++    powerAtClockMw: atClock ? powerAtClockMw : null,
+   };
+ }
+ 
++/**
++ * One byproduct-feed suggestion (S20 P2, Axis 4) — DISPLAY-ONLY: a proposed
++ * stage's surplus byproduct `itemId` (at aggregate `rate`) could feed the
++ * proposed stage that produces `toItemId` (named `toItemName`), whose recipe
++ * lists the byproduct among its inputs. No source-stage field — that was
++ * routing payload, and routing is #105's, not P2's. The list is UNIQUE on
++ * `(itemId, toItemId)` by construction (see `byproductSuggestions`), so that
++ * pair is the stable render key.
++ */
++export interface ByproductSuggestion {
++  itemId: string;
++  rate: Fraction;
++  toItemId: string;
++  toItemName: string;
++}
++
++/**
++ * Scan a proposal for byproduct → consumer feed suggestions (Axis 4), in two
++ * exact steps:
++ *
++ * 1. AGGREGATE per item — `ChainProposal.byproducts` is emitted
++ *    one-entry-per-(producing-stage, non-primary-output) with NO per-item merge
++ *    (chain-builder.ts), so the same byproduct B can appear across multiple
++ *    entries; sum their rates EXACTLY (Fraction add) into one total per distinct
++ *    B. The summed total is also the truthful display figure.
++ * 2. MATCH consumers — for each aggregated B, find every proposed stage whose
++ *    RECIPE INPUTS include B, and emit ONE suggestion per (B, consumer) pair.
++ *
++ * The output is therefore UNIQUE on `(itemId, toItemId)` by construction: two
++ * producers of one B toward one consumer pre-aggregate into a single entry; one
++ * B feeding two consumers yields two entries differing only in `toItemId`. A
++ * consumer stage whose recipe/inputs do not resolve is skipped (defensive).
++ * Deterministic: byproducts arrive item-sorted, and consumers are matched in
++ * the proposal's (id-sorted) stage order.
++ *
++ * PURE display derivation — no toggle, no proposal mutation, no store surface,
++ * no apply payload. Recomputed per re-propose (nothing is kept, so nothing can
++ * go stale).
++ */
++export function byproductSuggestions(
++  proposal: ChainProposal,
++  catalog: Catalog,
++): ByproductSuggestion[] {
++  // Step 1: aggregate byproduct rates per distinct item (exact Fraction sum).
++  // A Map preserves first-seen order; the byproducts array is already item-
++  // sorted upstream, so this stays deterministic.
++  const totals = new Map<string, Fraction>();
++  for (const bp of proposal.byproducts) {
++    const prev = totals.get(bp.itemId);
++    totals.set(bp.itemId, prev === undefined ? bp.rate : prev.add(bp.rate));
++  }
++
++  // Step 2: match each aggregated byproduct to every proposed stage whose recipe
++  // inputs include it; one suggestion per (byproduct, consumer).
++  const itemName = (id: string): string => catalog.items[id]?.displayName ?? id;
++  const suggestions: ByproductSuggestion[] = [];
++  for (const [itemId, rate] of totals) {
++    for (const stage of proposal.stages) {
++      const recipe = catalog.recipes[stage.recipeId];
++      if (recipe === undefined) continue; // defensive: unresolved recipe.
++      // A stage never feeds its own primary output back to itself, and the
++      // byproduct-of-B-consumed-by-B'-stage match is on RECIPE INPUTS only.
++      if (!recipe.inputs.some((i) => i.itemId === itemId)) continue;
++      suggestions.push({
++        itemId,
++        rate,
++        toItemId: stage.itemId,
++        toItemName: itemName(stage.itemId),
++      });
++    }
++  }
++  return suggestions;
++}
++
+ /**
+  * The subtree power total as the labeled display string — reusing
+  * `stagePowerText` (the S6 discipline) at 100% clock, so the exact-Fraction

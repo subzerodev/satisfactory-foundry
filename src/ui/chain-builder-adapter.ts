@@ -43,6 +43,9 @@ export interface ProposeOptions {
   overrides?: ReadonlyMap<string, string>;
   rawItemIds?: ReadonlySet<string>;
   excludedMachineIds?: Iterable<string>;
+  /** The global overclock target (S20 P2). Absent ⇒ the core's 100% default,
+   *  byte-identical to pre-P2. Threaded to `proposeChain`'s 7th param. */
+  clockPercent?: Fraction;
 }
 
 /**
@@ -66,6 +69,7 @@ export function proposeChainForCatalog(
     options.excludedMachineIds ?? EXCLUDED_MACHINE_IDS,
     options.overrides ?? new Map(),
     options.rawItemIds ?? new Set(),
+    options.clockPercent ?? Fraction.from(100),
   );
 }
 
@@ -217,6 +221,9 @@ function depthsFromTarget(
 export interface PreviewOptions {
   excludedMachineIds?: Iterable<string>;
   rawItemIds?: ReadonlySet<string>;
+  /** The proposal's overclock target (S20 P2), threaded to `proposalMetrics` so
+   *  the cost sheet can render `Σ POWER ≈ N MW` at ≠100. Absent ⇒ 100 (exact). */
+  clockPercent?: Fraction;
 }
 
 /**
@@ -327,7 +334,11 @@ export function toProposalPreview(
       rate: formatRate(b.rate),
     })),
     isEmpty: proposal.stages.length === 0,
-    metrics: proposalMetrics(proposal, catalog),
+    metrics: proposalMetrics(
+      proposal,
+      catalog,
+      options.clockPercent ?? Fraction.from(100),
+    ),
   };
 }
 
@@ -342,14 +353,20 @@ export function itemRateLineText(rows: ItemRateRow[]): string {
 }
 
 /**
- * The cost sheet's Σ POWER line: "<n> MW" exact (the 100%-clock exact branch —
- * proposal stages are always 100% clock, so `formatRate` renders the Fraction
- * verbatim), with a bare " (varies)" flag when any machine is variable-power.
- * The flag is a warning, not the bounds range (the compare rows carry the full
- * "(varies A–B MW)"; the sheet stays compact). S20 P0 Axis 4.
+ * The cost sheet's Σ POWER line. At 100% clock (`powerAtClockMw === null`):
+ * "<n> MW" EXACT — `formatRate` renders the Fraction verbatim, unchanged from
+ * S20 P0. At any other clock (S20 P2): "≈ <n> MW" — the per-stage-exponent
+ * float sum with the `≈` honesty prefix (the S6 discipline: overclock power is
+ * irrational, so it is approximated and LABELED). The " (varies)" flag rides
+ * either branch when any machine is variable-power (a warning, not the bounds
+ * range — the compare rows carry the full "(varies A–B MW)").
  */
 export function metricsPowerText(metrics: ProposalMetrics): string {
-  return `${formatRate(metrics.powerMw)} MW${metrics.powerVaries ? " (varies)" : ""}`;
+  const varies = metrics.powerVaries ? " (varies)" : "";
+  if (metrics.powerAtClockMw === null) {
+    return `${formatRate(metrics.powerMw)} MW${varies}`;
+  }
+  return `≈ ${metrics.powerAtClockMw.toFixed(1)} MW${varies}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -543,6 +560,17 @@ export function excludableMachines(
  * A stage whose recipe/machine/power does not resolve contributes nothing to the
  * power sums (defensive — a proposal stage always resolves in practice); its
  * machineCount still counts.
+ *
+ * `clockPercent` + `powerAtClockMw` (S20 P2): `powerMw`/`minMw`/`maxMw` stay the
+ * EXACT 100%-basis figures regardless of clock (they are the exact-rational
+ * envelope). `clockPercent` records the proposal's overclock target;
+ * `powerAtClockMw` is `null` at exactly 100 (no float needed — the exact figure
+ * stands) and, at any other clock, the FLOAT sum
+ * `Σ over stages of machineCount × fractionToNumber(power.mw) ×
+ * (clock/100)^fractionToNumber(power.exponent)` — computed PER STAGE with THAT
+ * stage's OWN exponent (the snapshot exponents are non-uniform: 1.321929 vs
+ * 1.6), NOT one chain-wide exponent. This is the single approved float boundary
+ * in the adapter; `subtreePowerText` is unusable here (it flattens exponent = 1).
  */
 export interface ProposalMetrics {
   powerMw: Fraction;
@@ -551,11 +579,24 @@ export interface ProposalMetrics {
   maxMw: Fraction;
   machineCount: bigint;
   rawInputs: ItemRate[];
+  /** The proposal's global overclock target (S20 P2); 100 on the default path. */
+  clockPercent: Fraction;
+  /** The float Σ power at `clockPercent` (per-stage exponent); `null` at 100 —
+   *  the exact `powerMw` is the truthful figure there, no approximation needed. */
+  powerAtClockMw: number | null;
+}
+
+/** Exact Fraction → JS number, confined to the ONE adapter float boundary
+ *  (`powerAtClockMw`). Mirrors advice.ts's module-private helper; never used in
+ *  any count/rate decision — those stay exact. */
+function fractionToNumber(f: Fraction): number {
+  return Number(f.num) / Number(f.den);
 }
 
 export function proposalMetrics(
   proposal: ChainProposal,
   catalog: Catalog,
+  clockPercent: Fraction = Fraction.from(100),
 ): ProposalMetrics {
   let powerMw = Fraction.from(0);
   let powerVaries = false;
@@ -566,6 +607,12 @@ export function proposalMetrics(
   let minMw = Fraction.from(0);
   let maxMw = Fraction.from(0);
   let machineCount = 0n;
+  // The float overclock-power sum (Axis 2). Only computed at clock ≠ 100 — at
+  // 100 the factor is 1 for every exponent, so the exact powerMw is the answer
+  // and powerAtClockMw stays null (no float leaks on the default path).
+  const atClock = !clockPercent.eq(Fraction.from(100));
+  const clockRatio = fractionToNumber(clockPercent) / 100;
+  let powerAtClockMw = 0;
   for (const stage of proposal.stages) {
     machineCount += stage.machineCount;
     const machineId = catalog.recipes[stage.recipeId]?.machineId;
@@ -577,6 +624,13 @@ export function proposalMetrics(
     if (power.variable) powerVaries = true;
     minMw = minMw.add(count.mul(power.minMw ?? power.mw));
     maxMw = maxMw.add(count.mul(power.maxMw ?? power.mw));
+    if (atClock) {
+      // Per-stage OWN exponent — the snapshot exponents are non-uniform, so a
+      // single chain-wide exponent would be silently wrong for the minority.
+      const factor = clockRatio ** fractionToNumber(power.exponent);
+      powerAtClockMw +=
+        fractionToNumber(count) * fractionToNumber(power.mw) * factor;
+    }
   }
   return {
     powerMw,
@@ -585,7 +639,83 @@ export function proposalMetrics(
     maxMw,
     machineCount,
     rawInputs: proposal.rawInputs,
+    clockPercent,
+    powerAtClockMw: atClock ? powerAtClockMw : null,
   };
+}
+
+/**
+ * One byproduct-feed suggestion (S20 P2, Axis 4) — DISPLAY-ONLY: a proposed
+ * stage's surplus byproduct `itemId` (at aggregate `rate`) could feed the
+ * proposed stage that produces `toItemId` (named `toItemName`), whose recipe
+ * lists the byproduct among its inputs. No source-stage field — that was
+ * routing payload, and routing is #105's, not P2's. The list is UNIQUE on
+ * `(itemId, toItemId)` by construction (see `byproductSuggestions`), so that
+ * pair is the stable render key.
+ */
+export interface ByproductSuggestion {
+  itemId: string;
+  rate: Fraction;
+  toItemId: string;
+  toItemName: string;
+}
+
+/**
+ * Scan a proposal for byproduct → consumer feed suggestions (Axis 4), in two
+ * exact steps:
+ *
+ * 1. AGGREGATE per item — `ChainProposal.byproducts` is emitted
+ *    one-entry-per-(producing-stage, non-primary-output) with NO per-item merge
+ *    (chain-builder.ts), so the same byproduct B can appear across multiple
+ *    entries; sum their rates EXACTLY (Fraction add) into one total per distinct
+ *    B. The summed total is also the truthful display figure.
+ * 2. MATCH consumers — for each aggregated B, find every proposed stage whose
+ *    RECIPE INPUTS include B, and emit ONE suggestion per (B, consumer) pair.
+ *
+ * The output is therefore UNIQUE on `(itemId, toItemId)` by construction: two
+ * producers of one B toward one consumer pre-aggregate into a single entry; one
+ * B feeding two consumers yields two entries differing only in `toItemId`. A
+ * consumer stage whose recipe/inputs do not resolve is skipped (defensive).
+ * Deterministic: byproducts arrive item-sorted, and consumers are matched in
+ * the proposal's (id-sorted) stage order.
+ *
+ * PURE display derivation — no toggle, no proposal mutation, no store surface,
+ * no apply payload. Recomputed per re-propose (nothing is kept, so nothing can
+ * go stale).
+ */
+export function byproductSuggestions(
+  proposal: ChainProposal,
+  catalog: Catalog,
+): ByproductSuggestion[] {
+  // Step 1: aggregate byproduct rates per distinct item (exact Fraction sum).
+  // A Map preserves first-seen order; the byproducts array is already item-
+  // sorted upstream, so this stays deterministic.
+  const totals = new Map<string, Fraction>();
+  for (const bp of proposal.byproducts) {
+    const prev = totals.get(bp.itemId);
+    totals.set(bp.itemId, prev === undefined ? bp.rate : prev.add(bp.rate));
+  }
+
+  // Step 2: match each aggregated byproduct to every proposed stage whose recipe
+  // inputs include it; one suggestion per (byproduct, consumer).
+  const itemName = (id: string): string => catalog.items[id]?.displayName ?? id;
+  const suggestions: ByproductSuggestion[] = [];
+  for (const [itemId, rate] of totals) {
+    for (const stage of proposal.stages) {
+      const recipe = catalog.recipes[stage.recipeId];
+      if (recipe === undefined) continue; // defensive: unresolved recipe.
+      // A stage never feeds its own primary output back to itself, and the
+      // byproduct-of-B-consumed-by-B'-stage match is on RECIPE INPUTS only.
+      if (!recipe.inputs.some((i) => i.itemId === itemId)) continue;
+      suggestions.push({
+        itemId,
+        rate,
+        toItemId: stage.itemId,
+        toItemName: itemName(stage.itemId),
+      });
+    }
+  }
+  return suggestions;
 }
 
 /**
