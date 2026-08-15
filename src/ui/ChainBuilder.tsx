@@ -38,6 +38,7 @@ import {
 } from "./chain-builder-adapter.ts";
 import type {
   ProposalPreview,
+  PreviewRow,
   ConstrainedLever,
 } from "./chain-builder-adapter.ts";
 import type { Catalog, CatalogRecipe } from "../data/types.ts";
@@ -85,10 +86,26 @@ export function parseClockText(
   return { ok: true, value };
 }
 
+/** The cost sheet's OUTPUT total: the target row's actual output, with the
+ *  requested preview snapshot shown only when integer machine counts overshoot. */
+export function totalOutputText(
+  rows: Pick<PreviewRow, "depth" | "outputRate">[],
+  requestedRate: string,
+): string {
+  const target = rows.find((r) => r.depth === 0);
+  if (target === undefined) return "—";
+  const actual = `${target.outputRate}/min`;
+  return target.outputRate === requestedRate
+    ? actual
+    : `${actual} (asked ${requestedRate}/min)`;
+}
+
 /** The preview + the proposal it came from (Apply hands the proposal to the store). */
 interface Preview {
   proposal: ChainProposal;
   view: ProposalPreview;
+  /** The requested rate this preview was solved against, formatted exactly. */
+  rateText: string;
   /**
    * The raw clock text the proposal was SOLVED at. Apply seeds from this
    * snapshot, never the live input: clock (like Rate) does not re-propose on
@@ -228,6 +245,7 @@ export function ChainBuilder() {
         // The UNGATED world, for the cause split + the lever matrix.
         ungatedCatalog: cat,
       }),
+      rateText: formatRate(parsed.value),
       clockText,
       gated: gatedCat,
     });
@@ -465,6 +483,10 @@ export function ChainBuilder() {
                 <dd>
                   {naturalRaws.length > 0 ? itemRateLineText(naturalRaws) : "—"}
                 </dd>
+              </div>
+              <div>
+                <dt>OUTPUT</dt>
+                <dd>{totalOutputText(view.rows, preview.rateText)}</dd>
               </div>
             </dl>
           )}
