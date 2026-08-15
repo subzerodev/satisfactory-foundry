@@ -56,14 +56,15 @@
 - **P2 (#106) — branded `GatedCatalog`**: **CLOSED won't-do** 2026-08-15, on
   measurement rather than judgement (report + harness in
   `features/branded-gated-catalog/`). Ran after P1 landed, so the count is of
-  the consolidated surface the blocker was there to produce. Of the ten places
-  in ChainBuilder where the gated/ungated swap compiles, **eight already turn
-  `ChainBuilder.gating.test.tsx` red**; of the two that do not, one
-  (`byproductSuggestions`) is provably inert and the other (`recipeLabel` in the
-  recovery `<select>`) is a real but untested gap, split to **#117**. So a brand
-  would have closed nothing the suite misses, while adding an exported type pair
-  carrying a measured hole (`preview?.gated ?? catalog` subtype-reduces past a
-  negative brand). Ships as one `gateCatalog` doc comment recording all of it.
+  the consolidated surface the blocker was there to produce. Of the fifteen
+  value-passing places in ChainBuilder where the gated/ungated swap compiles,
+  **nine already turn `ChainBuilder.gating.test.tsx` red**; of the six that do
+  not, one (`byproductSuggestions`) is provably inert, one (`recipeLabel` in the
+  recovery `<select>`) is a real but untested gap split to **#117**, and four
+  `repropose` callers are unproven gaps split to **#118**. The measured
+  five-seam brand would have closed nothing the suite misses; a sixth
+  `recipeLabel` narrowing could catch #117 but not #118. Ships as one
+  `gateCatalog` doc comment recording why the type stays out.
   Three design rounds, all NEEDS_REWORK ×2 — the reviewers killed two successive
   justifications, the second time by proving my headline "uncovered seam" was
   behaviour-preserving.

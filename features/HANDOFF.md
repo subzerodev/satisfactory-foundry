@@ -12,11 +12,12 @@ Repo-local MCP is `mcp__forgejo-satisfactory-foundry__*` (bound via `.mcp.json`)
 
 ## STOP — read these constraints before doing anything
 
-1. **All-Claude review roster. NEVER dispatch codex.** Standing user directive.
-   The correctness pair is `code-reviewer` + `adversarial-reviewer` (both
-   hard-gate); the parsimony lens is `claude-simplify-reviewer`, once,
-   post-convergence. Relay every verdict tagged
-   `(degraded: same-vendor, third-party reviewer unavailable)`.
+1. **Reviewer roster for this pickup:** copy the existing Claude reviewer agent
+   definitions into fresh Codex sub-agents; do not invoke the Claude CLI. The
+   correctness pair is `code-reviewer` + `adversarial-reviewer` (both hard-gate);
+   the parsimony lens follows `claude-simplify-reviewer`, once, post-convergence.
+   Relay every verdict tagged `(degraded: same-vendor, third-party reviewer
+   unavailable)`.
 2. **The GitHub mirror is deploy-only and needs Michael's EXPLICIT approval,
    every time.** `github` remote → `https://github.com/subzerodev/satisfactory-foundry.git`,
    HTTP+broker, **never SSH**, and **only `main`**. Do not push it because a
@@ -46,22 +47,22 @@ Current trunk (`develop`) test count: **912**, all green.
 | P3 explicit byproduct routing | #105 | **NOT STARTED** — the arc's largest design |
 
 Also open, outside the arc's four: **#115** (AltCompare tier-locked labels),
-**#111** (total output display), **#117** (new, see below).
+**#111** (total output display), **#117** and **#118** (new, see below).
 
 ### IMMEDIATE: `feature/s21-p2-wontdo` is committed but NOT reviewed-clean
 
-**This branch is NOT merged and must NOT be merged as-is.** The diff-stage
-review was at round 2 of the correctness gate when the session ended; I stopped
-both reviewers mid-flight, so **their r2 verdicts do not exist**. The r1 diff
-verdicts were `NEEDS_REWORK` ×2 and every finding has been folded — but a fold
-requires re-running the pair, and that did not happen.
+**This branch is NOT merged and must NOT be merged as-is.** The original
+diff-stage r2 run was stopped mid-flight, so those verdicts did not exist. The
+fresh Codex-subagent reruns have since happened: r2a folded stale handoff
+wording; r2b found the count still missed five `repropose(catalog, ...)` callers.
+Those five are now in the harness as R0-R4, with R4 red and R0-R3 split to #118.
 
 **To finish it:**
 
 1. `git checkout feature/s21-p2-wontdo`
 2. Dispatch `code-reviewer` + `adversarial-reviewer` in parallel on
    `features/branded-gated-catalog/diff-r2-prompt.md` (already written, already
-   delta-scoped to the r1 folds).
+   delta-scoped to the r1/r2 folds).
 3. Fold or reject-with-counter-evidence; re-run the pair until both are
    APPROVED / APPROVED_WITH_NITS.
 4. Then `claude-simplify-reviewer` once, disposition its findings.
@@ -70,20 +71,21 @@ requires re-running the pair, and that did not happen.
 6. **No changelog entry** — there is no behaviour change. (`docs/foundry-changelog.md`
    is deploy-facing prose for Michael to paste; a doc-comment change earns nothing.)
 
-**Beware:** the headline count in that comment has been **wrong twice** and both
-r1 reviewers caught it both times. It currently claims *ten* places in
-`ChainBuilder.tsx` where the gated/ungated swap compiles and *eight* that turn
+**Beware:** the headline count in that comment has been **wrong three times** and
+reviewers caught it every time. It currently claims *fifteen value-passing places*
+in `ChainBuilder.tsx` where the gated/ungated swap compiles and *nine* that turn
 `ChainBuilder.gating.test.tsx` red. Re-sweep it yourself; do not trust the
 harness rows or this file.
 
 ### What #106 concluded, and why
 
-Short version: **a branded type would close nothing the test suite misses**, so
-the ticket closes won't-do and ships one `gateCatalog` doc comment recording the
-measurement.
+Short version: **the measured five-seam brand would close nothing the test suite
+misses**, and a broader `recipeLabel` narrowing would close only #117 while
+leaving #118 untouched. The ticket closes won't-do and ships one `gateCatalog`
+doc comment recording the measurement.
 
 Full report + reproducible harness: `features/branded-gated-catalog/`.
-- `brainstorm-spec.md` — the report (v4), including three review rounds and every
+- `brainstorm-spec.md` — the report (v6), including the review rounds and every
   refuted claim. The wrong turns are the reusable part; do not delete them.
 - `seam-detection.sh` — applies each one-token slip, runs `tsc -b` + the full
   suite, restores. Run it before trusting any claim in the report.
@@ -94,7 +96,7 @@ Full report + reproducible harness: `features/branded-gated-catalog/`.
 NOT reject `preview?.gated ?? catalog` — TypeScript subtype-reduces that union to
 plain `Catalog`. Measured. That kills the obvious "just brand it" fix.
 
-### #117 — a real bug found by the #106 measurement
+### #117 / #118 — untested gaps found by the #106 measurement
 
 `ChainBuilder.tsx` renders the constrained-recovery `<select>` options via
 `recipeLabel(preview.gated, …)`. Swap that to the ungated `catalog` and **all 912
@@ -107,8 +109,17 @@ produced), **this one has no inertness argument**. Task 1 on #117 is to settle
 whether it is reachable; "it turns out inert, close it with the trace recorded"
 is a valid outcome, not a failure.
 
-#117 has **no milestone set** — assign it when you pick it up.
-**#115 also has no milestone.**
+#117 is assigned to Stage 21, linked under #108, and queued before #118. A
+`recipeLabel(catalog: GatedCatalog, ...)` type annotation could catch this one
+slip, but #117 still starts by deciding reachability/inertness because a
+pass-either-way label test is easy to write here.
+
+#118 is already created, assigned to Stage 21, linked under #108, and queued
+after #117. Its first task is the same shape: settle whether the four green
+`repropose` slips are reachable or inert. The measured negative brand does not
+catch them because `preview?.gated ?? catalog` launders back to plain `Catalog`.
+
+**#115 still has no milestone** — assign it to Stage 21 when you pick it up.
 
 ---
 
@@ -116,14 +127,15 @@ is a valid outcome, not a failure.
 
 1. **Finish the #106 gate** (above). Small, and it is blocking a clean trunk.
 2. **#117** — small, concrete, and it is a real untested path.
-3. **#115** — AltCompare tier-locked labels. Design is already sharp in the
+3. **#118** — same measurement family as #117; four green `repropose` slips.
+4. **#115** — AltCompare tier-locked labels. Design is already sharp in the
    ticket body; the decision (label, never hide) is SETTLED, do not re-litigate.
    Its stated trap: `unlockedTier` defaults to `null`, so a test that does not
    explicitly set a tier passes whether the feature works or not.
-4. **#111** — total output display.
-5. **#105** — byproduct routing. The arc's largest design; budget a full Tier-3
+5. **#111** — total output display.
+6. **#105** — byproduct routing. The arc's largest design; budget a full Tier-3
    phase, not a quick pass.
-6. **Then** the `develop → main` release PR — and the GitHub Pages deploy
+7. **Then** the `develop → main` release PR — and the GitHub Pages deploy
    **only** on Michael's explicit approval.
 
 Michael's standing instruction this session was *"I want everything completed"* —

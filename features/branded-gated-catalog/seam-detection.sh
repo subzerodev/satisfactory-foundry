@@ -70,6 +70,21 @@ run "S2 RecipePicker prop" "catalog={preview.gated}" "catalog={catalog}"
 run "S3 toProposalPreview" \
   "toProposalPreview(proposal, gatedCat, {" "toProposalPreview(proposal, cat, {"
 run "S4 ungatedCatalog" "        ungatedCatalog: cat," "        ungatedCatalog: gatedCat,"
+run "R0 repropose initial Propose" \
+  "    repropose(catalog, {}, true);" \
+  "    repropose(preview?.gated ?? catalog, {}, true);"
+run "R1 repropose chooseRecipe" \
+  "    repropose(catalog, { overrides: next });" \
+  "    repropose(preview?.gated ?? catalog, { overrides: next });"
+run "R2 repropose toggleRaw" \
+  "    repropose(catalog, { rawItemIds: next });" \
+  "    repropose(preview?.gated ?? catalog, { rawItemIds: next });"
+run "R3 repropose toggleExclusion" \
+  "    repropose(catalog, { excludedMachineIds: next });" \
+  "    repropose(preview?.gated ?? catalog, { excludedMachineIds: next });"
+run "R4 repropose onTierChange" \
+  "    repropose(catalog, { unlockedTier: next });" \
+  "    repropose(preview?.gated ?? catalog, { unlockedTier: next });"
 run "S5 excludableMachines" \
   "excludableMachines(catalog);" "excludableMachines(preview?.gated ?? catalog);"
 run "S7 effectiveDefaultRecipe" \

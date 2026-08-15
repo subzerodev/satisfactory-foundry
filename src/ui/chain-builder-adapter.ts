@@ -656,16 +656,19 @@ export function pickerOptionsFor(
  * typechecks identically wherever both are in scope — the wiring is pinned by
  * tests, not by the compiler. MEASURED, not an omission (#106, closed won't-do;
  * harness + full matrix in `features/branded-gated-catalog/`): ChainBuilder has
- * ten places where swapping the two worlds compiles, and swapping any of eight
- * of them turns `ChainBuilder.gating.test.tsx` red. Those jsdom rows are what
- * enforce the wiring — do not retire them as "render-only".
+ * fifteen value-passing places where swapping the two worlds compiles, and
+ * swapping any of nine of them turns `ChainBuilder.gating.test.tsx` red. Those
+ * jsdom rows are what enforce the wiring — do not retire them as "render-only".
  *
- * The two that stay green are NOT alike:
+ * The six that stay green are NOT alike:
  *   - `byproductSuggestions` is inert — it reads only `items` (shared by
  *     reference with the ungated catalog) and recipes of stages the gated solve
  *     already produced, so both worlds return the same value.
- *   - `recipeLabel` in the constrained-recovery `<select>` is a genuine gap,
- *     simply untested. Tracked as #117.
+ *   - `recipeLabel` in the constrained-recovery `<select>` is a genuine gap.
+ *     A narrower `recipeLabel` type could catch this one, but a focused test is
+ *     the direct fix. Tracked as #117.
+ *   - Four `repropose` callers can be laundered through `preview?.gated ??
+ *     catalog`, a brand-evading form this suite does not catch. Tracked as #118.
  *
  * One fact any future branding attempt must answer, measured: a NEGATIVE brand
  * (`Catalog & { readonly [b]?: never }`) does not reject

@@ -4,9 +4,11 @@ Ticket #106, epic #108, milestone 92 (Stage 21). Run on `develop` @ `bc2b435`,
 i.e. **after P1 (#103) landed** (merge `0805af0`) — so the count below is of the
 consolidated surface #106's `blocked-by` existed to produce.
 
-**v4. Recommendation: CLOSE #106 as won't-do.** A brand would close nothing the
-existing suite misses. What ships is a documentation change on `gateCatalog` —
-required regardless, since its comment pointed at this ticket as the fix.
+**v6. Recommendation: CLOSE #106 as won't-do.** The measured five-seam brand
+would close nothing the existing suite misses, and a broader `recipeLabel`
+narrowing would close only #117 while leaving the `repropose` gaps untouched.
+What ships is a documentation change on `gateCatalog` — required regardless,
+since its comment pointed at this ticket as the fix.
 
 This is a measurement report, not a build spec. v1 and v2 proposed builds; both
 were refuted by review. `## Revision history` keeps the trail, because the wrong
@@ -16,11 +18,13 @@ turns are the reusable part.
 
 | | |
 |---|---|
-| Places in `ChainBuilder.tsx` where the gated/ungated swap **compiles** | **10** (8 call sites + 2 object-literal fields) |
-| Already caught — swapping turns `ChainBuilder.gating.test.tsx` red | **8** |
+| Value-passing places in `ChainBuilder.tsx` where the gated/ungated swap **compiles** | **15** (13 call sites + 2 object-literal fields) |
+| Already caught — swapping turns `ChainBuilder.gating.test.tsx` red | **9** |
 | Green and **provably inert** (`byproductSuggestions`) | 1 |
 | Green and a **real gap** (`recipeLabel` in the recovery select) | 1 → split to **#117** |
-| **Net new coverage a brand would add** | **zero** |
+| Green and not proven inert (`repropose` callers) | 4 → split to **#118** |
+| Net new coverage the measured five-seam brand would add | **zero** |
+| Extra coverage a sixth `recipeLabel` narrowing could add | **#117 only** |
 
 ## The measurement
 
@@ -37,6 +41,11 @@ S1 Preview.gated                       missed   RED
 S2 RecipePicker prop                   missed   RED
 S3 toProposalPreview                   missed   RED
 S4 ungatedCatalog                      missed   RED
+R0 repropose initial Propose           missed   green (UNDETECTED)
+R1 repropose chooseRecipe              missed   green (UNDETECTED)
+R2 repropose toggleRaw                 missed   green (UNDETECTED)
+R3 repropose toggleExclusion           missed   green (UNDETECTED)
+R4 repropose onTierChange              missed   RED
 S5 excludableMachines                  missed   RED
 S7 effectiveDefaultRecipe              missed   RED
 S8 recipeLabel (recovery select)       missed   green (UNDETECTED)
@@ -45,7 +54,8 @@ U1 producerRecipesFor                  missed   RED
 ```
 
 `BRAND` reads `missed` throughout because this run is on plain `develop`, where
-no brand exists. **`brand-probe.patch` (beside this file) is the five-seam brand**
+no brand exists. **`brand-probe.patch` (beside this file) is the measured
+five-seam brand**
 — apply it and re-run to reproduce the BRAND column: CAUGHT for S1, S2, S4, S6
 and the direct (non-`??`) S5 form. Every one of those except S6 is already RED,
 and S6 is inert. Applying the patch alone gives `tsc -b` exit 0 and 912 green
@@ -70,16 +80,30 @@ the resolved recipe is `recipe.inputs`. Both are invariant across the worlds:
 So both worlds return the identical value in every reachable state. Green
 because there is nothing to observe.
 
-### Why `recipeLabel` is not
+### Why `recipeLabel` and the green `repropose` callers are not
 
-No such argument exists — it is simply untested. `recipeLabel` appends its
-`(default)` tag by comparing against `effectiveDefaultRecipe`, which the two
-worlds can answer differently, and the recovery `<select>`'s option list is
-built with the **live** exclusion set while the `constrained` cause was computed
-with the **solved** one. Nothing in the suite selects
-`.chain-builder-constrained select` or its options. Tracked as **#117**, which
-carries the pass-either-way warning: a test that does not force the two worlds
-to disagree will pass regardless.
+No such argument exists for either family — they are simply untested until their
+follow-up tickets trace reachability.
+
+`recipeLabel` appends its `(default)` tag by comparing against
+`effectiveDefaultRecipe`, which the two worlds can answer differently, and the
+recovery `<select>`'s option list is built with the **live** exclusion set while
+the `constrained` cause was computed with the **solved** one. Nothing in the
+suite selects `.chain-builder-constrained select` or its options. Tracked as
+**#117**, which carries the pass-either-way warning: a test that does not force
+the two worlds to disagree will pass regardless. Because both live production
+calls are gated today — the constrained row passes `preview.gated`, and
+`RecipePickerProps.catalog` already receives `preview.gated` — an additional
+`recipeLabel(catalog: GatedCatalog, ...)` annotation could catch this one slip.
+That is not part of the measured fallback, and it would not touch the
+`repropose` laundering gaps below.
+
+Four `repropose(catalog, ...)` callers also stay green when swapped to
+`repropose(preview?.gated ?? catalog, ...)`: initial Propose, `chooseRecipe`,
+`toggleRaw`, and `toggleExclusion`. The fifth caller (`onTierChange`) is already
+RED. The green four are tracked as **#118**. A brand is still not the fix:
+`preview?.gated ?? catalog` is the measured laundering idiom, so a negative
+`UngatedCatalog` parameter would not reject it.
 
 ### Two mechanism limits found along the way
 
@@ -116,18 +140,20 @@ Both r2 reviewers offered a fallback: keep `Preview.gated`,
 prevention-localisation alone — a `tsc` error at the slip line instead of a red
 assertion in another file. ~8 lines, measured zero churn.
 
-**Declined**, and at r3 the reviewer who proposed it agreed. The whole remaining
-benefit is *better error localisation for defects that are already caught*. That
-does not earn a new exported type pair — especially one carrying a measured
-laundering hole, which invites a reader to assume more coverage than exists. The
-jsdom rows must survive either way (a type cannot assert that a recipe is absent
-from a rendered `<select>`), so the brand would be a partial guard advertised as
-a total one.
+**Declined**, and at r3 the reviewer who proposed it agreed. The measured
+fallback's remaining benefit is *better error localisation for defects that are
+already caught*. That does not earn a new exported type pair — especially one
+carrying a measured laundering hole, which invites a reader to assume more
+coverage than exists. The jsdom rows must survive either way (a type cannot
+assert that a recipe is absent from a rendered `<select>`), so the brand would
+be a partial guard advertised as a total one.
 
-Neither of the two call sites the reviewers found missing (`effectiveDefaultRecipe`,
-`recipeLabel`) would have been caught by that fallback anyway: both are leaf
-helpers called from **both** worlds, so no brand can narrow their parameters —
-the same fact that refuted #106's own proposed shape.
+One narrower extension would catch something the measured fallback does not:
+`recipeLabel(catalog: GatedCatalog, ...)` would reject the #117 slip because its
+live production callers are gated. That is recorded on #117, not built here,
+because it catches only that one label path and still leaves the four #118
+`preview?.gated ?? catalog` repropose slips green. `effectiveDefaultRecipe`
+remains a bi-world leaf helper and is not narrowable in the same way.
 
 ## Revisit trigger
 
@@ -140,14 +166,16 @@ assuming this verdict still holds.
 
 | Assumption | How grounded |
 |---|---|
-| 8 of 10 swap-legal sites are already RED | Measured — `seam-detection.sh`, full suite per row |
-| The enumeration is complete | Two r3 reviewers independently swept `ChainBuilder.tsx` and agreed on the same ten; the two they added to v3's eight are now rows S7/S8 |
+| 9 of 15 swap-legal value-passing sites are already RED | Measured — `seam-detection.sh`, full suite per row |
+| The enumeration is complete | r2b review found five missing `repropose` callers; all are now rows R0-R4 |
 | The `byproductSuggestions` slip is behaviour-preserving | Traced by both r2 reviewers and re-verified exhaustive at r3 (two catalog reads, one use of the result) |
 | The `recipeLabel` slip is NOT provably inert | Absence of an argument, not proof of a defect — #117's first task is to settle it either way |
-| A brand would catch S1, S2, S4, S6 + direct S5 | Measured — `brand-probe.patch` applied, all rows re-run |
+| The green `repropose` slips are NOT provably inert | Absence of an argument, not proof of a defect — #118's first task is to settle them either way |
+| The measured five-seam brand would catch S1, S2, S4, S6 + direct S5 | Measured — `brand-probe.patch` applied, all rows re-run |
+| A sixth `recipeLabel` narrowing could catch #117 | Source trace — current production calls are gated (`preview.gated` directly or through `RecipePickerProps.catalog`) |
 | Applying the brand costs zero test churn | Measured — tsc exit 0, 912 green, no test file touched |
 | `preview?.gated ?? catalog` launders | Measured — `const __t: 1` probe |
-| P1 landed before this measurement | `git log`: merge `0805af0`, HEAD `bc2b435`; `candidateRecipesFor` absent from `src/` |
+| P1 landed before this measurement | `git log`: merge `0805af0`, HEAD `bc2b435`; no live `candidateRecipesFor` helper or call remains under `src/` |
 
 ## Revision history
 
@@ -190,6 +218,19 @@ assuming this verdict still holds.
   provenance anchor as unverifiable, the session snapshot showing `955adf8` as
   most recent. `git log` confirms HEAD **is** `bc2b435`; the reviewer's snapshot
   predated two commits. The anchor stands.
+- **v5** (2026-08-15): r2b found the count was still incomplete: five
+  `repropose(catalog, ...)` callers are also value-passing seams because
+  `preview?.gated ?? catalog` compiles and can feed a solved/gated world into
+  the re-solve path. Folded into the harness as R0-R4. Measurement: R4
+  (`onTierChange`) is RED; R0-R3 are green and split to #118. Headline becomes
+  **15 value-passing places, 9 red, 6 green**.
+- **v6** (2026-08-15): r2d found one overbroad conclusion: the measured
+  five-seam fallback would not catch #117, but a sixth
+  `recipeLabel(catalog: GatedCatalog, ...)` narrowing likely would because both
+  current production call paths are gated. Folded by scoping the "zero new
+  coverage" claim to the measured fallback and recording #117 as the one place a
+  broader annotation could help. The #106 verdict stays won't-do because that
+  still leaves #118's laundering gaps and keeps the type as a partial guard.
 - **Harness note, thrice-bitten.** This measurement produced a false all-clear
   twice and had a third path open. (1) A line-numbered script silently failed to
   apply all seven slips after an added import shifted every line. (2) Piping
