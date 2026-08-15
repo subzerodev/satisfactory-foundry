@@ -1,0 +1,421 @@
+# Ticket #116 — bidirectionality verification log
+
+AltCompare rows get an `(alt)` marker. Each new pin is verified BIDIRECTIONALLY:
+PASS with the real code → deliberately break the load-bearing term → observe the
+pin genuinely FAIL by name → restore → green.
+
+Target files:
+  - `src/ui/chain-builder-adapter.ts` — `CandidateRow.isAlternate` (interface) and
+    `isAlternate: candidate.isAlternate` (`candidateRowsFor`)
+  - `src/ui/AltCompare.tsx` — the `{row.isAlternate && <span …> (alt)</span>}` child
+
+The three new pins:
+  1. `chain-builder-adapter.test.ts` — "carries isAlternate from the RECIPE, not
+     from the selection (#116)"        [synthetic fixture, both polarities]
+  2. `AltCompare.test.tsx` — "marks the ALTERNATE row, whichever row is current
+     (#116)"                           [synthetic fixture, both polarities]
+  3. `chain-builder-adapter.test.ts` — "flags isAlternate against REAL parsed
+     names, not a name prefix (#116)"  [real bundled catalog]
+
+Run inside the worktree:
+`npx vitest run src/ui/chain-builder-adapter.test.ts src/ui/AltCompare.test.tsx`
+(106 its = 103 pre-existing + the 3 new). Repo-root `npm test` double-counts
+worktree tests — the worktree-local run is the trunk-true view.
+
+**Every mutant below was typechecked (`npx tsc -b`) before its test run, and every
+one COMPILES CLEAN.** A mutant that fails to compile proves nothing about a
+test's discriminating power, so compile-validity is part of each entry.
+
+---
+
+## PASS (baseline, real code)
+
+    npx vitest run src/ui/chain-builder-adapter.test.ts src/ui/AltCompare.test.tsx
+    Test Files  2 passed (2)
+    Tests  106 passed (106)
+
+Full suite: 907 → 910 passing (33 files), `npm run check` clean.
+
+(The A1-A5/R1-R3 transcripts below were captured in the 2-pin era and read
+`105`; pin 3 was added afterwards at the boundary gate. Every recorded KILL
+verdict still holds, but the failure COUNTS in those blocks are not simply one
+lower than a rerun today — see the correction immediately below. The `909` in
+the summary line above was likewise a 2-pin-era figure, now re-measured to 910.)
+
+CORRECTION (r4 review, and this parenthetical's own second draft was wrong):
+pin 3 is NOT insulated from the adapter mutants. It calls `candidateRowsFor`
+(chain-builder-adapter.test.ts:657), so it runs straight through the mutated
+line at chain-builder-adapter.ts:980. Against the real catalog — five
+candidates, the non-alternate current:
+
+    A1 `id === current`   -> [T,F,F,F,F]   pin 3 FAILS
+    A2 `id !== current`   -> [F,T,T,T,T]   pin 3 passes (the ONE adapter mutant
+                                            it misses: with a non-alternate
+                                            current, `!==` reproduces the true
+                                            vector on this fixture)
+    A3 `!isAlternate`     -> [T,F,F,F,F]   pin 3 FAILS
+    A4 `true`             -> [T,T,T,T,T]   pin 3 FAILS
+    A5 `false`            -> [F,F,F,F,F]   pin 3 FAILS
+    R1/R2/R3 (render-side)                 pin 3 unaffected
+
+So on a rerun today A1/A3/A4/A5 read `3 failed | 103 passed (106)`, not
+`2 failed | 104 passed (106)`, and those blocks' "both pins fail" headers would
+read "all three pins fail". Pin 3 catches 5 of the 10 recorded mutants, not 1 —
+the earlier wording understated its net.
+
+MEASURED, not re-reasoned (the original error came from reasoning about which
+`it` a mutant "reaches" instead of running it):
+
+    $ # A1 — isAlternate: candidate.id === currentRecipeId
+    $ npx vitest run src/ui/chain-builder-adapter.test.ts \
+        -t "flags isAlternate against REAL parsed names"
+      AssertionError: expected [ true, false, false, false, false ]
+                      to deeply equal [ false, true, true, true, true ]
+
+    $ # A2 — isAlternate: candidate.id !== currentRecipeId
+      Tests  1 passed | 93 skipped (94)        <- the one adapter mutant it misses
+
+    $ # A4 — isAlternate: true
+      AssertionError: expected [ true, true, true, true, true ]
+                      to deeply equal [ false, true, true, true, true ]
+
+---
+
+## The mutant family this log exists for
+
+The field is set ONE LINE BELOW `isCurrent: candidate.id === currentRecipeId`, so
+the plausible implementer slip is a verbatim copy of that line. Both fixtures hold
+two candidates of which exactly one is an alternate, so `isAlternate` is a
+**bijection** with `isCurrent` *whichever* recipe is current — a single-polarity
+assertion cannot tell the two apart. Both pins therefore assert at BOTH polarities,
+with the SAME expected value; that the expectation is identical at both is the point.
+
+Break commands are applied by `mutate.py` (scratchpad harness, exact-anchor
+replacement; refuses on anything but a unique match), then reverted with
+`git checkout -- src/ui/chain-builder-adapter.ts src/ui/AltCompare.tsx`.
+
+---
+
+## Adapter mutant A1 — `isAlternate: candidate.id === currentRecipeId`
+
+The verbatim copy of the line above. **This is the mutant the whole spec exists
+to kill.**
+
+BREAK:
+
+    -      isAlternate: candidate.isAlternate,
+    +      isAlternate: candidate.id === currentRecipeId,
+
+    tsc: CLEAN (mutant compiles)
+
+FAIL (genuine) — both pins fail, each at the **`r_std`-current polarity**:
+
+    × marks the ALTERNATE row, whichever row is current (#116) 4ms
+    × carries isAlternate from the RECIPE, not from the selection (#116) 4ms
+     FAIL  src/ui/AltCompare.test.tsx > AltCompare SSR smoke > marks the ALTERNATE row, whichever row is current (#116)
+     FAIL  src/ui/chain-builder-adapter.test.ts > alt-compare — per-candidate metrics (synthetic, exact) > carries isAlternate from the RECIPE, not from the selection (#116)
+    Test Files  2 failed (2)
+    Tests  2 failed | 103 passed (105)
+
+    AssertionError: expected [ true, false ] to deeply equal [ false, true ]
+     ❯ src/ui/chain-builder-adapter.test.ts:439:7      ← the "r_std" call
+
+    AssertionError: expected '<div class="alt-compare">…' to contain '<td>Alternate<span class="alt-compare…'
+     ❯ src/ui/AltCompare.test.tsx:321:26              ← the renderWithCurrent("r_std") pass
+
+The received markup names the defect exactly — the marker lands on the WRONG row:
+
+    <tr class="alt-compare-current"><td>Standard<span class="alt-compare-mark"> (alt)</span></td>…
+    <tr class=""><td>Alternate</td>…
+
+Decisive: the standard recipe is labelled an alternate in the DEFAULT state.
+
+---
+
+## Adapter mutant A2 — `isAlternate: candidate.id !== currentRecipeId`
+
+The mirror slip. BREAK:
+
+    +      isAlternate: candidate.id !== currentRecipeId,
+
+    tsc: CLEAN (mutant compiles)
+
+FAIL (genuine) — both pins fail, each at the **`r_alt`-current polarity** (the
+opposite half from A1, which is exactly why one polarity cannot cover both):
+
+    × marks the ALTERNATE row, whichever row is current (#116) 4ms
+    × carries isAlternate from the RECIPE, not from the selection (#116) 4ms
+    Test Files  2 failed (2)
+    Tests  2 failed | 103 passed (105)
+
+    AssertionError: expected [ true, false ] to deeply equal [ false, true ]
+     ❯ src/ui/chain-builder-adapter.test.ts:442:7      ← the "r_alt" call
+    AssertionError: expected '…' to contain '<td>Alternate<span class="alt-compare…'
+     ❯ src/ui/AltCompare.test.tsx:325:26              ← the renderWithCurrent("r_alt") pass
+
+---
+
+## THE CONTROL — is the second polarity actually load-bearing?
+
+The claim "one polarity would not catch A1" is the spec's central premise, so it
+was MEASURED, not assumed. Both pins were reduced to their `r_alt` half only
+(the first-polarity assertions deleted), then A1 was applied:
+
+    python3 single_polarity.py apply && python3 mutate.py A1
+    npx vitest run src/ui/chain-builder-adapter.test.ts src/ui/AltCompare.test.tsx
+    Test Files  2 passed (2)
+    Tests  105 passed (105)
+
+**A1 SURVIVES the single-polarity form** — a wholly wrong implementation, green.
+
+Scrutiny (a surviving mutant can also mean a broken test): the SAME reduced pins
+were re-run against A2, and they still kill it —
+
+    python3 single_polarity.py apply && python3 mutate.py A2
+    × marks the ALTERNATE row, whichever row is current (#116)
+    × carries isAlternate from the RECIPE, not from the selection (#116)
+    Tests  2 failed | 103 passed (105)
+
+So the reduced pins are LIVE, not vacuous: they are specifically blind to A1, in
+the exact way the correlation predicts. The second polarity is load-bearing.
+Test files restored byte-for-byte from backup afterwards.
+
+---
+
+## Adapter mutant A3 — `isAlternate: !candidate.isAlternate`
+
+    +      isAlternate: !candidate.isAlternate,
+    tsc: CLEAN (mutant compiles)
+
+    × marks the ALTERNATE row, whichever row is current (#116)
+    × carries isAlternate from the RECIPE, not from the selection (#116)
+    Tests  2 failed | 103 passed (105)
+
+## Adapter mutants A4 / A5 — hardcoded `true` / `false`
+
+    +      isAlternate: true,      → tsc CLEAN; Tests  2 failed | 103 passed (105)
+    +      isAlternate: false,     → tsc CLEAN; Tests  2 failed | 103 passed (105)
+
+Both pins fail on each ([T,T] and [F,F] against the expected [false, true]).
+
+---
+
+## Render mutant R1 — `{!row.isCurrent && …}`
+
+The render-side impostor: with the standard recipe current it emits BYTE-IDENTICAL
+HTML to the real code.
+
+    -                {row.isAlternate && (
+    +                {!row.isCurrent && (
+    tsc: CLEAN (mutant compiles)
+
+FAIL (genuine) — the render pin fails at the **`r_alt`-current** pass; the ADAPTER
+pin stays green, which is the two pins doing different jobs:
+
+    × marks the ALTERNATE row, whichever row is current (#116) 4ms
+     FAIL  src/ui/AltCompare.test.tsx > AltCompare SSR smoke > marks the ALTERNATE row, whichever row is current (#116)
+    Test Files  1 failed | 1 passed (2)
+    Tests  1 failed | 104 passed (105)
+     ❯ src/ui/AltCompare.test.tsx:325:26
+
+## Render mutant R2 — `{row.isCurrent && …}`
+
+    +                {row.isCurrent && (
+    tsc: CLEAN (mutant compiles)
+
+FAIL at the opposite pass (**`r_std`-current**) — R1 and R2 fail the second and
+first pass respectively, so neither pass is redundant. (Line/column refs inside
+the captured transcripts below are frozen at capture time; later comment edits
+shifted the live assertions to AltCompare.test.tsx:327 and :331.)
+
+    × marks the ALTERNATE row, whichever row is current (#116) 4ms
+    Test Files  1 failed | 1 passed (2)
+    Tests  1 failed | 104 passed (105)
+
+## Render mutant R3 — marker child deleted entirely
+
+    -                {row.isAlternate && (
+    -                  <span className="alt-compare-mark"> (alt)</span>
+    -                )}
+    tsc: CLEAN (mutant compiles — the field is simply unread)
+
+    × marks the ALTERNATE row, whichever row is current (#116) 4ms
+    Test Files  1 failed | 1 passed (2)
+    Tests  1 failed | 104 passed (105)
+
+---
+
+## RESTORE → green
+
+    git status --porcelain src/ui/chain-builder-adapter.ts src/ui/AltCompare.tsx
+    (clean — both production files back to the committed state)
+
+    npx vitest run src/ui/chain-builder-adapter.test.ts src/ui/AltCompare.test.tsx
+    Test Files  2 passed (2)
+    Tests  106 passed (106)      [re-measured after pin 3 landed; was 105]
+
+---
+
+## Assertion strings — verified against real output, not assumed
+
+    <td>Alternate<span class="alt-compare-mark"> (alt)</span></td>
+
+No `<!-- -->` separator (the marker child is an ELEMENT, not a second text node);
+matched first run. Rationale for the two scoping traps lives in the test comment.
+
+## Deliberately not pinned (per spec)
+
+The positional mutant (`isAlternate: index > 0`): neither map callback TAKES an
+index parameter (adapter `candidates.map((candidate) => {`; render
+`model.rows.map(({ row, apply }) =>`), so reaching one means deliberately adding
+one — not an implementer slip. Also unpinned:
+the styling (the browser walk is this file's stated visual gate).
+
+## Adapter mutant A6 — name-derived (`displayName.startsWith("Alternate")`)
+
+Surfaced at the boundary gate. The synthetic fixture's alternate is literally
+NAMED "Alternate", so both shipped pins score identically on it. Closed against
+the REAL bundled catalog, where the docs-loader strips the game's "Alternate: "
+prefix — `Alternate: Iron Alloy Ingot` is stored as `Iron Alloy Ingot`.
+
+  MUTATION  src/ui/chain-builder-adapter.ts:980
+    -  isAlternate: candidate.isAlternate,
+    +  isAlternate: candidate.displayName.startsWith("Alternate"),
+
+  COMPILE CHECK (a crashing mutant proves nothing)
+    $ npx tsc -b   ->  exit 0, CLEAN. The kill below is behavioural.
+
+  CONTROL — do the two SHIPPED pins see it?  NO, BOTH STILL PASS:
+    $ npx vitest run src/ui/chain-builder-adapter.test.ts \
+        -t "carries isAlternate from the RECIPE"
+      Tests  1 passed | 93 skipped (94)
+    $ npx vitest run src/ui/AltCompare.test.tsx -t "marks the ALTERNATE row"
+      Tests  1 passed | 11 skipped (12)
+    ^ confirms the reviewer's finding exactly, and confirms the new row is NOT
+      redundant with the existing two.
+
+  THE NEW PIN — KILLED:
+    $ npx vitest run src/ui/chain-builder-adapter.test.ts \
+        -t "flags isAlternate against REAL parsed names"
+      x flags isAlternate against REAL parsed names, not a name prefix (#116)
+      AssertionError: expected [ false, false, false, false, false ]
+                      to deeply equal [ false, true, true, true, true ]
+      Tests  1 failed | 93 skipped (94)
+
+    The received vector is all-false, which is precisely what this mutant does
+    in PRODUCTION: it would mark nothing, ever, while every synthetic test
+    stayed green. That is the failure mode worth the extra row -- a total,
+    silent feature no-op rather than a subtle mis-mark.
+
+  RESTORE
+    $ cp /tmp/cba.bak src/ui/chain-builder-adapter.ts
+    $ npm test        ->  Test Files 33 passed | Tests 910 passed (910)
+    $ npm run check   ->  clean (tsc + eslint + prettier)
+
+  The second assertion in that row pins the PREMISE (no parsed name starts with
+  "Alternate"), so the row cannot rot into a tautology if the parser ever stops
+  stripping the prefix -- it would then fail loudly instead of silently ceasing
+  to discriminate.
+
+## Adapter mutant M7 — id-derived (`candidate.id.includes("alternate")`)
+
+Surfaced by the DIFF-stage simplify pass while testing whether the real-catalog
+pin could subsume the synthetic one (it proposed the fold, then broke it itself).
+
+**More plausible than A6, not less.** The parser derives the real flag as
+`id.includes("alternate_") || displayName.startsWith("Alternate:")`
+(docs-loader), so an implementer re-deriving it inline rather than reading
+`candidate.isAlternate` writes exactly the id form — it mirrors the parser.
+
+  MUTATION  src/ui/chain-builder-adapter.ts:980
+    -  isAlternate: candidate.isAlternate,
+    +  isAlternate: candidate.id.includes("alternate"),
+
+  COMPILE CHECK
+    $ npx tsc -b   ->  exit 0, CLEAN. Behavioural kill.
+
+  MEASURED — the two fixtures are blind in OPPOSITE directions:
+    $ npx vitest run src/ui/chain-builder-adapter.test.ts \
+        -t "flags isAlternate against REAL parsed names"
+      Tests  1 passed | 93 skipped (94)          <- pin 3 SURVIVES
+    $ npx vitest run src/ui/chain-builder-adapter.test.ts \
+        -t "carries isAlternate from the RECIPE"
+      AssertionError: expected [ false, false ] to deeply equal [ false, true ]
+      Tests  1 failed | 93 skipped (94)          <- pin 1 KILLS
+    $ npx vitest run src/ui/AltCompare.test.tsx -t "marks the ALTERNATE row"
+      Tests  1 failed | 11 skipped (12)          <- pin 2 KILLS
+
+  WHY neither FIXTURE, AS THEY STAND, is removable:
+
+    fixture    ids                 names        blind to      catches
+    ---------  ------------------  -----------  ------------  ------------
+    synthetic  r_std / r_alt       "Alternate"  A6 (name)     M7 (id)
+    real       alternate_*         stripped     M7 (id)       A6 (name)
+
+    The synthetic fixture has a name matching the alternate convention but an id
+    that does not; the real one has the inverse. Each is the other's guard, so
+    BOTH FIXTURES stay.
+
+  A CLAIM THIS ENTRY ORIGINALLY MADE, AND WHY IT WAS WRONG:
+
+    It said "no two-pin subset covers the ground." That is FALSE, and this
+    file's own entries are the counterexample: pin 1 kills nothing pin 2 does
+    not also kill (pin 2 runs an EQUIVALENT synthetic fixture — its own `CAT` —
+    through the adapter),
+    so {pin 2, pin 3} kills all ten recorded mutants. Corrected rather than
+    quietly dropped, because a future simplify pass that checks the claim would
+    find it refuted here and might delete pin 1 for the reason this entry failed
+    to give.
+
+    Pin 1 stays for a reason that is NOT mutation coverage: it is a unit-level
+    contract pin on `candidateRowsFor`'s output, so it survives the render
+    ceasing to show a marker at all (mutant R3 is exactly that), and it localises
+    a failure to the adapter instead of to a rendered string.
+
+  A CHEAPER SHAPE, CONSIDERED AND NOT TAKEN:
+
+    Rename the synthetic fixture's alternate displayName ("Alternate" ->
+    anything else) and pin 1 alone kills BOTH A6 and M7 — a two-pin shape.
+    The r1 waiver priced this as touching "a fixture recipe shared by many
+    pins"; that was OVERSTATED — grep confirms exactly one `recipeName`
+    assertion in the file, and it is pin 3's real-catalog premise, not this
+    fixture's name.
+
+    The honest cost is TRANSCRIPT HYGIENE, not invalidation. An earlier draft of
+    this entry said re-baselining "invalidates every mutant measurement, all ten
+    of which would need re-running" — that was inflated, and inflated in the
+    self-serving direction, since the paragraph's job is to justify NOT doing the
+    work. In fact: R1/R2/R3 are measured by pin 2 against AltCompare's OWN `CAT`
+    fixture, a different object, so they cannot change; A1-A5 and M7 assert pin
+    1's name-independent vector `[false, true]`, so their outcomes hold. Exactly
+    ONE measurement flips behaviourally — A6's control, where pin 1 goes from
+    surviving to killing. Every transcript would be re-taken to stay current,
+    which is bookkeeping, not ten re-measurements.
+
+    Not taken anyway, because pin 3 is wanted on merits that survive the rename:
+
+      (a) `chain-builder-adapter.test.ts:667` is the SOLE
+          `recipeName.startsWith("Alternate")` assertion in the repo — the
+          no-prefix premise against the REAL bundled catalog is pinned nowhere
+          else. (`docs-loader.test.ts:167-178` pins the parser's strip + flag,
+          but against the synthetic `DOCS_FRAGMENT`.)
+
+      (b) Pin 3 is the only pin that kills A6, and the neighbouring
+          `chain-builder-adapter.test.ts:628-629` CANNOT — it asserts the same
+          [F,T,T,T,T] vector over the same five real candidates, but reads
+          `candidateRecipesFor`, which returns catalog recipes and never touches
+          the mutated line inside `candidateRowsFor`. Stated explicitly because a
+          reader who finds :628-629 would otherwise assume it subsumes pin 3.
+
+    An earlier draft claimed pin 3 was "the ONLY test anywhere that pins the real
+    catalog's isAlternate vector and the no-prefix premise, so deleting it would
+    leave the parser's contract unpinned." BOTH halves were false — :628-629
+    pins that vector, and docs-loader.test.ts pins the parser's contract. Only
+    the CONJUNCTION is unique. Recorded, not silently fixed: this is the second
+    overreaching-absolute in this entry, and the failure mode is always the same
+    — a uniqueness claim a future reader refutes by grep, who then deletes the
+    pin for the reason the entry failed to give.
+
+  RESTORE
+    $ npm test        ->  Test Files 33 passed | Tests 910 passed (910)
+    $ npm run check   ->  clean

@@ -518,6 +518,9 @@ export interface CandidateRow {
   recipeName: string;
   /** true ⇒ this row IS the stage's current recipe (marked, no Apply). */
   isCurrent: boolean;
+  /** true ⇒ this row's recipe is an ALTERNATE. The parser strips the game's
+   *  "Alternate: " prefix (docs-loader.ts:190), so `recipeName` cannot carry it. */
+  isAlternate: boolean;
   /** Total machine count across the candidate's whole subtree (Σ, exact). */
   machines: string;
   /** The candidate's actual produced rate of the compared item — the PRIMARY
@@ -974,6 +977,7 @@ export function candidateRowsFor(
       recipeId: candidate.id,
       recipeName: candidate.displayName,
       isCurrent: candidate.id === currentRecipeId,
+      isAlternate: candidate.isAlternate,
       machines: machines.toString(),
       output,
       power: subtreePowerText(proposal, catalog),

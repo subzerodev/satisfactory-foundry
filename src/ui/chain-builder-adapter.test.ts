@@ -426,6 +426,22 @@ describe("alt-compare — per-candidate metrics (synthetic, exact)", () => {
     expect(alt!.rawDraw).toBe("Ore 90/min"); // 2 × 45 ore
   });
 
+  it("carries isAlternate from the RECIPE, not from the selection (#116)", () => {
+    // Asserted at BOTH polarities, and that the assertion is IDENTICAL at both
+    // is the point. isAlternate is set one line below `isCurrent: candidate.id
+    // === currentRecipeId`, and with two candidates of which exactly one is an
+    // alternate the two fields are a bijection whichever recipe is current — so
+    // a single call passes against a verbatim copy of that line (`=== current`
+    // rotates to `!== current`, but one of them always survives). The pair
+    // breaks the correlation that no single call can.
+    expect(
+      candidateRowsFor(cat, "ingot", "r_std", F(120)).map((r) => r.isAlternate),
+    ).toEqual([false, true]);
+    expect(
+      candidateRowsFor(cat, "ingot", "r_alt", F(120)).map((r) => r.isAlternate),
+    ).toEqual([false, true]);
+  });
+
   it("pins each candidate's OUTPUT as its own actual produced rate, incl. the current row + a ceil-overshoot (#83)", () => {
     // R=100 is NOT a multiple of either producer's per-machine rate, so both
     // ceil-overshoot: std 30/min → ceil(100/30)=4 → 120/min; alt 60/min →
@@ -629,6 +645,26 @@ describe("alt-compare — bundled Iron Ingot alternates", () => {
     // of the comparison): at least two rows differ on machines OR raw draw.
     const fingerprints = new Set(rows.map((r) => `${r.machines}|${r.rawDraw}`));
     expect(fingerprints.size).toBeGreaterThan(1);
+  });
+
+  it("flags isAlternate against REAL parsed names, not a name prefix (#116)", () => {
+    // The synthetic pins cannot catch an implementation that reads the NAME
+    // (`displayName.startsWith("Alternate")`) — their fixture recipe is literally
+    // named "Alternate", so such a mutant scores identically there. Real data
+    // does catch it: docs-loader.ts:190 STRIPS the game's "Alternate: " prefix,
+    // so every parsed name here is bare ("Iron Alloy Ingot", "Pure Iron Ingot"),
+    // and a name-derived flag would report all-false against the true [F,T,T,T,T].
+    const rows = candidateRowsFor(catalog, "iron_ingot", "ingot_iron", F(60));
+    expect(rows.map((r) => r.isAlternate)).toEqual([
+      false,
+      true,
+      true,
+      true,
+      true,
+    ]);
+    // The premise, pinned so this row cannot rot into a tautology if the parser
+    // ever stops stripping: no parsed name carries the prefix.
+    expect(rows.some((r) => r.recipeName.startsWith("Alternate"))).toBe(false);
   });
 });
 
