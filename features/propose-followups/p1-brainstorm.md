@@ -1,7 +1,8 @@
 # S21 P1 (#103) — adapter consolidation: retire `candidateRecipesFor`
 
-**Status:** v3 — in review (r2 folded).
-**Ticket:** #103 (Stage 21 milestone 92, epic #108). **BLOCKED-BY #116.**
+**Status:** v4 — in review (r3 folded; re-based on the merged #116 world).
+**Ticket:** #103 (Stage 21 milestone 92, epic #108). **UNBLOCKED** — #116 merged
+as `b3ed867`.
 **Origin:** simplify-pass finding from the S20 P1 design gate (#100), deferred
 out of that phase because the AltCompare call sites were pinned untouched
 mid-arc.
@@ -14,19 +15,20 @@ a `< 2 ⇒ []` gate and the tail ordering. The gate is a **UI affordance living
 inside a data function**. Retiring `candidateRecipesFor` leaves one enumeration
 function and one exported surface.
 
-## Sequencing — #116 LANDS FIRST (Axis 2, re-decided at r2)
+## Sequencing — #116 HAS LANDED (Axis 2, re-decided at r2)
 
-This phase is **blocked-by #116** (add an `(alt)` marker to the comparison row).
-The reason is the whole story of this design and is stated here, up front,
-because it is the single most important thing a reader needs:
+This phase WAS blocked-by #116 (add an `(alt)` marker to the comparison row),
+which **merged as `b3ed867`**. The reason is the whole story of this design:
 
-- The comparison table marks alternates **nowhere**. Row order is the only
-  signal (`candidateRecipesFor` groups non-alternates first).
+- The comparison table USED TO mark alternates **nowhere**. Row order was the
+  only signal (`candidateRecipesFor` groups non-alternates first). **#116 fixed
+  that** — `CandidateRow.isAlternate` now exists and `AltCompare` renders an
+  `(alt)` span.
 - So deleting that ordering — which the consolidation naturally does — destroys
   the signal. That is the r1 BLOCKER.
 - Preserving the ordering (v2's answer) means writing a comparator and an
   ordering pin **that #116 will make redundant**.
-- Landing #116 first makes the signal explicit, at which point the ordering is
+- Landing #116 first made the signal explicit, so the ordering is now
   free to go and **#103 gets its full win**: no comparator, no ordering pin, no
   residual risk.
 
@@ -52,7 +54,7 @@ transcription slip — a genuine coincidence; the sum to 195 is the check):
 **Set agreement — scoped.** *Among the 63 items with ≥2 eligible producers* the
 two functions return identical SETS. This is **not an empirical fact — it is a
 theorem**: the two filters are the same expression
-(`chain-builder-adapter.ts:552-554` vs `:613-615`). Only an edit to one filter
+(`chain-builder-adapter.ts:555-557` vs `:613-615`). Only an edit to one filter
 can break it. For the 63 lone-producer items the sets differ trivially and by
 design (`[]` vs `[x]`) — that is Axis 3.
 
@@ -90,7 +92,7 @@ baseline row — and in both counterexamples both orderings put the *same* recip
 first (`alternate_coal_1`; `alternate_turbo_blend_fuel`), because with zero
 non-alternates both comparators degenerate to ascending id. `coal`'s eligible
 list is independently pinned in live source at
-`chain-builder-adapter.test.ts:2090-2094`. Recorded as the `decision` audit
+`chain-builder-adapter.test.ts:2126-2130`. Recorded as the `decision` audit
 comment on #103, 2026-08-07.
 
 ## Decision axes
@@ -121,7 +123,7 @@ design claiming a live production guard is dead is how that guard later gets
 deleted.
 
 **Third consumer, named for completeness (r2):** `candidateRowsFor`
-(`chain-builder-adapter.ts:948`, docstring at `:939`) also consumes the gate —
+(`chain-builder-adapter.ts:951`, docstring at `:939`) also consumes the gate —
 which is why Axis 4 exists. "Exactly two production sites" was an undercount.
 
 ### Axis 2 — the three ordering diffs — **RE-DECIDED AT r2**
@@ -131,9 +133,10 @@ which is why Axis 4 exists. "Exactly two production sites" was an undercount.
 > parser STRIPS it** (`src/data/docs-loader.ts:190`,
 > `displayName: r.displayName.replace(/^Alternate:\s*/, "")`, consumed as the
 > `isAlternate` signal at `:185-186`, pinned by `docs-loader.test.ts:175`).
-> `chain-builder-adapter.ts:975` sets `recipeName: candidate.displayName`
-> (stripped), `CandidateRow` has **no `isAlternate` field** (`:514-538`), and
-> `AltCompare.tsx:155` renders the bare name. I measured the parser's INPUT and
+> `chain-builder-adapter.ts:978` sets `recipeName: candidate.displayName`
+> (stripped); AT THE TIME `CandidateRow` had **no `isAlternate` field** and
+> `AltCompare.tsx:155` rendered the bare name. (#116 has since added both —
+> that is the fix, not the state this paragraph describes.) I measured the parser's INPUT and
 > asserted about its OUTPUT. `ChainBuilder.tsx:668` re-adds `(alt)` by hand via
 > `recipeLabel` — picker-only, never called by AltCompare — which is the
 > corroboration that was sitting in the repo the whole time.
@@ -211,8 +214,8 @@ override, so the excluded-machine recipe really does become the stage's recipe;
 
 ### Axis 4 — `candidateRowsFor`'s contract
 
-`candidateRowsFor` (`:942`) calls `candidateRecipesFor` at `:948`; its docstring
-(`:939`) says *"Empty when X has <2 candidates"*. After the swap it returns ONE
+`candidateRowsFor` (`:945`) calls `candidateRecipesFor` at `:948`; its docstring
+(`:942`) says *"Empty when X has <2 candidates"*. After the swap it returns ONE
 row for a lone-producer item.
 
 **PICK: swap it and let the caller's gate stand.** Its only production caller is
@@ -238,16 +241,18 @@ Surfaced at r1: the comparison table marks alternates nowhere. Fragile
 independently of this refactor — any future re-ordering silently destroys the
 signal, which is the trap v1 fell into.
 
-**Split to #116**, and per Axis 2 (d) it is now **blocked-by**, not a follow-up.
-Its proposed shape: carry `isAlternate` onto `CandidateRow` and render an
-`(alt)` tag, mirroring `ChainBuilder.tsx:668`.
+**Split to #116, which has MERGED** (`b3ed867`). Shipped shape: `isAlternate` on
+`CandidateRow` (`chain-builder-adapter.ts:521-523`, set at `:980`) rendered as
+an `(alt)` span at `AltCompare.tsx:156-158`, reusing the existing
+`.alt-compare-mark` class. This axis is CLOSED; it is recorded here because it
+is what unblocked Axis 2 (d).
 
 ## Spec — assumes #116 has landed
 
-1. **Delete** `candidateRecipesFor` (`chain-builder-adapter.ts:546-562`).
+1. **Delete** `candidateRecipesFor` (`chain-builder-adapter.ts:549-565`).
 2. `:341` — `candidateCount:` from
    `producerRecipesFor(catalog, s.itemId, excludedMachineIds).length`.
-3. `:948` (`candidateRowsFor`) — source from
+3. `:951` (`candidateRowsFor`) — source from
    `producerRecipesFor(catalog, itemId)` and **use its order directly**. No
    comparator (Axis 2 (d)). Update the docstring per Axis 4.
 4. `AltCompare.tsx:80` — call `producerRecipesFor(catalog, itemId)`; the
@@ -265,29 +270,66 @@ Its proposed shape: carry `isAlternate` onto `CandidateRow` and render an
      function that will not exist.
    - `:939` — `candidateRowsFor`'s "Empty when <2".
    - `ChainBuilder.tsx:691` — stays TRUE; **verify, do not edit.**
-6. **Test migration — rebuilt from the INVARIANT, not the symbol.** **FOUR
-   executable failures** (r2 fold: v2's "two" undercounted its own list):
-   - **`:840`** — `expect(countByName.get("Plate")).toBe(0)` → **FAILS**, flip
-     to `1`.
-   - **`:842-844`** — `every((c) => c === 0 || c >= 2)` → **FAILS**. This IS the
-     deleted invariant; delete it.
-   - **`:1274-1287`** — the whole `it("keeps the P0 ≥2-gate semantics (a lone
-     candidate → 0)")`; `:1284-1286` expects `0` → **FAILS**. Retitle and flip.
-   - **`:375-378`** — a mechanical re-point leaves `toEqual([])`, which
-     **FAILS** (becomes `["r_std"]`). Correct expectation `["r_std"]` — an
-     **upgrade**: today's `toEqual([])` passes even if the filter dropped
-     everything.
-   - **`:381-388`** — `it("returns empty when the item has fewer than 2
-     candidates")` exists SOLELY to pin the deleted gate. **DELETE**; its
-     fixture duplicates `:1099-1108`, which survives.
-   - Stale comments/titles: **`:813`** (title), **`:815`**, **`:841`** (both
-     name the deleted function and its invariant — r2 fold; v2 omitted them
-     despite listing the comparable `:572`), **`:990`**, **`:993`**.
-   - **`:1098-1105`** — delete `:1104-1105`, retitle `:1098`. The positive
-     assertion already exists at `:1106-1108`; do not duplicate.
-   - Genuinely mechanical: `30, 346, 572, 603, 995, 997, 1007-1008, 1276`.
-     (**`387` removed from this list at r2** — it is inside the `:381-388`
-     DELETE.)
+6. **Test migration — grounded on the SYMBOL, not on line numbers.**
+
+   > **Do not trust line numbers in this section.** #116 merged after v3 was
+   > written and shifted every citation past its insertion points. v3's final
+   > bullet was a bare number list, and four of those numbers (`995`, `997`,
+   > `1007-1008`, `1276`) now point at code containing no `candidateRecipesFor`
+   > at all — an implementer working them verbatim would edit unrelated
+   > assertions. Numbers rot; the symbol does not.
+
+   **Start by running `grep -n candidateRecipesFor src/ui/chain-builder-adapter.test.ts`
+   and work every hit.** As of `develop` @ `2c3d65d` that is: `30, 346, 375,
+   387, 588, 619, 851, 877, 924, 1026, 1031, 1033, 1043, 1044, 1134, 1140,
+   1141, 1312`.
+
+   **The judgment calls, named by TEST rather than by line** (these are the ones
+   a mechanical re-point gets wrong):
+
+   - `it("counts candidates per item (0 or >=2 by construction) …")` — contains
+     TWO executable failures: the `Plate` expectation (currently `0`) must flip
+     to `1`, and the `every((c) => c === 0 || c >= 2)` assertion **IS** the
+     deleted invariant and must be **deleted**. Its title and two inline
+     comments also name the deleted function.
+   - `it("keeps the P0 ≥2-gate semantics (a lone candidate → 0)")` — the whole
+     test encodes the deleted gate; its expectation flips `0` → `1`. Retitle.
+     This is the natural home for the test-plan's lone-producer-count row.
+   - `it("excludes converter/packager recipes from candidacy")` — a mechanical
+     re-point leaves `toEqual([])`, which **FAILS** (becomes `["r_std"]`). The
+     correct expectation is `["r_std"]`, and this is an **upgrade**: today's
+     `toEqual([])` passes even if the filter dropped everything.
+   - `it("returns empty when the item has fewer than 2 candidates")` — exists
+     SOLELY to pin the deleted gate. **DELETE**; its fixture is duplicated by
+     the surviving lone-candidate test.
+   - `it("lists a LONE eligible candidate (no ≥2 gate, unlike candidateRecipesFor)")`
+     — delete the two `candidateRecipesFor` contrast lines and retitle. The
+     positive assertion the design wants **already exists** in the same body; do
+     not write a duplicate.
+   - `describe("S20 P1 — candidateRecipesFor custom exclusions")` and its lead
+     comment — rename/retarget.
+   - The section-header comment reading *"frozen spec item 5: options plumbing,
+     candidateRecipesFor exclusions param, …"* — names both the deleted function
+     and its parameter.
+   - The inline comment *"default (Smelter), non-alternate → first"* states the
+     DELETED comparator's rule. (Its sibling *"The default leads; the four
+     alternates follow ascending by id"* stays TRUE under `producerRecipesFor` —
+     verify, do not edit.)
+
+   Everything else in the grep is a straight re-point to `producerRecipesFor`.
+
+   **#116's three pins were re-checked under the new ordering and are
+   UNAFFECTED** — no update needed, recorded so the next reviewer does not
+   re-derive it. `it("carries isAlternate from the RECIPE, not from the
+   selection")`, `it("flags isAlternate against REAL parsed names…")` and
+   `AltCompare.test.tsx`'s `it("marks the ALTERNATE row, whichever row is
+   current")` all assert on fixtures with **exactly one non-alternate**, so the
+   coincidence rule above (0 or 1 non-alternates ⇒ the two orderings agree)
+   applies. Note the synthetic case is saved by the **default-first clause**
+   specifically: plain ascending id would give `[r_alt, r_std]` and flip the
+   vector to `[true, false]`. Also swept and unaffected: the
+   `const [std, alt] = model.rows` destructure in `AltCompare.test.tsx` and the
+   `rows[0]` indexing in the adapter suite, both on one-non-alternate fixtures.
 7. **The chip pin goes in a COMPONENT test.** The label is an inline expression
    in the non-exported `RecipePicker` (`ChainBuilder.tsx:729-730`);
    `chain-builder-adapter.test.ts` has no render, and **no test anywhere asserts
@@ -334,7 +376,10 @@ becomes the *only* gate. v2 wrongly said it "becomes" the guard.
 | Order differs for exactly 3 items, positions 2/3 | MEASURED; re-derived from the comparators by all four reviewer runs |
 | ≥2 non-alternates ∧ ≥1 alternate is **necessary, not sufficient**, for divergence | r2 counterexample: `{a_std, b_std}` + `{z_alt}` gives the same list both ways |
 | **The rendered recipe name does NOT carry `Alternate: `** | VERIFIED — stripped at `docs-loader.ts:190`, pinned by `docs-loader.test.ts:175`. **v1 asserted the opposite — the r1 BLOCKER** |
-| The comparison table has no alternate marker at all | VERIFIED — `CandidateRow` (`:514-538`) has no `isAlternate`; `AltCompare.tsx:155` renders the bare name; `recipeLabel` is picker-only |
+| **The comparison table NOW HAS an alternate marker** | VERIFIED post-#116 — `CandidateRow.isAlternate` at `chain-builder-adapter.ts:521-523`, set at `:980`, rendered at `AltCompare.tsx:156-158`. **This row previously asserted the OPPOSITE as VERIFIED**; #116 is what made Axis 2 (d) valid, so a ledger denying the marker would invite a later pass to delete it |
+| #116's three pins survive the reordering | VERIFIED at r3 by BOTH reviewers — all three assert on fixtures with exactly ONE non-alternate, so the coincidence rule applies. The synthetic case is saved specifically by the **default-first clause**: plain ascending id would give `[r_alt, r_std]` and flip the vector |
+| `CandidateRow`'s construction is untouched by spec item 3 | VERIFIED at r3 — item 3 changes only the SOURCE of `candidates`; the row literal, including `isAlternate`, is unaffected |
+| Spec item 8's `rubber` order is correct and overlaps no #116 pin | VERIFIED at r3 against the bundled catalog — three eligible producers, two non-alternate; no #116 pin touches `rubber` |
 | **`AltCompare.tsx:81` is LIVE today, not dead** | VERIFIED — `candidateRecipesFor` returns `[]`, so the `< 2` branch fires on it; deleting `:81` yields a non-null model and an empty rendered table. **v1/v2 asserted the opposite — the r2 IMPORTANT** |
 | `candidateCount`'s only consumer is `RecipePicker` | VERIFIED by all four reviewer runs — `ChainBuilder.tsx:502, 679, 701, 730, 732` |
 | `candidateRowsFor`'s only production caller is `AltCompare.tsx:90` | VERIFIED — grep over `src/`, non-test |
@@ -386,3 +431,27 @@ becomes the *only* gate. v2 wrongly said it "becomes" the guard.
     (`:939` not `:940`; `openPickerOptions` at `:317-323` not `:302-320`).
   - **Label retraction re-retracted** — under (d) the order change returns, so
     `refactor` is not accurate. Stated in Axis 2.
+
+- **v4** (2026-08-15) — r3 fold, after #116 merged. Both reviewers NEEDS_REWORK,
+  converging on the same two, **both mechanical re-basing rather than design
+  defects**. The plan's shape was confirmed sound on every axis they attacked.
+  - **A ledger row asserted the OPPOSITE of live source, as VERIFIED.** It said
+    the comparison table has no alternate marker — #116 added one, and Axis 2
+    (d) *depends* on that. A frozen design denying the marker is how a later
+    pass deletes it, which is the failure mode this document already records
+    twice against itself.
+  - **Every citation past #116's insertion points was stale** (+3/+4 in the
+    adapter, +16/+36 in its test file). The dangerous case: spec item 6's final
+    bullet was a bare number list, and four of those numbers now point at code
+    containing no `candidateRecipesFor` at all — an implementer working them
+    verbatim would have edited unrelated assertions.
+  - **Spec item 6 is now grounded on the SYMBOL, not on line numbers** — it
+    opens with the `grep` to run, and names every judgment call by TEST NAME.
+    Numbers rot across a merge; the symbol does not. This is the durable fix for
+    a defect that has now bitten twice.
+  - **Recorded what r3 verified** so the next reviewer does not re-derive it:
+    #116's three pins survive the reordering (all three fixtures have exactly
+    one non-alternate); `CandidateRow`'s construction is untouched by item 3;
+    the `rubber` pin is correct and overlaps nothing.
+  - Two further stale-comment sites added, and the "still worth doing" judgment
+    re-confirmed now that the comparator cost is gone entirely.
