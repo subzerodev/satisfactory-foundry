@@ -21,9 +21,10 @@
  *     handed whichever catalog the component chose, which is the very thing
  *     under test. A branded `GatedCatalog` was measured and DECLINED (#106,
  *     won't-do): 9 of the 15 value-passing gated/ungated slips were already
- *     caught at #106 close, and #117 adds the constrained-recovery label row
- *     below as the tenth. These rows ARE the enforcement, not a stopgap
- *     awaiting a type. Do not retire them as "render-only".
+ *     caught at #106 close; #117 added the constrained-recovery label row; and
+ *     #118 added four stale-preview repropose rows. These rows ARE the
+ *     enforcement, not a stopgap awaiting a type. Do not retire them as
+ *     "render-only".
  *
  * So this ONE file runs in jsdom (scoped by the pragma above; the global
  * environment and every other test file are untouched) and drives React with
@@ -272,17 +273,18 @@ function click(el: HTMLElement): void {
   });
 }
 
+const proposeButton = (): HTMLButtonElement =>
+  $$<HTMLButtonElement>(".chain-builder-controls button").find(
+    (b) => b.textContent === "Propose",
+  )!;
+
 /** Propose `plate` at 60/min — the entry into the preview block every seam
  *  below lives inside. */
 function propose(): void {
   const selects = $$<HTMLSelectElement>(".chain-builder-controls select");
   chooseOption(selects[0]!, "plate");
   typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "60");
-  click(
-    $$<HTMLButtonElement>(".chain-builder-controls button").find(
-      (b) => b.textContent === "Propose",
-    )!,
-  );
+  click(proposeButton());
 }
 
 const tierSelect = (): HTMLSelectElement =>
@@ -331,6 +333,29 @@ function openPickerOptions(itemName: string): string[] {
   return $$<HTMLOptionElement>(
     'select[aria-label="pick a recipe for this stage"] option',
   ).map((o) => o.textContent!);
+}
+
+/**
+ * Leave the component in the exact state #118 cares about: the visible control
+ * says tier "all", but the live preview was solved at tier 0 because the tier
+ * change could not re-propose while Rate was invalid. The next successful
+ * re-propose must therefore start from the STORE catalog, not from
+ * `preview.gated`, or tier-gated recipes remain impossible to restore.
+ */
+function leaveTierZeroPreviewBehindAtTierAll(): void {
+  mount(splitCatalog(), { unlockedTier: 0 });
+  propose();
+  expect(stageRow("Ingot").textContent).toContain("Ingot — Foundry");
+
+  typeInto(
+    $$<HTMLInputElement>(".chain-builder-controls input")[0]!,
+    "nonsense",
+  );
+  chooseOption(tierSelect(), "");
+  expect(selectedTierLabel()).toBe("all");
+
+  typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "60");
+  expect(stageRow("Ingot").textContent).toContain("Ingot — Foundry");
 }
 
 afterEach(() => {
@@ -496,6 +521,53 @@ describe("S20 P3 seams — the gated world reaches the render (jsdom)", () => {
     // The CONTROL has moved, though — the documented caveat. The select binds
     // the live tier, so it can lead the solved world until the next propose.
     expect(selectedTierLabel()).toBe("0");
+  });
+
+  it("repropose initial Propose: starts from the store catalog, not a stale gated preview", () => {
+    leaveTierZeroPreviewBehindAtTierAll();
+
+    click(proposeButton());
+
+    expect(stageRow("Ingot").textContent).toContain("Ingot — Smelter");
+  });
+
+  it("repropose chooseRecipe: clearing the stale gated default restores the all-tier default", () => {
+    leaveTierZeroPreviewBehindAtTierAll();
+
+    openPickerOptions("Ingot");
+    chooseOption(stagePicker(), "r_b_std");
+
+    expect(stageRow("Ingot").textContent).toContain("Ingot — Smelter");
+    expect(appStore.getState().proposePrefs.overrides).toEqual({});
+  });
+
+  it("repropose toggleRaw: removing a raw override restores the all-tier default", () => {
+    leaveTierZeroPreviewBehindAtTierAll();
+
+    click(
+      stageRow("Ingot").querySelector<HTMLButtonElement>(
+        ".chain-builder-rawtoggle",
+      )!,
+    );
+    expect(
+      $<HTMLParagraphElement>(".chain-builder-rawstrip").textContent,
+    ).toContain("Ingot");
+
+    click(
+      $<HTMLButtonElement>(
+        'button[aria-label="remove raw override for Ingot"]',
+      ),
+    );
+
+    expect(stageRow("Ingot").textContent).toContain("Ingot — Smelter");
+  });
+
+  it("repropose toggleExclusion: machine changes re-solve from the store catalog", () => {
+    leaveTierZeroPreviewBehindAtTierAll();
+
+    click(exclusionCheckbox("Refinery"));
+
+    expect(stageRow("Ingot").textContent).toContain("Ingot — Smelter");
   });
 
   it("keeps a machine's checkbox reachable when the tier gates its every recipe", () => {

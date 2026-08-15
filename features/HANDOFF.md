@@ -31,7 +31,7 @@ Repo-local MCP is `mcp__forgejo-satisfactory-foundry__*` (bound via `.mcp.json`)
 5. **New work gets its OWN ticket immediately** — never parked in prose or in a
    comment on another ticket.
 
-Current trunk (`develop`) test count: **912**, all green.
+Current branch test count after #117/#118 rows: **917**, all green.
 
 ---
 
@@ -43,33 +43,28 @@ Current trunk (`develop`) test count: **912**, all green.
 |---|---|---|
 | P0 ore constrained-vs-natural | #104 | **DONE**, merged |
 | P1 retire `candidateRecipesFor` | #103 | **DONE**, merge `0805af0` |
-| P2 branded `GatedCatalog` | #106 | **won't-do, GATE NOT FINISHED** — see below |
+| P2 branded `GatedCatalog` | #106 | **DONE / won't-do**, merge `8debe85` |
 | P3 explicit byproduct routing | #105 | **NOT STARTED** — the arc's largest design |
 
 Also open, outside the arc's four: **#115** (AltCompare tier-locked labels),
-**#111** (total output display), **#117** and **#118** (new, see below).
+**#111** (total output display), and **#118** (in review, see below). #117 is
+**DONE**, merge `867d6d4`.
 
-### IMMEDIATE: `feature/s21-p2-wontdo` is committed but NOT reviewed-clean
+### IMMEDIATE: `feature/s21-118-repropose-world` is in review
 
-**This branch is NOT merged and must NOT be merged as-is.** The original
-diff-stage r2 run was stopped mid-flight, so those verdicts did not exist. The
-fresh Codex-subagent reruns have since happened: r2a folded stale handoff
-wording; r2b found the count still missed five `repropose(catalog, ...)` callers.
-Those five are now in the harness as R0-R4, with R4 red and R0-R3 split to #118.
+**This branch is NOT merged yet.** #118 has implementation + tests and has passed
+correctness r1 as APPROVED + APPROVED_WITH_NITS. The NITs were stale handoff
+lines, now folded. Next step is the one-shot simplify pass, then commit and
+merge if it approves / findings are dispositioned.
 
 **To finish it:**
 
-1. `git checkout feature/s21-p2-wontdo`
-2. Dispatch `code-reviewer` + `adversarial-reviewer` in parallel on
-   `features/branded-gated-catalog/diff-r2-prompt.md` (already written, already
-   delta-scoped to the r1/r2 folds).
-3. Fold or reject-with-counter-evidence; re-run the pair until both are
-   APPROVED / APPROVED_WITH_NITS.
-4. Then `claude-simplify-reviewer` once, disposition its findings.
-5. Merge `--no-ff` to `develop`, close #106 with a `done` audit comment, move the
-   card to Done (issue id **1193**, column **71**).
-6. **No changelog entry** — there is no behaviour change. (`docs/foundry-changelog.md`
-   is deploy-facing prose for Michael to paste; a doc-comment change earns nothing.)
+1. Run `claude-simplify-reviewer` once on `/tmp/s21-118-current.diff`.
+2. Disposition any simplify findings (or record APPROVED).
+3. Commit `feature/s21-118-repropose-world`.
+4. Merge `--no-ff` to `develop`, verify, close #118 with a `done` audit comment,
+   and move the card to Done (issue id **1259**, column **71**).
+5. No changelog entry — this is test/docs coverage, no behaviour change.
 
 **Beware:** the headline count in that comment has been **wrong three times** and
 reviewers caught it every time. It currently claims *fifteen value-passing places*
@@ -96,7 +91,7 @@ Full report + reproducible harness: `features/branded-gated-catalog/`.
 NOT reject `preview?.gated ?? catalog` — TypeScript subtype-reduces that union to
 plain `Catalog`. Measured. That kills the obvious "just brand it" fix.
 
-### #117 pinned; #118 remains from the #106 measurement
+### #117 / #118 pinned after the #106 measurement
 
 `ChainBuilder.tsx` renders the constrained-recovery `<select>` options via
 `recipeLabel(preview.gated, …)`. #117 proved the ungated-label slip reachable
@@ -106,11 +101,11 @@ keeps the solved cause while its recovery options use the live exclusions; the
 correct label is `Bravo (default)`, and the ungated mutation loses the
 `(default)` tag.
 
-#118 is already created, assigned to Stage 21, linked under #108, and queued
-after #117. Its first task is now the same shape #117 started with: settle
-whether the four green
-`repropose` slips are reachable or inert. The measured negative brand does not
-catch them because `preview?.gated ?? catalog` launders back to plain `Catalog`.
+#118 proved the four green `repropose` slips reachable and pinned them with
+stale-preview jsdom rows: solve at tier 0, stall a tier change to `all` with an
+invalid Rate, restore Rate, then trigger each caller. Correct code starts from
+the store catalog and restores Alpha/Smelter; the `preview?.gated ?? catalog`
+mutations stay stuck in the tier-0 Foundry world.
 
 **#115 still has no milestone** — assign it to Stage 21 when you pick it up.
 
@@ -118,10 +113,10 @@ catch them because `preview?.gated ?? catalog` launders back to plain `Catalog`.
 
 ## Suggested order
 
-1. **Finish the #106 gate** (above). Small, and it is blocking a clean trunk.
-2. **#117** — pinned by `feature/s21-117-constrained-label`; merge/close once
-   its review gate converges.
-3. **#118** — same measurement family as #117; four green `repropose` slips.
+1. **#106** — DONE / won't-do, merged at `8debe85`.
+2. **#117** — DONE, merged at `867d6d4`.
+3. **#118** — pinned by `feature/s21-118-repropose-world`; merge/close once its
+   review gate converges.
 4. **#115** — AltCompare tier-locked labels. Design is already sharp in the
    ticket body; the decision (label, never hide) is SETTLED, do not re-litigate.
    Its stated trap: `unlockedTier` defaults to `null`, so a test that does not

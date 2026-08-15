@@ -140,6 +140,17 @@ guard for the constrained-recovery `<select>` option labels. That does not
 change the #106 verdict: the brand still would have been a partial guard, and
 the four #118 `preview?.gated ?? catalog` `repropose` slips remain outside it.
 
+## Postscript: #118
+
+#118 later proved the four `repropose` rows reachable and added focused jsdom
+guards. The shared path: keep a tier-0 solved preview alive, move the live tier
+to `all` while Rate is invalid so re-propose stalls, restore Rate, then trigger
+initial Propose, `chooseRecipe`, `toggleRaw`, or `toggleExclusion`. Correct code
+starts from the store catalog and restores Alpha/Smelter; the
+`preview?.gated ?? catalog` mutations stay stuck in the old tier-0 Foundry
+world. After #117 and #118, only the inert `byproductSuggestions` row remains
+green.
+
 ## Why not the smaller ticket
 
 Both r2 reviewers offered a fallback: keep `Preview.gated`,
@@ -177,7 +188,7 @@ assuming this verdict still holds.
 | The enumeration is complete | r2b review found five missing `repropose` callers; all are now rows R0-R4 |
 | The `byproductSuggestions` slip is behaviour-preserving | Traced by both r2 reviewers and re-verified exhaustive at r3 (two catalog reads, one use of the result) |
 | At #106 close, the `recipeLabel` slip was NOT proven inert | Absence of an argument, not proof of a defect — #117 later proved it reachable and pinned it |
-| The green `repropose` slips are NOT provably inert | Absence of an argument, not proof of a defect — #118's first task is to settle them either way |
+| At #106 close, the green `repropose` slips were NOT proven inert | Absence of an argument, not proof of a defect — #118 later proved them reachable and pinned them |
 | The measured five-seam brand would catch S1, S2, S4, S6 + direct S5 | Measured — `brand-probe.patch` applied, all rows re-run |
 | A sixth `recipeLabel` narrowing could catch #117 | Source trace — current production calls are gated (`preview.gated` directly or through `RecipePickerProps.catalog`) |
 | Applying the brand costs zero test churn | Measured — tsc exit 0, 912 green, no test file touched |
