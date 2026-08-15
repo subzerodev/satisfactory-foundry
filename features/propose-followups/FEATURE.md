@@ -1,7 +1,7 @@
 # Propose follow-ups: consolidation, type-safety, routing (Stage 21 arc)
 
 **Started:** 2026-08-07
-**Status:** IN PROGRESS — P0 DONE, P1 next
+**Status:** IN PROGRESS — P0 DONE, P1 in design review (r1 dispatched 2026-08-15)
 **Epic:** #108 (board #21, Stage 21 milestone 92)
 **Directive:** Michael 2026-08-07, handed the four Stage 20 follow-ups:
 **"do them."** That delegates the #104 UX call the ticket had reserved for him.
@@ -35,7 +35,20 @@
   Walk: all five cases live, including both rule-killers — excluding
   Constructor keeps coal's machine lever; un-excluding Converter at tier 8
   keeps Iron Ore's tier lever.
-- **P1 (#103) — adapter consolidation + compare tier-awareness**: pending.
+- **P1 (#103) — adapter consolidation + compare tier-awareness**: DESIGN v1
+  in review (`p1-brainstorm.md`, commit `c0d480e`). The #103 research probe was
+  RE-RUN rather than trusted from the audit trail; it reproduced 0 set diffs /
+  3 order-only diffs and surfaced a number the original probe never reported —
+  **63 items have exactly one eligible producer**, so `candidateCount`'s
+  documented range (`0 or ≥2 by construction`) becomes false for a third of the
+  catalog. The render survives (the sole consumer branches on `>= 2`, and both
+  `0` and `1` sit below it), but the prose invariant and the test guarding it
+  (`chain-builder-adapter.test.ts:841`, "Never a bare 1") both become lies.
+  That test is flagged as the phase's pass-either-way danger point: it must be
+  rewritten to pin the CHIP, not the count.
+  Compare tier-awareness (the S20 P3 scope addition) is DECIDED here — label
+  locked candidates, never hide them — and split to **#115** for the build, so
+  a refactor does not carry a feature.
 - **P2 (#106) — branded `GatedCatalog`**: pending, blocked-by P1
   (consolidating first means fewer call sites to brand).
 - **P3 (#105) — explicit byproduct routing**: pending. The largest design;
