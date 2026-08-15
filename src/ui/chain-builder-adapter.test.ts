@@ -27,7 +27,6 @@ import {
   metricsPowerText,
   proposalMetrics,
   byproductSuggestions,
-  candidateRecipesFor,
   candidateRowsFor,
   swapMachineCountFor,
   effectiveDefaultRecipe,
@@ -319,7 +318,7 @@ function synthCatalog(
 }
 
 describe("alt-compare — candidate enumeration", () => {
-  it("lists default (non-alternate) first, then alternates ascending by id", () => {
+  it("lists the effective default first, then everything else ascending by id", () => {
     const cat = synthCatalog(
       [item("ingot", "Ingot"), item("ore", "Ore")],
       [machine("smelter", 4)],
@@ -343,8 +342,15 @@ describe("alt-compare — candidate enumeration", () => {
         ),
       ],
     );
-    const ids = candidateRecipesFor(cat, "ingot").map((r) => r.id);
-    // Default first; alternates ascending (r_alt_a before r_alt_z).
+    const ids = producerRecipesFor(cat, "ingot").map((r) => r.id);
+    // The fixture is declared SCRAMBLED (r_alt_z, r_std, r_alt_a) on purpose:
+    // that is what kills a mutant returning `eligible` unsorted. The sibling at
+    // "orders effective-default first, then ascending id" declares its fixture
+    // already in the expected order and cannot — so a future dedupe must retire
+    // THAT one, not this one.
+    // NB the rule is default-first-then-ascending, NOT the retired
+    // non-alternates-before-alternates grouping: #103 deleted that comparator,
+    // and this phase's rubber pin expects an alternate ahead of a non-alternate.
     expect(ids).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
   });
 
@@ -372,19 +378,11 @@ describe("alt-compare — candidate enumeration", () => {
         ),
       ],
     );
-    const ids = candidateRecipesFor(cat, "ingot").map((r) => r.id);
-    // Converter/packager never listed → only the smelter recipe survives → <2 →
-    // empty (nothing to compare against).
-    expect(ids).toEqual([]);
-  });
-
-  it("returns empty when the item has fewer than 2 candidates", () => {
-    const cat = synthCatalog(
-      [item("ingot", "Ingot"), item("ore", "Ore")],
-      [machine("smelter", 4)],
-      [crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]])],
-    );
-    expect(candidateRecipesFor(cat, "ingot")).toEqual([]);
+    const ids = producerRecipesFor(cat, "ingot").map((r) => r.id);
+    // Converter/packager never listed → only the smelter recipe survives. Named
+    // POSITIVELY (S21 P1): the old `toEqual([])` was satisfied by a filter that
+    // dropped EVERYTHING, so it could not tell exclusion from over-exclusion.
+    expect(ids).toEqual(["r_std"]);
   });
 });
 
@@ -584,8 +582,8 @@ describe("alt-compare — per-candidate metrics (synthetic, exact)", () => {
     // A recipe listing its own primary output among its inputs passes candidacy
     // but is demoted to RAW by proposeChain's cycle guard — leaving NO stage for
     // itemId. The guarded lookup degrades to "—"; an unguarded .find().outputRate
-    // would TypeError inside the render (r2 IMPORTANT/MAJOR). Two candidates so
-    // the item is comparable at all (candidateRecipesFor needs ≥2).
+    // would TypeError inside the render (r2 IMPORTANT/MAJOR). Two producers so
+    // the item is comparable at all (AltCompare's ≥2 gate).
     const selfCat = synthCatalog(
       [item("ingot", "Ingot"), item("ore", "Ore")],
       [machine("smelter", 4)],
@@ -616,9 +614,9 @@ describe("alt-compare — per-candidate metrics (synthetic, exact)", () => {
 
 describe("alt-compare — bundled Iron Ingot alternates", () => {
   it("surfaces exactly 5 candidates: default + Iron Alloy, Basic, Leached, Pure Iron", () => {
-    const cands = candidateRecipesFor(catalog, "iron_ingot");
+    const cands = producerRecipesFor(catalog, "iron_ingot");
     expect(cands.map((c) => c.id)).toEqual([
-      "ingot_iron", // default (Smelter), non-alternate → first
+      "ingot_iron", // the effective default (Smelter) → first
       "alternate_ingot_iron", // Iron Alloy Ingot
       "alternate_iron_ingot_basic", // Basic Iron Ingot
       "alternate_iron_ingot_leached", // Leached Iron Ingot
@@ -665,6 +663,56 @@ describe("alt-compare — bundled Iron Ingot alternates", () => {
     // The premise, pinned so this row cannot rot into a tautology if the parser
     // ever stops stripping: no parsed name carries the prefix.
     expect(rows.some((r) => r.recipeName.startsWith("Alternate"))).toBe(false);
+  });
+});
+
+// ===========================================================================
+// S21 P1 (#103) — the SINGLE enumerator, pinned against the bundled catalog.
+// Two facts the retirement of `candidateRecipesFor` newly puts at risk, both
+// stated so a revert to a ≥2-gated, non-alternate-first enumerator FAILS here.
+// ===========================================================================
+
+describe("S21 P1 — producerRecipesFor is the comparison enumerator", () => {
+  it("compares rubber in producerRecipesFor's order — the ALTERNATE in the MIDDLE", () => {
+    // The single item that proves the ordering actually changed hands. Rubber
+    // has THREE eligible producers, TWO of them non-alternate, so the retired
+    // "all non-alternates, then all alternates" grouping and the surviving
+    // "effective default first, then ascending id" rule genuinely disagree:
+    //   retired:   [residual_rubber, rubber, alternate_recycled_rubber]
+    //   surviving: [residual_rubber, alternate_recycled_rubber, rubber]
+    // An alternate in a NON-TERMINAL position is unreachable under grouping, so
+    // this row cannot pass against the old comparator — it is the phase's
+    // load-bearing revert-detector. (liquid_fuel and plastic are the only other
+    // two items in the whole 195-item catalog that diverge; all three differ at
+    // positions 2/3 only, never on the leading row.)
+    const rows = candidateRowsFor(catalog, "rubber", "rubber", F(60));
+    expect(rows.map((r) => r.recipeId)).toEqual([
+      "residual_rubber",
+      "alternate_recycled_rubber",
+      "rubber",
+    ]);
+    // …and #116's marker is what makes that order legible, so the alternate is
+    // still identifiable now that position no longer encodes it.
+    expect(rows.map((r) => r.isAlternate)).toEqual([false, true, false]);
+  });
+
+  it("counts a LONE eligible producer as 1 on a real preview row", () => {
+    // 63 of the bundled catalog's 195 items have exactly ONE eligible producer
+    // — a third of the catalog, every one of which read candidateCount 0 under
+    // the retired ≥2 gate. Pinned on a REAL row rather than a synthetic fixture
+    // because the range widening is precisely a bundled-catalog claim.
+    const lone = Object.keys(catalog.items).filter(
+      (id) => producerRecipesFor(catalog, id).length === 1,
+    );
+    expect(lone.length).toBeGreaterThan(0);
+    expect(lone).toContain("aluminum_plate");
+
+    const view = toProposalPreview(
+      proposeChainForCatalog(catalog, "aluminum_plate", F(60)),
+      catalog,
+    );
+    const row = view.rows.find((r) => r.itemName === "Alclad Aluminum Sheet")!;
+    expect(row.candidateCount).toBe(1);
   });
 });
 
@@ -846,9 +894,10 @@ describe("S20 P0 — depth on a diamond DAG (longest-path + feeds)", () => {
 });
 
 describe("S20 P0 — candidateCount on preview rows", () => {
-  it("counts candidates per item (0 or >=2 by construction) from the catalog", () => {
-    // ingot has TWO producers (default + alternate) → count 2; plate has one →
-    // count 0 (candidateRecipesFor returns [] below 2).
+  it("counts EVERY eligible producer per item (0, 1, or more) from the catalog", () => {
+    // ingot has TWO producers (default + alternate) → count 2; plate has ONE →
+    // count 1. S21 P1: the count is the raw eligible-producer count, so a lone
+    // producer reads 1, not 0 — the chip's own ≥2 rule preserves the display.
     const cat = synthCatalog(
       [item("plate", "Plate"), item("ingot", "Ingot"), item("ore", "Ore")],
       [machine("m", 4)],
@@ -873,11 +922,7 @@ describe("S20 P0 — candidateCount on preview rows", () => {
       view.rows.map((r) => [r.itemName, r.candidateCount]),
     );
     expect(countByName.get("Ingot")).toBe(2); // default + alternate
-    expect(countByName.get("Plate")).toBe(0); // single producer → []
-    // Never a bare 1 — candidateRecipesFor returns [] below 2.
-    expect([...countByName.values()].every((c) => c === 0 || c >= 2)).toBe(
-      true,
-    );
+    expect(countByName.get("Plate")).toBe(1); // its single producer, counted
   });
 
   it("counts the real bundled Iron Ingot alternates (5) on its preview row", () => {
@@ -921,7 +966,7 @@ describe("S20 P0 — compare-path regression (candidateRowsFor unchanged)", () =
 
 // ===========================================================================
 // S20 P1 — Propose customization core (ticket #100). Adapter families per the
-// frozen spec item 5: options plumbing, candidateRecipesFor exclusions param,
+// frozen spec item 5: options plumbing, the enumerator's exclusions param,
 // excludableMachines, effectiveDefaultRecipe (incl. null), producerRecipesFor
 // (UNGATED), pickerOptionsFor (TOTAL + the reachability pin), toProposalPreview
 // candidateCount under exclusions, and the rawInputs cause annotation.
@@ -1023,16 +1068,14 @@ describe("S20 P1 — proposeChainForCatalog options plumbing", () => {
   });
 });
 
-describe("S20 P1 — candidateRecipesFor custom exclusions", () => {
-  it("an excluded machine's recipe drops out of candidacy", () => {
+describe("S20 P1 — producerRecipesFor custom exclusions", () => {
+  it("an excluded machine's recipe drops out of the eligible list", () => {
     // ingot has 3 producers (std + 2 alternates). Excluding the foundry drops
-    // r_alt_a → 2 remain (still ≥2, so a non-empty list).
+    // r_alt_a → 2 remain.
     const cat = ingotCatalog();
-    const all = candidateRecipesFor(cat, "ingot").map((r) => r.id);
+    const all = producerRecipesFor(cat, "ingot").map((r) => r.id);
     expect(all).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
-    const excl = candidateRecipesFor(cat, "ingot", ["foundry"]).map(
-      (r) => r.id,
-    );
+    const excl = producerRecipesFor(cat, "ingot", ["foundry"]).map((r) => r.id);
     expect(excl).toEqual(["r_std", "r_alt_z"]);
   });
 
@@ -1040,12 +1083,10 @@ describe("S20 P1 — candidateRecipesFor custom exclusions", () => {
     // The default exclusion set is the module constant (converter/packager);
     // an unexcluded synthetic catalog is unaffected either way.
     const cat = ingotCatalog();
-    const dflt = candidateRecipesFor(cat, "ingot").map((r) => r.id);
-    const explicit = candidateRecipesFor(
-      cat,
-      "ingot",
-      EXCLUDED_MACHINE_IDS,
-    ).map((r) => r.id);
+    const dflt = producerRecipesFor(cat, "ingot").map((r) => r.id);
+    const explicit = producerRecipesFor(cat, "ingot", EXCLUDED_MACHINE_IDS).map(
+      (r) => r.id,
+    );
     expect(dflt).toEqual(explicit);
   });
 });
@@ -1131,14 +1172,12 @@ describe("S20 P1 — effectiveDefaultRecipe (matches selectProducer)", () => {
 });
 
 describe("S20 P1 — producerRecipesFor (UNGATED eligible list)", () => {
-  it("lists a LONE eligible candidate (no ≥2 gate, unlike candidateRecipesFor)", () => {
+  it("lists a LONE eligible candidate (no ≥2 gate)", () => {
     const cat = synthCatalog(
       [item("ingot", "Ingot"), item("ore", "Ore")],
       [machine("smelter", 4)],
       [crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]])],
     );
-    // candidateRecipesFor gates at ≥2 → []; producerRecipesFor lists the one.
-    expect(candidateRecipesFor(cat, "ingot")).toEqual([]);
     expect(producerRecipesFor(cat, "ingot").map((r) => r.id)).toEqual([
       "r_std",
     ]);
@@ -1307,9 +1346,10 @@ describe("S20 P1 — toProposalPreview candidateCount under exclusions", () => {
     );
   });
 
-  it("keeps the P0 ≥2-gate semantics (a lone candidate → 0)", () => {
-    // Excluding two of the three producers leaves ONE eligible → the ≥2 gate in
-    // candidateRecipesFor returns [] → candidateCount 0 (P0 chip semantics).
+  it("counts a LONE surviving producer as 1 (S21 P1 — no ≥2 gate)", () => {
+    // Excluding two of the three producers leaves ONE eligible. Under the
+    // retired gate this read 0; it now reads the honest 1. Bidirectional: this
+    // row FAILS if the swap back to a ≥2-gated enumerator is ever made.
     const cat = ingotCatalog();
     const opts = { excludedMachineIds: ["foundry", "refinery"] };
     const view = toProposalPreview(
@@ -1318,7 +1358,7 @@ describe("S20 P1 — toProposalPreview candidateCount under exclusions", () => {
       opts,
     );
     expect(view.rows.find((r) => r.itemName === "Ingot")!.candidateCount).toBe(
-      0,
+      1,
     );
   });
 });

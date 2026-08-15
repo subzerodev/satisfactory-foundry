@@ -19,7 +19,7 @@ import type { Selection, SolveState } from "../state/store.ts";
 import type { Catalog, CatalogRecipe } from "../data/types.ts";
 import { Fraction } from "../core/fraction.ts";
 import {
-  candidateRecipesFor,
+  producerRecipesFor,
   candidateRowsFor,
   swapMachineCountFor,
 } from "./chain-builder-adapter.ts";
@@ -77,7 +77,10 @@ export function altCompareModel(
   if (recipe === undefined) return null;
 
   const itemId = recipe.primaryOutputId;
-  const candidates = candidateRecipesFor(catalog, itemId);
+  const candidates = producerRecipesFor(catalog, itemId);
+  // The ONLY ≥2 gate (S21 P1 retired the enumerator's internal one). Load-
+  // bearing: without it a lone producer yields a non-null model with one row,
+  // which renders as the .alt-compare header over a pointless one-row table.
   if (candidates.length < 2) return null; // nothing to compare
 
   // R = the primary output lane's totalOutput (per-lane; no scalar). Gate off if
