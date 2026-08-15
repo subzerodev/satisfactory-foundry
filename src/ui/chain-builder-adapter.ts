@@ -106,9 +106,11 @@ export interface PreviewRow {
    */
   feeds: string[];
   /**
-   * How many candidate producer recipes exist for this item
-   * (candidateRecipesFor length — 0 or ≥2 by construction). Nonzero ⇒ the
-   * "N recipes" chip; this is exactly what P1's picker will offer. S20 P0 Axis 3.
+   * How many ELIGIBLE producer recipes exist for this item under the current
+   * exclusions (`producerRecipesFor` length — 0, 1, or more; S21 P1 retired the
+   * ≥2-gated enumerator this used to count). The chip's own `>= 2` rule keeps
+   * the display unchanged: a lone producer reads "machine excluded" exactly as
+   * zero does. S20 P0 Axis 3.
    */
   candidateCount: number;
 }
@@ -278,7 +280,7 @@ export interface PreviewOptions {
 /**
  * Build the display-ready preview from a proposal + the catalog for names.
  * Rows gain depth (longest-path tier from the target), feeds (direct-consumer
- * display names), and candidateCount (alternate-recipe count) — S20 P0. Rows are
+ * display names), and candidateCount (eligible-producer count) — S20 P0. Rows are
  * ordered by (depth asc, existing stage order); the target unique sink is the
  * root, so it renders T0 first. `metrics` carries the cost-sheet totals.
  *
@@ -338,7 +340,7 @@ export function toProposalPreview(
     // exclusions (design r1) — else the chip and the picker's list disagree.
     // Chip semantics (≥2 gate) are unchanged from P0; only the exclusion set
     // it reads is now the live one.
-    candidateCount: candidateRecipesFor(catalog, s.itemId, excludedMachineIds)
+    candidateCount: producerRecipesFor(catalog, s.itemId, excludedMachineIds)
       .length,
   }));
   // Stable sort by depth (asc); Array.prototype.sort is stable, so equal-depth
@@ -502,9 +504,11 @@ export function metricsPowerText(metrics: ProposalMetrics): string {
 // ---------------------------------------------------------------------------
 // Alternate-recipe comparison (Stage 8 / Phase 4, ticket #40).
 //
-// Candidate enumeration for an item X = every catalog recipe that
+// Candidates come from `producerRecipesFor` (below): every catalog recipe that
 // primary-produces X on a NON-excluded machine — the isAlternate filter is
 // LIFTED (that is the whole phase), the converter/packager exclusion stands.
+// S21 P1 retired the near-duplicate, ≥2-gated enumerator that used to live
+// here; the gate is now the caller's alone (AltCompare.tsx).
 // Each candidate's metrics come from ONE proposeChain run with the item pinned
 // to that candidate (overrides = {X: candidateId}) — N runs of the SAME builder,
 // no comparison-specific solver (the epic-mandated one-traversal reuse).
@@ -538,30 +542,6 @@ export interface CandidateRow {
   /** The subtree's byproducts as compact text, or null when there are none
    *  (a note, never a cost column — byproducts are a bonus, not ranked). */
   byproducts: string | null;
-}
-
-/**
- * Every candidate recipe for item X, ordered default (non-alternate) first then
- * alternates ascending by recipe id — the enumeration the comparison table maps
- * over. Excluded-machine recipes (converter/packager) are never candidates.
- * Fewer than 2 candidates ⇒ empty (nothing to compare; the UI gate).
- */
-export function candidateRecipesFor(
-  catalog: Catalog,
-  itemId: string,
-  excludedMachineIds: Iterable<string> = EXCLUDED_MACHINE_IDS,
-): CatalogRecipe[] {
-  const excluded = new Set(excludedMachineIds);
-  const candidates = Object.values(catalog.recipes).filter(
-    (r) => r.primaryOutputId === itemId && !excluded.has(r.machineId),
-  );
-  if (candidates.length < 2) return [];
-  // Non-alternate before alternate; within each group, ascending recipe id. The
-  // default candidate is the baseline row, so it leads.
-  return candidates.sort((a, b) => {
-    if (a.isAlternate !== b.isAlternate) return a.isAlternate ? 1 : -1;
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -600,9 +580,11 @@ export function effectiveDefaultRecipe(
 /**
  * The UNGATED eligible producer list for `itemId` under `exclusions` (Axis 4):
  * EVERY primary-producing recipe on a non-excluded machine — alternates
- * INCLUDED, NO ≥2 gate (unlike candidateRecipesFor, which is a comparison
- * affordance that hides a lone option). This is the picker's option source and
- * the constrained-row recovery list. Ordering: the effective default FIRST when
+ * INCLUDED, NO ≥2 gate. It is the SOLE enumerator (S21 P1): the picker's option
+ * source, the constrained-row recovery list, the preview's `candidateCount`,
+ * and the comparison table's rows. A consumer wanting a "nothing to compare"
+ * affordance applies that gate itself — hiding a lone option is a UI decision
+ * and does not belong in a data function. Ordering: the effective default FIRST when
  * it is non-null (its id leads), then the remaining recipes ascending by id;
  * when the effective default is null (alternate-only / fully-excluded) the list
  * degenerates cleanly to plain ascending id.
@@ -937,10 +919,12 @@ function itemRateDot(
 
 /**
  * The comparison rows for the item X currently produced by `currentRecipeId`, at
- * demand `rate` (the compared stage's current primary-output rate). One row per
- * candidate (default first, alternates ascending); each scored from a single
- * `proposeChain(X, rate, …, {X: candidate})` run. Empty when X has <2 candidates
- * (nothing to compare — the caller gates the whole block on this).
+ * demand `rate` (the compared stage's current primary-output rate). ONE ROW PER
+ * ELIGIBLE PRODUCER, in `producerRecipesFor`'s order (the effective default
+ * leads, then ascending id); each scored from a single
+ * `proposeChain(X, rate, …, {X: candidate})` run. NO ≥2 gate — a lone producer
+ * yields one row and the CALLER gates the block (AltCompare.tsx's `< 2` check
+ * is what makes it absent rather than an empty table).
  */
 export function candidateRowsFor(
   catalog: Catalog,
@@ -948,7 +932,7 @@ export function candidateRowsFor(
   currentRecipeId: string,
   rate: Fraction,
 ): CandidateRow[] {
-  const candidates = candidateRecipesFor(catalog, itemId);
+  const candidates = producerRecipesFor(catalog, itemId);
   const recipes = Object.values(catalog.recipes);
   return candidates.map((candidate) => {
     const proposal = proposeChain(
