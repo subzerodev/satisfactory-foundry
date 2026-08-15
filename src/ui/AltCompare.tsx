@@ -153,6 +153,9 @@ export function AltCompare() {
             >
               <td>
                 {row.recipeName}
+                {row.isAlternate && (
+                  <span className="alt-compare-mark"> (alt)</span>
+                )}
                 {row.byproducts !== null && (
                   <span className="alt-compare-byproducts">
                     {" "}
