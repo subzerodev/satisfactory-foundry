@@ -336,10 +336,10 @@ export function toProposalPreview(
     outputRate: formatRate(s.outputRate),
     depth: depthOf.get(s.itemId) ?? Number.MAX_SAFE_INTEGER,
     feeds: (consumersOf.get(s.itemId) ?? []).map(itemName),
-    // The "N recipes" chip counts eligible candidates under the CURRENT
-    // exclusions (design r1) — else the chip and the picker's list disagree.
-    // Chip semantics (≥2 gate) are unchanged from P0; only the exclusion set
-    // it reads is now the live one.
+    // Counts eligible producers under the CURRENT exclusions (design r1) —
+    // else the chip and the picker's list disagree. UNGATED since S21 P1: a
+    // lone producer counts 1, not 0. The ≥2 rule lives in the CHIP alone
+    // (ChainBuilder.tsx), which is why the rendered label is unaffected.
     candidateCount: producerRecipesFor(catalog, s.itemId, excludedMachineIds)
       .length,
   }));
