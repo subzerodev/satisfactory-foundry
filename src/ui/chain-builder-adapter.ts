@@ -525,6 +525,8 @@ export interface CandidateRow {
   /** true ⇒ this row's recipe is an ALTERNATE. The parser strips the game's
    *  "Alternate: " prefix (docs-loader.ts:190), so `recipeName` cannot carry it. */
   isAlternate: boolean;
+  /** Minimum unlock tier when this recipe sits above the current Propose tier. */
+  lockedTier: number | null;
   /** Total machine count across the candidate's whole subtree (Σ, exact). */
   machines: string;
   /** The candidate's actual produced rate of the compared item — the PRIMARY
@@ -950,10 +952,12 @@ export function candidateRowsFor(
   itemId: string,
   currentRecipeId: string,
   rate: Fraction,
+  unlockedTier: number | null = null,
 ): CandidateRow[] {
   const candidates = producerRecipesFor(catalog, itemId);
   const recipes = Object.values(catalog.recipes);
   return candidates.map((candidate) => {
+    const unlock = catalog.recipeUnlocks[candidate.id];
     const proposal = proposeChain(
       itemId,
       rate,
@@ -981,6 +985,10 @@ export function candidateRowsFor(
       recipeName: candidate.displayName,
       isCurrent: candidate.id === currentRecipeId,
       isAlternate: candidate.isAlternate,
+      lockedTier:
+        unlockedTier !== null && unlock !== undefined && unlock > unlockedTier
+          ? unlock
+          : null,
       machines: machines.toString(),
       output,
       power: subtreePowerText(proposal, catalog),
