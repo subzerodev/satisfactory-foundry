@@ -20,9 +20,10 @@
  *     regression, and an adapter-level test cannot catch it — the adapter is
  *     handed whichever catalog the component chose, which is the very thing
  *     under test. A branded `GatedCatalog` was measured and DECLINED (#106,
- *     won't-do): 9 of the 15 value-passing gated/ungated slips are already
- *     caught by the rows below, so these rows ARE the enforcement, not a
- *     stopgap awaiting a type. Do not retire them as "render-only".
+ *     won't-do): 9 of the 15 value-passing gated/ungated slips were already
+ *     caught at #106 close, and #117 adds the constrained-recovery label row
+ *     below as the tenth. These rows ARE the enforcement, not a stopgap
+ *     awaiting a type. Do not retire them as "render-only".
  *
  * So this ONE file runs in jsdom (scoped by the pragma above; the global
  * environment and every other test file are untouched) and drives React with
@@ -306,6 +307,13 @@ function exclusionCheckbox(machineName: string): HTMLInputElement {
 const stagePicker = (): HTMLSelectElement =>
   $<HTMLSelectElement>('select[aria-label="pick a recipe for this stage"]');
 
+/** The constrained-recovery row's inline picker option labels. */
+function constrainedPickerOptions(): string[] {
+  return $$<HTMLOptionElement>("p.chain-builder-constrained select option").map(
+    (o) => o.textContent!,
+  );
+}
+
 /** The stage row for `Item …` in the rendered preview. Matched on the row
  *  sentence's "<item> — " lead, not the start of textContent: the first row of
  *  each depth is prefixed by a `T<depth>` tier marker. */
@@ -382,6 +390,38 @@ describe("S20 P3 seams — the gated world reaches the render (jsdom)", () => {
     // recipes the gated solve then validate-and-ignores — a control that
     // contradicts the hint's own "raise TIER" advice.
     expect(row.querySelector("select")).toBe(null);
+  });
+
+  it("constrained recovery: option labels resolve defaults in the solved gated world after live exclusions drift", () => {
+    // Solve at tier 0 with Foundry excluded: Alpha is tier-gated, Bravo is
+    // machine-excluded, and alternates cannot be defaults, so Ingot is a
+    // constrained raw. The inline picker still offers Charlie as recovery.
+    mount(splitCatalog(), { unlockedTier: 0, excludedMachineIds: ["foundry"] });
+    propose();
+    expect(
+      $<HTMLParagraphElement>("p.chain-builder-constrained").textContent,
+    ).toContain("RAW (no eligible producer): Ingot");
+    expect(constrainedPickerOptions()).toEqual([
+      "pick recipe…",
+      "Charlie (alt)",
+    ]);
+
+    // Now block re-propose and clear Foundry. The constrained cause remains
+    // from the solved world, but the recovery options use the live exclusions.
+    // With correct wiring, Bravo is the gated default. An ungated `recipeLabel`
+    // would compare against Alpha, which is absent from the gated option list,
+    // so no visible option would carry "(default)".
+    typeInto(
+      $$<HTMLInputElement>(".chain-builder-controls input")[0]!,
+      "nonsense",
+    );
+    click(exclusionCheckbox("Foundry"));
+
+    expect(constrainedPickerOptions()).toEqual([
+      "pick recipe…",
+      "Bravo (default)",
+      "Charlie (alt)",
+    ]);
   });
 
   it("constrained recovery: at tier null the wording is P1's exact string (regression)", () => {

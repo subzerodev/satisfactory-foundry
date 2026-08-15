@@ -64,7 +64,9 @@
   `repropose` callers are unproven gaps split to **#118**. The measured
   five-seam brand would have closed nothing the suite misses; a sixth
   `recipeLabel` narrowing could catch #117 but not #118. Ships as one
-  `gateCatalog` doc comment recording why the type stays out.
+  `gateCatalog` doc comment recording why the type stays out. #117 later
+  proved the `recipeLabel` label slip reachable and pinned it with a jsdom row;
+  #118 remains the unproven green family.
   Three design rounds, all NEEDS_REWORK ×2 — the reviewers killed two successive
   justifications, the second time by proving my headline "uncovered seam" was
   behaviour-preserving.

@@ -80,19 +80,19 @@ the resolved recipe is `recipe.inputs`. Both are invariant across the worlds:
 So both worlds return the identical value in every reachable state. Green
 because there is nothing to observe.
 
-### Why `recipeLabel` and the green `repropose` callers are not
+### Why `recipeLabel` and the green `repropose` callers were not
 
-No such argument exists for either family — they are simply untested until their
-follow-up tickets trace reachability.
+At #106 close, no inertness argument existed for either family — they were
+untested until their follow-up tickets traced reachability.
 
 `recipeLabel` appends its `(default)` tag by comparing against
 `effectiveDefaultRecipe`, which the two worlds can answer differently, and the
 recovery `<select>`'s option list is built with the **live** exclusion set while
-the `constrained` cause was computed with the **solved** one. Nothing in the
-suite selects `.chain-builder-constrained select` or its options. Tracked as
-**#117**, which carries the pass-either-way warning: a test that does not force
-the two worlds to disagree will pass regardless. Because both live production
-calls are gated today — the constrained row passes `preview.gated`, and
+the `constrained` cause was computed with the **solved** one. #117 later added
+the constrained-recovery option-label jsdom row and proved this path reachable.
+The pass-either-way warning still explains why the row forces the two worlds to
+disagree. Because both live production calls are gated today — the constrained
+row passes `preview.gated`, and
 `RecipePickerProps.catalog` already receives `preview.gated` — an additional
 `recipeLabel(catalog: GatedCatalog, ...)` annotation could catch this one slip.
 That is not part of the measured fallback, and it would not touch the
@@ -114,10 +114,10 @@ answer:
    TypeScript subtype-reduces the union, and `Catalog` then satisfies a negative
    brand's optional `?: never`. Measured by binding the expression to a
    `const __t: 1` and reading tsc's error. It launders **only** when the left
-   operand is nullable. This is exactly the idiom the jsdom row at
-   `ChainBuilder.gating.test.tsx:458-477` guards, and it also defeats
-   `PreviewOptions.ungatedCatalog` at its own site, where `preview` is not
-   narrowed.
+   operand is nullable. This is exactly the idiom guarded by the
+   `excludableMachines(preview?.gated ?? catalog)` jsdom row, and it also
+   defeats `PreviewOptions.ungatedCatalog` at its own site, where `preview` is
+   not narrowed.
 2. **A brand cannot be sealed.** `GatedCatalog` must be exported to annotate
    anything, and `x as GatedCatalog` — or `<GatedCatalog>x`, or spreading an
    existing gated value — mints one from any module. "Only `gateCatalog` mints"
@@ -132,6 +132,13 @@ closing. The same stale pointer in `ChainBuilder.gating.test.tsx`'s header
 ("deferred to #106") is corrected in the same commit.
 
 No production behaviour changes; no test changes; 912 green.
+
+## Postscript: #117
+
+#117 later proved the `recipeLabel` row reachable and added a focused jsdom
+guard for the constrained-recovery `<select>` option labels. That does not
+change the #106 verdict: the brand still would have been a partial guard, and
+the four #118 `preview?.gated ?? catalog` `repropose` slips remain outside it.
 
 ## Why not the smaller ticket
 
@@ -169,7 +176,7 @@ assuming this verdict still holds.
 | 9 of 15 swap-legal value-passing sites are already RED | Measured — `seam-detection.sh`, full suite per row |
 | The enumeration is complete | r2b review found five missing `repropose` callers; all are now rows R0-R4 |
 | The `byproductSuggestions` slip is behaviour-preserving | Traced by both r2 reviewers and re-verified exhaustive at r3 (two catalog reads, one use of the result) |
-| The `recipeLabel` slip is NOT provably inert | Absence of an argument, not proof of a defect — #117's first task is to settle it either way |
+| At #106 close, the `recipeLabel` slip was NOT proven inert | Absence of an argument, not proof of a defect — #117 later proved it reachable and pinned it |
 | The green `repropose` slips are NOT provably inert | Absence of an argument, not proof of a defect — #118's first task is to settle them either way |
 | The measured five-seam brand would catch S1, S2, S4, S6 + direct S5 | Measured — `brand-probe.patch` applied, all rows re-run |
 | A sixth `recipeLabel` narrowing could catch #117 | Source trace — current production calls are gated (`preview.gated` directly or through `RecipePickerProps.catalog`) |
@@ -207,7 +214,7 @@ assuming this verdict still holds.
   fields as call sites and omitted two real ones. Folded as S7
   (`effectiveDefaultRecipe`, measured **RED** — a ninth already-caught seam) and
   S8 (`recipeLabel`, measured **green** — a real gap, now #117). Also folded:
-  the stale `#106` pointer left in `ChainBuilder.gating.test.tsx:22`; `FEATURE.md`
+  the stale `#106` pointer left in `ChainBuilder.gating.test.tsx`; `FEATURE.md`
   stale on both P1 and P2; the brand patch not shipping, leaving the BRAND
   column unreproducible (now `brand-probe.patch`); line-number citations that
   this commit's own +14-line hunk would invalidate (now expression-based); the
