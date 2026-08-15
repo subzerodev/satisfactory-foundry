@@ -96,26 +96,19 @@ Full report + reproducible harness: `features/branded-gated-catalog/`.
 NOT reject `preview?.gated ?? catalog` — TypeScript subtype-reduces that union to
 plain `Catalog`. Measured. That kills the obvious "just brand it" fix.
 
-### #117 / #118 — untested gaps found by the #106 measurement
+### #117 pinned; #118 remains from the #106 measurement
 
 `ChainBuilder.tsx` renders the constrained-recovery `<select>` options via
-`recipeLabel(preview.gated, …)`. Swap that to the ungated `catalog` and **all 912
-tests still pass**. Nothing in the suite selects `.chain-builder-constrained
-select` or its options.
-
-Unlike the `byproductSuggestions` slip (which is provably inert — it reads only
-`items`, shared by reference, and recipes of stages the gated solve already
-produced), **this one has no inertness argument**. Task 1 on #117 is to settle
-whether it is reachable; "it turns out inert, close it with the trace recorded"
-is a valid outcome, not a failure.
-
-#117 is assigned to Stage 21, linked under #108, and queued before #118. A
-`recipeLabel(catalog: GatedCatalog, ...)` type annotation could catch this one
-slip, but #117 still starts by deciding reachability/inertness because a
-pass-either-way label test is easy to write here.
+`recipeLabel(preview.gated, …)`. #117 proved the ungated-label slip reachable
+and pinned it: solve at tier 0 with Foundry excluded so Ingot is constrained,
+make Rate invalid so re-propose stalls, then clear Foundry. The constrained row
+keeps the solved cause while its recovery options use the live exclusions; the
+correct label is `Bravo (default)`, and the ungated mutation loses the
+`(default)` tag.
 
 #118 is already created, assigned to Stage 21, linked under #108, and queued
-after #117. Its first task is the same shape: settle whether the four green
+after #117. Its first task is now the same shape #117 started with: settle
+whether the four green
 `repropose` slips are reachable or inert. The measured negative brand does not
 catch them because `preview?.gated ?? catalog` launders back to plain `Catalog`.
 
@@ -126,7 +119,8 @@ catch them because `preview?.gated ?? catalog` launders back to plain `Catalog`.
 ## Suggested order
 
 1. **Finish the #106 gate** (above). Small, and it is blocking a clean trunk.
-2. **#117** — small, concrete, and it is a real untested path.
+2. **#117** — pinned by `feature/s21-117-constrained-label`; merge/close once
+   its review gate converges.
 3. **#118** — same measurement family as #117; four green `repropose` slips.
 4. **#115** — AltCompare tier-locked labels. Design is already sharp in the
    ticket body; the decision (label, never hide) is SETTLED, do not re-litigate.
