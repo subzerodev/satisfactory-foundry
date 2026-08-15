@@ -316,9 +316,10 @@ describe("AltCompare SSR smoke", () => {
     // returns ONE flat string holding both rows, so a bare not.toContain("(alt)")
     // is unusable — it always fails, since the alternate row legitimately
     // contains "(alt)". Cell-scoping is what makes absence testable at all.
-    // The parens are load-bearing too —
-    // the fixture's alternate is NAMED "Alternate", so a bare "alt" matches the
-    // recipe name alone.
+    // The parens are load-bearing too, but NOT because of the fixture's name:
+    // toContain is case-sensitive, and "Alternate" does not contain "alt". The
+    // markup is saturated with alt-compare / alt-compare-mark / alt-compare-
+    // current class names, so a bare "alt" matches unconditionally.
     const marked =
       '<td>Alternate<span class="alt-compare-mark"> (alt)</span></td>';
     try {

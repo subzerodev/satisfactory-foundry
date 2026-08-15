@@ -32,9 +32,15 @@ test's discriminating power, so compile-validity is part of each entry.
 
     npx vitest run src/ui/chain-builder-adapter.test.ts src/ui/AltCompare.test.tsx
     Test Files  2 passed (2)
-    Tests  105 passed (105)
+    Tests  106 passed (106)
 
-Full suite: 907 → 909 passing (33 files), `npm run check` clean.
+Full suite: 907 → 910 passing (33 files), `npm run check` clean.
+
+(The A1-A5/R1-R3 transcripts below were taken in the 2-pin era and read
+`105`/`909`; pin 3 was added afterwards at the boundary gate. Their PASS/FAIL
+outcomes are unaffected — pin 3 is a separate `it` that none of those mutants
+reaches differently — but the totals in those blocks are one lower than a rerun
+today. Re-measured figures above.)
 
 ---
 
@@ -207,7 +213,7 @@ second and first pass respectively, so neither pass is redundant:
 
     npx vitest run src/ui/chain-builder-adapter.test.ts src/ui/AltCompare.test.tsx
     Test Files  2 passed (2)
-    Tests  105 passed (105)
+    Tests  106 passed (106)      [re-measured after pin 3 landed; was 105]
 
 ---
 
@@ -300,7 +306,7 @@ pin could subsume the synthetic one (it proposed the fold, then broke it itself)
     $ npx vitest run src/ui/AltCompare.test.tsx -t "marks the ALTERNATE row"
       Tests  1 failed | 11 skipped (12)          <- pin 2 KILLS
 
-  WHY neither FIXTURE is removable:
+  WHY neither FIXTURE, AS THEY STAND, is removable:
 
     fixture    ids                 names        blind to      catches
     ---------  ------------------  -----------  ------------  ------------
@@ -335,12 +341,40 @@ pin could subsume the synthetic one (it proposed the fold, then broke it itself)
     assertion in the file, and it is pin 3's real-catalog premise, not this
     fixture's name.
 
-    Not taken anyway, for a cost r1 did not price: re-baselining that fixture
-    invalidates every mutant measurement in this log, all ten of which would
-    need re-running to stay honest. And pin 3 would still be wanted on its own
-    merits — it is the ONLY test anywhere that pins the real catalog's
-    isAlternate vector and the no-prefix premise, so deleting it would leave the
-    parser's contract unpinned.
+    The honest cost is TRANSCRIPT HYGIENE, not invalidation. An earlier draft of
+    this entry said re-baselining "invalidates every mutant measurement, all ten
+    of which would need re-running" — that was inflated, and inflated in the
+    self-serving direction, since the paragraph's job is to justify NOT doing the
+    work. In fact: R1/R2/R3 are measured by pin 2 against AltCompare's OWN `CAT`
+    fixture, a different object, so they cannot change; A1-A5 and M7 assert pin
+    1's name-independent vector `[false, true]`, so their outcomes hold. Exactly
+    ONE measurement flips behaviourally — A6's control, where pin 1 goes from
+    surviving to killing. Every transcript would be re-taken to stay current,
+    which is bookkeeping, not ten re-measurements.
+
+    Not taken anyway, because pin 3 is wanted on merits that survive the rename:
+
+      (a) `chain-builder-adapter.test.ts:667` is the SOLE
+          `recipeName.startsWith("Alternate")` assertion in the repo — the
+          no-prefix premise against the REAL bundled catalog is pinned nowhere
+          else. (`docs-loader.test.ts:167-178` pins the parser's strip + flag,
+          but against the synthetic `DOCS_FRAGMENT`.)
+
+      (b) Pin 3 is the only pin that kills A6, and the neighbouring
+          `chain-builder-adapter.test.ts:628-629` CANNOT — it asserts the same
+          [F,T,T,T,T] vector over the same five real candidates, but reads
+          `candidateRecipesFor`, which returns catalog recipes and never touches
+          the mutated line inside `candidateRowsFor`. Stated explicitly because a
+          reader who finds :628-629 would otherwise assume it subsumes pin 3.
+
+    An earlier draft claimed pin 3 was "the ONLY test anywhere that pins the real
+    catalog's isAlternate vector and the no-prefix premise, so deleting it would
+    leave the parser's contract unpinned." BOTH halves were false — :628-629
+    pins that vector, and docs-loader.test.ts pins the parser's contract. Only
+    the CONJUNCTION is unique. Recorded, not silently fixed: this is the second
+    overreaching-absolute in this entry, and the failure mode is always the same
+    — a uniqueness claim a future reader refutes by grep, who then deletes the
+    pin for the reason the entry failed to give.
 
   RESTORE
     $ npm test        ->  Test Files 33 passed | Tests 910 passed (910)
