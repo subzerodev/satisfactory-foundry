@@ -3,6 +3,19 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-15 — Alternate recipe lists: one ordering rule, not two
+
+> Hey Michael — housekeeping you'll barely notice, but here's what changed in
+> case you spot it. The alternate-recipe comparison table used to list every
+> standard recipe before any alternate. It now uses the same ordering rule as
+> the recipe picker: the default recipe leads, then everything else by name.
+>
+> For three items — Fuel, Plastic and Rubber — that swaps rows two and three.
+> Nothing else moves, the numbers are identical, and the row you're currently
+> running is still marked. This only became safe to do once alternates started
+> carrying their own "(alt)" tag, so the order isn't the thing telling you
+> which is which any more.
+
 ## 2026-08-15 — Alternate recipes now say they're alternates
 
 > Hey Michael — a small honesty fix in the alternate-recipe comparison
