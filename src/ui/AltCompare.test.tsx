@@ -285,4 +285,47 @@ describe("AltCompare SSR smoke", () => {
       store.getInitialState = realInitial;
     }
   });
+
+  it("marks the ALTERNATE row, whichever row is current (#116)", () => {
+    // Same getInitialState seam as the test above (SSR reads the initial
+    // snapshot, not getState). Rendered TWICE — once with each recipe current —
+    // asserting the SAME markup both times: the marker follows the RECIPE, not
+    // the selection. A single pass would not discriminate; with one alternate
+    // among two candidates isAlternate is a bijection with isCurrent whichever
+    // recipe is current, so `{!row.isCurrent && …}` (or its mirror) emits
+    // byte-identical HTML at one polarity.
+    const store = appStore as unknown as {
+      getInitialState: () => unknown;
+      getState: () => unknown;
+    };
+    const realInitial = store.getInitialState;
+    const renderWithCurrent = (recipeId: string): string => {
+      store.getInitialState = () => ({
+        ...(store.getState() as object),
+        catalog: { status: "ready" as const, catalog: CAT },
+        activeStageId: "s1",
+        selection: selection(recipeId),
+        solve: solvedWith("ingot", 120),
+      });
+      return renderToStaticMarkup(<AltCompare />);
+    };
+    // Both halves are scoped to the CELL on purpose: renderToStaticMarkup
+    // returns ONE flat string holding both rows, so a bare not.toContain("(alt)")
+    // would be satisfied by the unmarked row. The parens are load-bearing too —
+    // the fixture's alternate is NAMED "Alternate", so a bare "alt" matches the
+    // recipe name alone.
+    const marked =
+      '<td>Alternate<span class="alt-compare-mark"> (alt)</span></td>';
+    try {
+      const stdCurrent = renderWithCurrent("r_std");
+      expect(stdCurrent).toContain(marked);
+      expect(stdCurrent).toContain("<td>Standard</td>");
+
+      const altCurrent = renderWithCurrent("r_alt");
+      expect(altCurrent).toContain(marked);
+      expect(altCurrent).toContain("<td>Standard</td>");
+    } finally {
+      store.getInitialState = realInitial;
+    }
+  });
 });

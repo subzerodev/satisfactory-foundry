@@ -1,0 +1,235 @@
+# Ticket #116 — bidirectionality verification log
+
+AltCompare rows get an `(alt)` marker. Each new pin is verified BIDIRECTIONALLY:
+PASS with the real code → deliberately break the load-bearing term → observe the
+pin genuinely FAIL by name → restore → green.
+
+Target files:
+  - `src/ui/chain-builder-adapter.ts` — `CandidateRow.isAlternate` (interface) and
+    `isAlternate: candidate.isAlternate` (`candidateRowsFor`)
+  - `src/ui/AltCompare.tsx` — the `{row.isAlternate && <span …> (alt)</span>}` child
+
+The two new pins:
+  1. `chain-builder-adapter.test.ts` — "carries isAlternate from the RECIPE, not
+     from the selection (#116)"
+  2. `AltCompare.test.tsx` — "marks the ALTERNATE row, whichever row is current
+     (#116)"
+
+Run inside the worktree:
+`npx vitest run src/ui/chain-builder-adapter.test.ts src/ui/AltCompare.test.tsx`
+(105 its = 103 pre-existing + the 2 new). Repo-root `npm test` double-counts
+worktree tests — the worktree-local run is the trunk-true view.
+
+**Every mutant below was typechecked (`npx tsc -b`) before its test run, and every
+one COMPILES CLEAN.** A mutant that fails to compile proves nothing about a
+test's discriminating power, so compile-validity is part of each entry.
+
+---
+
+## PASS (baseline, real code)
+
+    npx vitest run src/ui/chain-builder-adapter.test.ts src/ui/AltCompare.test.tsx
+    Test Files  2 passed (2)
+    Tests  105 passed (105)
+
+Full suite: 907 → 909 passing (33 files), `npm run check` clean.
+
+---
+
+## The mutant family this log exists for
+
+The field is set ONE LINE BELOW `isCurrent: candidate.id === currentRecipeId`, so
+the plausible implementer slip is a verbatim copy of that line. Both fixtures hold
+two candidates of which exactly one is an alternate, so `isAlternate` is a
+**bijection** with `isCurrent` *whichever* recipe is current — a single-polarity
+assertion cannot tell the two apart. Both pins therefore assert at BOTH polarities,
+with the SAME expected value; that the expectation is identical at both is the point.
+
+Break commands are applied by `mutate.py` (scratchpad harness, exact-anchor
+replacement; refuses on anything but a unique match), then reverted with
+`git checkout -- src/ui/chain-builder-adapter.ts src/ui/AltCompare.tsx`.
+
+---
+
+## Adapter mutant A1 — `isAlternate: candidate.id === currentRecipeId`
+
+The verbatim copy of the line above. **This is the mutant the whole spec exists
+to kill.**
+
+BREAK:
+
+    -      isAlternate: candidate.isAlternate,
+    +      isAlternate: candidate.id === currentRecipeId,
+
+    tsc: CLEAN (mutant compiles)
+
+FAIL (genuine) — both pins fail, each at the **`r_std`-current polarity**:
+
+    × marks the ALTERNATE row, whichever row is current (#116) 4ms
+    × carries isAlternate from the RECIPE, not from the selection (#116) 4ms
+     FAIL  src/ui/AltCompare.test.tsx > AltCompare SSR smoke > marks the ALTERNATE row, whichever row is current (#116)
+     FAIL  src/ui/chain-builder-adapter.test.ts > alt-compare — per-candidate metrics (synthetic, exact) > carries isAlternate from the RECIPE, not from the selection (#116)
+    Test Files  2 failed (2)
+    Tests  2 failed | 103 passed (105)
+
+    AssertionError: expected [ true, false ] to deeply equal [ false, true ]
+     ❯ src/ui/chain-builder-adapter.test.ts:439:7      ← the "r_std" call
+
+    AssertionError: expected '<div class="alt-compare">…' to contain '<td>Alternate<span class="alt-compare…'
+     ❯ src/ui/AltCompare.test.tsx:321:26              ← the renderWithCurrent("r_std") pass
+
+The received markup names the defect exactly — the marker lands on the WRONG row:
+
+    <tr class="alt-compare-current"><td>Standard<span class="alt-compare-mark"> (alt)</span></td>…
+    <tr class=""><td>Alternate</td>…
+
+Decisive: the standard recipe is labelled an alternate in the DEFAULT state.
+
+---
+
+## Adapter mutant A2 — `isAlternate: candidate.id !== currentRecipeId`
+
+The mirror slip. BREAK:
+
+    +      isAlternate: candidate.id !== currentRecipeId,
+
+    tsc: CLEAN (mutant compiles)
+
+FAIL (genuine) — both pins fail, each at the **`r_alt`-current polarity** (the
+opposite half from A1, which is exactly why one polarity cannot cover both):
+
+    × marks the ALTERNATE row, whichever row is current (#116) 4ms
+    × carries isAlternate from the RECIPE, not from the selection (#116) 4ms
+    Test Files  2 failed (2)
+    Tests  2 failed | 103 passed (105)
+
+    AssertionError: expected [ true, false ] to deeply equal [ false, true ]
+     ❯ src/ui/chain-builder-adapter.test.ts:442:7      ← the "r_alt" call
+    AssertionError: expected '…' to contain '<td>Alternate<span class="alt-compare…'
+     ❯ src/ui/AltCompare.test.tsx:325:26              ← the renderWithCurrent("r_alt") pass
+
+---
+
+## THE CONTROL — is the second polarity actually load-bearing?
+
+The claim "one polarity would not catch A1" is the spec's central premise, so it
+was MEASURED, not assumed. Both pins were reduced to their `r_alt` half only
+(the first-polarity assertions deleted), then A1 was applied:
+
+    python3 single_polarity.py apply && python3 mutate.py A1
+    npx vitest run src/ui/chain-builder-adapter.test.ts src/ui/AltCompare.test.tsx
+    Test Files  2 passed (2)
+    Tests  105 passed (105)
+
+**A1 SURVIVES the single-polarity form** — a wholly wrong implementation, green.
+
+Scrutiny (a surviving mutant can also mean a broken test): the SAME reduced pins
+were re-run against A2, and they still kill it —
+
+    python3 single_polarity.py apply && python3 mutate.py A2
+    × marks the ALTERNATE row, whichever row is current (#116)
+    × carries isAlternate from the RECIPE, not from the selection (#116)
+    Tests  2 failed | 103 passed (105)
+
+So the reduced pins are LIVE, not vacuous: they are specifically blind to A1, in
+the exact way the correlation predicts. The second polarity is load-bearing.
+Test files restored byte-for-byte from backup afterwards.
+
+---
+
+## Adapter mutant A3 — `isAlternate: !candidate.isAlternate`
+
+    +      isAlternate: !candidate.isAlternate,
+    tsc: CLEAN (mutant compiles)
+
+    × marks the ALTERNATE row, whichever row is current (#116)
+    × carries isAlternate from the RECIPE, not from the selection (#116)
+    Tests  2 failed | 103 passed (105)
+
+## Adapter mutants A4 / A5 — hardcoded `true` / `false`
+
+    +      isAlternate: true,      → tsc CLEAN; Tests  2 failed | 103 passed (105)
+    +      isAlternate: false,     → tsc CLEAN; Tests  2 failed | 103 passed (105)
+
+Both pins fail on each ([T,T] and [F,F] against the expected [false, true]).
+
+---
+
+## Render mutant R1 — `{!row.isCurrent && …}`
+
+The render-side impostor: with the standard recipe current it emits BYTE-IDENTICAL
+HTML to the real code.
+
+    -                {row.isAlternate && (
+    +                {!row.isCurrent && (
+    tsc: CLEAN (mutant compiles)
+
+FAIL (genuine) — the render pin fails at the **`r_alt`-current** pass; the ADAPTER
+pin stays green, which is the two pins doing different jobs:
+
+    × marks the ALTERNATE row, whichever row is current (#116) 4ms
+     FAIL  src/ui/AltCompare.test.tsx > AltCompare SSR smoke > marks the ALTERNATE row, whichever row is current (#116)
+    Test Files  1 failed | 1 passed (2)
+    Tests  1 failed | 104 passed (105)
+     ❯ src/ui/AltCompare.test.tsx:325:26
+
+## Render mutant R2 — `{row.isCurrent && …}`
+
+    +                {row.isCurrent && (
+    tsc: CLEAN (mutant compiles)
+
+FAIL at the opposite pass (**`r_std`-current**, line 321) — R1 and R2 fail the
+second and first pass respectively, so neither pass is redundant:
+
+    × marks the ALTERNATE row, whichever row is current (#116) 4ms
+    Test Files  1 failed | 1 passed (2)
+    Tests  1 failed | 104 passed (105)
+
+## Render mutant R3 — marker child deleted entirely
+
+    -                {row.isAlternate && (
+    -                  <span className="alt-compare-mark"> (alt)</span>
+    -                )}
+    tsc: CLEAN (mutant compiles — the field is simply unread)
+
+    × marks the ALTERNATE row, whichever row is current (#116) 4ms
+    Test Files  1 failed | 1 passed (2)
+    Tests  1 failed | 104 passed (105)
+
+---
+
+## RESTORE → green
+
+    git status --porcelain src/ui/chain-builder-adapter.ts src/ui/AltCompare.tsx
+    (clean — both production files back to the committed state)
+
+    npx vitest run src/ui/chain-builder-adapter.test.ts src/ui/AltCompare.test.tsx
+    Test Files  2 passed (2)
+    Tests  105 passed (105)
+
+---
+
+## Assertion strings — verified byte-accurate, not assumed
+
+The spec's two exact-substring assertions were checked against real
+`renderToStaticMarkup` output rather than trusted. The emitted cell is exactly:
+
+    <td>Alternate<span class="alt-compare-mark"> (alt)</span></td>
+
+No `<!-- -->` separator appears (static markup emits none, and the marker child is
+an ELEMENT, not a second text node); JSX preserves the span's leading space. The
+spec's strings matched the bytes on the first run — no correction was needed.
+
+Both assertion-form traps hold as the spec states:
+  - the absence half is scoped to `<td>Standard</td>`; a bare
+    `not.toContain("(alt)")` would be meaningless, since SSR returns ONE flat
+    string containing both rows;
+  - the presence half keeps the parens — the fixture's alternate is NAMED
+    "Alternate", so a bare `"alt"` matches the recipe name alone.
+
+## Deliberately not pinned (per spec)
+
+The positional mutant (`isAlternate: index > 0`): neither map callback exposes an
+index (`chain-builder-adapter.ts:950`, `AltCompare.tsx:149`), so reaching one
+requires deliberately adding a parameter — not an implementer slip. Also unpinned:
+the styling (the browser walk is this file's stated visual gate).
