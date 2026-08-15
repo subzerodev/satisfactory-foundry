@@ -594,3 +594,50 @@ describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () => 
     expect(boxes).toHaveLength(4);
   });
 });
+
+// ---------------------------------------------------------------------------
+// S21 P1 (#103) — the picker CHIP under a lone eligible producer.
+//
+// WHY THIS ROW LIVES HERE AND NOT IN THE ADAPTER SUITE. Retiring
+// `candidateRecipesFor` widened `candidateCount`'s range from {0} ∪ [2,∞) to
+// {0,1} ∪ [2,∞) — 63 of the catalog's 195 items now report 1 where they
+// reported 0. The claim carrying that change is that the RENDERED chip is
+// unaffected, because `RecipePicker`'s label branches on `candidateCount >= 2`
+// and both 0 and 1 fall the same side of it. That label is an inline
+// expression inside a NON-EXPORTED component (ChainBuilder.tsx), so no
+// adapter-level test can reach it — an adapter-level "the count is 1"
+// assertion passes whether or not the chip survived, which is exactly the
+// pass-either-way trap this row exists to avoid. It needs a real render.
+// ---------------------------------------------------------------------------
+
+describe("S21 P1 — the chip never prints a lone count", () => {
+  it("reads 'machine excluded', NOT '1 recipes', for a force-included lone producer", () => {
+    // The ONLY state in which candidateCount === 1 reaches the screen at all.
+    // The picker renders iff options ≥ 2 OR the current recipe is
+    // force-included, so a single eligible producer is visible only behind an
+    // override onto an EXCLUDED machine:
+    //   excluding Foundry + Refinery leaves Alpha (Smelter) the lone eligible
+    //   producer → candidateCount 1;
+    //   the override pins Bravo, whose Foundry is excluded → selectProducer
+    //   honours a valid override anyway, so Bravo is the stage's recipe and is
+    //   force-included → options = {Alpha, Bravo} = 2 → the affordance renders.
+    mount(splitCatalog(), {
+      unlockedTier: null,
+      overrides: { ingot: "r_b_std" },
+      excludedMachineIds: ["foundry", "refinery"],
+    });
+    propose();
+
+    // The premise, pinned: the excluded-machine override really IS the stage's
+    // recipe. Without it this row could pass from some other, unexcluded state
+    // in which the chip reads "machine excluded" for an unrelated reason.
+    const row = stageRow("Ingot");
+    expect(row.textContent).toContain("Ingot — Foundry");
+
+    const chip = row.querySelector<HTMLButtonElement>("button")!;
+    expect(chip.textContent).toBe("machine excluded");
+    // Stated negatively too: the guard is against someone "simplifying" the
+    // label to print the raw count now that a bare 1 is reachable at all.
+    expect(chip.textContent).not.toBe("1 recipes");
+  });
+});

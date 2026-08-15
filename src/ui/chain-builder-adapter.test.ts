@@ -659,6 +659,56 @@ describe("alt-compare — bundled Iron Ingot alternates", () => {
   });
 });
 
+// ===========================================================================
+// S21 P1 (#103) — the SINGLE enumerator, pinned against the bundled catalog.
+// Two facts the retirement of `candidateRecipesFor` newly puts at risk, both
+// stated so a revert to a ≥2-gated, non-alternate-first enumerator FAILS here.
+// ===========================================================================
+
+describe("S21 P1 — producerRecipesFor is the comparison enumerator", () => {
+  it("compares rubber in producerRecipesFor's order — the ALTERNATE in the MIDDLE", () => {
+    // The single item that proves the ordering actually changed hands. Rubber
+    // has THREE eligible producers, TWO of them non-alternate, so the retired
+    // "all non-alternates, then all alternates" grouping and the surviving
+    // "effective default first, then ascending id" rule genuinely disagree:
+    //   retired:   [residual_rubber, rubber, alternate_recycled_rubber]
+    //   surviving: [residual_rubber, alternate_recycled_rubber, rubber]
+    // An alternate in a NON-TERMINAL position is unreachable under grouping, so
+    // this row cannot pass against the old comparator — it is the phase's
+    // load-bearing revert-detector. (liquid_fuel and plastic are the only other
+    // two items in the whole 195-item catalog that diverge; all three differ at
+    // positions 2/3 only, never on the leading row.)
+    const rows = candidateRowsFor(catalog, "rubber", "rubber", F(60));
+    expect(rows.map((r) => r.recipeId)).toEqual([
+      "residual_rubber",
+      "alternate_recycled_rubber",
+      "rubber",
+    ]);
+    // …and #116's marker is what makes that order legible, so the alternate is
+    // still identifiable now that position no longer encodes it.
+    expect(rows.map((r) => r.isAlternate)).toEqual([false, true, false]);
+  });
+
+  it("counts a LONE eligible producer as 1 on a real preview row", () => {
+    // 63 of the bundled catalog's 195 items have exactly ONE eligible producer
+    // — a third of the catalog, every one of which read candidateCount 0 under
+    // the retired ≥2 gate. Pinned on a REAL row rather than a synthetic fixture
+    // because the range widening is precisely a bundled-catalog claim.
+    const lone = Object.keys(catalog.items).filter(
+      (id) => producerRecipesFor(catalog, id).length === 1,
+    );
+    expect(lone.length).toBeGreaterThan(0);
+    expect(lone).toContain("aluminum_plate");
+
+    const view = toProposalPreview(
+      proposeChainForCatalog(catalog, "aluminum_plate", F(60)),
+      catalog,
+    );
+    const row = view.rows.find((r) => r.itemName === "Alclad Aluminum Sheet")!;
+    expect(row.candidateCount).toBe(1);
+  });
+});
+
 describe("alt-compare — swap machine count (ceil at compared rate)", () => {
   it("ceilDivs the compared rate by the candidate's primary perMinute", () => {
     const r = crecipe("r", "R", "m", [["ingot", 65]], [["ore", 7]], true);
