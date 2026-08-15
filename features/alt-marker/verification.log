@@ -36,11 +36,48 @@ test's discriminating power, so compile-validity is part of each entry.
 
 Full suite: 907 → 910 passing (33 files), `npm run check` clean.
 
-(The A1-A5/R1-R3 transcripts below were taken in the 2-pin era and read
-`105`/`909`; pin 3 was added afterwards at the boundary gate. Their PASS/FAIL
-outcomes are unaffected — pin 3 is a separate `it` that none of those mutants
-reaches differently — but the totals in those blocks are one lower than a rerun
-today. Re-measured figures above.)
+(The A1-A5/R1-R3 transcripts below were captured in the 2-pin era and read
+`105`; pin 3 was added afterwards at the boundary gate. Every recorded KILL
+verdict still holds, but the failure COUNTS in those blocks are not simply one
+lower than a rerun today — see the correction immediately below. The `909` in
+the summary line above was likewise a 2-pin-era figure, now re-measured to 910.)
+
+CORRECTION (r4 review, and this parenthetical's own second draft was wrong):
+pin 3 is NOT insulated from the adapter mutants. It calls `candidateRowsFor`
+(chain-builder-adapter.test.ts:657), so it runs straight through the mutated
+line at chain-builder-adapter.ts:980. Against the real catalog — five
+candidates, the non-alternate current:
+
+    A1 `id === current`   -> [T,F,F,F,F]   pin 3 FAILS
+    A2 `id !== current`   -> [F,T,T,T,T]   pin 3 passes (the ONE adapter mutant
+                                            it misses: with a non-alternate
+                                            current, `!==` reproduces the true
+                                            vector on this fixture)
+    A3 `!isAlternate`     -> [T,F,F,F,F]   pin 3 FAILS
+    A4 `true`             -> [T,T,T,T,T]   pin 3 FAILS
+    A5 `false`            -> [F,F,F,F,F]   pin 3 FAILS
+    R1/R2/R3 (render-side)                 pin 3 unaffected
+
+So on a rerun today A1/A3/A4/A5 read `3 failed | 103 passed (106)`, not
+`2 failed | 104 passed (106)`, and those blocks' "both pins fail" headers would
+read "all three pins fail". Pin 3 catches 5 of the 10 recorded mutants, not 1 —
+the earlier wording understated its net.
+
+MEASURED, not re-reasoned (the original error came from reasoning about which
+`it` a mutant "reaches" instead of running it):
+
+    $ # A1 — isAlternate: candidate.id === currentRecipeId
+    $ npx vitest run src/ui/chain-builder-adapter.test.ts \
+        -t "flags isAlternate against REAL parsed names"
+      AssertionError: expected [ true, false, false, false, false ]
+                      to deeply equal [ false, true, true, true, true ]
+
+    $ # A2 — isAlternate: candidate.id !== currentRecipeId
+      Tests  1 passed | 93 skipped (94)        <- the one adapter mutant it misses
+
+    $ # A4 — isAlternate: true
+      AssertionError: expected [ true, true, true, true, true ]
+                      to deeply equal [ false, true, true, true, true ]
 
 ---
 
@@ -186,8 +223,10 @@ pin stays green, which is the two pins doing different jobs:
     +                {row.isCurrent && (
     tsc: CLEAN (mutant compiles)
 
-FAIL at the opposite pass (**`r_std`-current**, line 321) — R1 and R2 fail the
-second and first pass respectively, so neither pass is redundant:
+FAIL at the opposite pass (**`r_std`-current**) — R1 and R2 fail the second and
+first pass respectively, so neither pass is redundant. (Line/column refs inside
+the captured transcripts below are frozen at capture time; later comment edits
+shifted the live assertions to AltCompare.test.tsx:327 and :331.)
 
     × marks the ALTERNATE row, whichever row is current (#116) 4ms
     Test Files  1 failed | 1 passed (2)
@@ -321,7 +360,8 @@ pin could subsume the synthetic one (it proposed the fold, then broke it itself)
 
     It said "no two-pin subset covers the ground." That is FALSE, and this
     file's own entries are the counterexample: pin 1 kills nothing pin 2 does
-    not also kill (pin 2 runs the same synthetic fixture THROUGH the adapter),
+    not also kill (pin 2 runs an EQUIVALENT synthetic fixture — its own `CAT` —
+    through the adapter),
     so {pin 2, pin 3} kills all ten recorded mutants. Corrected rather than
     quietly dropped, because a future simplify pass that checks the claim would
     find it refuted here and might delete pin 1 for the reason this entry failed
