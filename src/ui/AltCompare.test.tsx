@@ -300,13 +300,20 @@ describe("AltCompare SSR smoke", () => {
     };
     const realInitial = store.getInitialState;
     const renderWithCurrent = (recipeId: string): string => {
-      store.getInitialState = () => ({
+      // Build the snapshot ONCE per render and return the same reference on
+      // every call, matching the test above: getServerSnapshot is contractually
+      // required to be cached, and React calls it once per useSyncExternalStore
+      // hook. Rebuilding it inside the closure would hand each hook a fresh
+      // object — harmless in a single static pass, a real hazard if this ever
+      // moves to a hydrating render.
+      const seeded = {
         ...(store.getState() as object),
         catalog: { status: "ready" as const, catalog: CAT },
         activeStageId: "s1",
         selection: selection(recipeId),
         solve: solvedWith("ingot", 120),
-      });
+      };
+      store.getInitialState = () => seeded;
       return renderToStaticMarkup(<AltCompare />);
     };
     // Both halves are scoped to the CELL on purpose: renderToStaticMarkup

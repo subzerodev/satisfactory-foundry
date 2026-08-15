@@ -646,6 +646,26 @@ describe("alt-compare — bundled Iron Ingot alternates", () => {
     const fingerprints = new Set(rows.map((r) => `${r.machines}|${r.rawDraw}`));
     expect(fingerprints.size).toBeGreaterThan(1);
   });
+
+  it("flags isAlternate against REAL parsed names, not a name prefix (#116)", () => {
+    // The synthetic pins cannot catch an implementation that reads the NAME
+    // (`displayName.startsWith("Alternate")`) — their fixture recipe is literally
+    // named "Alternate", so such a mutant scores identically there. Real data
+    // does catch it: docs-loader.ts:190 STRIPS the game's "Alternate: " prefix,
+    // so every parsed name here is bare ("Iron Alloy Ingot", "Pure Iron Ingot"),
+    // and a name-derived flag would report all-false against the true [F,T,T,T,T].
+    const rows = candidateRowsFor(catalog, "iron_ingot", "ingot_iron", F(60));
+    expect(rows.map((r) => r.isAlternate)).toEqual([
+      false,
+      true,
+      true,
+      true,
+      true,
+    ]);
+    // The premise, pinned so this row cannot rot into a tautology if the parser
+    // ever stops stripping: no parsed name carries the prefix.
+    expect(rows.some((r) => r.recipeName.startsWith("Alternate"))).toBe(false);
+  });
 });
 
 describe("alt-compare — swap machine count (ceil at compared rate)", () => {

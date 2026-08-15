@@ -230,6 +230,64 @@ Both assertion-form traps hold as the spec states:
 ## Deliberately not pinned (per spec)
 
 The positional mutant (`isAlternate: index > 0`): neither map callback exposes an
-index (`chain-builder-adapter.ts:950`, `AltCompare.tsx:149`), so reaching one
+index (`chain-builder-adapter.ts:953`, `AltCompare.tsx:149`), so reaching one
 requires deliberately adding a parameter — not an implementer slip. Also unpinned:
 the styling (the browser walk is this file's stated visual gate).
+
+================================================================================
+MUTANT A6 — added at the BOUNDARY GATE (team lead, 2026-08-15)
+================================================================================
+
+Origin: the boundary adversarial reviewer named this as the one genuinely
+dangerous mutant that SURVIVES the two shipped pins, and waived it against the
+frozen design on the grounds that closing it would mean renaming a fixture
+recipe shared by many pins.
+
+There was a cheaper close it did not consider: assert against the REAL bundled
+catalog, which this file already loads and already has a 5-candidate compare
+fixture (`alt-compare — bundled Iron Ingot alternates`). Cost: one `it`, no new
+fixture, no renaming.
+
+Why the synthetic pins are blind to it: their alternate recipe is literally
+NAMED "Alternate", so a name-derived flag scores identically there. Real parsed
+names cannot be — docs-loader.ts:190 STRIPS the game's "Alternate: " prefix, so
+`Alternate: Iron Alloy Ingot` is stored as `Iron Alloy Ingot`.
+
+  MUTATION  src/ui/chain-builder-adapter.ts:980
+    -  isAlternate: candidate.isAlternate,
+    +  isAlternate: candidate.displayName.startsWith("Alternate"),
+
+  COMPILE CHECK (a crashing mutant proves nothing)
+    $ npx tsc -b   ->  exit 0, CLEAN. The kill below is behavioural.
+
+  CONTROL — do the two SHIPPED pins see it?  NO, BOTH STILL PASS:
+    $ npx vitest run src/ui/chain-builder-adapter.test.ts \
+        -t "carries isAlternate from the RECIPE"
+      Tests  1 passed | 93 skipped (94)
+    $ npx vitest run src/ui/AltCompare.test.tsx -t "marks the ALTERNATE row"
+      Tests  1 passed | 11 skipped (12)
+    ^ confirms the reviewer's finding exactly, and confirms the new row is NOT
+      redundant with the existing two.
+
+  THE NEW PIN — KILLED:
+    $ npx vitest run src/ui/chain-builder-adapter.test.ts \
+        -t "flags isAlternate against REAL parsed names"
+      x flags isAlternate against REAL parsed names, not a name prefix (#116)
+      AssertionError: expected [ false, false, false, false, false ]
+                      to deeply equal [ false, true, true, true, true ]
+      Tests  1 failed | 93 skipped (94)
+
+    The received vector is all-false, which is precisely what this mutant does
+    in PRODUCTION: it would mark nothing, ever, while every synthetic test
+    stayed green. That is the failure mode worth the extra row -- a total,
+    silent feature no-op rather than a subtle mis-mark.
+
+  RESTORE
+    $ cp /tmp/cba.bak src/ui/chain-builder-adapter.ts
+    $ npm test        ->  Test Files 33 passed | Tests 910 passed (910)
+    $ npm run check   ->  clean (tsc + eslint + prettier)
+
+  The second assertion in that row pins the PREMISE (no parsed name starts with
+  "Alternate"), so the row cannot rot into a tautology if the parser ever stops
+  stripping the prefix -- it would then fail loudly instead of silently ceasing
+  to discriminate.
