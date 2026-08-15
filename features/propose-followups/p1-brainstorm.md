@@ -1,6 +1,7 @@
 # S21 P1 (#103) — adapter consolidation: retire `candidateRecipesFor`
 
-**Status:** v4 — in review (r3 folded; re-based on the merged #116 world).
+**Status:** v4 — FROZEN (r3 folded; re-based on the merged #116 world). Design
+shape approved by both reviewers at r3; findings were citation re-basing only.
 **Ticket:** #103 (Stage 21 milestone 92, epic #108). **UNBLOCKED** — #116 merged
 as `b3ed867`.
 **Origin:** simplify-pass finding from the S20 P1 design gate (#100), deferred
