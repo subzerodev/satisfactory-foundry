@@ -69,6 +69,7 @@ export function altCompareModel(
   stageId: string,
   selection: Selection,
   solve: SolveState,
+  unlockedTier: number | null = null,
 ): AltCompareModel | null {
   if (solve.status !== "solved") return null;
   const recipeId = selection.recipeId;
@@ -90,14 +91,18 @@ export function altCompareModel(
   const rate = lane.totalOutput;
 
   const byId = new Map(candidates.map((c) => [c.id, c]));
-  const rows = candidateRowsFor(catalog, itemId, recipeId, rate).map(
-    (row): CompareRow => ({
-      row,
-      apply: row.isCurrent
-        ? null
-        : swapPayloadFor(stageId, byId.get(row.recipeId)!, rate),
-    }),
-  );
+  const rows = candidateRowsFor(
+    catalog,
+    itemId,
+    recipeId,
+    rate,
+    unlockedTier,
+  ).map((row): CompareRow => ({
+    row,
+    apply: row.isCurrent
+      ? null
+      : swapPayloadFor(stageId, byId.get(row.recipeId)!, rate),
+  }));
 
   return { itemName: catalog.items[itemId]?.displayName ?? itemId, rows };
 }
@@ -126,10 +131,17 @@ export function AltCompare() {
   const activeStageId = useAppStore((s) => s.activeStageId);
   const selection = useAppStore((s) => s.selection);
   const solve = useAppStore((s) => s.solve);
+  const unlockedTier = useAppStore((s) => s.proposePrefs.unlockedTier);
   const applyRecipeSwap = useAppStore((s) => s.applyRecipeSwap);
 
   if (catalog === null) return null;
-  const model = altCompareModel(catalog, activeStageId, selection, solve);
+  const model = altCompareModel(
+    catalog,
+    activeStageId,
+    selection,
+    solve,
+    unlockedTier,
+  );
   if (model === null) return null;
 
   return (
@@ -158,6 +170,12 @@ export function AltCompare() {
                 {row.recipeName}
                 {row.isAlternate && (
                   <span className="alt-compare-mark"> (alt)</span>
+                )}
+                {row.lockedTier !== null && (
+                  <span className="alt-compare-mark">
+                    {" "}
+                    (locked T{row.lockedTier})
+                  </span>
                 )}
                 {row.byproducts !== null && (
                   <span className="alt-compare-byproducts">

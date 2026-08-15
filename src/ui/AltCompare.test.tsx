@@ -334,4 +334,50 @@ describe("AltCompare SSR smoke", () => {
       store.getInitialState = realInitial;
     }
   });
+
+  it("labels tier-locked candidates without hiding or disabling apply (#115)", () => {
+    // The explicit unlockedTier is the load-bearing part of this pin:
+    // proposePrefs defaults it to null ("all"), which would make a no-setup test
+    // pass even if tier-lock labeling were never wired.
+    const lockedCat: Catalog = { ...CAT, recipeUnlocks: { r_alt: 1 } };
+    const store = appStore as unknown as {
+      getInitialState: () => unknown;
+      getState: () => unknown;
+    };
+    const realInitial = store.getInitialState;
+    const renderAtTier = (unlockedTier: number | null): string => {
+      const current = store.getState() as { proposePrefs: unknown };
+      const seeded = {
+        ...(current as object),
+        catalog: { status: "ready" as const, catalog: lockedCat },
+        activeStageId: "s1",
+        selection: selection("r_std"),
+        solve: solvedWith("ingot", 120),
+        proposePrefs: {
+          ...(current.proposePrefs as object),
+          unlockedTier,
+        },
+      };
+      store.getInitialState = () => seeded;
+      return renderToStaticMarkup(<AltCompare />);
+    };
+    const lockedCell =
+      '<td>Alternate<span class="alt-compare-mark"> (alt)</span><span class="alt-compare-mark"> (locked T1)</span></td>';
+    try {
+      const tier0 = renderAtTier(0);
+      expect(tier0).toContain(lockedCell);
+      expect(tier0).toContain("<td>Standard</td>");
+      expect(tier0).toContain(
+        '<button type="button" class="alt-compare-apply">apply</button>',
+      );
+
+      const allTiers = renderAtTier(null);
+      expect(allTiers).not.toContain("locked T1");
+      expect(allTiers).toContain(
+        '<td>Alternate<span class="alt-compare-mark"> (alt)</span></td>',
+      );
+    } finally {
+      store.getInitialState = realInitial;
+    }
+  });
 });

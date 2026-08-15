@@ -1,0 +1,545 @@
+diff --git a/features/altcompare-tier-labels/brainstorm-spec.md b/features/altcompare-tier-labels/brainstorm-spec.md
+new file mode 100644
+index 0000000..dd7e9e3
+--- /dev/null
++++ b/features/altcompare-tier-labels/brainstorm-spec.md
+@@ -0,0 +1,84 @@
++# #115 — AltCompare tier-locked labels
++
++## Status
++
++Tier 2 single-feature design, written from the board decision context on
++2026-08-16. The decision is already settled by #103 / #115: **label locked
++candidates; never hide them**.
++
++## Already settled — do not re-litigate
++
++- AltCompare is deliberately ungated. It serves the applied graph, where a stage
++  may legitimately run a recipe above the current Propose tier.
++- A tier-locked row remains visible and applyable. This planner labels truth; it
++  does not enforce progression.
++- The test must set `proposePrefs.unlockedTier` explicitly. The store default is
++  `null` ("all"), so an unset test passes even if no lock labeling exists.
++- #116 already landed the explicit `(alt)` marker, so tier labeling composes with
++  an existing inline mark in the same recipe cell.
++
++## Grounding
++
++- `Catalog.recipeUnlocks` is required data (`src/data/types.ts`): recipe id to
++  minimum unlock tier; an absent key means always available.
++- `ProposePrefs.unlockedTier` is persisted store state (`src/state/store.ts`):
++  `null` means all recipes, otherwise recipes whose minimum unlock tier exceeds
++  it are above the current Propose gate.
++- `CandidateRow` already carries UI-facing row facts (`recipeName`,
++  `isCurrent`, `isAlternate`) from `candidateRowsFor`.
++- `AltCompare` is a thin render shell over pure helpers. Keeping the lock state
++  on `CandidateRow` preserves that architecture.
++
++## Design
++
++Add `lockedTier: number | null` to `CandidateRow`.
++
++- In `candidateRowsFor`, read `const unlock = catalog.recipeUnlocks[candidate.id]`.
++- Set `lockedTier` to `unlock` only when `unlockedTier !== null && unlock !==
++  undefined && unlock > unlockedTier`; otherwise `null`.
++- Add `unlockedTier: number | null = null` as a trailing defaulted argument to
++  `candidateRowsFor`, and pass it from `altCompareModel`. The default preserves
++  existing helper tests and callers on the explicit no-gate path.
++- Extend `altCompareModel` with the same trailing defaulted argument;
++  `AltCompare` reads `proposePrefs.unlockedTier` directly from the store and
++  passes it through.
++- Render `lockedTier` in the recipe cell with the existing
++  `.alt-compare-mark` class, after `(alt)` and before byproducts:
++  ` (locked T<n>)`.
++- Leave Apply enabled for locked non-current rows. Current rows still render the
++  existing `current` mark instead of Apply.
++
++## Rejected alternatives
++
++- **Hide locked rows**: contradicts the settled decision and can hide the
++  currently-applied recipe.
++- **Compute lock state in `AltCompare.tsx`**: works, but pushes domain-row facts
++  into the render shell and duplicates the existing `CandidateRow` pattern.
++- **Disable Apply for locked rows**: turns a compare label into policy
++  enforcement and blocks imported or intentionally-over-tier plans.
++
++## Test plan
++
++- Add an SSR test that seeds `proposePrefs.unlockedTier` to `0` and sets
++  `CAT.recipeUnlocks.r_alt = 1`. Assert the alternate row renders
++  ` (alt)` and ` (locked T1)`, while the standard row has neither lock text nor
++  altered Apply/current behavior.
++- In the same test, assert the Apply button still appears for the locked
++  non-current row.
++- Add a second SSR pass with `unlockedTier: null` against the same catalog to pin
++  the pass-either-way trap: the lock label must disappear when the tier gate is
++  all.
++- Run `npx vitest run src/ui/AltCompare.test.tsx`, `npm run check`, and
++  `npm test`.
++- Record bidirectionality in `features/altcompare-tier-labels/r2-verification.log`
++  by breaking the `lockedTier` assignment and showing the new SSR test fails,
++  then restoring and showing it passes.
++
++## Revision history
++
++- v1: Initial design from #115/#103 decision trail. Settles row field,
++  `locked T<n>` wording, and enabled Apply behavior.
++- v2: Folded simplify nit: make the new `unlockedTier` helper arguments
++  trailing defaults (`= null`) so existing pure-helper callers stay on the
++  no-gate path without mechanical churn, while production still passes the real
++  store value explicitly.
+diff --git a/features/altcompare-tier-labels/design-r1-prompt.md b/features/altcompare-tier-labels/design-r1-prompt.md
+new file mode 100644
+index 0000000..8cb3638
+--- /dev/null
++++ b/features/altcompare-tier-labels/design-r1-prompt.md
+@@ -0,0 +1,50 @@
++# Design review r1 — #115 AltCompare tier-locked labels
++
++Worktree: `/home/subzerodev/workspace/satisfactory-foundry`
++Artifact under review:
++`/home/subzerodev/workspace/satisfactory-foundry/features/altcompare-tier-labels/brainstorm-spec.md`
++
++Reviewer mode: degraded same-vendor. Apply your assigned reviewer role exactly;
++return one of `APPROVED`, `APPROVED_WITH_NITS`, `NEEDS_REWORK`, or `BLOCKED` as
++the final line. Verify citations against the live worktree before relying on
++them.
++
++## A. Current-state anchors to verify
++
++1. #115's board decision is settled: label tier-locked AltCompare candidates,
++   never hide them. Hiding is out of scope for this review.
++2. `src/data/types.ts` requires `Catalog.recipeUnlocks: Record<string, number>`;
++   absent means no recipe gate.
++3. `src/state/store.ts` defines `ProposePrefs.unlockedTier: number | null`;
++   default `null` means all recipes.
++4. `src/ui/chain-builder-adapter.ts` defines `CandidateRow` with UI-facing row
++   facts and builds rows in `candidateRowsFor`.
++5. `src/ui/AltCompare.tsx` reads the store directly, calls `altCompareModel`,
++   renders recipe-cell inline marks with `.alt-compare-mark`, and leaves Apply
++   available for non-current rows.
++6. `src/ui/AltCompare.test.tsx` uses SSR `renderToStaticMarkup` with a
++   `getInitialState` seam; tests that do not explicitly seed
++   `proposePrefs.unlockedTier` would not exercise a tier lock because the
++   default is `null`.
++
++## B. Proposed design to review
++
++The design adds a nullable `lockedTier` row field, computed in
++`candidateRowsFor` from `catalog.recipeUnlocks[candidate.id]` and an explicit
++`unlockedTier` argument. `AltCompare` reads `proposePrefs.unlockedTier`, passes
++it through `altCompareModel` to `candidateRowsFor`, and renders
++` (locked T<n>)` with the existing `.alt-compare-mark` class after `(alt)` and
++before byproducts. Apply stays enabled for locked non-current rows.
++
++## C. Review focus
++
++- Does the proposed data flow preserve AltCompare's thin-render-shell shape, or
++  is there a simpler/lower-risk place to compute the label without violating the
++  settled decision?
++- Is `lockedTier = unlock > unlockedTier` the correct threshold for
++  `recipeUnlocks` and `unlockedTier`, including `null` and absent-key cases?
++- Does the test plan actually close the known trap where `unlockedTier` defaults
++  to `null`?
++- Is the wording `locked T<n>` precise enough, and does it avoid implying Apply
++  is disabled?
++- Is any current behavior accidentally changed beyond adding the label?
+diff --git a/features/altcompare-tier-labels/diff-r1-prompt.md b/features/altcompare-tier-labels/diff-r1-prompt.md
+new file mode 100644
+index 0000000..bfb6762
+--- /dev/null
++++ b/features/altcompare-tier-labels/diff-r1-prompt.md
+@@ -0,0 +1,68 @@
++# Diff review r1 — #115 AltCompare tier-locked labels
++
++Worktree: `/home/subzerodev/workspace/satisfactory-foundry`
++Cumulative diff under review:
++`/home/subzerodev/workspace/satisfactory-foundry/features/altcompare-tier-labels/diff-r1.diff`
++
++Reviewer mode: degraded same-vendor. Apply your assigned reviewer role exactly;
++return one of `APPROVED`, `APPROVED_WITH_NITS`, `NEEDS_REWORK`, or `BLOCKED` as
++the final line. Verify cited source against the live worktree before relying on
++it.
++
++## A. Current-state anchors to verify
++
++1. #115's settled decision: AltCompare labels tier-locked candidates and never
++   hides them.
++2. `Catalog.recipeUnlocks` is recipe id -> minimum unlock tier; absent key means
++   ungated.
++3. `ProposePrefs.unlockedTier` default is `null` ("all"), which is the known
++   pass-either-way trap for tests that do not explicitly set a tier.
++4. `AltCompare` is intentionally ungated and Apply remains available for
++   non-current rows.
++
++## B. What changed
++
++1. `CandidateRow` gained `lockedTier: number | null`.
++2. `candidateRowsFor` now accepts a trailing defaulted
++   `unlockedTier: number | null = null` and computes `lockedTier` when
++   `unlock > unlockedTier`.
++3. `altCompareModel` now accepts the same trailing default, while `AltCompare`
++   explicitly reads `proposePrefs.unlockedTier` and passes it through.
++4. The recipe cell renders ` (locked T<n>)` with the existing
++   `.alt-compare-mark` class; rows are not hidden and Apply is not disabled.
++5. `AltCompare.test.tsx` adds an SSR pin that explicitly seeds
++   `unlockedTier: 0`, expects the locked label on the alternate row, expects the
++   standard row to remain unlabeled, expects Apply to remain present, then
++   verifies `unlockedTier: null` removes the lock label.
++6. `features/altcompare-tier-labels/r2-verification.log` records
++   bidirectionality: breaking the production `lockedTier` assignment to `null`
++   fails the new test; restoring the threshold assignment passes.
++
++## C. Pre-review hygiene already run
++
++```text
++npx vitest run src/ui/AltCompare.test.tsx
++Test Files  1 passed (1)
++Tests  13 passed (13)
++
++npm run check
++tsc -b && eslint . && prettier --check src
++All matched files use Prettier code style!
++
++npm test
++Test Files  33 passed (33)
++Tests  918 passed (918)
++```
++
++## D. Review focus
++
++- Confirm the threshold handles `null`, absent unlock, equal tier, and above-tier
++  cases correctly.
++- Confirm existing callers that omit the new helper arguments stay on the
++  no-gate path.
++- Confirm the SSR test would fail if the production label path were missing and
++  does not rely on default `unlockedTier`.
++- Confirm Apply behavior and row visibility are unchanged except for the new
++  label.
++- Confirm the bidirectionality log contains a real failure line for the new
++  test.
+diff --git a/features/altcompare-tier-labels/diff-simplify-prompt.md b/features/altcompare-tier-labels/diff-simplify-prompt.md
+new file mode 100644
+index 0000000..c3ec09e
+--- /dev/null
++++ b/features/altcompare-tier-labels/diff-simplify-prompt.md
+@@ -0,0 +1,36 @@
++# Simplify review — diff at the diff stage
++
++**Artifact under review:** `/home/subzerodev/workspace/satisfactory-foundry/features/altcompare-tier-labels/diff-r1.diff`
++**Stage:** diff
++**Worktree (read source here to ground every proposal):** `/home/subzerodev/workspace/satisfactory-foundry`
++
++This artifact has **ALREADY passed correctness review**: `code-reviewer`
++APPROVED and `adversarial-reviewer` APPROVED, both in degraded same-vendor mode.
++Do NOT re-check correctness. Bugs, missing cases, and design-intent disputes are
++the correctness pair's beat, not yours.
++
++Your sole job: find **over-engineering** and propose the **simplest correct
++shape**. For each finding:
++
++1. Cite the lines (`file:line` or a line range into the artifact).
++2. Name the simpler shape concretely.
++3. Say why it stays correct, grounded by reading the worktree.
++
++If it is already as simple as it should be, say so. Do not invent work.
++
++## Diff-stage guidance
++
++Look for:
++
++- needless indirection;
++- duplicated logic that could reuse an existing helper;
++- guards, branches, or error handling beyond the requirement;
++- generality introduced with no caller.
++
++## Verdict
++
++Return exactly one verdict as the final line, uppercase, nothing else on it:
++`APPROVED` / `APPROVED_WITH_NITS` / `NEEDS_REWORK` / `BLOCKED`.
++
++Your verdict is advisory-with-teeth: findings must be folded or rejected with a
++written rationale, but only `BLOCKED` forces a stop.
+diff --git a/features/altcompare-tier-labels/r2-verification.log b/features/altcompare-tier-labels/r2-verification.log
+new file mode 100644
+index 0000000..9150d7c
+--- /dev/null
++++ b/features/altcompare-tier-labels/r2-verification.log
+@@ -0,0 +1,71 @@
++# #115 diff verification log
++
++Worktree: `/home/subzerodev/workspace/satisfactory-foundry`
++
++## PASS with production code present
++
++Command:
++
++```sh
++npx vitest run src/ui/AltCompare.test.tsx -t "labels tier-locked candidates"
++```
++
++Result:
++
++```text
++Test Files  1 passed (1)
++Tests  1 passed | 12 skipped (13)
++```
++
++## BREAK: remove the production lock assignment
++
++Temporary mutation:
++
++```diff
++-      lockedTier:
++-        unlockedTier !== null && unlock !== undefined && unlock > unlockedTier
++-          ? unlock
++-          : null,
+++      lockedTier: null,
++```
++
++Command:
++
++```sh
++npx vitest run src/ui/AltCompare.test.tsx -t "labels tier-locked candidates"
++```
++
++Result:
++
++```text
++FAIL  src/ui/AltCompare.test.tsx > AltCompare SSR smoke > labels tier-locked candidates without hiding or disabling apply (#115)
++AssertionError: expected '<div class="alt-compare"><header clas...' to contain '<td>Alternate<span class="alt-compare...'
++
++Expected: "<td>Alternate<span class="alt-compare-mark"> (alt)</span><span class="alt-compare-mark"> (locked T1)</span></td>"
++Received: "...<td>Alternate<span class="alt-compare-mark"> (alt)</span></td>..."
++```
++
++## RESTORE: reinstate threshold assignment
++
++Restore:
++
++```diff
++-      lockedTier: null,
+++      lockedTier:
+++        unlockedTier !== null && unlock !== undefined && unlock > unlockedTier
+++          ? unlock
+++          : null,
++```
++
++Command:
++
++```sh
++npx vitest run src/ui/AltCompare.test.tsx -t "labels tier-locked candidates"
++```
++
++Result:
++
++```text
++Test Files  1 passed (1)
++Tests  1 passed | 12 skipped (13)
++```
+diff --git a/features/altcompare-tier-labels/simplify-prompt.md b/features/altcompare-tier-labels/simplify-prompt.md
+new file mode 100644
+index 0000000..240740b
+--- /dev/null
++++ b/features/altcompare-tier-labels/simplify-prompt.md
+@@ -0,0 +1,37 @@
++# Simplify review — design at the design stage
++
++**Artifact under review:** `/home/subzerodev/workspace/satisfactory-foundry/features/altcompare-tier-labels/brainstorm-spec.md`
++**Stage:** design
++**Worktree (read source here to ground every proposal):** `/home/subzerodev/workspace/satisfactory-foundry`
++
++This artifact has **ALREADY passed correctness review**: `code-reviewer`
++APPROVED and `adversarial-reviewer` APPROVED, both in degraded same-vendor mode.
++Do NOT re-check correctness. Bugs, missing cases, and design-intent disputes are
++the correctness pair's beat, not yours.
++
++Your sole job: find **over-engineering** and propose the **simplest correct
++shape**. For each finding:
++
++1. Cite the lines (`file:line` or a line range into the artifact).
++2. Name the simpler shape concretely.
++3. Say why it stays correct, grounded by reading the worktree.
++
++If it is already as simple as it should be, say so. Do not invent work.
++
++## Design-stage guidance
++
++Look for over-engineering designed in before any code:
++
++- unnecessary abstraction layers or indirection the requirement does not ask for;
++- premature generality;
++- speculative options or configuration knobs with no stated consumer;
++- defensive machinery beyond the stated requirement;
++- process or document structure more elaborate than the problem demands.
++
++## Verdict
++
++Return exactly one verdict as the final line, uppercase, nothing else on it:
++`APPROVED` / `APPROVED_WITH_NITS` / `NEEDS_REWORK` / `BLOCKED`.
++
++Your verdict is advisory-with-teeth: findings must be folded or rejected with a
++written rationale, but only `BLOCKED` forces a stop.
+diff --git a/src/ui/AltCompare.test.tsx b/src/ui/AltCompare.test.tsx
+index f6a3f6a..ab3a34d 100644
+--- a/src/ui/AltCompare.test.tsx
++++ b/src/ui/AltCompare.test.tsx
+@@ -334,4 +334,50 @@ describe("AltCompare SSR smoke", () => {
+       store.getInitialState = realInitial;
+     }
+   });
++
++  it("labels tier-locked candidates without hiding or disabling apply (#115)", () => {
++    // The explicit unlockedTier is the load-bearing part of this pin:
++    // proposePrefs defaults it to null ("all"), which would make a no-setup test
++    // pass even if tier-lock labeling were never wired.
++    const lockedCat: Catalog = { ...CAT, recipeUnlocks: { r_alt: 1 } };
++    const store = appStore as unknown as {
++      getInitialState: () => unknown;
++      getState: () => unknown;
++    };
++    const realInitial = store.getInitialState;
++    const renderAtTier = (unlockedTier: number | null): string => {
++      const current = store.getState() as { proposePrefs: unknown };
++      const seeded = {
++        ...(current as object),
++        catalog: { status: "ready" as const, catalog: lockedCat },
++        activeStageId: "s1",
++        selection: selection("r_std"),
++        solve: solvedWith("ingot", 120),
++        proposePrefs: {
++          ...(current.proposePrefs as object),
++          unlockedTier,
++        },
++      };
++      store.getInitialState = () => seeded;
++      return renderToStaticMarkup(<AltCompare />);
++    };
++    const lockedCell =
++      '<td>Alternate<span class="alt-compare-mark"> (alt)</span><span class="alt-compare-mark"> (locked T1)</span></td>';
++    try {
++      const tier0 = renderAtTier(0);
++      expect(tier0).toContain(lockedCell);
++      expect(tier0).toContain("<td>Standard</td>");
++      expect(tier0).toContain(
++        '<button type="button" class="alt-compare-apply">apply</button>',
++      );
++
++      const allTiers = renderAtTier(null);
++      expect(allTiers).not.toContain("locked T1");
++      expect(allTiers).toContain(
++        '<td>Alternate<span class="alt-compare-mark"> (alt)</span></td>',
++      );
++    } finally {
++      store.getInitialState = realInitial;
++    }
++  });
+ });
+diff --git a/src/ui/AltCompare.tsx b/src/ui/AltCompare.tsx
+index 33b4542..fd9fe88 100644
+--- a/src/ui/AltCompare.tsx
++++ b/src/ui/AltCompare.tsx
+@@ -69,6 +69,7 @@ export function altCompareModel(
+   stageId: string,
+   selection: Selection,
+   solve: SolveState,
++  unlockedTier: number | null = null,
+ ): AltCompareModel | null {
+   if (solve.status !== "solved") return null;
+   const recipeId = selection.recipeId;
+@@ -90,14 +91,18 @@ export function altCompareModel(
+   const rate = lane.totalOutput;
+
+   const byId = new Map(candidates.map((c) => [c.id, c]));
+-  const rows = candidateRowsFor(catalog, itemId, recipeId, rate).map(
+-    (row): CompareRow => ({
+-      row,
+-      apply: row.isCurrent
+-        ? null
+-        : swapPayloadFor(stageId, byId.get(row.recipeId)!, rate),
+-    }),
+-  );
++  const rows = candidateRowsFor(
++    catalog,
++    itemId,
++    recipeId,
++    rate,
++    unlockedTier,
++  ).map((row): CompareRow => ({
++    row,
++    apply: row.isCurrent
++      ? null
++      : swapPayloadFor(stageId, byId.get(row.recipeId)!, rate),
++  }));
+
+   return { itemName: catalog.items[itemId]?.displayName ?? itemId, rows };
+ }
+@@ -126,10 +131,17 @@ export function AltCompare() {
+   const activeStageId = useAppStore((s) => s.activeStageId);
+   const selection = useAppStore((s) => s.selection);
+   const solve = useAppStore((s) => s.solve);
++  const unlockedTier = useAppStore((s) => s.proposePrefs.unlockedTier);
+   const applyRecipeSwap = useAppStore((s) => s.applyRecipeSwap);
+
+   if (catalog === null) return null;
+-  const model = altCompareModel(catalog, activeStageId, selection, solve);
++  const model = altCompareModel(
++    catalog,
++    activeStageId,
++    selection,
++    solve,
++    unlockedTier,
++  );
+   if (model === null) return null;
+
+   return (
+@@ -159,6 +171,12 @@ export function AltCompare() {
+                 {row.isAlternate && (
+                   <span className="alt-compare-mark"> (alt)</span>
+                 )}
++                {row.lockedTier !== null && (
++                  <span className="alt-compare-mark">
++                    {" "}
++                    (locked T{row.lockedTier})
++                  </span>
++                )}
+                 {row.byproducts !== null && (
+                   <span className="alt-compare-byproducts">
+                     {" "}
+diff --git a/src/ui/chain-builder-adapter.ts b/src/ui/chain-builder-adapter.ts
+index 71463ce..1ae1cc1 100644
+--- a/src/ui/chain-builder-adapter.ts
++++ b/src/ui/chain-builder-adapter.ts
+@@ -525,6 +525,8 @@ export interface CandidateRow {
+   /** true ⇒ this row's recipe is an ALTERNATE. The parser strips the game's
+    *  "Alternate: " prefix (docs-loader.ts:190), so `recipeName` cannot carry it. */
+   isAlternate: boolean;
++  /** Minimum unlock tier when this recipe sits above the current Propose tier. */
++  lockedTier: number | null;
+   /** Total machine count across the candidate's whole subtree (Σ, exact). */
+   machines: string;
+   /** The candidate's actual produced rate of the compared item — the PRIMARY
+@@ -950,10 +952,12 @@ export function candidateRowsFor(
+   itemId: string,
+   currentRecipeId: string,
+   rate: Fraction,
++  unlockedTier: number | null = null,
+ ): CandidateRow[] {
+   const candidates = producerRecipesFor(catalog, itemId);
+   const recipes = Object.values(catalog.recipes);
+   return candidates.map((candidate) => {
++    const unlock = catalog.recipeUnlocks[candidate.id];
+     const proposal = proposeChain(
+       itemId,
+       rate,
+@@ -981,6 +985,10 @@ export function candidateRowsFor(
+       recipeName: candidate.displayName,
+       isCurrent: candidate.id === currentRecipeId,
+       isAlternate: candidate.isAlternate,
++      lockedTier:
++        unlockedTier !== null && unlock !== undefined && unlock > unlockedTier
++          ? unlock
++          : null,
+       machines: machines.toString(),
+       output,
+       power: subtreePowerText(proposal, catalog),

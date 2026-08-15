@@ -1,0 +1,71 @@
+# #115 diff verification log
+
+Worktree: `/home/subzerodev/workspace/satisfactory-foundry`
+
+## PASS with production code present
+
+Command:
+
+```sh
+npx vitest run src/ui/AltCompare.test.tsx -t "labels tier-locked candidates"
+```
+
+Result:
+
+```text
+Test Files  1 passed (1)
+Tests  1 passed | 12 skipped (13)
+```
+
+## BREAK: remove the production lock assignment
+
+Temporary mutation:
+
+```diff
+-      lockedTier:
+-        unlockedTier !== null && unlock !== undefined && unlock > unlockedTier
+-          ? unlock
+-          : null,
++      lockedTier: null,
+```
+
+Command:
+
+```sh
+npx vitest run src/ui/AltCompare.test.tsx -t "labels tier-locked candidates"
+```
+
+Result:
+
+```text
+FAIL  src/ui/AltCompare.test.tsx > AltCompare SSR smoke > labels tier-locked candidates without hiding or disabling apply (#115)
+AssertionError: expected '<div class="alt-compare"><header clas...' to contain '<td>Alternate<span class="alt-compare...'
+
+Expected: "<td>Alternate<span class="alt-compare-mark"> (alt)</span><span class="alt-compare-mark"> (locked T1)</span></td>"
+Received: "...<td>Alternate<span class="alt-compare-mark"> (alt)</span></td>..."
+```
+
+## RESTORE: reinstate threshold assignment
+
+Restore:
+
+```diff
+-      lockedTier: null,
++      lockedTier:
++        unlockedTier !== null && unlock !== undefined && unlock > unlockedTier
++          ? unlock
++          : null,
+```
+
+Command:
+
+```sh
+npx vitest run src/ui/AltCompare.test.tsx -t "labels tier-locked candidates"
+```
+
+Result:
+
+```text
+Test Files  1 passed (1)
+Tests  1 passed | 12 skipped (13)
+```
