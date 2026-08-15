@@ -209,49 +209,27 @@ second and first pass respectively, so neither pass is redundant:
 
 ---
 
-## Assertion strings — verified byte-accurate, not assumed
-
-The spec's two exact-substring assertions were checked against real
-`renderToStaticMarkup` output rather than trusted. The emitted cell is exactly:
+## Assertion strings — verified against real output, not assumed
 
     <td>Alternate<span class="alt-compare-mark"> (alt)</span></td>
 
-No `<!-- -->` separator appears (static markup emits none, and the marker child is
-an ELEMENT, not a second text node); JSX preserves the span's leading space. The
-spec's strings matched the bytes on the first run — no correction was needed.
-
-Both assertion-form traps hold as the spec states:
-  - the absence half is scoped to `<td>Standard</td>`; a bare
-    `not.toContain("(alt)")` would be meaningless, since SSR returns ONE flat
-    string containing both rows;
-  - the presence half keeps the parens — the fixture's alternate is NAMED
-    "Alternate", so a bare `"alt"` matches the recipe name alone.
+No `<!-- -->` separator (the marker child is an ELEMENT, not a second text node);
+matched first run. Rationale for the two scoping traps lives in the test comment.
 
 ## Deliberately not pinned (per spec)
 
-The positional mutant (`isAlternate: index > 0`): neither map callback exposes an
-index (`chain-builder-adapter.ts:953`, `AltCompare.tsx:149`), so reaching one
-requires deliberately adding a parameter — not an implementer slip. Also unpinned:
+The positional mutant (`isAlternate: index > 0`): neither map callback TAKES an
+index parameter (adapter `candidates.map((candidate) => {`; render
+`model.rows.map(({ row, apply }) =>`), so reaching one means deliberately adding
+one — not an implementer slip. Also unpinned:
 the styling (the browser walk is this file's stated visual gate).
 
-================================================================================
-MUTANT A6 — added at the BOUNDARY GATE (team lead, 2026-08-15)
-================================================================================
+## Adapter mutant A6 — name-derived (`displayName.startsWith("Alternate")`)
 
-Origin: the boundary adversarial reviewer named this as the one genuinely
-dangerous mutant that SURVIVES the two shipped pins, and waived it against the
-frozen design on the grounds that closing it would mean renaming a fixture
-recipe shared by many pins.
-
-There was a cheaper close it did not consider: assert against the REAL bundled
-catalog, which this file already loads and already has a 5-candidate compare
-fixture (`alt-compare — bundled Iron Ingot alternates`). Cost: one `it`, no new
-fixture, no renaming.
-
-Why the synthetic pins are blind to it: their alternate recipe is literally
-NAMED "Alternate", so a name-derived flag scores identically there. Real parsed
-names cannot be — docs-loader.ts:190 STRIPS the game's "Alternate: " prefix, so
-`Alternate: Iron Alloy Ingot` is stored as `Iron Alloy Ingot`.
+Surfaced at the boundary gate. The synthetic fixture's alternate is literally
+NAMED "Alternate", so both shipped pins score identically on it. Closed against
+the REAL bundled catalog, where the docs-loader strips the game's "Alternate: "
+prefix — `Alternate: Iron Alloy Ingot` is stored as `Iron Alloy Ingot`.
 
   MUTATION  src/ui/chain-builder-adapter.ts:980
     -  isAlternate: candidate.isAlternate,
@@ -291,3 +269,46 @@ names cannot be — docs-loader.ts:190 STRIPS the game's "Alternate: " prefix, s
   "Alternate"), so the row cannot rot into a tautology if the parser ever stops
   stripping the prefix -- it would then fail loudly instead of silently ceasing
   to discriminate.
+
+## Adapter mutant M7 — id-derived (`candidate.id.includes("alternate")`)
+
+Surfaced by the DIFF-stage simplify pass while testing whether the real-catalog
+pin could subsume the synthetic one (it proposed the fold, then broke it itself).
+
+**More plausible than A6, not less.** The parser derives the real flag as
+`id.includes("alternate_") || displayName.startsWith("Alternate:")`
+(docs-loader), so an implementer re-deriving it inline rather than reading
+`candidate.isAlternate` writes exactly the id form — it mirrors the parser.
+
+  MUTATION  src/ui/chain-builder-adapter.ts:980
+    -  isAlternate: candidate.isAlternate,
+    +  isAlternate: candidate.id.includes("alternate"),
+
+  COMPILE CHECK
+    $ npx tsc -b   ->  exit 0, CLEAN. Behavioural kill.
+
+  MEASURED — the two fixtures are blind in OPPOSITE directions:
+    $ npx vitest run src/ui/chain-builder-adapter.test.ts \
+        -t "flags isAlternate against REAL parsed names"
+      Tests  1 passed | 93 skipped (94)          <- pin 3 SURVIVES
+    $ npx vitest run src/ui/chain-builder-adapter.test.ts \
+        -t "carries isAlternate from the RECIPE"
+      AssertionError: expected [ false, false ] to deeply equal [ false, true ]
+      Tests  1 failed | 93 skipped (94)          <- pin 1 KILLS
+    $ npx vitest run src/ui/AltCompare.test.tsx -t "marks the ALTERNATE row"
+      Tests  1 failed | 11 skipped (12)          <- pin 2 KILLS
+
+  WHY (and why no two-pin subset covers the ground):
+
+    fixture    ids                 names        blind to      catches
+    ---------  ------------------  -----------  ------------  ------------
+    synthetic  r_std / r_alt       "Alternate"  A6 (name)     M7 (id)
+    real       alternate_*         stripped     M7 (id)       A6 (name)
+
+    The synthetic fixture has a name matching the alternate convention but an id
+    that does not; the real one has the inverse. Each is the other's guard.
+    **Do not "simplify" by deleting either — the fold was tried and it fails.**
+
+  RESTORE
+    $ npm test        ->  Test Files 33 passed | Tests 910 passed (910)
+    $ npm run check   ->  clean

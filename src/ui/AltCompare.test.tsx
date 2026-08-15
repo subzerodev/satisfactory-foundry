@@ -300,12 +300,8 @@ describe("AltCompare SSR smoke", () => {
     };
     const realInitial = store.getInitialState;
     const renderWithCurrent = (recipeId: string): string => {
-      // Build the snapshot ONCE per render and return the same reference on
-      // every call, matching the test above: getServerSnapshot is contractually
-      // required to be cached, and React calls it once per useSyncExternalStore
-      // hook. Rebuilding it inside the closure would hand each hook a fresh
-      // object — harmless in a single static pass, a real hazard if this ever
-      // moves to a hydrating render.
+      // Built once per render and returned by reference — getServerSnapshot must
+      // be cached; a fresh object per hook is a hazard if this ever hydrates.
       const seeded = {
         ...(store.getState() as object),
         catalog: { status: "ready" as const, catalog: CAT },
