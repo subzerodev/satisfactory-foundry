@@ -318,7 +318,7 @@ function synthCatalog(
 }
 
 describe("alt-compare — candidate enumeration", () => {
-  it("lists default (non-alternate) first, then alternates ascending by id", () => {
+  it("lists the effective default first, then everything else ascending by id", () => {
     const cat = synthCatalog(
       [item("ingot", "Ingot"), item("ore", "Ore")],
       [machine("smelter", 4)],
@@ -343,7 +343,14 @@ describe("alt-compare — candidate enumeration", () => {
       ],
     );
     const ids = producerRecipesFor(cat, "ingot").map((r) => r.id);
-    // Default first; alternates ascending (r_alt_a before r_alt_z).
+    // The fixture is declared SCRAMBLED (r_alt_z, r_std, r_alt_a) on purpose:
+    // that is what kills a mutant returning `eligible` unsorted. The sibling at
+    // "orders effective-default first, then ascending id" declares its fixture
+    // already in the expected order and cannot — so a future dedupe must retire
+    // THAT one, not this one.
+    // NB the rule is default-first-then-ascending, NOT the retired
+    // non-alternates-before-alternates grouping: #103 deleted that comparator,
+    // and this phase's rubber pin expects an alternate ahead of a non-alternate.
     expect(ids).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
   });
 

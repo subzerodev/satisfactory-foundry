@@ -584,7 +584,8 @@ export function effectiveDefaultRecipe(
  * source, the constrained-row recovery list, the preview's `candidateCount`,
  * and the comparison table's rows. A consumer wanting a "nothing to compare"
  * affordance applies that gate itself — hiding a lone option is a UI decision
- * and does not belong in a data function. Ordering: the effective default FIRST when
+ * and does not belong in a data function. Ordering: the effective default
+ * FIRST when
  * it is non-null (its id leads), then the remaining recipes ascending by id;
  * when the effective default is null (alternate-only / fully-excluded) the list
  * degenerates cleanly to plain ascending id.
