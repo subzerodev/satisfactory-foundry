@@ -1,6 +1,7 @@
 # #116 — AltCompare row gets an `(alt)` marker
 
-**Status:** v3 — in review (r2 folded).
+**Status:** v4 — CORRECTNESS-APPROVED (r3: APPROVED_WITH_NITS ×2, nits folded).
+Awaiting the one-shot simplify pass before freeze.
 **Ticket:** #116 (Stage 21 milestone 92). **Blocks #103.**
 **Tier:** 2 (single feature, user-visible, no sub-phases).
 
@@ -172,10 +173,18 @@ Two pins, in `src/ui/chain-builder-adapter.test.ts` and
 ### The mutant that nearly shipped — BOTH r1 reviewers found it independently
 
 v1 specified both pins as presence-AND-absence and called that sufficient. **It
-is not.** Every existing fixture uses `r_std` as the current recipe
-(`chain-builder-adapter.test.ts:412, 435, 466, 591, 876`; `AltCompare.test.tsx:263`
-seeds `selection("r_std")`), and `r_std` is the non-alternate. So across the whole
-suite **`isAlternate` is perfectly aliased with `!isCurrent`.**
+is not.** **All eight** `candidateRowsFor` call sites pass a NON-ALTERNATE as the
+current recipe — `"r_std"` at `chain-builder-adapter.test.ts:412, 435, 466, 591,
+876`, `"r_widget_a"` at `:514` and `:559`, and `"ingot_iron"` at `:617`; plus
+`AltCompare.test.tsx:263` seeding `selection("r_std")`. So across the whole suite
+**`isAlternate` is perfectly aliased with `!isCurrent`.**
+
+(r3 fold: v2's enumeration listed only five of the eight. The conclusion held at
+every site, but note `:617` aliases for a *different structural reason* — it runs
+against the REAL bundled catalog with **five** candidates, 1 non-alternate + 4
+alternates (`:601-614`), so the alias comes from every alternate being
+non-current rather than from a 2-row bijection. A sweep claiming completeness
+should be complete.)
 
 The new field goes in one line below `isCurrent: candidate.id === currentRecipeId`
 (`chain-builder-adapter.ts:976`), which makes
@@ -184,9 +193,11 @@ The new field goes in one line below `isCurrent: candidate.id === currentRecipeI
 isAlternate: candidate.id !== currentRecipeId   // WRONG
 ```
 
-the single most plausible slip — and it passes presence, absence, and produces
+**v1's** most plausible slip — and it passes presence, absence, and produces
 **byte-identical HTML**. The same holds for
-`{!row.isCurrent && <span…>}` in the render.
+`{!row.isCurrent && <span…>}` in the render. (r3 fold: v2 called this "the single
+most plausible slip" full stop, which now contradicts the `===` mirror analysis
+below — that one is *more* plausible. Scoped to v1 so the two sections agree.)
 
 **What it would ship:** one click after Apply the user is running the alternate.
 Under the mutant they see `(alt)` on every *standard* row and none on the
@@ -231,9 +242,26 @@ tempting fix (change which row is current) is the one that does not work.
 non-alternates-first (`chain-builder-adapter.ts:558-561`), a 2-non-alt + 1-alt
 fixture with the first current gives three mutually distinct vectors —
 `isAlternate = [F,F,T]`, `isCurrent = [T,F,F]`, `index > 0 = [F,T,T]` — so a
-single `toEqual` separates the real field from every plausible impostor. It needs
-a **local** catalog, not a change to `CAT`: `AltCompare.test.tsx:175` pins
-`rows` to length 2.
+single `toEqual` separates the real field from every plausible impostor.
+
+It needs a **local** catalog. The blocker against widening the describe-scoped
+`cat` (`chain-builder-adapter.test.ts:395-409`) is `:413`
+(`expect(rows).toHaveLength(2)`) plus the positional destructure at `:414`.
+Per-test catalogs are already idiomatic in that file (`varCat` `:448`, `bpCat`
+`:478`, `selfCat` `:573`). (r3 fold: v2 cited `AltCompare.test.tsx:175` here —
+**the wrong file**; that file has no bearing on the adapter pin, and there is no
+`CAT` in `chain-builder-adapter.test.ts` at all. As written it could have sent an
+implementer to put the three-recipe pin in the render file.)
+
+**Do NOT reuse `ingotCatalog()`** (`chain-builder-adapter.test.ts:894-941`) — it
+is the obvious shortcut and it is the **wrong shape**: 1 non-alternate + 2
+alternates gives `isAlternate = [F,T,T]`, which is exactly `index > 0`, so the
+positional mutant would survive.
+
+**The load-bearing constraint is that the current recipe must NOT be the
+alternate.** If it were, `isCurrent` would be `[F,F,T] ≡ isAlternate` and the
+`=== currentRecipeId` mutant would survive again. *Which* non-alternate is
+current does not matter — `[T,F,F]` and `[F,T,F]` both kill all four mutants.
 
 **Why two render passes rather than a third fixture.** The render reads
 `row.isAlternate` with no index in scope, so the positional mutant is
@@ -265,9 +293,33 @@ cheap rather than expensive. The whole alias family is closed.
 `isAlternate` in a 2-row fixture are `machineId`, `displayName`,
 `outputs[0].perMinute`, the derived `machines`/`power`/`rawDraw`, array
 position, and `currentRecipeId` equality. Only the last two are plausible
-implementation slips, and both are now pinned. Hardcoded-`machineId` or
--`displayName` mutants are not slips an implementer would produce and are
-deliberately not pinned.
+implementation slips, and both are now pinned.
+
+**Deliberately NOT pinned, stated in full so the completeness claim is honest**
+(r3 fold — v3 named only the styling here):
+
+- Hardcoded `machineId` / `displayName` / rate constants. Not slips an
+  implementer produces.
+- `index === candidates.length - 1` (or any hand-tuned positional constant). **No
+  finite fixture can close the positional family** — an index expression can
+  encode any vector. `index > 0` is pinned because it is the only positional form
+  derived from a real structural property (the non-alternates-first ordering).
+  Note the render cannot reach positional mutants at all: `AltCompare.tsx:149`
+  destructures `({ row, apply })` with **no index parameter**, so reaching one
+  requires deliberately adding a second `.map` argument.
+- **Axis D's composition order.** Spec item 3 places the marker after the name
+  and before byproducts, but the fixture's recipes are single-output so
+  `byproducts` is `null` on every row — a marker emitted *after* the byproducts
+  span renders byte-identically. Cosmetic, and spec item 3 gives the literal JSX,
+  so it does not justify a fixture; recorded rather than left silent.
+- The styling itself (see below).
+
+**The two pins cover each other's blind spots**, which is why both are needed:
+the render passes exercise the real `candidateRowsFor` (`AltCompare.tsx:90`), so
+they independently kill the `===` / `!==` correlations, while the three-recipe
+fixture kills the positional mutant the render cannot see. A fourth mutant falls
+out free — `candidate.id !== effectiveDefaultRecipe(catalog, itemId)?.id` gives
+`[F,T,T]` on three rows and would have survived any two-row fixture.
 
 **The render pin uses `renderToStaticMarkup`, NOT jsdom** — this file's own
 discipline (`AltCompare.test.tsx:1-7`), with a worked store-seeding example at
@@ -293,7 +345,9 @@ gate"* (`AltCompare.test.tsx:5-6`). Stated explicitly rather than left silent.
 | `AltCompare.test.tsx` can render without jsdom | VERIFIED — `renderToStaticMarkup` at `:251`, `:279`; seam-stub `:265-286` |
 | Only 2 jsdom files exist, so #109 stays untriggered | VERIFIED by both r1 reviewers |
 | `CandidateRow` is constructed in exactly ONE place | VERIFIED by both r1 reviewers — `:973-985`; no literals, no snapshots, no whole-object `toEqual` |
-| **`isAlternate` is a BIJECTION with `isCurrent` in both existing fixtures, whichever recipe is current** | VERIFIED — each holds exactly 2 recipes, exactly 1 alternate (`AltCompare.test.tsx:73-88`, `chain-builder-adapter.test.ts:395-409`). **This is why v2's "make the alternate current" fix failed and why the adapter needs a 3-recipe fixture** |
+| **`isAlternate` is a BIJECTION with `isCurrent` in both 2-recipe fixtures, whichever recipe is current** | VERIFIED — each holds exactly 2 recipes, exactly 1 alternate (`AltCompare.test.tsx:73-88`, `chain-builder-adapter.test.ts:395-409`). **This is why v2's "make the alternate current" fix failed and why the adapter needs a 3-recipe fixture** |
+| The alias also holds at the 5-candidate BUNDLED fixture, for a different reason | VERIFIED (r3) — `chain-builder-adapter.test.ts:601-617` is 1 non-alternate + 4 alternates with the non-alternate current, so the alias comes from *every alternate being non-current*, not from a bijection. Same conclusion, different mechanism |
+| The alternate sorts LAST for any legal id choice | VERIFIED (r3, both reviewers) — `chain-builder-adapter.ts:558-561` keys on `isAlternate` FIRST and uses id only as a tiebreak, so `isAlternate = [F,F,T]` is id-independent |
 | Compare is blind to USER machine exclusions | VERIFIED — `:948` passes no exclusions, defaulting to `EXCLUDED_MACHINE_IDS` (`:31-34`). Consistent with #103 Axis 5's ungated-compare decision |
 
 ## Revision history
@@ -362,3 +416,31 @@ gate"* (`AltCompare.test.tsx:5-6`). Stated explicitly rather than left silent.
   - **Axis C reuse re-confirmed** — `.alt-compare-mark` has one declaration, one
     consumer, and zero references in tests or descendant selectors; no state
     leaves the marker unstyled.
+- **v4** (2026-08-15) — r3 fold. **Both reviewers APPROVED_WITH_NITS** — the
+  correctness pair has converged. All findings were citation-precision defects in
+  the *justifications*; none changed a line of what gets written.
+  - **Wrong-file citation** (both, NIT). v3 justified the local adapter fixture
+    by citing `AltCompare.test.tsx:175`, which has no bearing on the adapter pin
+    — and `chain-builder-adapter.test.ts` contains no `CAT` at all. Re-pointed to
+    `:413`/`:414`. Added the near-miss shortcut `ingotCatalog()` (`:894-941`) and
+    why it must NOT be reused (1 non-alt + 2 alts ⇒ `[F,T,T]` ≡ `index > 0`).
+  - **Unretired superlative** (adversarial, NIT) — v3 still called v1's `!==` "the
+    single most plausible slip" while separately arguing the `===` mirror is more
+    plausible. Scoped to v1.
+  - **Incomplete alias enumeration** (adversarial, NIT) — v3 listed five of the
+    **eight** `candidateRowsFor` call sites. All eight pass a non-alternate as
+    current, so the conclusion held everywhere; but `:617` runs against the REAL
+    bundled catalog with 5 candidates and aliases for a *different structural
+    reason*, which the ledger's "exactly 2 recipes" explanation did not cover.
+  - **Unpinned-list completed** (code-reviewer, NIT) — v3 claimed to name
+    everything deliberately unpinned and named only the styling. Axis D's
+    composition order is also unpinned (single-output fixtures ⇒ `byproducts` is
+    `null`, so a marker after the byproducts span is byte-identical), as is the
+    unclosable positional-constant family.
+  - **Recorded from the r3 verification, not previously claimed:** the alternate
+    sorts LAST for *any* legal id choice (the comparator keys on `isAlternate`
+    first, id only as tiebreak); the two pins **cover each other's blind spots**
+    (the render kills the `===`/`!==` correlations by exercising the real
+    `candidateRowsFor`, the 3-row fixture kills the positional the render cannot
+    reach); and a **fourth** mutant falls free —
+    `!== effectiveDefaultRecipe(...)?.id` gives `[F,T,T]` on three rows.
