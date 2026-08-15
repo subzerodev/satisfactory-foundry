@@ -1,0 +1,65 @@
+# #111 diff verification log
+
+Worktree: `/home/subzerodev/workspace/satisfactory-foundry`
+
+## PASS with production code present
+
+Command:
+
+```sh
+npx vitest run src/ui/ChainBuilder.output.test.tsx
+```
+
+Result:
+
+```text
+Test Files  1 passed (1)
+Tests  1 passed (1)
+```
+
+## BREAK: compare OUTPUT against live rateText
+
+Temporary mutation:
+
+```diff
+-                <dd>{totalOutputText(view.rows, preview.rateText)}</dd>
++                <dd>{totalOutputText(view.rows, rateText)}</dd>
+```
+
+Command:
+
+```sh
+npx vitest run src/ui/ChainBuilder.output.test.tsx
+```
+
+Result:
+
+```text
+FAIL  src/ui/ChainBuilder.output.test.tsx > ChainBuilder OUTPUT metric (#111) > shows actual target output and keeps the requested-rate snapshot after Rate drifts
+AssertionError: expected '80/min (asked 999/min)' to be '80/min (asked 61/min)' // Object.is equality
+
+Expected: "80/min (asked 61/min)"
+Received: "80/min (asked 999/min)"
+```
+
+## RESTORE: use the solved preview's requested-rate snapshot
+
+Restore:
+
+```diff
+-                <dd>{totalOutputText(view.rows, rateText)}</dd>
++                <dd>{totalOutputText(view.rows, preview.rateText)}</dd>
+```
+
+Command:
+
+```sh
+npx vitest run src/ui/ChainBuilder.output.test.tsx
+```
+
+Result:
+
+```text
+Test Files  1 passed (1)
+Tests  1 passed (1)
+```

@@ -13,6 +13,7 @@ import { Fraction } from "../core/fraction.ts";
 import {
   parseRateText,
   parseClockText,
+  totalOutputText,
   ChainBuilder,
 } from "./ChainBuilder.tsx";
 
@@ -99,6 +100,24 @@ describe("parseClockText (S20 P2, (0, 250])", () => {
       ok: false,
       error: "clock % must be at most 250",
     });
+  });
+});
+
+describe("totalOutputText", () => {
+  it("renders actual output only when it matches the requested rate", () => {
+    expect(totalOutputText([{ depth: 0, outputRate: "60" }], "60")).toBe(
+      "60/min",
+    );
+  });
+
+  it("renders the requested rate when integer machine counts overshoot", () => {
+    expect(totalOutputText([{ depth: 0, outputRate: "80" }], "61")).toBe(
+      "80/min (asked 61/min)",
+    );
+  });
+
+  it("returns a total fallback when there is no target row", () => {
+    expect(totalOutputText([{ depth: 1, outputRate: "90" }], "60")).toBe("—");
   });
 });
 
