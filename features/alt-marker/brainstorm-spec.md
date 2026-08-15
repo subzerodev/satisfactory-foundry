@@ -1,6 +1,6 @@
 # #116 — AltCompare row gets an `(alt)` marker
 
-**Status:** v2 — in review (r1 folded).
+**Status:** v3 — in review (r2 folded).
 **Ticket:** #116 (Stage 21 milestone 92). **Blocks #103.**
 **Tier:** 2 (single feature, user-visible, no sub-phases).
 
@@ -192,13 +192,55 @@ the single most plausible slip — and it passes presence, absence, and produces
 Under the mutant they see `(alt)` on every *standard* row and none on the
 alternate they are on — the exact inversion this ticket exists to prevent, green.
 
-**The fix costs one argument: decorrelate the fixture by making the ALTERNATE the
-current recipe.**
+### v2's fix was WRONG — it inverted the correlation instead of removing it (r2, both reviewers, again independently)
+
+v2 "decorrelated" by making the ALTERNATE the current recipe. That does not
+work, and the reason is structural: **both fixtures hold exactly two recipes,
+exactly one of them alternate** (`AltCompare.test.tsx:73-88`,
+`chain-builder-adapter.test.ts:395-409`). In a fixture of that shape
+`isAlternate` is a **bijection** with `isCurrent` whichever recipe is current —
+v1 got `≡ !isCurrent`, v2 got `≡ isCurrent`. The alias family was never closed,
+only flipped.
+
+So the **mirror-image mutant survives v2's pins byte-identically**:
+
+```ts
+isCurrent:   candidate.id === currentRecipeId,
+isAlternate: candidate.id === currentRecipeId,   // WRONG — copy the line, forget the RHS
+```
+
+It is **more plausible than v1's `!==`** (a verbatim duplicate needs copy alone;
+`!==` needs copy *plus* negate) and **strictly worse in effect**: it misfires in
+the **default** state, so a user sitting on the standard recipe sees `(alt)` on
+the standard row and nothing on the actual alternate. v1's mutant at least
+required an Apply first.
+
+**This is the exact failure the lesson at the bottom of this section names** —
+*bidirectionality does not kill correlation with an adjacent field* — and v2's
+own fix failed to act on it. Recorded rather than quietly corrected, because the
+tempting fix (change which row is current) is the one that does not work.
+
+**The fix: pin BOTH polarities, and decorrelate the adapter fixture properly.**
 
 | Pin | File | Form | Kills |
 |---|---|---|---|
-| Rows carry the right flag with the alternate CURRENT | `chain-builder-adapter.test.ts` | `candidateRowsFor(cat, "ingot", "r_alt", F(120))`; assert the `r_alt` row has `isAlternate: true` **and** the `r_std` row has `isAlternate: false` | hardcoded `true`/`false`, an inversion, **and** the `!isCurrent` correlation |
-| The marker renders on the alternate and NOT on the standard row | `AltCompare.test.tsx` | seed `selection("r_alt")`; assert `html` contains `<td>Alternate<span class="alt-compare-mark"> (alt)</span></td>` **and** contains `<td>Standard</td>` | forgetting the render, hardcoding it on every row, **and** the `!isCurrent` correlation |
+| The flag is right regardless of what is current | `chain-builder-adapter.test.ts` | a **THREE-recipe** local fixture — two non-alternates + one alternate — with a *non-alternate* current; assert the whole triple `rows.map(r => r.isAlternate)` equals `[false, false, true]` | hardcoded `true`/`false`, `=== currentRecipeId`, `!== currentRecipeId`, **and** the positional `index > 0` — all four in one assertion |
+| The marker follows the RECIPE, not the selection | `AltCompare.test.tsx` | **two** `renderToStaticMarkup` passes in the same seeding harness — `selection("r_std")` and `selection("r_alt")` — asserting in **both** that `html` contains `<td>Alternate<span class="alt-compare-mark"> (alt)</span></td>` **and** `<td>Standard</td>` | forgetting the render, hardcoding it on every row, and the render-side `row.isCurrent` / `!row.isCurrent` substitutions |
+
+**Why the three-recipe fixture for the adapter.** With recipes ordered
+non-alternates-first (`chain-builder-adapter.ts:558-561`), a 2-non-alt + 1-alt
+fixture with the first current gives three mutually distinct vectors —
+`isAlternate = [F,F,T]`, `isCurrent = [T,F,F]`, `index > 0 = [F,T,T]` — so a
+single `toEqual` separates the real field from every plausible impostor. It needs
+a **local** catalog, not a change to `CAT`: `AltCompare.test.tsx:175` pins
+`rows` to length 2.
+
+**Why two render passes rather than a third fixture.** The render reads
+`row.isAlternate` with no index in scope, so the positional mutant is
+unreachable there; only the `isCurrent` substitutions matter, and asserting the
+**identical** two substrings at both polarities kills them at zero fixture cost.
+That the assertion is byte-identical in both passes is the point: *the marker is
+invariant under which row is current.*
 
 **Two assertion-form traps, named because the obvious form is wrong:**
 
@@ -211,11 +253,21 @@ current recipe.**
   *named* `"Alternate"` (`AltCompare.test.tsx:82`), so a bare `toContain("alt")`
   would pass on the recipe name alone.
 
-**Acknowledged, not pinned:** a positional mutant (`isAlternate: index > 0`) also
-survives, because `candidateRecipesFor` orders non-alternates first
-(`chain-builder-adapter.ts:558-561`). Killing it needs a fixture with two
-non-alternates plus an alternate — more than this ticket should spend, and #103
-retires that ordering anyway. Recorded so the gap is deliberate, not missed.
+**The positional mutant is now KILLED, not acknowledged.** v2 recorded
+`isAlternate: index > 0` as a deliberate gap, on the grounds that killing it
+needed a two-non-alternate fixture costing "more than this ticket should spend."
+That pricing was wrong once the same fixture also had to kill the `===` and
+`!==` correlations: one fixture now buys three mutants instead of one, so it is
+cheap rather than expensive. The whole alias family is closed.
+
+**The full survivor sweep** (r2 adversarial, over everything in
+`candidateRowsFor`'s callback scope, `:950-986`) — fields aliased with
+`isAlternate` in a 2-row fixture are `machineId`, `displayName`,
+`outputs[0].perMinute`, the derived `machines`/`power`/`rawDraw`, array
+position, and `currentRecipeId` equality. Only the last two are plausible
+implementation slips, and both are now pinned. Hardcoded-`machineId` or
+-`displayName` mutants are not slips an implementer would produce and are
+deliberately not pinned.
 
 **The render pin uses `renderToStaticMarkup`, NOT jsdom** — this file's own
 discipline (`AltCompare.test.tsx:1-7`), with a worked store-seeding example at
@@ -241,7 +293,7 @@ gate"* (`AltCompare.test.tsx:5-6`). Stated explicitly rather than left silent.
 | `AltCompare.test.tsx` can render without jsdom | VERIFIED — `renderToStaticMarkup` at `:251`, `:279`; seam-stub `:265-286` |
 | Only 2 jsdom files exist, so #109 stays untriggered | VERIFIED by both r1 reviewers |
 | `CandidateRow` is constructed in exactly ONE place | VERIFIED by both r1 reviewers — `:973-985`; no literals, no snapshots, no whole-object `toEqual` |
-| **`isAlternate` aliases `!isCurrent` in every existing fixture** | VERIFIED — `chain-builder-adapter.test.ts:412, 435, 466, 591, 876`; `AltCompare.test.tsx:263`. **This is the r1 IMPORTANT and the reason the fixtures change** |
+| **`isAlternate` is a BIJECTION with `isCurrent` in both existing fixtures, whichever recipe is current** | VERIFIED — each holds exactly 2 recipes, exactly 1 alternate (`AltCompare.test.tsx:73-88`, `chain-builder-adapter.test.ts:395-409`). **This is why v2's "make the alternate current" fix failed and why the adapter needs a 3-recipe fixture** |
 | Compare is blind to USER machine exclusions | VERIFIED — `:948` passes no exclusions, defaulting to `EXCLUDED_MACHINE_IDS` (`:31-34`). Consistent with #103 Axis 5's ungated-compare decision |
 
 ## Revision history
@@ -272,6 +324,41 @@ gate"* (`AltCompare.test.tsx:5-6`). Stated explicitly rather than left silent.
   - **Second hand-rolled site added** — `ControlsStrip.tsx:17-19`; it strengthens
     Axis C by making the `<option>` premise a pattern rather than an anecdote.
   - **Positional mutant acknowledged** as a deliberate, reasoned gap.
-  - **Citations trued up** — `types.ts:90` (not `:80`), `AltCompare.tsx:152` (not
-    `:153`), `:9-12` (not `:8-13`), `docs-loader.ts:185-186` + `:192` (not
-    `:185-191`).
+  - **Citations trued up** — `types.ts:90` (not `:80`), `:9-12` (not `:8-13`),
+    `docs-loader.ts:185-186` + `:192` (not `:185-191`). (r2 nit: v2 also claimed
+    a correction to `AltCompare.tsx:152`, but no claim in the body rests on that
+    line — the body correctly cites `:155` and `:154-162`. Dangling correction
+    removed so a later reader does not "fix" the correct citation.)
+- **v3** (2026-08-15) — r2 fold. Both reviewers NEEDS_REWORK, converging on the
+  **same IMPORTANT independently for the second round running**.
+  - **v2's fix was wrong in the most instructive way: it INVERTED the
+    correlation rather than removing it.** Both fixtures hold exactly two
+    recipes, exactly one alternate, so `isAlternate` is a *bijection* with
+    `isCurrent` whichever recipe is current — v1 got `≡ !isCurrent`, v2 got
+    `≡ isCurrent`. The mirror-image mutant (`isAlternate: candidate.id ===
+    currentRecipeId`, a verbatim copy of the line above) survives v2's pins
+    byte-identically, is **more** plausible than v1's `!==` (copy alone vs copy
+    plus negate), and is **worse** — it misfires in the DEFAULT state rather
+    than only after an Apply. v2 stated the correct lesson and then failed to
+    apply it; recorded rather than quietly fixed, because the tempting fix is
+    the one that does not work.
+  - **Adapter pin → a three-recipe local fixture.** Two non-alternates + one
+    alternate with a non-alternate current yields three mutually distinct
+    vectors (`[F,F,T]` / `[T,F,F]` / `[F,T,T]`), so one `toEqual` kills the
+    constants, both `currentRecipeId` correlations, and the positional mutant.
+  - **Render pin → two passes at both polarities**, asserting the identical two
+    substrings each time (the marker is invariant under which row is current).
+    The positional mutant is unreachable in the render, so no third fixture.
+  - **The positional mutant is now killed, not acknowledged** — v2 priced that
+    fixture against one mutant; it buys three.
+  - **Full survivor sweep recorded**, naming what remains deliberately unpinned
+    and why.
+  - **Byte-accuracy confirmed by both reviewers** — React 19.2's
+    `renderToStaticMarkup` emits no `<!-- -->` separators under
+    `generateStaticMarkup`, and separators only ever fall between two adjacent
+    *text* nodes anyway; JSX strips the whitespace-only newlines around the
+    marker child and preserves the span's leading space. Both specified
+    substrings hold exactly.
+  - **Axis C reuse re-confirmed** — `.alt-compare-mark` has one declaration, one
+    consumer, and zero references in tests or descendant selectors; no state
+    leaves the marker unstyled.
