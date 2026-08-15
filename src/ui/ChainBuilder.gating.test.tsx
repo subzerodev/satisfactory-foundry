@@ -19,7 +19,10 @@
  *     identically at every seam. A missed seam is a SILENT behavioural
  *     regression, and an adapter-level test cannot catch it — the adapter is
  *     handed whichever catalog the component chose, which is the very thing
- *     under test. (A branded `GatedCatalog` type is deferred to #106.)
+ *     under test. A branded `GatedCatalog` was measured and DECLINED (#106,
+ *     won't-do): 8 of the 10 gated/ungated slips are already caught by the
+ *     rows below, so these rows ARE the enforcement, not a stopgap awaiting a
+ *     type. Do not retire them as "render-only".
  *
  * So this ONE file runs in jsdom (scoped by the pragma above; the global
  * environment and every other test file are untouched) and drives React with

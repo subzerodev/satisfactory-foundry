@@ -1,0 +1,151 @@
+# HANDOFF — satisfactory-foundry, 2026-08-15
+
+Written for a fresh agent picking up mid-arc. Read this, then `git log`, then the
+board. **The forge board is the source of truth, not this file** — if they
+disagree, the board wins and this file is stale.
+
+Board: `sudohworks/satisfactory-foundry` on the sudohworks Forgejo, project #21.
+Columns: Backlog=68, To Do=69, In Progress=70, Done=71.
+Repo-local MCP is `mcp__forgejo-satisfactory-foundry__*` (bound via `.mcp.json`).
+
+---
+
+## STOP — read these constraints before doing anything
+
+1. **All-Claude review roster. NEVER dispatch codex.** Standing user directive.
+   The correctness pair is `code-reviewer` + `adversarial-reviewer` (both
+   hard-gate); the parsimony lens is `claude-simplify-reviewer`, once,
+   post-convergence. Relay every verdict tagged
+   `(degraded: same-vendor, third-party reviewer unavailable)`.
+2. **The GitHub mirror is deploy-only and needs Michael's EXPLICIT approval,
+   every time.** `github` remote → `https://github.com/subzerodev/satisfactory-foundry.git`,
+   HTTP+broker, **never SSH**, and **only `main`**. Do not push it because a
+   phase finished. See `CLAUDE.md` for the runbook.
+3. **The deploy run's verdict is the "Verify the site serves this build" step.**
+   The `deploy-pages` step is ADVISORY and its 10-minute cap shows red while the
+   deploy still lands. Never react to that step alone
+   (`docs/postmortems/2026-08-06-pages-deploy-false-failures.md`).
+4. **Verify test counts on trunk only, with no worktree mounted.** A root `npm
+   test` also collects `.worktrees/**` suites and double-counts.
+5. **New work gets its OWN ticket immediately** — never parked in prose or in a
+   comment on another ticket.
+
+Current trunk (`develop`) test count: **912**, all green.
+
+---
+
+## Where things stand
+
+### Stage 21 arc (epic #108, milestone 92) — 3 of 4 phases resolved
+
+| Phase | Ticket | State |
+|---|---|---|
+| P0 ore constrained-vs-natural | #104 | **DONE**, merged |
+| P1 retire `candidateRecipesFor` | #103 | **DONE**, merge `0805af0` |
+| P2 branded `GatedCatalog` | #106 | **won't-do, GATE NOT FINISHED** — see below |
+| P3 explicit byproduct routing | #105 | **NOT STARTED** — the arc's largest design |
+
+Also open, outside the arc's four: **#115** (AltCompare tier-locked labels),
+**#111** (total output display), **#117** (new, see below).
+
+### IMMEDIATE: `feature/s21-p2-wontdo` is committed but NOT reviewed-clean
+
+**This branch is NOT merged and must NOT be merged as-is.** The diff-stage
+review was at round 2 of the correctness gate when the session ended; I stopped
+both reviewers mid-flight, so **their r2 verdicts do not exist**. The r1 diff
+verdicts were `NEEDS_REWORK` ×2 and every finding has been folded — but a fold
+requires re-running the pair, and that did not happen.
+
+**To finish it:**
+
+1. `git checkout feature/s21-p2-wontdo`
+2. Dispatch `code-reviewer` + `adversarial-reviewer` in parallel on
+   `features/branded-gated-catalog/diff-r2-prompt.md` (already written, already
+   delta-scoped to the r1 folds).
+3. Fold or reject-with-counter-evidence; re-run the pair until both are
+   APPROVED / APPROVED_WITH_NITS.
+4. Then `claude-simplify-reviewer` once, disposition its findings.
+5. Merge `--no-ff` to `develop`, close #106 with a `done` audit comment, move the
+   card to Done (issue id **1193**, column **71**).
+6. **No changelog entry** — there is no behaviour change. (`docs/foundry-changelog.md`
+   is deploy-facing prose for Michael to paste; a doc-comment change earns nothing.)
+
+**Beware:** the headline count in that comment has been **wrong twice** and both
+r1 reviewers caught it both times. It currently claims *ten* places in
+`ChainBuilder.tsx` where the gated/ungated swap compiles and *eight* that turn
+`ChainBuilder.gating.test.tsx` red. Re-sweep it yourself; do not trust the
+harness rows or this file.
+
+### What #106 concluded, and why
+
+Short version: **a branded type would close nothing the test suite misses**, so
+the ticket closes won't-do and ships one `gateCatalog` doc comment recording the
+measurement.
+
+Full report + reproducible harness: `features/branded-gated-catalog/`.
+- `brainstorm-spec.md` — the report (v4), including three review rounds and every
+  refuted claim. The wrong turns are the reusable part; do not delete them.
+- `seam-detection.sh` — applies each one-token slip, runs `tsc -b` + the full
+  suite, restores. Run it before trusting any claim in the report.
+- `brand-probe.patch` — the five-seam brand, so the harness's BRAND column is
+  reproducible.
+
+**The one thing worth knowing if you touch tier-gating:** a negative brand does
+NOT reject `preview?.gated ?? catalog` — TypeScript subtype-reduces that union to
+plain `Catalog`. Measured. That kills the obvious "just brand it" fix.
+
+### #117 — a real bug found by the #106 measurement
+
+`ChainBuilder.tsx` renders the constrained-recovery `<select>` options via
+`recipeLabel(preview.gated, …)`. Swap that to the ungated `catalog` and **all 912
+tests still pass**. Nothing in the suite selects `.chain-builder-constrained
+select` or its options.
+
+Unlike the `byproductSuggestions` slip (which is provably inert — it reads only
+`items`, shared by reference, and recipes of stages the gated solve already
+produced), **this one has no inertness argument**. Task 1 on #117 is to settle
+whether it is reachable; "it turns out inert, close it with the trace recorded"
+is a valid outcome, not a failure.
+
+#117 has **no milestone set** — assign it when you pick it up.
+**#115 also has no milestone.**
+
+---
+
+## Suggested order
+
+1. **Finish the #106 gate** (above). Small, and it is blocking a clean trunk.
+2. **#117** — small, concrete, and it is a real untested path.
+3. **#115** — AltCompare tier-locked labels. Design is already sharp in the
+   ticket body; the decision (label, never hide) is SETTLED, do not re-litigate.
+   Its stated trap: `unlockedTier` defaults to `null`, so a test that does not
+   explicitly set a tier passes whether the feature works or not.
+4. **#111** — total output display.
+5. **#105** — byproduct routing. The arc's largest design; budget a full Tier-3
+   phase, not a quick pass.
+6. **Then** the `develop → main` release PR — and the GitHub Pages deploy
+   **only** on Michael's explicit approval.
+
+Michael's standing instruction this session was *"I want everything completed"* —
+meaning the whole queue above, not just the next item. He is fine with won't-do
+outcomes when they are measured; he is not fine with silent stalls.
+
+---
+
+## Process notes that cost real time this session
+
+- **A green mutant means one of two things, and they are opposite:** the tests
+  miss it, or the mutation is a no-op. I read the second as the first and it
+  killed a design at review. Before calling a surviving mutant a coverage gap,
+  enumerate every expression in the function that reads the mutated input and
+  show at least one can differ.
+- **A mutation harness reporting "nothing detected" is a harness bug until
+  proven otherwise.** Mine produced a false all-clear three ways in one session:
+  line-addressed slips that silently failed to apply after an import shifted the
+  lines; `vitest | grep -q` under `set -o pipefail` returning the pipeline's
+  status and inverting every RED to green; and an absence-based read scoring a
+  crashed run as green. All three now guarded in `seam-detection.sh`. Every false
+  result looked like a real finding.
+- **Absolute and uniqueness claims ("the only", "exactly N", "no other") are the
+  highest-frequency defect in my docs here.** Five were caught by review on #106
+  alone. Run the grep, or write the scoped version.

@@ -1,7 +1,7 @@
 # Propose follow-ups: consolidation, type-safety, routing (Stage 21 arc)
 
 **Started:** 2026-08-07
-**Status:** IN PROGRESS — P0 DONE, P1 in design review (r1 dispatched 2026-08-15)
+**Status:** IN PROGRESS — P0 DONE, P1 DONE, P2 CLOSED won't-do; P3 (#105) next
 **Epic:** #108 (board #21, Stage 21 milestone 92)
 **Directive:** Michael 2026-08-07, handed the four Stage 20 follow-ups:
 **"do them."** That delegates the #104 UX call the ticket had reserved for him.
@@ -35,8 +35,12 @@
   Walk: all five cases live, including both rule-killers — excluding
   Constructor keeps coal's machine lever; un-excluding Converter at tier 8
   keeps Iron Ore's tier lever.
-- **P1 (#103) — adapter consolidation + compare tier-awareness**: DESIGN v1
-  in review (`p1-brainstorm.md`, commit `c0d480e`). The #103 research probe was
+- **P1 (#103) — adapter consolidation + compare tier-awareness**: DONE
+  2026-08-15 (merge `0805af0`; design v4 FROZEN after THREE rounds; 912 tests).
+  `candidateRecipesFor` is retired onto `producerRecipesFor` with no comparator
+  and no ordering shim — safe only because **#116** shipped an explicit `(alt)`
+  marker first (`b3ed867`), so the grouped ordering was no longer the compare
+  table's only alternate signal. The #103 research probe was
   RE-RUN rather than trusted from the audit trail; it reproduced 0 set diffs /
   3 order-only diffs and surfaced a number the original probe never reported —
   **63 items have exactly one eligible producer**, so `candidateCount`'s
@@ -49,8 +53,20 @@
   Compare tier-awareness (the S20 P3 scope addition) is DECIDED here — label
   locked candidates, never hide them — and split to **#115** for the build, so
   a refactor does not carry a feature.
-- **P2 (#106) — branded `GatedCatalog`**: pending, blocked-by P1
-  (consolidating first means fewer call sites to brand).
+- **P2 (#106) — branded `GatedCatalog`**: **CLOSED won't-do** 2026-08-15, on
+  measurement rather than judgement (report + harness in
+  `features/branded-gated-catalog/`). Ran after P1 landed, so the count is of
+  the consolidated surface the blocker was there to produce. Of the ten places
+  in ChainBuilder where the gated/ungated swap compiles, **eight already turn
+  `ChainBuilder.gating.test.tsx` red**; of the two that do not, one
+  (`byproductSuggestions`) is provably inert and the other (`recipeLabel` in the
+  recovery `<select>`) is a real but untested gap, split to **#117**. So a brand
+  would have closed nothing the suite misses, while adding an exported type pair
+  carrying a measured hole (`preview?.gated ?? catalog` subtype-reduces past a
+  negative brand). Ships as one `gateCatalog` doc comment recording all of it.
+  Three design rounds, all NEEDS_REWORK ×2 — the reviewers killed two successive
+  justifications, the second time by proving my headline "uncovered seam" was
+  behaviour-preserving.
 - **P3 (#105) — explicit byproduct routing**: pending. The largest design;
   carries both Stage-20 r1 reviewer analyses as input.
 
