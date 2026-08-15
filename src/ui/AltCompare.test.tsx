@@ -314,7 +314,9 @@ describe("AltCompare SSR smoke", () => {
     };
     // Both halves are scoped to the CELL on purpose: renderToStaticMarkup
     // returns ONE flat string holding both rows, so a bare not.toContain("(alt)")
-    // would be satisfied by the unmarked row. The parens are load-bearing too —
+    // is unusable — it always fails, since the alternate row legitimately
+    // contains "(alt)". Cell-scoping is what makes absence testable at all.
+    // The parens are load-bearing too —
     // the fixture's alternate is NAMED "Alternate", so a bare "alt" matches the
     // recipe name alone.
     const marked =

@@ -9,15 +9,17 @@ Target files:
     `isAlternate: candidate.isAlternate` (`candidateRowsFor`)
   - `src/ui/AltCompare.tsx` — the `{row.isAlternate && <span …> (alt)</span>}` child
 
-The two new pins:
+The three new pins:
   1. `chain-builder-adapter.test.ts` — "carries isAlternate from the RECIPE, not
-     from the selection (#116)"
+     from the selection (#116)"        [synthetic fixture, both polarities]
   2. `AltCompare.test.tsx` — "marks the ALTERNATE row, whichever row is current
-     (#116)"
+     (#116)"                           [synthetic fixture, both polarities]
+  3. `chain-builder-adapter.test.ts` — "flags isAlternate against REAL parsed
+     names, not a name prefix (#116)"  [real bundled catalog]
 
 Run inside the worktree:
 `npx vitest run src/ui/chain-builder-adapter.test.ts src/ui/AltCompare.test.tsx`
-(105 its = 103 pre-existing + the 2 new). Repo-root `npm test` double-counts
+(106 its = 103 pre-existing + the 3 new). Repo-root `npm test` double-counts
 worktree tests — the worktree-local run is the trunk-true view.
 
 **Every mutant below was typechecked (`npx tsc -b`) before its test run, and every
@@ -298,7 +300,7 @@ pin could subsume the synthetic one (it proposed the fold, then broke it itself)
     $ npx vitest run src/ui/AltCompare.test.tsx -t "marks the ALTERNATE row"
       Tests  1 failed | 11 skipped (12)          <- pin 2 KILLS
 
-  WHY (and why no two-pin subset covers the ground):
+  WHY neither FIXTURE is removable:
 
     fixture    ids                 names        blind to      catches
     ---------  ------------------  -----------  ------------  ------------
@@ -306,8 +308,39 @@ pin could subsume the synthetic one (it proposed the fold, then broke it itself)
     real       alternate_*         stripped     M7 (id)       A6 (name)
 
     The synthetic fixture has a name matching the alternate convention but an id
-    that does not; the real one has the inverse. Each is the other's guard.
-    **Do not "simplify" by deleting either — the fold was tried and it fails.**
+    that does not; the real one has the inverse. Each is the other's guard, so
+    BOTH FIXTURES stay.
+
+  A CLAIM THIS ENTRY ORIGINALLY MADE, AND WHY IT WAS WRONG:
+
+    It said "no two-pin subset covers the ground." That is FALSE, and this
+    file's own entries are the counterexample: pin 1 kills nothing pin 2 does
+    not also kill (pin 2 runs the same synthetic fixture THROUGH the adapter),
+    so {pin 2, pin 3} kills all ten recorded mutants. Corrected rather than
+    quietly dropped, because a future simplify pass that checks the claim would
+    find it refuted here and might delete pin 1 for the reason this entry failed
+    to give.
+
+    Pin 1 stays for a reason that is NOT mutation coverage: it is a unit-level
+    contract pin on `candidateRowsFor`'s output, so it survives the render
+    ceasing to show a marker at all (mutant R3 is exactly that), and it localises
+    a failure to the adapter instead of to a rendered string.
+
+  A CHEAPER SHAPE, CONSIDERED AND NOT TAKEN:
+
+    Rename the synthetic fixture's alternate displayName ("Alternate" ->
+    anything else) and pin 1 alone kills BOTH A6 and M7 — a two-pin shape.
+    The r1 waiver priced this as touching "a fixture recipe shared by many
+    pins"; that was OVERSTATED — grep confirms exactly one `recipeName`
+    assertion in the file, and it is pin 3's real-catalog premise, not this
+    fixture's name.
+
+    Not taken anyway, for a cost r1 did not price: re-baselining that fixture
+    invalidates every mutant measurement in this log, all ten of which would
+    need re-running to stay honest. And pin 3 would still be wanted on its own
+    merits — it is the ONLY test anywhere that pins the real catalog's
+    isAlternate vector and the no-prefix premise, so deleting it would leave the
+    parser's contract unpinned.
 
   RESTORE
     $ npm test        ->  Test Files 33 passed | Tests 910 passed (910)
