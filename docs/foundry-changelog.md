@@ -3,6 +3,22 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-15 — Alternate recipes now say they're alternates
+
+> Hey Michael — a small honesty fix in the alternate-recipe comparison
+> table. When you compared, say, rubber recipes, you got three rows:
+> "Residual Rubber", "Rubber" and "Recycled Rubber" — and nothing on the
+> screen told you that the last one is an alternate you had to unlock.
+> The only clue was the running order, which put the standard recipes
+> first. Alternates now carry a small "(alt)" tag, the same one the recipe
+> picker already uses.
+>
+> Why it wasn't there: the game's own data does label them — the recipe is
+> literally called "Alternate: Recycled Rubber" — but the app strips that
+> prefix when it reads the data in, so the label never survived to the
+> table. Nothing else changes: same rows, same order, same numbers, and
+> Apply still works exactly as before.
+
 ## 2026-08-07 — Stage 21 P0: ores stop pretending to be a problem
 
 > Hey Michael — small one, but you'll see it on almost every chain. Iron
