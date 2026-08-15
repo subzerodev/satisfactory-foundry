@@ -66,7 +66,9 @@
   `recipeLabel` narrowing could catch #117 but not #118. Ships as one
   `gateCatalog` doc comment recording why the type stays out. #117 later
   proved the `recipeLabel` label slip reachable and pinned it with a jsdom row;
-  #118 remains the unproven green family.
+  #118 later proved the four `repropose` slips reachable and pinned them with
+  stale-preview jsdom rows. After those follow-ups, only the inert
+  `byproductSuggestions` row remains green.
   Three design rounds, all NEEDS_REWORK ×2 — the reviewers killed two successive
   justifications, the second time by proving my headline "uncovered seam" was
   behaviour-preserving.

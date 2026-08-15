@@ -658,15 +658,14 @@ export function pickerOptionsFor(
  * harness + full matrix in `features/branded-gated-catalog/`): ChainBuilder has
  * fifteen value-passing places where swapping the two worlds compiles. Nine
  * turned `ChainBuilder.gating.test.tsx` red at #106 close; #117 added the
- * constrained-recovery label row as the tenth. Those jsdom rows are what
- * enforce the wiring — do not retire them as "render-only".
+ * constrained-recovery label row; and #118 added four stale-preview repropose
+ * rows. Those jsdom rows are what enforce the wiring — do not retire them as
+ * "render-only".
  *
- * The five that still stay green are NOT alike:
+ * The one that still stays green is different:
  *   - `byproductSuggestions` is inert — it reads only `items` (shared by
  *     reference with the ungated catalog) and recipes of stages the gated solve
  *     already produced, so both worlds return the same value.
- *   - Four `repropose` callers can be laundered through `preview?.gated ??
- *     catalog`, a brand-evading form this suite does not catch. Tracked as #118.
  *
  * One fact any future branding attempt must answer, measured: a NEGATIVE brand
  * (`Catalog & { readonly [b]?: never }`) does not reject
