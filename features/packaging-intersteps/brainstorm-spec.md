@@ -62,6 +62,15 @@ its forward `transport` and `returnTransport`; pipe and fluid-truck combinations
 are rejected at the v8 boundary and guarded again by derive. Save/export/import/
 bundle write v8. Old builds reject v8 rather than accepting and erasing intent.
 
+V8 validates editable transport as **raw structural intent**: required fields
+and discriminants must exist with string values, but empty/non-positive numeric
+text is accepted by persistence and rejected by the existing derive-time
+parsers. This applies to forward and return routes plus interstep clock. It
+prevents saving an in-progress train/drone/road edit from creating an unloadable
+plan. Historical v7 keeps its existing strict validator; migration yields valid
+v8. Save/load/export/bundle tests cover empty and malformed-numeric trip/clock
+text round trips followed by exact derive errors.
+
 ## Exact Plan
 
 For link fluid demand `D` and clock factor `c`:
@@ -172,3 +181,6 @@ count is guessed.
 - **r2:** expanded the projection to preserve separate supply/demand, defined an
   explicit unavailable/problem path for every consumer, and fixed return train
   shared-end keys to physical link sides with both one-sided tests.
+- **r3:** defined v8 transport/clock validation as raw structural intent so
+  incomplete edits survive every persistence path and fail only at derive;
+  historical v7 validation remains unchanged.
