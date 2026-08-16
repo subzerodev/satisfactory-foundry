@@ -348,26 +348,107 @@ async function main() {
     clicks = await evaluate(cdp, `window.__rawClicks`);
     if (clicks !== 3)
       throw new Error(`Space activation total was ${clicks}, expected 3`);
-    await evaluate(cdp, `window.__setMachineCount(40)`);
+    await evaluate(
+      cdp,
+      `(() => {
+    const select = document.querySelector('[role="dialog"] select');
+    select.value = 'miner_mk3';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`,
+    );
     await waitForExpression(
       cdp,
-      `document.querySelector('[role="dialog"]')?.textContent.includes('1800/min required') === true`,
-      "live demand update",
+      `window.__extractionSelection('stone')?.machineId === 'miner_mk3' && window.__extractionSelection('stone')?.clockPercentText === '100' && document.querySelector('[role="dialog"]')?.textContent.includes('1000/min required') === true && document.querySelector('[role="dialog"]')?.textContent.includes('Normal baseline') === true && document.querySelector('[role="dialog"]')?.textContent.includes('5 × Miner Mk.3') === true`,
+      "Limestone Normal baseline",
+    );
+    await evaluate(
+      cdp,
+      `document.querySelector('[role="dialog"] [aria-label="Use node mix"]').click()`,
+    );
+    await waitForExpression(
+      cdp,
+      `(() => {
+    const mix = window.__extractionSelection('stone')?.purityMix;
+    const inputs = [...document.querySelectorAll('[role="dialog"] .extraction-purity-fields input')].map((input) => input.value);
+    return mix?.impure === '0' && mix.normal === '5' && mix.pure === '0' && inputs.join('/') === '0/5/0';
+  })()`,
+      "seeded Limestone purity mix",
+    );
+    for (const label of ["Impure nodes", "Normal nodes", "Pure nodes"]) {
+      await evaluate(
+        cdp,
+        `(() => {
+    const input = document.querySelector('[role="dialog"] [aria-label="${label}"]');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(input, '1');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`,
+      );
+      await waitForExpression(
+        cdp,
+        `document.querySelector('[role="dialog"] [aria-label="${label}"]').value === '1'`,
+        `${label} edit`,
+      );
+    }
+    await waitForExpression(
+      cdp,
+      `(() => {
+    const dialog = document.querySelector('[role="dialog"]');
+    const mix = window.__extractionSelection('stone')?.purityMix;
+    return mix?.impure === '1' && mix.normal === '1' && mix.pure === '1' && dialog?.textContent.includes('840/min supplied · 160/min shortfall') === true;
+  })()`,
+      "exact Limestone purity supply and shortfall",
     );
     await evaluate(
       cdp,
       `document.querySelector('[aria-label="Close extraction planning"]').click()`,
     );
     await delay(100);
-
     await evaluate(
       cdp,
-      `document.querySelectorAll('.raw-feed-node-button')[0].click()`,
+      `document.querySelector('.raw-feed-node-button[data-raw-item="stone"]').click()`,
     );
     await waitForExpression(
       cdp,
-      `document.querySelector('[role="dialog"]') !== null`,
-      "replacement source dialog",
+      `(() => {
+    const dialog = document.querySelector('[role="dialog"]');
+    const values = [...dialog?.querySelectorAll('.extraction-purity-fields input') ?? []].map((input) => input.value);
+    return dialog?.textContent.includes('EXTRACTION - Limestone') === true && values.join('/') === '1/1/1' && dialog.textContent.includes('840/min supplied · 160/min shortfall');
+  })()`,
+      "persisted Limestone purity mix",
+    );
+    let pureVisibility = null;
+    if (width === 360) {
+      pureVisibility = await evaluate(
+        cdp,
+        `(() => {
+    const input = document.querySelector('[role="dialog"] [aria-label="Pure nodes"]');
+    const visiblePanel = document.querySelector('.graph-top-right-stack');
+    input.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const inputRect = input.getBoundingClientRect();
+    const panelRect = visiblePanel.getBoundingClientRect();
+    return {
+      input: { top: inputRect.top, bottom: inputRect.bottom },
+      panel: { top: panelRect.top, bottom: panelRect.bottom },
+      scrollTop: visiblePanel.scrollTop,
+      visible: visiblePanel.scrollTop > 0 && inputRect.top >= panelRect.top && inputRect.bottom <= panelRect.bottom && inputRect.top >= 0 && inputRect.bottom <= innerHeight,
+    };
+  })()`,
+      );
+      if (!pureVisibility.visible) {
+        throw new Error(
+          `360px Pure input is outside the visible extraction panel ${JSON.stringify(pureVisibility)}`,
+        );
+      }
+    }
+    await evaluate(cdp, `window.__setMachineCount(36)`);
+    await waitForExpression(
+      cdp,
+      `document.querySelector('[role="dialog"]')?.textContent.includes('1800/min required') === true`,
+      "live demand update",
     );
     await evaluate(
       cdp,
@@ -394,6 +475,12 @@ async function main() {
       `window.__extractionSelection('water')?.machineId === 'water_pump'`,
       "Water auto-seed persistence",
     );
+    const waterHasMix = await evaluate(
+      cdp,
+      `document.querySelector('[role="dialog"] [aria-label="Use node mix"]') !== null`,
+    );
+    if (waterHasMix)
+      throw new Error("Water exposed a Use node mix checkbox");
     await evaluate(cdp, `window.__suppressRaw('water')`);
     await waitForExpression(
       cdp,
@@ -414,16 +501,22 @@ async function main() {
       `window.__extractionSelection('liquid_oil')?.machineId === 'oil_pump'`,
       "Crude Oil auto-seed persistence",
     );
+    const oilHasMix = await evaluate(
+      cdp,
+      `document.querySelector('[role="dialog"] [aria-label="Use node mix"]') !== null`,
+    );
+    if (!oilHasMix)
+      throw new Error("Crude Oil did not expose a Use node mix checkbox");
     const oilText = await evaluate(
       cdp,
       `document.querySelector('[role="dialog"]').textContent`,
     );
     if (
       !oilText.includes("Oil Extractor") ||
-      !oilText.includes("Purity Normal")
+      !oilText.includes("Normal baseline")
     ) {
       throw new Error(
-        "Crude Oil did not render its Normal-purity Oil Extractor plan",
+        "Crude Oil did not render its Normal-baseline Oil Extractor plan",
       );
     }
     if (oilText.includes("one extractor exceeds")) {
@@ -460,7 +553,7 @@ async function main() {
       );
     await screenshot(cdp, `interaction-${width}`);
     process.stdout.write(
-      `PASS interaction ${width}px pointer/Enter/Space, Limestone/Water/Oil/Nitrogen, replacement, live update, disappearance, focus\n`,
+      `PASS interaction ${width}px pointer/Enter/Space, Limestone purity 0/5/0 -> 1/1/1 = 840/min supplied + 160/min shortfall, persistence${pureVisibility === null ? "" : ", Pure visible after scroll"}, Water no mix, Oil mix, Nitrogen refusal, replacement, live update, disappearance, focus\n`,
     );
   }
   cdp.close();

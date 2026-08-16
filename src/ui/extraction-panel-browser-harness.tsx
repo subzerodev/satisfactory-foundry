@@ -268,10 +268,10 @@ const INTERACTION_DOCS = JSON.stringify([
         ClassName: "Recipe_Concrete_C",
         mDisplayName: "Concrete",
         mIngredients:
-          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Stone_C\"',Amount=3),(ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Water_C\"',Amount=1000),(ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_LiquidOil_C\"',Amount=1000),(ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_NitrogenGas_C\"',Amount=1000))",
+          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Stone_C\"',Amount=10),(ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Water_C\"',Amount=3000),(ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_LiquidOil_C\"',Amount=3000),(ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_NitrogenGas_C\"',Amount=3000))",
         mProduct:
           "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Concrete_C\"',Amount=1))",
-        mManufactoringDuration: "4",
+        mManufactoringDuration: "12",
         mProducedIn: "/Game/Path/Build_ConstructorMk1_C",
       },
     ],

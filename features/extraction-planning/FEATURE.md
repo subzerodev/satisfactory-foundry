@@ -1,8 +1,8 @@
 # Extraction planning (Stage 22 arc)
 
 **Started:** 2026-08-16
-**Status:** IN PROGRESS - Phase 1 merged; Phase 2 ready for design
-**Current phase:** Phase 2 purity-mix design
+**Status:** IN PROGRESS - Phase 2 implementation complete; review pending
+**Current phase:** Phase 2 cumulative implementation review pending
 **Epic:** #114 (board #21, Stage 22 milestone 93)
 **Feature ticket:** #112
 **Phase 2 child:** #124
@@ -42,12 +42,19 @@ reconsideration:
 
 ### Phase 2 - purity mix
 
-- **Status:** brainstorm/spec candidate under review
-- **Scope lock only:** use the shipped Impure/Normal/Pure multipliers
-  0.5/1.0/2.0 to adjust the normal-purity requirement into a user-edited purity
-  mix
-- **Candidate:** `phase-2/brainstorm-spec.md`
-- **No implementation plan exists yet.** It follows design convergence.
+- **Status:** implementation complete; cumulative review pending
+- **Scope:** exact Impure/Normal/Pure 0.5/1.0/2.0 node inventories,
+  coverage/shortfall, power and transport results, plan v7 persistence, and
+  production-control browser coverage
+- **Spec:** `phase-2/brainstorm-spec.md`
+- **Implementation plan:** `phase-2/implementation-plan.md` frozen at r6 after
+  correctness convergence and one-shot parsimony disposition
+- **Branch:** `feature/s22-124-extraction-p2-purity`
+- **Implementation commits:** `5098796`, `f8f7f89`, `03b9d97`, `8094126`
+- **Current branch verification:** 40 files / 1067 tests; TypeScript, ESLint,
+  Prettier, and build pass; the checked-in Chromium/CDP gate passes nine
+  geometry rows and three interaction rows at 360px, 720px, and 1280px
+- **Completion report:** `phase-2/completion-report.md`
 
 ## Dependency Shape
 
@@ -161,11 +168,11 @@ provenance.
 
 On resume:
 
-1. Read #112 and #114 before this file; the board wins on disagreement.
-2. Resume Phase 1 at cumulative implementation review using
-   `phase-1/completion-report.md` and `phase-1/r2-verification.log`.
-3. Do not write a Phase 2 plan until Phase 1 has merged and its phase report has
-   been accepted.
+1. Read #124, #112, and #114 before this file; the board wins on disagreement.
+2. Resume Phase 2 at cumulative implementation review using
+   `phase-2/completion-report.md` and the full `develop...HEAD` diff.
+3. Create the cumulative review prompt only when that review begins; Task 4
+   deliberately does not create it.
 4. Keep Resource Wells explicit. A later decision to build a full well planner
    is new scoped work and must be ticketed rather than hidden in Phase 2.
 
