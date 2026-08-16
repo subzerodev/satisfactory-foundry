@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
+import { act, useState } from "react";
 import type { ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import { ReactFlowProvider } from "@xyflow/react";
@@ -35,6 +35,13 @@ function extractionCatalog(): Catalog {
         stackSize: null,
         isRawResource: true,
       },
+      liquid_oil: {
+        id: "liquid_oil",
+        displayName: "Crude Oil",
+        isFluid: true,
+        stackSize: null,
+        isRawResource: true,
+      },
       nitrogen_gas: {
         id: "nitrogen_gas",
         displayName: "Nitrogen Gas",
@@ -58,6 +65,11 @@ function extractionCatalog(): Catalog {
         id: "water_pump",
         displayName: "Water Extractor",
         power: power(20),
+      },
+      oil_pump: {
+        id: "oil_pump",
+        displayName: "Oil Extractor",
+        power: power(40),
       },
       fracking_extractor: {
         id: "fracking_extractor",
@@ -89,6 +101,12 @@ function extractionCatalog(): Catalog {
         topology: "standalone",
         normalRate: F(120),
         itemIds: ["water"],
+      },
+      oil_pump: {
+        machineId: "oil_pump",
+        topology: "standalone",
+        normalRate: F(120),
+        itemIds: ["liquid_oil"],
       },
       fracking_extractor: {
         machineId: "fracking_extractor",
@@ -296,6 +314,41 @@ describe("RawFeedNode", () => {
     expect(host.textContent).toContain("Resource Well alternative not counted");
   });
 
+  it.each([
+    ["water", "Water", 10600],
+    ["liquid_oil", "Crude Oil", 1200],
+  ])(
+    "allows clearing the auto-seeded %s extractor",
+    async (itemId, name, demand) => {
+      function Harness() {
+        const [selection, setSelection] =
+          useState<ComponentProps<typeof ExtractionPanel>["selection"]>(null);
+        return (
+          <ExtractionPanel
+            catalog={extractionCatalog()}
+            rawNode={rawNode(itemId, name, demand)}
+            stage={stage}
+            selection={selection}
+            onSetSelection={setSelection}
+            onClose={vi.fn()}
+          />
+        );
+      }
+
+      await act(async () => root.render(<Harness />));
+      const select = host.querySelector("select")!;
+      expect(select.value).not.toBe("");
+
+      select.value = "";
+      await act(async () =>
+        select.dispatchEvent(new Event("change", { bubbles: true })),
+      );
+
+      expect(host.querySelector("select")!.value).toBe("");
+      expect(host.textContent).toContain("Choose an extractor");
+    },
+  );
+
   it("removes stale output for an invalid clock and gives Nitrogen no miner count", async () => {
     await act(async () => {
       root.render(
@@ -309,7 +362,7 @@ describe("RawFeedNode", () => {
         />,
       );
     });
-    expect(host.textContent).toContain("Clock must be a number");
+    expect(host.textContent).toContain("clock % must be a number in (0, 250]");
     expect(host.textContent).not.toContain("53 ×");
 
     await act(async () => {

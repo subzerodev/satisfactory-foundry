@@ -3,6 +3,7 @@ import type { LaneKind } from "../core/manifold.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import type { Catalog, CatalogExtractor } from "../data/types.ts";
 import { stagePowerText, suggestSupply } from "./advice.ts";
+import { parseClockText } from "./clock.ts";
 
 export interface ExtractionSelection {
   machineId: string;
@@ -90,21 +91,11 @@ export function deriveExtractionPlan({
     };
   }
 
-  let clock: Fraction;
-  try {
-    clock = Fraction.parse(selection.clockPercentText);
-  } catch {
-    return {
-      status: "invalid-clock",
-      detail: "Clock must be a number from 0 to 250.",
-    };
+  const parsedClock = parseClockText(selection.clockPercentText);
+  if (!parsedClock.ok) {
+    return { status: "invalid-clock", detail: parsedClock.error };
   }
-  if (!clock.gt(Fraction.from(0)) || clock.gt(Fraction.from(250))) {
-    return {
-      status: "invalid-clock",
-      detail: "Clock must be greater than 0 and at most 250.",
-    };
-  }
+  const clock = parsedClock.value;
 
   const perExtractor = extractor.normalRate.mul(clock).div(Fraction.from(100));
   let suggestion: ReturnType<typeof suggestSupply>;

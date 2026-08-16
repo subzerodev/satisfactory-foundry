@@ -184,6 +184,17 @@ describe("deriveExtractionPlan", () => {
     },
   );
 
+  it.each([
+    ["nope", "clock % must be a number in (0, 250]"],
+    ["0", "clock % must be greater than 0"],
+    ["251", "clock % must be at most 250"],
+  ])("uses the shared clock error for %s", (clock, detail) => {
+    expect(derive("stone", F(1), "miner_mk3", clock)).toEqual({
+      status: "invalid-clock",
+      detail,
+    });
+  });
+
   it("reports safe-integer count overflow instead of throwing", () => {
     const huge = Fraction.from(BigInt(Number.MAX_SAFE_INTEGER) + 1n).mul(
       F(240),
