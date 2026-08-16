@@ -20,7 +20,7 @@ import type {
   PackagingCatalog,
   PackagingPair,
 } from "../core/packaging-pair.ts";
-import { discoverPackagingPairs } from "../data/packaging.ts";
+import { discoverPackagingPairs } from "../core/packaging-pair.ts";
 import { deriveLinkPlan } from "../core/link-plan.ts";
 import type { DerivedLinkPlan } from "../core/link-plan.ts";
 import type { Catalog } from "../data/types.ts";
@@ -141,12 +141,12 @@ export function LinkInspector() {
   // a repeated `link.transport` property access on its own).
   const transport = link.transport;
 
-  // #34: the resolve preamble folds to planForLink. planForLink returns null
-  // ONLY for a missing item, which the early-return at the top already excluded,
-  // so the plan is non-null here (the `!`). An unsolved rate flows through as
-  // computeLinkTransport's { kind: "unsolved" } plan, preserving the rendered
-  // "solve both stages to size the fleet" line.
-  const plan = item === undefined ? null : planForLink(link, catalog, stages);
+  // Ordinary links resolve through planForLink. Intersteps use the richer
+  // deriveLinkPlan projection below, so do not derive the ordinary plan too.
+  const plan =
+    item === undefined || link.interstep !== undefined
+      ? null
+      : planForLink(link, catalog, stages);
   const interstepPlan =
     link.interstep === undefined ? null : deriveLinkPlan(catalog, link, stages);
 

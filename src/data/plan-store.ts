@@ -40,10 +40,11 @@ import type {
   FlowDirection,
   ExtractionSelection,
 } from "../state/store.ts";
-import type {
-  LinkTransport,
-  PackagingInterstep,
-  TransportMode,
+import {
+  canonicalizeLinkTransport,
+  type LinkTransport,
+  type PackagingInterstep,
+  type TransportMode,
 } from "../core/link-transport.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
 import { Fraction } from "../core/fraction.ts";
@@ -459,71 +460,23 @@ export function migrateV7(plan: PlanFileV7): PlanFileV8 {
 }
 
 function canonicalLegacyTransport(transport: LinkTransport): LinkTransport {
-  switch (transport.mode) {
-    case "belt":
-      return { mode: "belt" };
-    case "pipe":
-      return {
-        mode: "pipe",
-        ...(transport.deratePercentText !== undefined
-          ? { deratePercentText: transport.deratePercentText }
-          : {}),
-      };
-    case "truck":
-    case "tractor":
-    case "explorer":
-    case "fluid-truck":
-      return {
-        mode: transport.mode,
-        trip: canonicalVehicleTrip(transport.trip),
-      };
-    case "train": {
-      const sharedEnds = transport.sharedEnds;
-      return {
-        mode: "train",
-        trip: canonicalVehicleTrip(transport.trip),
-        ...(sharedEnds !== undefined
-          ? {
-              sharedEnds: {
-                ...(sharedEnds.from === true ? { from: true as const } : {}),
-                ...(sharedEnds.to === true ? { to: true as const } : {}),
-              },
-            }
-          : {}),
-      };
-    }
-    case "drone":
-      return {
-        mode: "drone",
-        fuel: transport.fuel,
-        trip:
-          transport.trip.kind === "estimated"
-            ? {
-                kind: "estimated",
-                flightMetersText: transport.trip.flightMetersText,
-              }
-            : {
-                kind: "measured",
-                roundTripSecondsText: transport.trip.roundTripSecondsText,
-                ...(transport.trip.flightMetersText !== undefined
-                  ? { flightMetersText: transport.trip.flightMetersText }
-                  : {}),
-              },
-      };
+  const normalized =
+    transport.mode === "train" && transport.sharedEnds !== undefined
+      ? {
+          ...transport,
+          sharedEnds: {
+            ...(transport.sharedEnds.from === true
+              ? { from: true as const }
+              : {}),
+            ...(transport.sharedEnds.to === true ? { to: true as const } : {}),
+          },
+        }
+      : transport;
+  const canonical = canonicalizeLinkTransport(normalized);
+  if (canonical === null) {
+    throw new Error("validated v7 transport could not be canonicalized");
   }
-}
-
-function canonicalVehicleTrip(
-  trip:
-    | { kind: "measured"; roundTripSecondsText: string }
-    | { kind: "estimated"; distanceText: string },
-) {
-  return trip.kind === "measured"
-    ? {
-        kind: "measured" as const,
-        roundTripSecondsText: trip.roundTripSecondsText,
-      }
-    : { kind: "estimated" as const, distanceText: trip.distanceText };
+  return canonical;
 }
 
 function copyHistoricalExtraction(

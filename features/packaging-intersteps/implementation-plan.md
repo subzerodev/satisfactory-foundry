@@ -254,7 +254,13 @@ git diff --check develop...HEAD
       wider-variable canonicalization, forward/return v8 save/reload proof, and
       representative break/fail/restore evidence to `r2-verification.log`.
 
-- [ ] Generate a cumulative `develop...HEAD` diff prompt. Run both correctness
-      reviewers in parallel until both approve, then one diff simplify pass,
-      disposition findings, rerun correctness if code changes, and only afterward
-      merge as a separate action.
+- [x] Generate the cumulative `develop...HEAD` diff prompt and fold r1 findings;
+      both correctness reviewers approved r2. Run the one-shot diff simplify pass
+      and disposition all four findings.
+- [x] Fold the simplify findings without production-behavior changes: share the
+      two browser gates' CDP/Vite/Chromium runtime, delegate normalized v7
+      transport migration to the core canonicalizer, skip the redundant ordinary
+      link derivation for intersteps, and remove the zero-logic packaging facade.
+      No behavior test or `r2-verification.log` mutation row was added.
+- [ ] Re-run the correctness pair on the post-simplify cumulative diff, then merge
+      only after both approve. This remains a separate parent-workflow action.

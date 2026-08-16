@@ -74,6 +74,10 @@ npm test
 Test Files  44 passed (44)
 Tests  1135 passed (1135)
 
+npm test -- --run src/data/plan-store.test.ts src/data/packaging.test.ts src/ui/LinkInspector.test.ts src/ui/LinkInspector.dom.test.tsx
+Test Files  4 passed (4)
+Tests  117 passed (117)
+
 npm run check
 TypeScript, ESLint, and Prettier passed.
 
@@ -103,10 +107,16 @@ No output (passed).
   evidence coverage.
 - The one-shot plan simplification removed compatibility wrappers and reduced
   the browser matrix to one full workflow plus three responsive geometry rows.
-- Cumulative implementation review is intentionally not run by this Task 6
-  commit; the parent workflow dispatched r1 after the committed diff existed.
 - Cumulative implementation r1 returned `NEEDS_REWORK` from both correctness
   reviewers. Both findings were folded with TDD: all six non-positive recipe
   rates are guarded before division, and both public setters now canonicalize
   wider/type-erased input while refusing malformed required structure. Strict
-  v8 exact-key validation was not weakened. The r2 rerun remains pending.
+  v8 exact-key validation was not weakened. Both correctness reviewers approved
+  r2.
+- The one-shot implementation simplify pass produced four findings, all folded:
+  the browser gates now share only their CDP/Vite/Chromium mechanics; v7
+  migration normalizes lenient `sharedEnds` and delegates to the core transport
+  canonicalizer; intersteps skip the redundant ordinary link derivation; and the
+  zero-logic `src/data/packaging.ts` facade was removed. These are refactors only,
+  so no behavior test or `r2-verification.log` mutation row was added.
+- The post-simplify correctness rerun and merge remain parent-workflow actions.

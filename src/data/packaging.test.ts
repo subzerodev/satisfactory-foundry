@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { Fraction } from "../core/fraction.ts";
 import { parseCatalogFromText } from "./catalog.ts";
 import type { Catalog, CatalogRecipe } from "./types.ts";
-import { discoverPackagingPairs, resolvePackagingPair } from "./packaging.ts";
+import {
+  discoverPackagingPairs,
+  resolvePackagingPair,
+} from "../core/packaging-pair.ts";
 
 const bundled = parseCatalogFromText(
   readFileSync("public/bundled-docs/en-US.json", "utf8"),
