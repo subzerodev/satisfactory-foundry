@@ -38,20 +38,15 @@
  */
 
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
-import type { Root } from "react-dom/client";
 
 import { parseCatalogFromText } from "../data/catalog.ts";
 import type { Catalog } from "../data/types.ts";
 import { appStore } from "../state/store.ts";
-import { ChainBuilder } from "./ChainBuilder.tsx";
+import {
+  mountChainBuilder,
+  type MountedChainBuilder,
+} from "./ChainBuilder.harness.tsx";
 import bundledDocsText from "../../public/bundled-docs/en-US.json?raw";
-
-// React's act() otherwise warns that the environment is not configured for it.
-(
-  globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
-).IS_REACT_ACT_ENVIRONMENT = true;
 
 /**
  * A minimal in-memory `localStorage`, installed BEFORE the store module loads
@@ -79,8 +74,7 @@ const storage = vi.hoisted(() => {
 
 const catalog: Catalog = parseCatalogFromText(bundledDocsText);
 
-let container: HTMLDivElement;
-let root: Root;
+let harness: MountedChainBuilder | null = null;
 
 function mount(): void {
   appStore.setState({
@@ -94,45 +88,19 @@ function mount(): void {
       unlockedTier: null,
     },
   });
-  container = document.createElement("div");
-  document.body.appendChild(container);
-  root = createRoot(container);
-  act(() => {
-    root.render(<ChainBuilder />);
-  });
+  harness = mountChainBuilder();
 }
 
-const $$ = <T extends Element>(sel: string): T[] =>
-  Array.from(container.querySelectorAll<T>(sel));
+const $$ = <T extends Element>(sel: string): T[] => harness!.queryAll<T>(sel);
 
 /** Propose `itemId` at `rate` — the entry into the preview block. */
 function propose(itemId: string, rate: string): void {
-  const select = $$<HTMLSelectElement>(".chain-builder-controls select")[0]!;
-  act(() => {
-    select.value = itemId;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  const input = $$<HTMLInputElement>(".chain-builder-controls input")[0]!;
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    "value",
-  )!.set!;
-  act(() => {
-    setter.call(input, rate);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  act(() => {
-    $$<HTMLButtonElement>(".chain-builder-controls button")
-      .find((b) => b.textContent === "Propose")!
-      .click();
-  });
+  harness!.propose(itemId, rate);
 }
 
 afterEach(() => {
-  act(() => {
-    root.unmount();
-  });
-  container.remove();
+  harness?.cleanup();
+  harness = null;
   storage.clear();
 });
 
@@ -144,13 +112,15 @@ describe("S21 P0 — proposing a natural-ized raw item as the target", () => {
     // The ACCEPTED change: the empty-state message now fires, because
     // ChainBuilder gates it on every raw input being "natural" and Iron Ore
     // just became natural.
-    expect(container.querySelector(".chain-builder-empty")?.textContent).toBe(
-      "Nothing to build — the target is a raw input.",
-    );
+    expect(
+      harness!.container.querySelector(".chain-builder-empty")?.textContent,
+    ).toBe("Nothing to build — the target is a raw input.");
 
     // And the constrained line it replaced is gone — asserted on the wording
     // the user actually reads, not just on the absence of a container.
-    expect(container.textContent).not.toContain("no eligible producer");
+    expect(harness!.container.textContent).not.toContain(
+      "no eligible producer",
+    );
     expect($$(".chain-builder-constrained")).toHaveLength(0);
   });
 
@@ -166,7 +136,7 @@ describe("S21 P0 — proposing a natural-ized raw item as the target", () => {
     // Asserted on the bare number rather than "120/min" — strictly stronger,
     // and it holds wherever the rate could surface, including a future render
     // path that formats it differently.
-    expect(container.textContent).not.toContain("120");
+    expect(harness!.container.textContent).not.toContain("120");
   });
 
   it("renders Iron Ore on the plain RAW line for an ordinary chain (the improvement, + control)", () => {
@@ -174,9 +144,11 @@ describe("S21 P0 — proposing a natural-ized raw item as the target", () => {
     // no-opped would make every "not.toContain" assertion vacuously true.
     mount();
     propose("iron_plate", "60");
-    expect(container.querySelector(".chain-builder-empty")).toBe(null);
+    expect(harness!.container.querySelector(".chain-builder-empty")).toBe(null);
     expect($$(".chain-builder-metrics")).toHaveLength(1);
-    expect(container.textContent).toContain("Iron Plate — Constructor");
+    expect(harness!.container.textContent).toContain(
+      "Iron Plate — Constructor",
+    );
 
     // THE HEADLINE OUTCOME — the design's opening walk step: propose Iron
     // Plate and Iron Ore lands on the plain RAW line with NO "no eligible
@@ -186,7 +158,9 @@ describe("S21 P0 — proposing a natural-ized raw item as the target", () => {
     // <dd> at :466), which no other test reaches for a NON-EMPTY chain.
     // 90/min, not 60: Iron Plate 60/min draws 90 Iron Ore/min.
     expect($$(".chain-builder-constrained")).toHaveLength(0);
-    expect(container.textContent).not.toContain("no eligible producer");
+    expect(harness!.container.textContent).not.toContain(
+      "no eligible producer",
+    );
     // SCOPED to the metrics block, not the whole container: the constrained
     // line emits the byte-identical "Iron Ore 90/min", so a container-wide
     // match would pass even when Iron Ore renders on the WRONG line. Against
@@ -194,7 +168,7 @@ describe("S21 P0 — proposing a natural-ized raw item as the target", () => {
     // "—" (ChainBuilder.tsx:466) — pinning "on the plain RAW line" directly
     // rather than by elimination.
     expect(
-      container.querySelector(".chain-builder-metrics")!.textContent,
+      harness!.container.querySelector(".chain-builder-metrics")!.textContent,
     ).toContain("Iron Ore 90/min");
   });
 });

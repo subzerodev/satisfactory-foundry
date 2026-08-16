@@ -42,9 +42,6 @@
  */
 
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
-import type { Root } from "react-dom/client";
 
 import { Fraction } from "../core/fraction.ts";
 import type {
@@ -54,13 +51,10 @@ import type {
   CatalogRecipe,
 } from "../data/types.ts";
 import { appStore } from "../state/store.ts";
-import { ChainBuilder } from "./ChainBuilder.tsx";
-
-// React's act() otherwise warns that the environment is not configured for it.
-// There are no setupFiles and no testing-library (which normally sets this).
-(
-  globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
-).IS_REACT_ACT_ENVIRONMENT = true;
+import {
+  mountChainBuilder,
+  type MountedChainBuilder,
+} from "./ChainBuilder.harness.tsx";
 
 /**
  * A minimal in-memory `localStorage`, installed BEFORE the store module loads.
@@ -213,8 +207,7 @@ function allGatedCatalog(): Catalog {
 
 // --- harness ---------------------------------------------------------------
 
-let container: HTMLDivElement;
-let root: Root;
+let harness: MountedChainBuilder | null = null;
 
 function mount(
   catalog: Catalog,
@@ -233,44 +226,25 @@ function mount(
       ...prefs,
     },
   });
-  container = document.createElement("div");
-  document.body.appendChild(container);
-  root = createRoot(container);
-  act(() => {
-    root.render(<ChainBuilder />);
-  });
+  harness = mountChainBuilder();
 }
 
-const $ = <T extends Element>(sel: string): T =>
-  container.querySelector<T>(sel)!;
-const $$ = <T extends Element>(sel: string): T[] =>
-  Array.from(container.querySelectorAll<T>(sel));
+const $ = <T extends Element>(sel: string): T => harness!.query<T>(sel);
+const $$ = <T extends Element>(sel: string): T[] => harness!.queryAll<T>(sel);
 
 /** Set a <select> and fire React's onChange (no value-tracker short-circuit). */
 function chooseOption(el: HTMLSelectElement, value: string): void {
-  act(() => {
-    el.value = value;
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  harness!.chooseOption(el, value);
 }
 
 /** Set a text <input> through the NATIVE setter, so React's value tracker sees
  *  the change and does not swallow the event. */
 function typeInto(el: HTMLInputElement, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    "value",
-  )!.set!;
-  act(() => {
-    setter.call(el, value);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  harness!.typeInto(el, value);
 }
 
 function click(el: HTMLElement): void {
-  act(() => {
-    el.click();
-  });
+  harness!.click(el);
 }
 
 const proposeButton = (): HTMLButtonElement =>
@@ -281,10 +255,7 @@ const proposeButton = (): HTMLButtonElement =>
 /** Propose `plate` at 60/min — the entry into the preview block every seam
  *  below lives inside. */
 function propose(): void {
-  const selects = $$<HTMLSelectElement>(".chain-builder-controls select");
-  chooseOption(selects[0]!, "plate");
-  typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "60");
-  click(proposeButton());
+  harness!.propose("plate", "60");
 }
 
 const tierSelect = (): HTMLSelectElement =>
@@ -359,10 +330,8 @@ function leaveTierZeroPreviewBehindAtTierAll(): void {
 }
 
 afterEach(() => {
-  act(() => {
-    root.unmount();
-  });
-  container.remove();
+  harness?.cleanup();
+  harness = null;
   storage.clear();
 });
 

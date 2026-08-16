@@ -10,19 +10,15 @@
  */
 
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
-import type { Root } from "react-dom/client";
 
 import { parseCatalogFromText } from "../data/catalog.ts";
 import type { Catalog } from "../data/types.ts";
 import { appStore } from "../state/store.ts";
-import { ChainBuilder } from "./ChainBuilder.tsx";
+import {
+  mountChainBuilder,
+  type MountedChainBuilder,
+} from "./ChainBuilder.harness.tsx";
 import bundledDocsText from "../../public/bundled-docs/en-US.json?raw";
-
-(
-  globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
-).IS_REACT_ACT_ENVIRONMENT = true;
 
 const storage = vi.hoisted(() => {
   const memory = new Map<string, string>();
@@ -42,8 +38,7 @@ const storage = vi.hoisted(() => {
 
 const catalog: Catalog = parseCatalogFromText(bundledDocsText);
 
-let container: HTMLDivElement;
-let root: Root;
+let harness: MountedChainBuilder | null = null;
 
 function mount(): void {
   appStore.setState({
@@ -54,48 +49,13 @@ function mount(): void {
       unlockedTier: null,
     },
   });
-  container = document.createElement("div");
-  document.body.appendChild(container);
-  root = createRoot(container);
-  act(() => {
-    root.render(<ChainBuilder />);
-  });
+  harness = mountChainBuilder();
 }
 
-const $$ = <T extends Element>(sel: string): T[] =>
-  Array.from(container.querySelectorAll<T>(sel));
-
-function typeInto(el: HTMLInputElement, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    "value",
-  )!.set!;
-  act(() => {
-    setter.call(el, value);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-
-function chooseTarget(itemId: string): void {
-  const select = $$<HTMLSelectElement>(".chain-builder-controls select")[0]!;
-  act(() => {
-    select.value = itemId;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-}
-
-function clickPropose(): void {
-  act(() => {
-    $$<HTMLButtonElement>(".chain-builder-controls button")
-      .find((b) => b.textContent === "Propose")!
-      .click();
-  });
-}
+const $$ = <T extends Element>(sel: string): T[] => harness!.queryAll<T>(sel);
 
 function propose(itemId: string, rate: string): void {
-  chooseTarget(itemId);
-  typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, rate);
-  clickPropose();
+  harness!.propose(itemId, rate);
 }
 
 function metricValue(label: string): string {
@@ -106,10 +66,8 @@ function metricValue(label: string): string {
 }
 
 afterEach(() => {
-  act(() => {
-    root.unmount();
-  });
-  container.remove();
+  harness?.cleanup();
+  harness = null;
   storage.clear();
 });
 
@@ -120,7 +78,10 @@ describe("ChainBuilder OUTPUT metric (#111)", () => {
 
     expect(metricValue("OUTPUT")).toBe("80/min (asked 61/min)");
 
-    typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "999");
+    harness!.typeInto(
+      $$<HTMLInputElement>(".chain-builder-controls input")[0]!,
+      "999",
+    );
 
     expect(metricValue("OUTPUT")).toBe("80/min (asked 61/min)");
   });
