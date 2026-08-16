@@ -247,7 +247,7 @@ Expected: FAIL because mix controls and deep cloning are absent.
 
 - [ ] **Step 2: Implement store cloning and UI**
 
-Deep-copy the optional nested object in every extraction-selection copy path:
+Deep-copy the optional nested object only at the external store-action boundary:
 
 ```ts
 const copyExtractionSelection = (selection: ExtractionSelection) => ({
@@ -258,7 +258,9 @@ const copyExtractionSelection = (selection: ExtractionSelection) => ({
 });
 ```
 
-Use the helper in the action, plan rebuild, and plan writer projections.
+Use the helper in `setExtractionSelection`. Keep the existing shallow plan
+rebuild and direct writer projections: their values are immutable strings,
+updates replace selections, and IDB/JSON already create snapshots.
 
 In `ExtractionPanel`, show `Normal baseline`, then a labeled checkbox only when
 the result is planned and `itemId !== "water"`. Enabling writes:
@@ -362,3 +364,5 @@ Expected: clean feature worktree ready for cumulative `develop...HEAD` review.
 - **r2:** folded the remaining nits by moving the future-version fixture to an
   otherwise-valid version 8 payload and adding DOM coverage for disabling the
   checkbox/removing purity intent.
+- **simplify:** folded the one-shot parsimony nit by cloning the nested mix only
+  at the external store-action boundary, not at snapshot rebuild/writer paths.
