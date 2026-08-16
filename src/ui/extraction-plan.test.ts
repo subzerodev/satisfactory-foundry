@@ -353,18 +353,23 @@ describe("deriveExtractionPlan", () => {
     [
       { impure: "0", normal: "", pure: "0" },
       "Normal node count must be a base-10 nonnegative integer.",
+      "normal",
     ],
     [
       { impure: "0", normal: "0", pure: "-1" },
       "Pure node count must be a base-10 nonnegative integer.",
+      "pure",
     ],
-  ])("identifies the malformed purity field in %o", (purityMix, detail) => {
-    const result = derivePurity(purityMix);
-    expect(result).toMatchObject({
-      status: "planned",
-      purity: { status: "invalid", detail },
-    });
-  });
+  ])(
+    "identifies the malformed purity field in %o",
+    (purityMix, detail, field) => {
+      const result = derivePurity(purityMix);
+      expect(result).toMatchObject({
+        status: "planned",
+        purity: { status: "invalid", detail, field },
+      });
+    },
+  );
 
   it("rejects individual and aggregate safe-integer overflow exactly", () => {
     const individual = derivePurity({
@@ -377,6 +382,7 @@ describe("deriveExtractionPlan", () => {
       purity: {
         status: "invalid",
         detail: "Pure node count must not exceed Number.MAX_SAFE_INTEGER.",
+        field: "pure",
       },
     });
 
@@ -387,6 +393,7 @@ describe("deriveExtractionPlan", () => {
       purity: {
         status: "invalid",
         detail: "Total node count must not exceed Number.MAX_SAFE_INTEGER.",
+        field: null,
       },
     });
   });

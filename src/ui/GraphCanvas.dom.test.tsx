@@ -381,7 +381,7 @@ describe("RawFeedNode", () => {
     expect(host.querySelector('input[aria-label="Impure nodes"]')).toBeNull();
   });
 
-  it("preserves invalid node text and associates its dynamic error with every mix input", async () => {
+  it("associates purity errors with only the offending input or every aggregate input", async () => {
     const onSelection = vi.fn();
 
     function Harness() {
@@ -440,13 +440,43 @@ describe("RawFeedNode", () => {
     expect(host.textContent).toContain(
       "Normal node count must be a base-10 nonnegative integer.",
     );
-    for (const input of inputs) {
-      expect(input.getAttribute("aria-invalid")).toBe("true");
-      expect(input.getAttribute("aria-describedby")).toBe(error.id);
-    }
+    expect(inputs[0]!.getAttribute("aria-invalid")).toBeNull();
+    expect(inputs[0]!.getAttribute("aria-describedby")).toBeNull();
+    expect(inputs[1]!.getAttribute("aria-invalid")).toBe("true");
+    expect(inputs[1]!.getAttribute("aria-describedby")).toBe(error.id);
+    expect(inputs[2]!.getAttribute("aria-invalid")).toBeNull();
+    expect(inputs[2]!.getAttribute("aria-describedby")).toBeNull();
     expect(host.querySelector(".extraction-purity-result")).toBeNull();
     expect(host.textContent).not.toContain("0 nodes");
     expect(host.textContent).not.toContain("Output: no node output.");
+
+    const max = String(Number.MAX_SAFE_INTEGER);
+    for (const label of ["Impure nodes", "Normal nodes", "Pure nodes"]) {
+      await setInputValue(
+        host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!,
+        max,
+      );
+    }
+    expect(onSelection).toHaveBeenLastCalledWith({
+      machineId: "miner_mk3",
+      clockPercentText: "100",
+      purityMix: { impure: max, normal: max, pure: max },
+    });
+    const aggregateError = host.querySelector<HTMLElement>(
+      "#extraction-s-stone-purity-error",
+    )!;
+    expect(aggregateError.textContent).toBe(
+      "Total node count must not exceed Number.MAX_SAFE_INTEGER.",
+    );
+    expect(aggregateError.getAttribute("role")).toBe("alert");
+    for (const label of ["Impure nodes", "Normal nodes", "Pure nodes"]) {
+      const input = host.querySelector<HTMLInputElement>(
+        `input[aria-label="${label}"]`,
+      )!;
+      expect(input.getAttribute("aria-invalid")).toBe("true");
+      expect(input.getAttribute("aria-describedby")).toBe(aggregateError.id);
+    }
+    expect(host.querySelector(".extraction-purity-result")).toBeNull();
   });
 
   it("offers node mixes for Oil but not Water", async () => {

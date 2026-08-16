@@ -390,6 +390,12 @@ export function ExtractionPanel({
     });
   };
 
+  const purityFieldHasError = (
+    field: keyof NonNullable<StoredExtractionSelection["purityMix"]>,
+  ) =>
+    purityError !== null &&
+    (purityError.field === null || purityError.field === field);
+
   return (
     <section
       className="extraction-panel"
@@ -515,9 +521,13 @@ export function ExtractionPanel({
                         min="0"
                         step="1"
                         aria-label="Impure nodes"
-                        aria-invalid={purityError !== null ? true : undefined}
+                        aria-invalid={
+                          purityFieldHasError("impure") ? true : undefined
+                        }
                         aria-describedby={
-                          purityError !== null ? purityErrorId : undefined
+                          purityFieldHasError("impure")
+                            ? purityErrorId
+                            : undefined
                         }
                         value={selection!.purityMix.impure}
                         onChange={(event) =>
@@ -532,9 +542,13 @@ export function ExtractionPanel({
                         min="0"
                         step="1"
                         aria-label="Normal nodes"
-                        aria-invalid={purityError !== null ? true : undefined}
+                        aria-invalid={
+                          purityFieldHasError("normal") ? true : undefined
+                        }
                         aria-describedby={
-                          purityError !== null ? purityErrorId : undefined
+                          purityFieldHasError("normal")
+                            ? purityErrorId
+                            : undefined
                         }
                         value={selection!.purityMix.normal}
                         onChange={(event) =>
@@ -549,9 +563,13 @@ export function ExtractionPanel({
                         min="0"
                         step="1"
                         aria-label="Pure nodes"
-                        aria-invalid={purityError !== null ? true : undefined}
+                        aria-invalid={
+                          purityFieldHasError("pure") ? true : undefined
+                        }
                         aria-describedby={
-                          purityError !== null ? purityErrorId : undefined
+                          purityFieldHasError("pure")
+                            ? purityErrorId
+                            : undefined
                         }
                         value={selection!.purityMix.pure}
                         onChange={(event) =>

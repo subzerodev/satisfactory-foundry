@@ -26,7 +26,11 @@ export type ExtractionTransportStatus =
 
 export type ExtractionPurityResult =
   | null
-  | { status: "invalid"; detail: string }
+  | {
+      status: "invalid";
+      detail: string;
+      field: keyof PurityMixText | null;
+    }
   | {
       status: "planned";
       nodeCount: number;
@@ -178,13 +182,14 @@ function derivePurityResult(
   if (purityMix === undefined || itemId === "water") return null;
 
   const parsed = parsePurityMix(purityMix);
-  if ("detail" in parsed) return { status: "invalid", detail: parsed.detail };
+  if ("detail" in parsed) return { status: "invalid", ...parsed };
 
   const nodeCountBig = parsed.impure + parsed.normal + parsed.pure;
   if (nodeCountBig > MAX_SAFE_NODE_COUNT) {
     return {
       status: "invalid",
       detail: "Total node count must not exceed Number.MAX_SAFE_INTEGER.",
+      field: null,
     };
   }
   const nodeCount = Number(nodeCountBig);
@@ -236,7 +241,9 @@ function derivePurityResult(
 
 function parsePurityMix(
   purityMix: PurityMixText,
-): { impure: bigint; normal: bigint; pure: bigint } | { detail: string } {
+):
+  | { impure: bigint; normal: bigint; pure: bigint }
+  | { detail: string; field: keyof PurityMixText } {
   const counts = {} as { impure: bigint; normal: bigint; pure: bigint };
   const fields = [
     ["impure", "Impure"],
@@ -248,12 +255,14 @@ function parsePurityMix(
     if (!/^\d+$/.test(raw)) {
       return {
         detail: `${label} node count must be a base-10 nonnegative integer.`,
+        field,
       };
     }
     const count = BigInt(raw);
     if (count > MAX_SAFE_NODE_COUNT) {
       return {
         detail: `${label} node count must not exceed Number.MAX_SAFE_INTEGER.`,
+        field,
       };
     }
     counts[field] = count;

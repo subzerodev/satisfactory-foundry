@@ -221,6 +221,20 @@ do not satisfy that contract. Task 6 therefore remains unchanged.
   shared validator comment's unmatched parenthesis. Runtime code remained the
   correctness-approved r6 artifact.
 
+## Phase 2 Diff Review Disposition
+
+- **r1:** code-reviewer returned `APPROVED_WITH_NITS`; adversarial-reviewer
+  returned `NEEDS_REWORK`. Both grounded findings were accepted. Purity
+  validation now carries the offending field for field-local parse/overflow
+  errors and `null` for aggregate overflow, so the panel associates its stable
+  live error only with the offending input or with all three inputs for an
+  aggregate failure. The controlled DOM regression enters blank Normal text
+  through the rendered input and callback/rerender path, and separately proves
+  aggregate all-field association with no stale totals. The four historical
+  v2-v5 writer comments now describe current reads as migrating to plan v7.
+  Correctness recheck continues with a delta-scoped r2 prompt; the one-shot
+  Phase 2 diff simplify lens has not run.
+
 ## Phase 1 Diff Parsimony Disposition
 
 The one-shot diff simplifier returned five nits; all five were verified and
