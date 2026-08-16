@@ -1,7 +1,7 @@
 # Packaging Intersteps Brainstorm And Spec
 
 **Ticket:** #113
-**Status:** candidate for correctness review
+**Status:** frozen after design r13 correctness convergence
 **Date:** 2026-08-16
 
 ## Goal
