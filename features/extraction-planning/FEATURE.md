@@ -1,8 +1,8 @@
 # Extraction planning (Stage 22 arc)
 
 **Started:** 2026-08-16
-**Status:** IN PROGRESS - Phase 1 implementation plan candidate r8
-**Current phase:** Phase 1 implementation plan review r8
+**Status:** IN PROGRESS - Phase 1 plan frozen; implementation next
+**Current phase:** Phase 1 implementation
 **Epic:** #114 (board #21, Stage 22 milestone 93)
 **Feature ticket:** #112
 
@@ -33,7 +33,8 @@ reconsideration:
   and per-plan persistence of the user's extractor choice
 - **Candidate:** `phase-1/brainstorm-spec.md`
 - **Review prompt:** `phase-1/design-r6-prompt.md`
-- **Implementation plan:** `phase-1/implementation-plan.md` candidate r8
+- **Implementation plan:** `phase-1/implementation-plan.md` frozen at r8 after
+  correctness convergence and one-shot parsimony disposition
 - **Production edits:** none
 
 ### Phase 2 - purity mix
@@ -158,8 +159,17 @@ provenance.
 On resume:
 
 1. Read #112 and #114 before this file; the board wins on disagreement.
-2. Resume Phase 1 at implementation-plan review r8.
+2. Resume Phase 1 at Task 1 of `phase-1/implementation-plan.md`.
 3. Do not write a Phase 2 plan until Phase 1 has merged and its phase report has
    been accepted.
 4. Keep Resource Wells explicit. A later decision to build a full well planner
    is new scoped work and must be ticketed rather than hidden in Phase 2.
+
+## Plan Parsimony Disposition
+
+The one-shot plan simplifier proposed replacing Task 6's post-implementation
+mutation probes with the initial TDD red runs. Rejected with counter-evidence:
+the canonical bidirectionality gate requires the verification artifact to name
+an exact revert/break command and capture a genuine failure with production code
+removed or broken, followed by restoration. Initial pre-code reds are useful but
+do not satisfy that contract. Task 6 therefore remains unchanged.
