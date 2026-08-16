@@ -416,6 +416,8 @@ export default function App() {
             result={solve.result}
             itemName={itemName}
             powerText={activePowerText}
+            tiers={catalog.tiers}
+            unlocked={selection.unlockedTiers}
           />
           {/* Two tabs naming the CURRENT view (#74) — honest, unlike the old
               cycle button that named its NEXT destination (the grounded mislabel

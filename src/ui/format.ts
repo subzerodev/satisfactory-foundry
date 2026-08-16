@@ -62,6 +62,22 @@ export function tierLabel(
   return kind === "belt" ? `Mk${i + 1}` : `Pipe Mk${i + 1}`;
 }
 
+/** First still-locked tier that reduces an exact bus peak to one line. */
+export function firstLockedTierForOneLine(
+  kind: LaneKind,
+  peakFlow: Fraction,
+  tiers: TierTable,
+  unlockedCount: number,
+): { capacity: Fraction; label: string } | null {
+  for (let i = unlockedCount; i < tiers[kind].length; i++) {
+    const capacity = tiers[kind][i]!;
+    if (capacity.gte(peakFlow)) {
+      return { capacity, label: tierLabel(kind, capacity, tiers) };
+    }
+  }
+  return null;
+}
+
 /**
  * A belt's human label. Feed prints its capacity + entry point; output prints
  * its carried load + break-out point (the two rates differ, so each template
@@ -101,10 +117,17 @@ export function beltLabel(
 export function segTooltip(
   seg: { fromMachine: number; toMachine: number; peakFlow: Fraction },
   busCapString: string,
+  parallelCount = 1,
+  oneLineTier: string | null = null,
 ): string {
-  return `machines ${seg.fromMachine}–${seg.toMachine} · peak ${formatRate(
+  const base = `machines ${seg.fromMachine}–${seg.toMachine} · peak ${formatRate(
     seg.peakFlow,
-  )}/min of ${busCapString}/min`;
+  )}/min`;
+  if (parallelCount === 1) {
+    return `${base} of ${busCapString}/min`;
+  }
+  const bundle = `${base} · ${parallelCount} parallel lines × ${busCapString}/min`;
+  return oneLineTier === null ? bundle : `${bundle} · ${oneLineTier}: 1 line`;
 }
 
 /** One human sentence per finding variant. */

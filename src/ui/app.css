@@ -762,6 +762,24 @@ body {
   stroke-width: 6;
 }
 
+.parallel-rail {
+  stroke-width: 4;
+}
+
+.parallel-segment:focus-visible .parallel-rail {
+  stroke-width: 6;
+}
+
+.parallel-run-label {
+  font-family: var(--font-mono-num);
+  font-size: 10px;
+  fill: var(--fg);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3;
+}
+
 .belt-arrow {
   stroke-width: 2;
 }
@@ -770,7 +788,8 @@ body {
    lane reads distinctly from a belt lane. The stroke colour stays tier-driven
    (set inline from colorForCapacity); the class adds the dashed dm rhythm +
    a slight fade so pipes recede visually from belts. */
-.lane-pipe.bus-seg {
+.lane-pipe.bus-seg,
+.lane-pipe.parallel-rail {
   stroke-dasharray: 10 5;
   opacity: 0.85;
 }
@@ -950,6 +969,17 @@ body {
 .bp-bus {
   fill: var(--bus-fill);
   opacity: 0.7;
+}
+
+.bp-parallel-max {
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  fill: var(--fg);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3;
 }
 
 /* Pipe buses (Stage 5 item 4): a desaturated-blue tint + a dashed outline so a
