@@ -227,7 +227,7 @@ export interface AppState {
   placementSeq: number;
   /**
    * The flow-chart orientation (Stage 10 / Phase 1), default "LR". Persists
-   * per-plan in the v5 file (orientation is a property of the drawing, like
+   * per-plan in the v6 file (orientation is a property of the drawing, like
    * positions); a switch re-slots every NON-userPlaced stage + flips the handle
    * sides. The store stays window-free — the plan file is its only persistence.
    */
@@ -235,11 +235,10 @@ export interface AppState {
   /**
    * The set of stage ids the user hand-dragged (Stage 10 / Phase 1). `true`-valued
    * membership only; set by `setStagePosition` (the drag-END commit), pruned with
-   * the stage on remove, seeded at load (v5: from the per-stage flag; pre-v5:
-   * from position-presence). A direction switch re-slots only NON-members —
-   * user-placed nodes keep their exact positions. Persists via the v5
-   * `userPlaced?: true` flag because save writes positions unconditionally, so
-   * position-presence alone can't survive a round-trip as the auto-vs-user signal.
+   * the stage on remove, and seeded from v6's required per-stage boolean. Legacy
+   * migration materializes the original position-based intent before rebuild. A
+   * direction switch re-slots only NON-members; save writes the required boolean
+   * because position presence alone cannot distinguish auto from user placement.
    */
   userPlaced: Record<string, true>;
   /**
@@ -389,7 +388,7 @@ export interface Actions {
   loadPlan(id: string): Promise<void>;
   renamePlan(id: string, name: string): Promise<void>;
   deletePlan(id: string): Promise<void>;
-  /** Serialize a stored plan (migrated to v2) as pretty JSON, or null if the
+  /** Serialize a stored plan (migrated to v6) as pretty JSON, or null if the
    *  row is missing/corrupt. Headless — App owns the Blob/anchor download. */
   exportPlan(id: string): Promise<string | null>;
   /** Validate + save an exported plan file's text under the save-over model.
@@ -734,7 +733,7 @@ function deriveAllStages(
  * - positions from the file entry, else the auto-slot for the entry's index (in
  *   the FILE's direction — a v1-migrated positionless stage must slot per the
  *   orientation the file was saved in);
- * - flowDirection restored from the file (pre-v5 migrated as "LR"); userPlaced
+ * - flowDirection restored from the file (v1-v4 migration defaults to "LR"); userPlaced
  *   read directly from v6's required boolean. Legacy migration materializes the
  *   conservative original-position rule before this rebuild, so no transient
  *   source-version flag is needed;
@@ -792,9 +791,8 @@ function rebuildFromPlan(
     // Positionless entries (v1-migrated) auto-slot in the FILE's direction; a
     // saved position restores exactly. The fallback direction is plan-level.
     positions[id] = entry.position ?? placementSlot(i, plan.flowDirection);
-    // Seed userPlaced: a v5-native row carries the explicit flag (auto stages
-    // omit it → stay auto); a migrated v1–v4 row has no flag, so fall back to
-    // position-presence (positioned ⇒ conservatively pinned, the stated cost).
+    // Validation always returns v6; legacy migration has already materialized
+    // placement origin into this required boolean.
     if (entry.userPlaced) userPlaced[id] = true;
   });
   const links: StageLink[] = plan.links.map((l) => ({
@@ -1879,10 +1877,9 @@ export function createAppStore(storage?: StateStorage) {
                 // Capture the WHOLE graph (Stage 3 / Phase 3): stages in
                 // stageOrder (array order IS stageOrder), each carrying name +
                 // selection + position; links index-encoded (stage id → index).
-                // Stage 10 / Phase 1: position is written UNCONDITIONALLY (exact
-                // restore stands); the `userPlaced: true` flag is written ONLY for
-                // a user-placed stage, so a v5 load can seed the auto-vs-user
-                // distinction that position-presence alone can't carry.
+                // Position is written unconditionally for exact restoration;
+                // v6 also writes the required placement boolean because position
+                // presence alone cannot distinguish auto from user placement.
                 const s = get();
                 const indexOf = new Map(s.stageOrder.map((id, i) => [id, i]));
                 const stages: PlanStageV6[] = s.stageOrder.map((id) => {

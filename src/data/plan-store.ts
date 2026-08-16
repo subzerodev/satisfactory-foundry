@@ -78,8 +78,8 @@ export interface PlanLinkV2 {
 
 /**
  * Stage 3 / Phase 3: the whole-graph file. Same header fields as v1; `stages`
- * now carry names + positions and `links` reference stages by index. Save always
- * writes this; `loadPlanFile` returns it directly (v2) or via `migrateV1` (v1).
+ * now carry names + positions and `links` reference stages by index. Version 2
+ * writers emitted this shape; current reads migrate it to v6.
  */
 export interface PlanFileV2 {
   format_version: 2;
@@ -102,8 +102,8 @@ export interface PlanLinkV3 extends PlanLinkV2 {
 
 /**
  * Stage 7 / Phase 2: the whole-graph file with per-link transport. Same header +
- * stages as v2; `links` are `PlanLinkV3`. Save always writes this; `loadPlanFile`
- * returns it directly (v3) or via `migrateV2`/`migrateV1` (older files).
+ * stages as v2; `links` are `PlanLinkV3`. Version 3 writers emitted this shape;
+ * current reads migrate it to v6.
  */
 export interface PlanFileV3 {
   format_version: 3;
@@ -126,9 +126,9 @@ export type PlanLinkV4 = PlanLinkV3;
 
 /**
  * Stage 8 / Phase 2: the whole-graph file with the extended transport union.
- * Same header + stages as v3; `links` are `PlanLinkV4`. Save always writes this;
- * `loadPlanFile` returns it directly (v4) or via `migrateV3`/`migrateV2`/
- * `migrateV1` (older files). State and file keep sharing the ONE `LinkTransport`
+ * Same header + stages as v3; `links` are `PlanLinkV4`. Version 4 writers
+ * emitted this shape; current reads migrate it to v6. State and file keep
+ * sharing the ONE `LinkTransport`
  * union (the S7P2 verbatim-boundary invariant) — nothing to map at the edge.
  */
 export interface PlanFileV4 {
@@ -158,8 +158,8 @@ export interface PlanStageV5 extends PlanStageV2 {
  * Stage 10 / Phase 1: the whole-graph file with a persisted flow direction and
  * per-stage placement intent. Same header + links as v4; `stages` are
  * `PlanStageV5` and a top-level `flowDirection` ("LR"|"TB") records the chart's
- * orientation. Save always writes this; `loadPlanFile` returns it directly (v5)
- * or via `migrateV4`/… (older files, defaulting `flowDirection: "LR"`).
+ * orientation. Version 5 writers emitted this shape; current reads migrate it
+ * to v6, with older files defaulting `flowDirection: "LR"`.
  * Orientation is a property of the drawing (like positions), so it persists
  * per-plan — a TB chart reloaded must come back TB, not render vertical with
  * left/right handles.

@@ -200,3 +200,6 @@ do not satisfy that contract. Task 6 therefore remains unchanged.
   duplicated pipe noun from exact output guidance.
 - **r6:** correctness converged; folded the remaining documentation nit by
   updating all cited persistence comments from v5-current to v6-current.
+- **r7:** folded the reviewers' additional stale-comment citations and swept
+  every current persistence description to v6 terminology; historical version
+  declarations remain explicitly labeled as historical writer shapes.
