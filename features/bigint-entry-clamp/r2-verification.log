@@ -1,0 +1,23 @@
+# Forgejo #122 implementation verification
+
+## Test-first red state
+
+Command:
+`npm test -- src/core/manifold.test.ts src/state/store.test.ts`
+
+Result before the production edit: 3 failed, 213 passed. Both huge core rows
+threw from `toIndex` with exact quotients `18014398509481982` and
+`18014398509481984`; the store lifecycle row received `invalid` instead of
+`solved`.
+
+## Bidirectional clamp mutations
+
+Command:
+`npm test -- src/core/manifold.test.ts src/state/store.test.ts -t 'exact feed-entry clamp|huge feed override'`
+
+- Under-clamp mutation (`N - 1`): 4 failed, 212 skipped. Core entries were 2
+  instead of 3 and the restored store entry was 19 instead of 20.
+- Over-clamp mutation (`N + 1`): 4 failed, 212 skipped. Core entries were 4
+  instead of 3 and the restored store entry was 21 instead of 20.
+
+Both mutations were removed before final verification.
