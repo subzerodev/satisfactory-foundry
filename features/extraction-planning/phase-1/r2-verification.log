@@ -57,18 +57,24 @@ restore result: PASS - 1 file, 4 tests
 break: skip malformed restricted-resource members; serialize extractors into a plain object
 command: npm test -- src/data/docs-loader.test.ts src/data/catalog-store.test.ts
 FAIL src/data/docs-loader.test.ts > parseDocsJson - extractor capabilities (#112) > rejects a restricted resource list with a malformed member
-FAIL src/data/catalog-store.test.ts > catalog cache - null-prototype maps survive revive (#28) > round-trips an extractor and machine whose shared id is __proto__
+FAIL src/data/catalog-store.test.ts > catalog cache - null-prototype maps survive revive (#28) > round-trips an extractor whose id is __proto__
 restore result: PASS - 2 files, 73 tests
 
 7. Correctness r2 complete cache and responsive geometry folds
 break A: serialize the extractor's matching machine into a plain object
 command: npm test -- src/data/catalog-store.test.ts
-FAIL src/data/catalog-store.test.ts > catalog cache - null-prototype maps survive revive (#28) > round-trips an extractor whose id is __proto__
+FAIL src/data/catalog-store.test.ts > catalog cache - null-prototype maps survive revive (#28) > round-trips an extractor and machine whose shared id is __proto__
 restore result: PASS - 1 file, 14 tests
 break B: raise the measured mobile stack cap from 170px to the previously specified 220px
 command: node scripts/extraction-panel-browser-check.mjs
 FAIL 360/extraction: top-right stack overlaps bottom-left controls; stack y=49..269, controls y=220..324
 restore result: PASS - 9 geometry rows and 3 interaction rows
+
+8. Correctness r3 explicit solid selection fold
+break: restore the one-candidate auto-seed condition for every resource
+command: npm test -- src/ui/GraphCanvas.dom.test.tsx
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > leaves a single-candidate solid unselected until the user chooses it
+restore result: PASS - 1 file, 5 tests; browser gate also PASS - 9 geometry rows and 3 interaction rows
 
 BROWSER GATE
 command: node scripts/extraction-panel-browser-check.mjs
@@ -86,7 +92,7 @@ screenshots: /tmp/satisfactory-foundry-112-browser/{360,720,1280}-{notice,extrac
 
 POST-CODE COMPLETE SUITE
 command: npm test
-result: PASS - 39 files, 1024 tests
+result: PASS - 39 files, 1025 tests
 command: npm run check
 result: PASS - TypeScript, ESLint, and Prettier
 command: npm run build

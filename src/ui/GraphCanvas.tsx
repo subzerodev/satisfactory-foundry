@@ -311,6 +311,8 @@ export function ExtractionPanel({
   const primaryControlRef = useRef<HTMLSelectElement | HTMLInputElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const headingId = `extraction-${rawNode.data.stageId}-${rawNode.data.itemId}`;
+  const autoSeedsStandalone =
+    rawNode.data.itemId === "water" || rawNode.data.itemId === "liquid_oil";
 
   useEffect(() => {
     const target = primaryControlRef.current ?? closeRef.current;
@@ -318,13 +320,13 @@ export function ExtractionPanel({
   }, [rawNode.data.stageId, rawNode.data.itemId]);
 
   useEffect(() => {
-    if (selection === null && candidates.length === 1) {
+    if (autoSeedsStandalone && selection === null && candidates.length === 1) {
       onSetSelection({
         machineId: candidates[0]!.machineId,
         clockPercentText: "100",
       });
     }
-  }, [candidates, onSetSelection, selection]);
+  }, [autoSeedsStandalone, candidates, onSetSelection, selection]);
 
   const result = deriveExtractionPlan({
     catalog,

@@ -274,6 +274,15 @@ async function main() {
       `document.querySelector('[role="dialog"]') !== null`,
       "pointer dialog",
     );
+    const solidSelection = await evaluate(
+      cdp,
+      `window.__extractionSelection('stone')`,
+    );
+    if (solidSelection !== undefined) {
+      throw new Error(
+        "Limestone auto-seeded instead of awaiting an explicit Miner choice",
+      );
+    }
     let clicks = await evaluate(cdp, `window.__rawClicks`);
     if (clicks !== 1)
       throw new Error(`pointer activation fired ${clicks} clicks`);

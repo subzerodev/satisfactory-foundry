@@ -254,6 +254,27 @@ describe("RawFeedNode", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("leaves a single-candidate solid unselected until the user chooses it", async () => {
+    const onSetSelection = vi.fn();
+    const catalog = extractionCatalog();
+    catalog.extractors = { miner_mk3: catalog.extractors["miner_mk3"]! };
+    await act(async () => {
+      root.render(
+        <ExtractionPanel
+          catalog={catalog}
+          rawNode={rawNode("stone", "Limestone", 12720)}
+          stage={stage}
+          selection={null}
+          onSetSelection={onSetSelection}
+          onClose={vi.fn()}
+        />,
+      );
+    });
+
+    expect(onSetSelection).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("Choose an extractor");
+  });
+
   it("auto-seeds Water into persisted state and names the Resource Well alternative", async () => {
     const onSetSelection = vi.fn();
     await act(async () => {
