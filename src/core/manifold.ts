@@ -382,8 +382,9 @@ export function solveFeedLane(
     // clamp to N so a belt that would enter past the last machine reports
     // entersAfterMachine = N (its span start = N+1 > end -> no segment, the
     // belt is simply unused). Keeps every emitted index ≤ N.
-    const rawEnter = j === 0 ? 0 : toIndex(cumulative.floorDiv(d));
-    const entersAfterMachine = Math.min(rawEnter, N);
+    const entryQuotient = j === 0 ? 0n : cumulative.floorDiv(d);
+    const entersAfterMachine =
+      entryQuotient >= BigInt(N) ? N : toIndex(entryQuotient);
     belts.push({
       index: j,
       capacity,

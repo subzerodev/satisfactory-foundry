@@ -521,6 +521,59 @@ describe("solveFeedLane — over-B override clamps entry/span to N (regression)"
   });
 });
 
+describe("solveFeedLane — exact feed-entry clamp before narrowing (#122)", () => {
+  it.each([
+    ["MAX_SAFE_INTEGER", Fraction.from(Number.MAX_SAFE_INTEGER)],
+    [
+      "larger than MAX_SAFE_INTEGER",
+      Fraction.from(BigInt(Number.MAX_SAFE_INTEGER) + 1n),
+    ],
+  ])(
+    "clamps a %s override quotient to N without losing exactness",
+    (_, override) => {
+      const r = solveFeed({
+        n: 3,
+        rate: R(1, 2),
+        belts: [F(1)],
+        overrides: [override],
+      });
+
+      expect(r.belts).toHaveLength(2);
+      expect(r.belts[0]!.capacity.eq(override)).toBe(true);
+      expect(r.belts[1]!.entersAfterMachine).toBe(3);
+      expect(r.belts.every((b) => b.entersAfterMachine <= 3)).toBe(true);
+      expect(r.segments).toHaveLength(1);
+      expect(r.segments[0]!).toMatchObject({
+        fromMachine: 1,
+        toMachine: 3,
+        beltIndex: 0,
+      });
+
+      const over = r.findings.filter((f) => f.type === "segment-over-capacity");
+      expect(over).toHaveLength(1);
+      expect(over[0]!.peakFlow.eq(override)).toBe(true);
+      expect(over[0]!).toMatchObject({ fromMachine: 1, toMachine: 3 });
+    },
+  );
+
+  it("clamps the exact equality boundary to N", () => {
+    const r = solveFeed({
+      n: 3,
+      rate: R(1, 2),
+      belts: [F(1)],
+      overrides: [R(3, 2)],
+    });
+
+    expect(r.belts[1]!.entersAfterMachine).toBe(3);
+    expect(r.segments).toHaveLength(1);
+    expect(r.segments[0]!).toMatchObject({
+      fromMachine: 1,
+      toMachine: 3,
+      beltIndex: 0,
+    });
+  });
+});
+
 describe("solveFeedLane — oversize overrides array (spec row 7)", () => {
   it("overrides longer than k -> lane-local invalid-input, lane empty", () => {
     // k=1 (D=300 <= 480), overrides length 2 > 1.
