@@ -217,25 +217,25 @@ while any writer still emits v7.
 - Modify: `features/packaging-intersteps/FEATURE.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] Build a checked-in Vite/system-Chromium CDP gate using the real
+- [x] Build a checked-in Vite/system-Chromium CDP gate using the real
       `LinkInspector` and production CSS. Do not assign input values through JS;
       use pointer/key events and CDP text insertion.
-- [ ] At 1280px run the full workflow: enable, clock edit, independent route
+- [x] At 1280px run the full workflow: enable, clock edit, independent route
       changes, return trip input, stale recovery/disable, and keyboard operation.
       At 360, 720, and 1280 assert all four rectangle edges, wrapping, no overlap,
       and document/body width no larger than client width; perform one real packaged
       control activation at each width to prove hit-testing/reachability. Save and
       inspect screenshots.
-- [ ] Re-run the extraction browser gate to protect the existing 360px fix.
-- [ ] Record exact test/browser evidence, user-visible behavior, constraints,
+- [x] Re-run the extraction browser gate to protect the existing 360px fix.
+- [x] Record exact test/browser evidence, user-visible behavior, constraints,
       and review dispositions in the completion report and feature ledger.
-- [ ] Populate `r2-verification.log` with bidirectional evidence per distinct
+- [x] Populate `r2-verification.log` with bidirectional evidence per distinct
       production behavior: exact green command/output; exact temporary
       `apply_patch` break; focused Vitest output containing a real `FAIL`/`×` line
       naming the new test; exact restoring `apply_patch`; and green rerun. Cover
       representative pair/derive math, v8/store guard, combined graph diagnostic,
       and inspector interaction behavior. Never leave a break applied.
-- [ ] Run fresh branch verification:
+- [x] Run fresh branch verification:
 
 ```bash
 node scripts/packaging-intersteps-browser-check.mjs

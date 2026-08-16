@@ -1,0 +1,257 @@
+# Packaging intersteps r2 bidirectional verification
+
+Date: 2026-08-16
+Worktree: feature/s22-113-intersteps
+
+Every break below was applied with `apply_patch`, produced a genuine focused
+Vitest failure naming the protected test, and was restored with `apply_patch`
+before the next section. The final `git diff --check` and full verification
+confirm that no break remains.
+
+## 1. Pair/derive math
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/core/link-plan.test.ts -t "derives the exact Water 10,600/min worked example" --reporter=verbose
+```
+
+Green output:
+
+```text
+✓ src/core/link-plan.test.ts > deriveLinkPlan > derives the exact Water 10,600/min worked example 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 11 skipped (12)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/core/link-plan.ts
+@@
+     const packageCount = materialDemand.ceilDiv(
+-      pair.packageFluidRate.mul(clockScale),
++      pair.unpackageFluidRate.mul(clockScale),
+     );
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/core/link-plan.test.ts > deriveLinkPlan > derives the exact Water 10,600/min worked example 4ms
+  → expected 89 to be 177 // Object.is equality
+FAIL  src/core/link-plan.test.ts > deriveLinkPlan > derives the exact Water 10,600/min worked example
+Test Files  1 failed (1)
+Tests  1 failed | 11 skipped (12)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/core/link-plan.ts
+@@
+     const packageCount = materialDemand.ceilDiv(
+-      pair.unpackageFluidRate.mul(clockScale),
++      pair.packageFluidRate.mul(clockScale),
+     );
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/core/link-plan.test.ts > deriveLinkPlan > derives the exact Water 10,600/min worked example 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 11 skipped (12)
+```
+
+## 2. V8/saveable store guard
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/state/store.test.ts -t "refuses illegal packaged routes without changing state" --reporter=verbose 2>&1 | rg "^ (✓|×|Test Files|     Tests)|refuses illegal"
+```
+
+Green output:
+
+```text
+✓ src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > refuses illegal packaged routes without changing state 29ms
+Test Files  1 passed (1)
+Tests  1 passed | 176 skipped (177)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/state/store.ts
+@@
+               if (
+-                link.interstep !== undefined &&
++                false &&
+                 isIllegalPackagedTransport(transport)
+               ) {
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > refuses illegal packaged routes without changing state 36ms
+  → expected { …(6) } to be { …(6) } // Object.is equality
+FAIL  src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > refuses illegal packaged routes without changing state
+Test Files  1 failed (1)
+Tests  1 failed | 176 skipped (177)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/state/store.ts
+@@
+               if (
+-                false &&
++                link.interstep !== undefined &&
+                 isIllegalPackagedTransport(transport)
+               ) {
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > refuses illegal packaged routes without changing state 29ms
+Test Files  1 passed (1)
+Tests  1 passed | 176 skipped (177)
+```
+
+## 3. Combined graph diagnostic
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/ui/graph-flow.test.ts -t "problem precedence" --reporter=verbose 2>&1 | rg "^ (✓|×|Test Files|     Tests)|problem precedence"
+```
+
+Green output:
+
+```text
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'under-supply' text beside an interstep problem with problem precedence 2ms
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'over-supply' text beside an interstep problem with problem precedence 0ms
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'dangling-link' text beside an interstep problem with problem precedence 0ms
+Test Files  1 passed (1)
+Tests  3 passed | 52 skipped (55)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/ui/graph-flow.ts
+@@
+-    const state: EdgeState = problem === undefined ? material.state : "problem";
++    const state: EdgeState = material.state;
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'under-supply' text beside an interstep problem with problem precedence 5ms
+× src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'over-supply' text beside an interstep problem with problem precedence 1ms
+× src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'dangling-link' text beside an interstep problem with problem precedence 0ms
+FAIL  src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'under-supply' text beside an interstep problem with problem precedence
+Test Files  1 failed (1)
+Tests  3 failed | 52 skipped (55)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/ui/graph-flow.ts
+@@
+-    const state: EdgeState = material.state;
++    const state: EdgeState = problem === undefined ? material.state : "problem";
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'under-supply' text beside an interstep problem with problem precedence 2ms
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'over-supply' text beside an interstep problem with problem precedence 0ms
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'dangling-link' text beside an interstep problem with problem precedence 0ms
+Test Files  1 passed (1)
+Tests  3 passed | 52 skipped (55)
+```
+
+## 4. Inspector interaction behavior
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/ui/LinkInspector.dom.test.tsx -t "enables the sole pair with belt defaults and renders exact plan math" --reporter=verbose 2>&1 | rg "^ (✓|×|Test Files|     Tests)|enables the sole pair"
+```
+
+Green output:
+
+```text
+✓ src/ui/LinkInspector.dom.test.tsx > LinkInspector packaging intersteps > enables the sole pair with belt defaults and renders exact plan math 25ms
+Test Files  1 passed (1)
+Tests  1 passed | 4 skipped (5)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/ui/LinkInspector.tsx
+@@
+                 setLinkInterstep(link.id, {
+                   packageRecipeId: pair.packageRecipe.id,
+-                  clockPercentText: "100",
++                  clockPercentText: "50",
+                   returnTransport: { mode: "belt" },
+                 });
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/ui/LinkInspector.dom.test.tsx > LinkInspector packaging intersteps > enables the sole pair with belt defaults and renders exact plan math 30ms
+FAIL  src/ui/LinkInspector.dom.test.tsx > LinkInspector packaging intersteps > enables the sole pair with belt defaults and renders exact plan math
+-     "clockPercentText": "100",
++     "clockPercentText": "50",
+Test Files  1 failed (1)
+Tests  1 failed | 4 skipped (5)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/ui/LinkInspector.tsx
+@@
+                 setLinkInterstep(link.id, {
+                   packageRecipeId: pair.packageRecipe.id,
+-                  clockPercentText: "50",
++                  clockPercentText: "100",
+                   returnTransport: { mode: "belt" },
+                 });
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/ui/LinkInspector.dom.test.tsx > LinkInspector packaging intersteps > enables the sole pair with belt defaults and renders exact plan math 25ms
+Test Files  1 passed (1)
+Tests  1 passed | 4 skipped (5)
+```
