@@ -129,11 +129,14 @@ writer still emits v6.
 
 - [ ] **Step 1: Write failing v7 boundary tests**
 
-Before production edits, add a `samplePlanV7` current writer fixture with one extraction mix. Assert
-save/load and export/import preserve all three raw strings. Add malformed v7
-cases for null/array mix, missing keys, and non-string values. Add a v6 row with
-an unknown `purityMix` extra and assert migration returns a v7 selection with
-only `machineId` and `clockPercentText`.
+Before production edits, add a `samplePlanV7` current writer fixture with one
+extraction mix. Assert save/load and export/import preserve all three raw
+strings. Add malformed v7 cases for null/array mix, missing keys, and non-string
+values. Add a v6 row with an unknown `purityMix` extra and assert migration
+returns a v7 selection with only `machineId` and `clockPercentText`. Update the
+existing unknown-future-version test from 7 to 8 and base it on an otherwise
+valid v7-shaped payload, so it fails specifically on the version boundary
+rather than malformed contents.
 
 Update store save/export/bundle expectations from v6 to v7 and add a round-trip
 assertion for a prototype-like raw item key carrying a mix.
@@ -231,7 +234,8 @@ three fields, and inspect the callback payload. Then change the extractor and
 clock through the rendered controls and assert both callback payloads retain
 the exact existing `purityMix`. Assert Water has no checkbox and Oil does. Feed
 invalid text and assert the exact inline error is present while the mix supply
-summary is absent.
+summary is absent. Finally disable the checkbox through the DOM and assert the
+callback selection omits `purityMix` entirely.
 
 Run:
 
@@ -355,3 +359,6 @@ Expected: clean feature worktree ready for cumulative `develop...HEAD` review.
   unit with no intermediate v6 writer commit; the UI extractor and clock
   handlers have explicit mix-preservation DOM coverage; and derivation tests
   cover Pure/Normal/Impure/zero transport plus exact spare, shortfall, and power.
+- **r2:** folded the remaining nits by moving the future-version fixture to an
+  otherwise-valid version 8 payload and adding DOM coverage for disabling the
+  checkbox/removing purity intent.
