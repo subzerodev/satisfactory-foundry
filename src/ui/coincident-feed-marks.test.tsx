@@ -130,8 +130,8 @@ describe("coincident feed mark helpers", () => {
       100,
     );
 
-    expect(right.get(20)).toEqual({ x: 24, side: "right" });
-    expect(left.get(95)).toEqual({ x: 63, side: "left" });
+    expect(right.get(20)).toBe(24);
+    expect(left.get(95)).toBe(63);
     expect(blocked.has(20)).toBe(false);
   });
 
@@ -145,7 +145,7 @@ describe("coincident feed mark helpers", () => {
       944,
     );
 
-    expect(placements.get(904)).toEqual({ x: 908, side: "right" });
+    expect(placements.get(904)).toBe(908);
     expect(placements.has(944)).toBe(false);
   });
 

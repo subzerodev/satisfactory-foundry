@@ -312,7 +312,7 @@ function LaneG({
                 {placement !== undefined && (
                   <text
                     className="feed-group-count"
-                    x={placement.x}
+                    x={placement}
                     y={track.y + 29}
                   >
                     {feedCountToken(feedBelts.length)}

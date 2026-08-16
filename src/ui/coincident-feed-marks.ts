@@ -3,11 +3,6 @@ export interface CoincidentMarkGroup<T> {
   members: T[];
 }
 
-export interface GroupTokenPlacement {
-  x: number;
-  side: "left" | "right";
-}
-
 const TOKEN_WIDTH = 28;
 const TOKEN_GAP = 4;
 
@@ -36,8 +31,8 @@ export function placeGroupTokens<T>(
   groups: readonly CoincidentMarkGroup<T>[],
   laneStart: number,
   laneEnd: number,
-): Map<number, GroupTokenPlacement> {
-  const placements = new Map<number, GroupTokenPlacement>();
+): Map<number, number> {
+  const placements = new Map<number, number>();
   const anchors = groups.map((group) => group.coordinate);
   const reserved: { start: number; end: number }[] = [];
 
@@ -46,17 +41,11 @@ export function placeGroupTokens<T>(
   )) {
     if (group.members.length < 2) continue;
     const candidates = [
-      {
-        x: group.coordinate + TOKEN_GAP,
-        side: "right" as const,
-      },
-      {
-        x: group.coordinate - TOKEN_GAP - TOKEN_WIDTH,
-        side: "left" as const,
-      },
+      group.coordinate + TOKEN_GAP,
+      group.coordinate - TOKEN_GAP - TOKEN_WIDTH,
     ];
     const placement = candidates.find((candidate) => {
-      const interval = { start: candidate.x, end: candidate.x + TOKEN_WIDTH };
+      const interval = { start: candidate, end: candidate + TOKEN_WIDTH };
       return (
         interval.start >= laneStart &&
         interval.end <= laneEnd &&
@@ -74,8 +63,8 @@ export function placeGroupTokens<T>(
     if (placement !== undefined) {
       placements.set(group.coordinate, placement);
       reserved.push({
-        start: placement.x,
-        end: placement.x + TOKEN_WIDTH,
+        start: placement,
+        end: placement + TOKEN_WIDTH,
       });
     }
   }
