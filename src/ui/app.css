@@ -785,6 +785,34 @@ body {
   stroke-width: 2;
 }
 
+.feed-group-stem {
+  stroke: var(--fg);
+  stroke-width: 2;
+}
+
+.feed-group-count {
+  font-family: var(--font-mono-num);
+  font-size: 10px;
+  fill: var(--fg);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.feed-mark-group:focus-visible {
+  outline: none;
+}
+
+.feed-mark-group:focus-visible .feed-group-stem {
+  stroke: var(--accent-strong);
+  stroke-width: 4;
+}
+
+.feed-mark-group:focus-visible .feed-group-count {
+  fill: var(--accent-strong);
+}
+
 /* Pipe lanes (Stage 5 item 4): a desaturated-blue dashed treatment so a fluid
    lane reads distinctly from a belt lane. The stroke colour stays tier-driven
    (set inline from colorForCapacity); the class adds the dashed dm rhythm +
@@ -796,6 +824,11 @@ body {
 }
 
 .lane-pipe.belt-arrow {
+  stroke-dasharray: 4 3;
+  opacity: 0.85;
+}
+
+.lane-pipe.feed-group-stem {
   stroke-dasharray: 4 3;
   opacity: 0.85;
 }
@@ -1015,6 +1048,19 @@ body {
   fill: var(--accent);
   stroke: var(--accent-strong);
   stroke-width: 1;
+}
+
+.bp-feed-mark-group:focus-visible {
+  outline: none;
+}
+
+.bp-feed-mark-group:focus-visible .bp-mark-glyph {
+  stroke: var(--fg);
+  stroke-width: 4;
+}
+
+.bp-feed-group-count {
+  font-family: var(--font-mono-num);
 }
 
 /* Label halo (Stage 12 P1 Axis 2): the rate labels sit at fixed dm offsets and,

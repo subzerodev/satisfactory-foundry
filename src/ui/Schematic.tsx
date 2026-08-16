@@ -7,15 +7,21 @@ import type {
   BreakoutBelt,
 } from "../core/manifold.ts";
 import type { TierTable } from "../data/types.ts";
-import { computeLayout } from "./layout.ts";
+import { computeLayout, LAYOUT } from "./layout.ts";
 import type { LaneTrack, SchematicLayout } from "./layout.ts";
 import {
   beltLabel,
+  feedGroupLabel,
   firstLockedTierForOneLine,
   formatRate,
   segTooltip,
 } from "./format.ts";
 import { colorForCapacity, ERROR_COLOR } from "./colors.ts";
+import {
+  feedCountToken,
+  groupCoincidentMarks,
+  placeGroupTokens,
+} from "./coincident-feed-marks.ts";
 
 interface SchematicProps {
   result: StageSolveResult;
@@ -98,6 +104,8 @@ function LaneG({
   tiers,
   itemName,
   machineTopY,
+  laneStart,
+  laneEnd,
   onTip,
   onFocusTip,
   offTip,
@@ -112,6 +120,8 @@ function LaneG({
   tiers: TierTable;
   itemName: (id: string) => string;
   machineTopY: number;
+  laneStart: number;
+  laneEnd: number;
   onTip: (text: string, e: React.MouseEvent) => void;
   onFocusTip: (text: string, e: React.FocusEvent<SVGGElement>) => void;
   offTip: () => void;
@@ -121,6 +131,11 @@ function LaneG({
   const pipeClass = kind === "pipe" ? " lane-pipe" : "";
   const busCapString = formatRate(busCapacity);
   const runs = side === "feed" ? parallelRuns(track) : [];
+  const feedGroups =
+    side === "feed"
+      ? groupCoincidentMarks(track.belts, (arrow) => arrow.x)
+      : [];
+  const tokenPlacements = placeGroupTokens(feedGroups, laneStart, laneEnd);
   return (
     <g className={`lane lane-${side}`} data-item={track.itemId}>
       {/* Output lane names sit BELOW their bus (#76): the output bus is at
@@ -237,25 +252,93 @@ function LaneG({
           y2={track.busY + 6}
         />
       ))}
-      {track.belts.map((arrow) => {
-        const belt = belts[arrow.index]!;
-        const tip = beltLabel(side, arrow.index, belt, kind, tiers);
-        return (
-          <line
-            key={`belt-${arrow.index}`}
-            className={`belt-arrow${pipeClass}`}
-            data-feed-index={side === "feed" ? arrow.index : undefined}
-            x1={arrow.x}
-            x2={arrow.x}
-            y1={side === "feed" ? track.y + 16 : machineTopY}
-            y2={track.busY}
-            stroke={colorForCapacity(kind, belt.capacity, tiers)}
-            onMouseEnter={(e) => onTip(tip, e)}
-            onMouseMove={(e) => onTip(tip, e)}
-            onMouseLeave={offTip}
-          />
-        );
-      })}
+      {side === "feed"
+        ? feedGroups.map((group) => {
+            if (group.members.length === 1) {
+              const arrow = group.members[0]!;
+              const belt = belts[arrow.index]!;
+              const tip = beltLabel(side, arrow.index, belt, kind, tiers);
+              return (
+                <line
+                  key={`belt-${arrow.index}`}
+                  className={`belt-arrow${pipeClass}`}
+                  data-feed-index={arrow.index}
+                  x1={arrow.x}
+                  x2={arrow.x}
+                  y1={track.y + 16}
+                  y2={track.busY}
+                  stroke={colorForCapacity(kind, belt.capacity, tiers)}
+                  onMouseEnter={(e) => onTip(tip, e)}
+                  onMouseMove={(e) => onTip(tip, e)}
+                  onMouseLeave={offTip}
+                />
+              );
+            }
+            const feedBelts = group.members.map(
+              (arrow) => belts[arrow.index] as FeedBelt,
+            );
+            const tip = feedGroupLabel(feedBelts);
+            const placement = tokenPlacements.get(group.coordinate);
+            return (
+              <g
+                key={`feed-group-${feedBelts[0]!.index}`}
+                className="feed-mark-group"
+                data-feed-indices={feedBelts
+                  .map((belt) => belt.index)
+                  .join(",")}
+                role="img"
+                tabIndex={0}
+                aria-label={tip}
+                onMouseEnter={(e) => onTip(tip, e)}
+                onMouseMove={(e) => onTip(tip, e)}
+                onMouseLeave={offTip}
+                onFocus={(e) => onFocusTip(tip, e)}
+                onBlur={offTip}
+              >
+                <line
+                  className={`feed-group-stem${pipeClass}`}
+                  x1={group.coordinate - 2}
+                  x2={group.coordinate - 2}
+                  y1={track.y + 16}
+                  y2={track.busY}
+                />
+                <line
+                  className={`feed-group-stem${pipeClass}`}
+                  x1={group.coordinate + 2}
+                  x2={group.coordinate + 2}
+                  y1={track.y + 16}
+                  y2={track.busY}
+                />
+                {placement !== undefined && (
+                  <text
+                    className="feed-group-count"
+                    x={placement.x}
+                    y={track.y + 29}
+                  >
+                    {feedCountToken(feedBelts.length)}
+                  </text>
+                )}
+              </g>
+            );
+          })
+        : track.belts.map((arrow) => {
+            const belt = belts[arrow.index]!;
+            const tip = beltLabel(side, arrow.index, belt, kind, tiers);
+            return (
+              <line
+                key={`belt-${arrow.index}`}
+                className={`belt-arrow${pipeClass}`}
+                x1={arrow.x}
+                x2={arrow.x}
+                y1={machineTopY}
+                y2={track.busY}
+                stroke={colorForCapacity(kind, belt.capacity, tiers)}
+                onMouseEnter={(e) => onTip(tip, e)}
+                onMouseMove={(e) => onTip(tip, e)}
+                onMouseLeave={offTip}
+              />
+            );
+          })}
     </g>
   );
 }
@@ -413,6 +496,8 @@ export function Schematic({
               tiers={tiers}
               itemName={itemName}
               machineTopY={machineTopY}
+              laneStart={LAYOUT.marginX}
+              laneEnd={layout.width - LAYOUT.marginX}
               onTip={showTip}
               onFocusTip={showFocusTip}
               offTip={hideTip}
@@ -466,6 +551,8 @@ export function Schematic({
               tiers={tiers}
               itemName={itemName}
               machineTopY={machineTopY + 40}
+              laneStart={LAYOUT.marginX}
+              laneEnd={layout.width - LAYOUT.marginX}
               onTip={showTip}
               onFocusTip={showFocusTip}
               offTip={hideTip}
