@@ -4,8 +4,6 @@
 
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
-import type { Root } from "react-dom/client";
 
 import { Fraction } from "../core/fraction.ts";
 import type {
@@ -15,11 +13,10 @@ import type {
   CatalogRecipe,
 } from "../data/types.ts";
 import { appStore, createAppStore } from "../state/store.ts";
-import { ChainBuilder } from "./ChainBuilder.tsx";
-
-(
-  globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
-).IS_REACT_ACT_ENVIRONMENT = true;
+import {
+  mountChainBuilder,
+  type MountedChainBuilder,
+} from "./ChainBuilder.harness.tsx";
 
 const storage = vi.hoisted(() => {
   const memory = new Map<string, string>();
@@ -187,8 +184,7 @@ function routeCatalogWithoutRubberInput(): Catalog {
   };
 }
 
-let container: HTMLDivElement;
-let root: Root;
+let harness: MountedChainBuilder | null = null;
 
 function mount(): void {
   const fresh = createAppStore(storage).getState();
@@ -212,78 +208,44 @@ function mount(): void {
       unlockedTier: null,
     },
   });
-  container = document.createElement("div");
-  document.body.appendChild(container);
-  root = createRoot(container);
-  act(() => {
-    root.render(<ChainBuilder />);
-  });
+  harness = mountChainBuilder();
 }
 
-const $$ = <T extends Element>(sel: string): T[] =>
-  Array.from(container.querySelectorAll<T>(sel));
-
-function chooseTarget(itemId: string): void {
-  const select = $$<HTMLSelectElement>(".chain-builder-controls select")[0]!;
-  act(() => {
-    select.value = itemId;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-}
+const $$ = <T extends Element>(sel: string): T[] => harness!.queryAll<T>(sel);
 
 function chooseTier(value: string): void {
-  const select = container.querySelector<HTMLSelectElement>(
+  const select = harness!.query<HTMLSelectElement>(
     ".chain-builder-tier-select",
-  )!;
-  act(() => {
-    select.value = value;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  );
+  harness!.chooseOption(select, value);
 }
 
 function typeInto(el: HTMLInputElement, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    "value",
-  )!.set!;
-  act(() => {
-    setter.call(el, value);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  harness!.typeInto(el, value);
 }
 
 function clickText(text: string): void {
-  act(() => {
-    $$<HTMLButtonElement>("button")
-      .find((button) => button.textContent === text)!
-      .click();
-  });
-}
-
-function clickPropose(): void {
-  clickText("Propose");
+  harness!.click(
+    $$<HTMLButtonElement>("button").find(
+      (button) => button.textContent === text,
+    )!,
+  );
 }
 
 function toggleMachineExclusion(): void {
-  const checkbox = container.querySelector<HTMLInputElement>(
+  const checkbox = harness!.query<HTMLInputElement>(
     ".chain-builder-exclusions input[type='checkbox']",
-  )!;
-  act(() => {
-    checkbox.click();
-  });
+  );
+  harness!.click(checkbox);
 }
 
 function propose(): void {
-  chooseTarget("pack");
-  typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "10");
-  clickPropose();
+  harness!.propose("pack", "10");
 }
 
 afterEach(() => {
-  act(() => {
-    root.unmount();
-  });
-  container.remove();
+  harness?.cleanup();
+  harness = null;
   storage.clear();
 });
 
@@ -295,9 +257,7 @@ describe("ChainBuilder byproduct routing (#105)", () => {
     const route = $$<HTMLInputElement>(
       'input[aria-label="route Resin from Fuel to Rubber"]',
     )[0]!;
-    act(() => {
-      route.click();
-    });
+    harness!.click(route);
     clickText("Apply");
 
     const s = appStore.getState();
@@ -320,11 +280,11 @@ describe("ChainBuilder byproduct routing (#105)", () => {
     propose();
     chooseTier("0");
 
-    act(() => {
+    harness!.click(
       $$<HTMLInputElement>(
         'input[aria-label="route Resin from Fuel to Rubber"]',
-      )[0]!.click();
-    });
+      )[0]!,
+    );
     clickText("Apply");
 
     const s = appStore.getState();
@@ -340,18 +300,18 @@ describe("ChainBuilder byproduct routing (#105)", () => {
         }),
       ]),
     );
-    expect(container.querySelector(".chain-builder-error")).toBe(null);
+    expect(harness!.container.querySelector(".chain-builder-error")).toBe(null);
   });
 
   it("drops a checked route when re-propose makes it non-routeable", () => {
     mount();
     propose();
 
-    act(() => {
+    harness!.click(
       $$<HTMLInputElement>(
         'input[aria-label="route Resin from Fuel to Rubber"]',
-      )[0]!.click();
-    });
+      )[0]!,
+    );
 
     act(() => {
       appStore.setState({
@@ -388,10 +348,12 @@ describe("ChainBuilder byproduct routing (#105)", () => {
     mount();
     propose();
 
-    act(() => {
+    harness!.click(
       $$<HTMLInputElement>(
         'input[aria-label="route Resin from Fuel to Rubber"]',
-      )[0]!.click();
+      )[0]!,
+    );
+    act(() => {
       appStore.setState({
         catalog: { status: "ready", catalog: routeCatalogWithPlasticSource() },
       });
@@ -440,9 +402,7 @@ describe("ChainBuilder byproduct routing (#105)", () => {
         'input[aria-label="route Resin from Fuel to Rubber"]',
       ),
     ).toHaveLength(1);
-    const suggestion = container.querySelector<HTMLElement>(
-      ".chain-builder-suggestion",
-    )!;
+    const suggestion = harness!.query<HTMLElement>(".chain-builder-suggestion");
     expect(suggestion.textContent).toContain(
       "from Fuel: Resin could feed Rubber",
     );
@@ -475,11 +435,11 @@ describe("ChainBuilder byproduct routing (#105)", () => {
     mount();
     propose();
 
-    act(() => {
+    harness!.click(
       $$<HTMLInputElement>(
         'input[aria-label="route Resin from Fuel to Rubber"]',
-      )[0]!.click();
-    });
+      )[0]!,
+    );
     const beforeStageOrder = appStore.getState().stageOrder;
     const beforeLinks = appStore.getState().links;
 
@@ -496,8 +456,10 @@ describe("ChainBuilder byproduct routing (#105)", () => {
     expect(appStore.getState().stageOrder).toEqual(beforeStageOrder);
     expect(appStore.getState().links).toEqual(beforeLinks);
     expect(
-      container.querySelector<HTMLElement>(".chain-builder-error")!.textContent,
+      harness!.query<HTMLElement>(".chain-builder-error").textContent,
     ).toBe("catalog changed; propose again");
-    expect(container.querySelector(".chain-builder-preview")).toBe(null);
+    expect(harness!.container.querySelector(".chain-builder-preview")).toBe(
+      null,
+    );
   });
 });
