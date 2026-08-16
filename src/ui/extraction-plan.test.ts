@@ -1,0 +1,241 @@
+import { describe, expect, it } from "vitest";
+import { Fraction } from "../core/fraction.ts";
+import type {
+  Catalog,
+  CatalogExtractor,
+  CatalogMachine,
+} from "../data/types.ts";
+import { TIER_TABLE } from "../data/tiers.ts";
+import { deriveExtractionPlan } from "./extraction-plan.ts";
+
+const F = Fraction.from;
+
+function machine(id: string, mw: number): CatalogMachine {
+  return {
+    id,
+    displayName: id,
+    power: {
+      mw: F(mw),
+      variable: false,
+      exponent: Fraction.of(1321929, 1000000),
+    },
+  };
+}
+
+function extractor(
+  machineId: string,
+  normalRate: number,
+  itemIds: string[],
+  topology: CatalogExtractor["topology"] = "standalone",
+): CatalogExtractor {
+  return { machineId, normalRate: F(normalRate), itemIds, topology };
+}
+
+function catalog(): Catalog {
+  return {
+    items: {
+      stone: {
+        id: "stone",
+        displayName: "Limestone",
+        isFluid: false,
+        stackSize: F(100),
+        isRawResource: true,
+      },
+      water: {
+        id: "water",
+        displayName: "Water",
+        isFluid: true,
+        stackSize: null,
+        isRawResource: true,
+      },
+      liquid_oil: {
+        id: "liquid_oil",
+        displayName: "Crude Oil",
+        isFluid: true,
+        stackSize: null,
+        isRawResource: true,
+      },
+      nitrogen_gas: {
+        id: "nitrogen_gas",
+        displayName: "Nitrogen Gas",
+        isFluid: true,
+        stackSize: null,
+        isRawResource: true,
+      },
+    },
+    machines: {
+      miner_mk3: machine("miner_mk3", 45),
+      water_pump: machine("water_pump", 20),
+      oil_pump: machine("oil_pump", 40),
+      fracking_extractor: machine("fracking_extractor", 0),
+    },
+    recipes: {},
+    tiers: TIER_TABLE,
+    recipeUnlocks: {},
+    extractors: {
+      miner_mk3: extractor("miner_mk3", 240, ["stone"]),
+      water_pump: extractor("water_pump", 120, ["water"]),
+      oil_pump: extractor("oil_pump", 120, ["liquid_oil"]),
+      fracking_extractor: extractor(
+        "fracking_extractor",
+        60,
+        ["water", "liquid_oil", "nitrogen_gas"],
+        "resource-well",
+      ),
+    },
+  };
+}
+
+function derive(
+  itemId: string,
+  demand: Fraction,
+  machineId: string,
+  clockPercentText = "100",
+  unlockedTiers = { belt: 6, pipe: 2 },
+  cat = catalog(),
+) {
+  return deriveExtractionPlan({
+    catalog: cat,
+    itemId,
+    demand,
+    selection: { machineId, clockPercentText },
+    unlockedTiers,
+  });
+}
+
+describe("deriveExtractionPlan", () => {
+  it("derives the exact Limestone and Water worked examples", () => {
+    const limestone = derive("stone", F(12720), "miner_mk3");
+    expect(limestone).toMatchObject({
+      status: "planned",
+      count: 53,
+      powerText: "2385 MW",
+    });
+    if (limestone.status !== "planned") return;
+    expect(limestone.perExtractor.toString()).toBe("240");
+    expect(limestone.totalSupply.toString()).toBe("12720");
+    expect(limestone.surplus.toString()).toBe("0");
+    expect(limestone.transport).toMatchObject({
+      status: "available",
+      tierIndex: 2,
+      kind: "belt",
+    });
+
+    const water = derive("water", F(10600), "water_pump");
+    expect(water).toMatchObject({
+      status: "planned",
+      count: 89,
+      powerText: "1780 MW",
+    });
+    if (water.status !== "planned") return;
+    expect(water.totalSupply.toString()).toBe("10680");
+    expect(water.surplus.toString()).toBe("80");
+    expect(water.transport).toMatchObject({
+      status: "available",
+      tierIndex: 0,
+      kind: "pipe",
+    });
+  });
+
+  it("keeps exact counts and per-output transport at 250 percent", () => {
+    const locked = derive("stone", F(12720), "miner_mk3", "250", {
+      belt: 4,
+      pipe: 2,
+    });
+    expect(locked).toMatchObject({ status: "planned", count: 22 });
+    if (locked.status !== "planned") return;
+    expect(locked.perExtractor.toString()).toBe("600");
+    expect(locked.totalSupply.toString()).toBe("13200");
+    expect(locked.surplus.toString()).toBe("480");
+    expect(locked.powerText).toMatch(/^≈ /);
+    expect(locked.transport).toMatchObject({
+      status: "requires-unlock",
+      tierIndex: 4,
+      kind: "belt",
+    });
+
+    const unlocked = derive("stone", F(12720), "miner_mk3", "250", {
+      belt: 5,
+      pipe: 2,
+    });
+    expect(unlocked.status).toBe("planned");
+    if (unlocked.status === "planned")
+      expect(unlocked.transport.status).toBe("available");
+
+    const water = derive("water", F(10600), "water_pump", "250");
+    expect(water).toMatchObject({ status: "planned", count: 36 });
+    if (water.status !== "planned") return;
+    expect(water.perExtractor.toString()).toBe("300");
+    expect(water.totalSupply.toString()).toBe("10800");
+    expect(water.surplus.toString()).toBe("200");
+    expect(water.transport).toMatchObject({
+      status: "available",
+      tierIndex: 0,
+      kind: "pipe",
+    });
+  });
+
+  it.each(["", "nope", "0", "-1", "251"])(
+    "rejects invalid clock %s",
+    (clock) => {
+      expect(derive("stone", F(1), "miner_mk3", clock).status).toBe(
+        "invalid-clock",
+      );
+    },
+  );
+
+  it("reports safe-integer count overflow instead of throwing", () => {
+    const huge = Fraction.from(BigInt(Number.MAX_SAFE_INTEGER) + 1n).mul(
+      F(240),
+    );
+    expect(derive("stone", huge, "miner_mk3").status).toBe("unavailable");
+  });
+
+  it("rejects resource-well, cross-item, removed, and no-standalone selections", () => {
+    expect(derive("water", F(100), "fracking_extractor").status).toBe(
+      "unavailable",
+    );
+    expect(derive("water", F(100), "oil_pump").status).toBe("unavailable");
+    expect(derive("water", F(100), "removed").status).toBe("unavailable");
+    expect(derive("nitrogen_gas", F(100), "fracking_extractor").status).toBe(
+      "unavailable",
+    );
+  });
+
+  it("asks for a standalone extractor when candidates exist", () => {
+    const result = deriveExtractionPlan({
+      catalog: catalog(),
+      itemId: "stone",
+      demand: F(100),
+      selection: null,
+      unlockedTiers: { belt: 6, pipe: 2 },
+    });
+    expect(result.status).toBe("pick-extractor");
+    if (result.status === "pick-extractor") {
+      expect(result.candidates.map((candidate) => candidate.machineId)).toEqual(
+        ["miner_mk3"],
+      );
+    }
+  });
+
+  it("retains the plan with a hard warning when no full tier carries one output", () => {
+    const cat = catalog();
+    cat.machines.synthetic = machine("synthetic", 1);
+    cat.extractors.synthetic = extractor("synthetic", 1300, ["stone"]);
+    const result = derive(
+      "stone",
+      F(2600),
+      "synthetic",
+      "100",
+      { belt: 6, pipe: 2 },
+      cat,
+    );
+    expect(result).toMatchObject({ status: "planned", count: 2 });
+    if (result.status === "planned") {
+      expect(result.transport).toMatchObject({
+        status: "over-capacity",
+        kind: "belt",
+      });
+    }
+  });
+});
