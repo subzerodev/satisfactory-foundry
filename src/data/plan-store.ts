@@ -542,13 +542,12 @@ function isPlanFileV6(value: unknown): value is PlanFileV6 {
 }
 
 /**
- * The shared header/stages/link-index validation for the whole-graph files (v3,
- * v4, v5 — identical but for the version literal + top-level fields, checked by
+ * The shared header/stages/link-index validation for whole-graph files v3-v6,
+ * identical except for version-specific top-level fields checked by
  * the caller, the per-link transport checker, and the per-stage shape checker
  * passed in). Pins the frozen P1 refusals at the file boundary: self-link,
  * in-range indices, no duplicate `(to, itemId)` feed lane. `stageShape` defaults
- * to the v2/v3/v4 stage shape; v5 passes the extended `isStageV5Shape` (which
- * adds the optional `userPlaced` check).
+ * to the v2/v3/v4 stage shape; v5 and v6 pass their stricter stage checkers.
  */
 function isGraphFileBody(
   v: Record<string, unknown>,

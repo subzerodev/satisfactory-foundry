@@ -159,7 +159,7 @@ function samplePlanV3(overrides?: Partial<PlanFileV3>): PlanFileV3 {
   };
 }
 
-/** A well-formed v4 file (the CURRENT save shape): v3 + the S8P2 transport
+/** A well-formed historical v4 file: v3 + the S8P2 transport
  *  extensions (pipe deratePercentText, train sharedEnds) legal in the config. */
 function samplePlanV4(overrides?: Partial<PlanFileV4>): PlanFileV4 {
   return {
@@ -179,7 +179,7 @@ function samplePlanV4(overrides?: Partial<PlanFileV4>): PlanFileV4 {
   };
 }
 
-/** A well-formed v5 file (the CURRENT save shape): v4 + a top-level
+/** A well-formed historical v5 file: v4 + a top-level
  *  flowDirection and optional per-stage userPlaced. */
 function samplePlanV5(overrides?: Partial<PlanFileV5>): PlanFileV5 {
   return {
@@ -378,10 +378,10 @@ describe("plan-store — listPlans", () => {
     expect(list[0]).toMatchObject({ id: "id-new", name: "new" });
   });
 
-  it("lists a legacy v1 row alongside v5 rows (both loadable)", async () => {
+  it("lists a legacy v1 row alongside v6 rows (both loadable)", async () => {
     await savePlan(
       samplePlanV6({ name: "v6", updatedAt: "2026-06-15T00:00:00.000Z" }),
-      "id-v5",
+      "id-v6",
     );
     const db = await (await import("./db.ts")).openDb();
     await db.put(

@@ -203,3 +203,6 @@ do not satisfy that contract. Task 6 therefore remains unchanged.
 - **r7:** folded the reviewers' additional stale-comment citations and swept
   every current persistence description to v6 terminology; historical version
   declarations remain explicitly labeled as historical writer shapes.
+- **r8:** folded the last current-shape test labels and generalized the shared
+  validator comment to v3-v6; remaining v5 references describe v5 migration
+  inputs and validators only.

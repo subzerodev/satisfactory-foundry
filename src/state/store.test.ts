@@ -2706,7 +2706,7 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     expect(store.getState().links).toHaveLength(linksBefore);
   });
 
-  it("renaming a v1 row persists it as v5 (save-over model)", async () => {
+  it("renaming a v1 row persists it as v6 (save-over model)", async () => {
     const store = await chainStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2730,7 +2730,7 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     await db.put("plans", v1, "v1-id");
 
     await store.getState().renamePlan("v1-id", "NewName");
-    // The stored row is now v5, renamed, single "Stage 1" stage.
+    // The stored row is now v6, renamed, single "Stage 1" stage.
     const raw = (await db.get<PlanFileV6>("plans", "v1-id"))!;
     expect(raw.format_version).toBe(6);
     expect(raw.name).toBe("NewName");
@@ -2751,7 +2751,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     return store;
   }
 
-  it("exportPlan returns the stored v5 JSON verbatim (re-parses to the saved file)", async () => {
+  it("exportPlan returns the stored v6 JSON verbatim (re-parses to the saved file)", async () => {
     const store = await readyStore();
     store.getState().selectRecipe("ingot_iron");
     store.getState().setClockPercentText("37.5");
@@ -2774,7 +2774,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     expect(await store.getState().exportPlan("does-not-exist")).toBeNull();
   });
 
-  it("exportPlan emits the MIGRATED v5 form for a stored v1 row", async () => {
+  it("exportPlan emits the migrated v6 form for a stored v1 row", async () => {
     const store = await readyStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2799,7 +2799,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
 
     const json = await store.getState().exportPlan("legacy-id");
     const parsed = JSON.parse(json!) as PlanFileV6;
-    // The export is what a LOAD would see: v5, one "Stage 1" stage, createdAt kept.
+    // The export is what a load sees: v6, one "Stage 1" stage, createdAt kept.
     expect(parsed.format_version).toBe(6);
     expect(parsed.name).toBe("LegacyPlan");
     expect(parsed.stages[0]!.name).toBe("Stage 1");
@@ -3010,7 +3010,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     return store;
   }
 
-  /** A minimal valid v5 plan file with a chosen name + recipe (content marker). */
+  /** A minimal valid v6 plan file with a chosen name + recipe (content marker). */
   function planFile(name: string, recipeId: string | null): PlanFileV6 {
     return {
       format_version: 6,
@@ -3104,7 +3104,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     expect(typeof env.exportedAt).toBe("string");
     expect(env.exportedAt >= before).toBe(true); // stamped at the export moment
     expect(env.plans).toHaveLength(2);
-    // Each entry is a per-plan v5 file object (validatePlanFile-shaped).
+    // Each entry is a per-plan v6 file object (validatePlanFile-shaped).
     expect(env.plans.every((p) => p.format_version === 6)).toBe(true);
     expect(env.plans.map((p) => p.name).sort()).toEqual(["One", "Two"]);
     // Pretty-printed, matching JSON.stringify(bundle, null, 2).
