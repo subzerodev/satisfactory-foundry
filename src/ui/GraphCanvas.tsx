@@ -37,6 +37,7 @@ import "@xyflow/react/dist/style.css";
 import { useAppStore } from "../state/store.ts";
 import { canLink } from "../state/store.ts";
 import type { Catalog } from "../data/types.ts";
+import type { Fraction } from "../core/fraction.ts";
 import {
   graphToFlow,
   pickLinkItem,
@@ -45,7 +46,7 @@ import {
   RAW_NODE_WIDTH,
   RAW_NODE_HEIGHT,
 } from "./graph-flow.ts";
-import type { StageNodeData, EdgeState } from "./graph-flow.ts";
+import type { StageNodeData, EdgeState, RawFlowNode } from "./graph-flow.ts";
 import { chainPowerText } from "./advice.ts";
 
 /**
@@ -181,11 +182,43 @@ function StageNode({ data, selected }: NodeProps<StageFlowNode>) {
  * Index signature satisfies RF's Node data constraint.
  */
 interface RawFeedCardData extends Record<string, unknown> {
+  stageId: string;
+  itemId: string;
+  demand: Fraction;
   itemName: string;
   rateText: string;
+  onOpen: (identity: RawFeedIdentity) => void;
 }
 
 type RawFeedFlowNode = Node<RawFeedCardData, "rawFeed">;
+
+export interface RawFeedIdentity {
+  stageId: string;
+  itemId: string;
+}
+
+export function projectRawFeedNode(
+  node: RawFlowNode,
+  onOpen: (identity: RawFeedIdentity) => void,
+): RawFeedFlowNode {
+  return {
+    id: node.id,
+    type: "rawFeed",
+    position: node.position,
+    width: node.width,
+    height: node.height,
+    handles: node.handles.map((handle) => ({
+      ...handle,
+      position: handle.position as Position,
+    })),
+    draggable: false,
+    selectable: false,
+    deletable: false,
+    focusable: false,
+    style: { pointerEvents: "all" },
+    data: { ...node.data, onOpen },
+  };
+}
 
 /**
  * One raw-feed supply card — the drafting "supply callout" for an extraction
@@ -209,8 +242,18 @@ export function RawFeedNode({ data }: NodeProps<RawFeedFlowNode>) {
         id="out"
         isConnectable={false}
       />
-      <span className="raw-feed-node-item">{data.itemName}</span>
-      <span className="raw-feed-node-rate">{data.rateText}</span>
+      <button
+        type="button"
+        className="raw-feed-node-button nodrag nopan"
+        aria-haspopup="dialog"
+        aria-label={`Plan extraction for ${data.itemName}, ${data.rateText.replace("/min", " per minute")} required`}
+        onClick={() =>
+          data.onOpen({ stageId: data.stageId, itemId: data.itemId })
+        }
+      >
+        <span className="raw-feed-node-item">{data.itemName}</span>
+        <span className="raw-feed-node-rate">{data.rateText}</span>
+      </button>
     </div>
   );
 }
@@ -335,6 +378,7 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
   // Component-local gesture feedback — NOT store state (meaningless headless).
   // Cleared at the next canvas gesture (success or refusal), no timers.
   const [canvasNotice, setCanvasNotice] = useState<string | null>(null);
+  const [openRawFeed, setOpenRawFeed] = useState<RawFeedIdentity | null>(null);
 
   // The chain-wide power total (Stage 6 P2): "Σ ≈ X MW" over the solved+powered
   // stages, or null when none. Store-wired — GraphCanvas holds stages+catalog.
@@ -435,23 +479,26 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
   // as unknown-id. The commit-loop raw: skip is the app-level belt-and-braces.
   const rawFeedNodes: RawFeedFlowNode[] = useMemo(
     () =>
-      derived.rawFeeds.nodes.map((n) => ({
-        id: n.id,
-        type: "rawFeed",
-        position: n.position,
-        width: n.width,
-        height: n.height,
-        handles: n.handles.map((h) => ({
-          ...h,
-          position: h.position as Position,
-        })),
-        draggable: false,
-        selectable: false,
-        deletable: false,
-        data: { itemName: n.data.itemName, rateText: n.data.rateText },
-      })),
+      derived.rawFeeds.nodes.map((node) =>
+        projectRawFeedNode(node, setOpenRawFeed),
+      ),
     [derived.rawFeeds.nodes],
   );
+
+  const openRawNode = useMemo(
+    () =>
+      openRawFeed === null
+        ? undefined
+        : derived.rawFeeds.nodes.find(
+            (node) =>
+              node.data.stageId === openRawFeed.stageId &&
+              node.data.itemId === openRawFeed.itemId,
+          ),
+    [derived.rawFeeds.nodes, openRawFeed],
+  );
+  useEffect(() => {
+    if (openRawFeed !== null && openRawNode === undefined) setOpenRawFeed(null);
+  }, [openRawFeed, openRawNode]);
 
   const rawFeedEdges: Edge[] = useMemo(
     () =>

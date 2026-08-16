@@ -1226,6 +1226,11 @@ describe("graphToFlow — rawFeeds", () => {
     expect(n.data.itemName).toBe("Iron Ore");
     // The rate is the solve's own totalDemand, formatRate'd — no re-derivation.
     expect(n.data.rateText).toBe("600/min");
+    expect(n.data.stageId).toBe("s");
+    expect(n.data.itemId).toBe("ore_iron");
+    expect(n.data.demand).toBe(
+      s.solve.status === "solved" ? s.solve.result.feeds[0]!.totalDemand : null,
+    );
     expect(n.width).toBe(RAW_NODE_WIDTH);
     expect(n.height).toBe(RAW_NODE_HEIGHT);
     // One source handle mirroring stageHandles at the raw dims (LR → right).

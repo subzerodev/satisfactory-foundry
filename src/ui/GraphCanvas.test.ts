@@ -10,6 +10,9 @@
 import { describe, it, expect, vi } from "vitest";
 import type { NodeChange } from "@xyflow/react";
 import { commitNodeChange } from "./GraphCanvas.tsx";
+import { projectRawFeedNode } from "./GraphCanvas.tsx";
+import { Fraction } from "../core/fraction.ts";
+import type { RawFlowNode } from "./graph-flow.ts";
 
 describe("commitNodeChange — raw-feed non-interactivity", () => {
   const setters = () => ({
@@ -59,5 +62,33 @@ describe("commitNodeChange — raw-feed non-interactivity", () => {
     const change: NodeChange = { id: "stage1", type: "select", selected: true };
     commitNodeChange(change, s);
     expect(s.setActiveStage).toHaveBeenCalledWith("stage1");
+  });
+});
+
+describe("projectRawFeedNode", () => {
+  it("pins XYFlow interaction flags and forwards exact open identity", () => {
+    const demand = Fraction.of(100, 3);
+    const source: RawFlowNode = {
+      id: "raw:s:ore_iron",
+      type: "rawFeed",
+      position: { x: 10, y: 20 },
+      width: 150,
+      height: 44,
+      handles: [],
+      data: {
+        stageId: "s",
+        itemId: "ore_iron",
+        demand,
+        itemName: "Iron Ore",
+        rateText: "100/3/min",
+      },
+    };
+    const onOpen = vi.fn();
+    const projected = projectRawFeedNode(source, onOpen);
+    expect(projected.focusable).toBe(false);
+    expect(projected.style?.pointerEvents).toBe("all");
+    expect(projected.data.demand).toBe(demand);
+    projected.data.onOpen({ stageId: "s", itemId: "ore_iron" });
+    expect(onOpen).toHaveBeenCalledWith({ stageId: "s", itemId: "ore_iron" });
   });
 });

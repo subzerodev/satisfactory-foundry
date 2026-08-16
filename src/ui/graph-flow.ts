@@ -138,7 +138,13 @@ export interface RawFlowNode {
   width: number;
   height: number;
   handles: FlowHandle[];
-  data: { itemName: string; rateText: string };
+  data: {
+    stageId: string;
+    itemId: string;
+    demand: Fraction;
+    itemName: string;
+    rateText: string;
+  };
 }
 
 /** A derived raw-feed edge (Stage 11 / Phase 1): the dashed hairline from a
@@ -615,7 +621,13 @@ function deriveRawFeeds(
         width: RAW_NODE_WIDTH,
         height: RAW_NODE_HEIGHT,
         handles: [rawFeedHandle(flowDirection)],
-        data: { itemName, rateText },
+        data: {
+          stageId,
+          itemId,
+          demand: feed.totalDemand,
+          itemName,
+          rateText,
+        },
       });
       edges.push({
         id: `rawedge:${stageId}:${itemId}`,
