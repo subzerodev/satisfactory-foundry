@@ -104,6 +104,15 @@ export interface PurityMixText {
   pure: string;
 }
 
+function copyExtractionSelection(
+  selection: ExtractionSelection,
+): ExtractionSelection {
+  return {
+    ...selection,
+    ...(selection.purityMix ? { purityMix: { ...selection.purityMix } } : {}),
+  };
+}
+
 /**
  * Per-link transport configuration (Stage 7 / Phase 2, frozen Axis 1). RAW USER
  * TEXT, parsed at derive time — the established Selection idiom (clock / capacity
@@ -1613,7 +1622,7 @@ export function createAppStore(storage?: StateStorage) {
                 extraction[key] = value;
               }
               if (selection === null) delete extraction[itemId];
-              else extraction[itemId] = { ...selection };
+              else extraction[itemId] = copyExtractionSelection(selection);
               const nextStage: StageNode = {
                 ...stage,
                 ...(Object.keys(extraction).length > 0

@@ -1631,6 +1631,55 @@ describe("stage graph — removeStage cursor + cascade rules (Stage 3 P1)", () =
 });
 
 describe("extraction selection state (#112)", () => {
+  it("clones purity mix input at the action boundary", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    const id = store.getState().activeStageId;
+    const purityMix = { impure: "1", normal: "2", pure: "3" };
+
+    store.getState().setExtractionSelection(id, "stone", {
+      machineId: "miner_mk3",
+      clockPercentText: "150",
+      purityMix,
+    });
+    purityMix.normal = "changed outside the store";
+
+    const stored = store.getState().stages[id]!.extraction?.stone;
+    expect(stored?.purityMix).toEqual({
+      impure: "1",
+      normal: "2",
+      pure: "3",
+    });
+    expect(stored?.purityMix).not.toBe(purityMix);
+  });
+
+  it("stores and removes a purity mix under the __proto__ item key", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    const id = store.getState().activeStageId;
+
+    store.getState().setExtractionSelection(id, "__proto__", {
+      machineId: "miner_mk1",
+      clockPercentText: "100",
+      purityMix: { impure: "1", normal: "0", pure: "0" },
+    });
+
+    const extraction = store.getState().stages[id]!.extraction!;
+    expect(Object.getPrototypeOf(extraction)).toBeNull();
+    expect(Object.hasOwn(extraction, "__proto__")).toBe(true);
+    expect(extraction.__proto__?.purityMix).toEqual({
+      impure: "1",
+      normal: "0",
+      pure: "0",
+    });
+
+    store.getState().setExtractionSelection(id, "__proto__", {
+      machineId: "miner_mk1",
+      clockPercentText: "100",
+    });
+    expect(
+      store.getState().stages[id]!.extraction?.__proto__?.purityMix,
+    ).toBeUndefined();
+  });
+
   it("sets, clears, and isolates extraction intent by stage and raw item", () => {
     const store = createAppStore(makeStorageStub().storage);
     const first = store.getState().activeStageId;

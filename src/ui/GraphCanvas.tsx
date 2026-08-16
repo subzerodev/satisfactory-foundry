@@ -354,7 +354,35 @@ export function ExtractionPanel({
       onSetSelection({
         machineId,
         clockPercentText: selection?.clockPercentText ?? "100",
+        ...(selection?.purityMix
+          ? { purityMix: { ...selection.purityMix } }
+          : {}),
       });
+  };
+
+  const setPurityEnabled = (enabled: boolean) => {
+    if (selection === null || result.status !== "planned") return;
+    if (enabled) {
+      onSetSelection({
+        ...selection,
+        purityMix: { impure: "0", normal: String(result.count), pure: "0" },
+      });
+      return;
+    }
+    const next = { ...selection };
+    delete next.purityMix;
+    onSetSelection(next);
+  };
+
+  const setPurityCount = (
+    field: keyof NonNullable<StoredExtractionSelection["purityMix"]>,
+    value: string,
+  ) => {
+    if (selection?.purityMix === undefined) return;
+    onSetSelection({
+      ...selection,
+      purityMix: { ...selection.purityMix, [field]: value },
+    });
   };
 
   return (
@@ -437,7 +465,7 @@ export function ExtractionPanel({
       {result.status === "planned" && (
         <div className="extraction-result">
           <p>
-            Purity <strong>Normal</strong>
+            <strong>Normal baseline</strong>
           </p>
           <p>
             <strong>
@@ -461,6 +489,92 @@ export function ExtractionPanel({
             {transportText(result.transport, catalog)}
           </p>
           <p>Power: {result.powerText}</p>
+          {rawNode.data.itemId !== "water" && (
+            <>
+              <label className="extraction-purity-toggle">
+                <input
+                  type="checkbox"
+                  aria-label="Use node mix"
+                  checked={selection!.purityMix !== undefined}
+                  onChange={(event) => setPurityEnabled(event.target.checked)}
+                />
+                <span>Use node mix</span>
+              </label>
+              {selection!.purityMix !== undefined && (
+                <>
+                  <div className="extraction-purity-fields">
+                    <label>
+                      <span>Impure</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        aria-label="Impure nodes"
+                        value={selection!.purityMix.impure}
+                        onChange={(event) =>
+                          setPurityCount("impure", event.target.value)
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Normal</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        aria-label="Normal nodes"
+                        value={selection!.purityMix.normal}
+                        onChange={(event) =>
+                          setPurityCount("normal", event.target.value)
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Pure</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        aria-label="Pure nodes"
+                        value={selection!.purityMix.pure}
+                        onChange={(event) =>
+                          setPurityCount("pure", event.target.value)
+                        }
+                      />
+                    </label>
+                  </div>
+                  {result.purity?.status === "invalid" && (
+                    <p className="extraction-error">{result.purity.detail}</p>
+                  )}
+                  {result.purity?.status === "planned" && (
+                    <div className="extraction-purity-result">
+                      <p>
+                        <strong>{result.purity.nodeCount} nodes</strong>
+                      </p>
+                      <p>
+                        {formatRate(result.purity.totalSupply)}/min supplied ·{" "}
+                        {formatRate(result.purity.balance.amount)}/min{" "}
+                        {result.purity.balance.status}
+                      </p>
+                      <p
+                        className={
+                          result.purity.transport.status !== "none" &&
+                          result.purity.transport.status !== "available"
+                            ? "extraction-warning"
+                            : undefined
+                        }
+                      >
+                        {result.purity.transport.status === "none"
+                          ? "Output: no node output."
+                          : transportText(result.purity.transport, catalog)}
+                      </p>
+                      <p>Power: {result.purity.powerText}</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
         </div>
       )}
       {hasResourceWell && rawNode.data.itemId !== "nitrogen_gas" && (

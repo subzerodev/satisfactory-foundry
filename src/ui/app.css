@@ -1349,6 +1349,43 @@ body {
   min-width: 0;
 }
 
+.extraction-purity-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.extraction-purity-toggle input {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.extraction-purity-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.extraction-purity-fields label {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.extraction-purity-fields input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.extraction-purity-result {
+  margin-top: 6px;
+  padding-top: 2px;
+  border-top: 1px dashed var(--border-soft);
+}
+
 .extraction-result {
   margin-top: 8px;
   padding-top: 2px;
