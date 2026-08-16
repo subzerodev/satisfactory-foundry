@@ -36,8 +36,8 @@ import {
   validatePlanFile,
 } from "../data/plan-store.ts";
 import type {
-  PlanFileV6,
-  PlanStageV6,
+  PlanFileV7,
+  PlanStageV7,
   PlanListEntry,
 } from "../data/plan-store.ts";
 
@@ -95,6 +95,13 @@ export interface StageNode {
 export interface ExtractionSelection {
   machineId: string;
   clockPercentText: string;
+  purityMix?: PurityMixText;
+}
+
+export interface PurityMixText {
+  impure: string;
+  normal: string;
+  pure: string;
 }
 
 /**
@@ -227,7 +234,7 @@ export interface AppState {
   placementSeq: number;
   /**
    * The flow-chart orientation (Stage 10 / Phase 1), default "LR". Persists
-   * per-plan in the v6 file (orientation is a property of the drawing, like
+   * per-plan in the current file (orientation is a property of the drawing, like
    * positions); a switch re-slots every NON-userPlaced stage + flips the handle
    * sides. The store stays window-free — the plan file is its only persistence.
    */
@@ -235,7 +242,7 @@ export interface AppState {
   /**
    * The set of stage ids the user hand-dragged (Stage 10 / Phase 1). `true`-valued
    * membership only; set by `setStagePosition` (the drag-END commit), pruned with
-   * the stage on remove, and seeded from v6's required per-stage boolean. Legacy
+   * the stage on remove, and seeded from the required per-stage boolean. Legacy
    * migration materializes the original position-based intent before rebuild. A
    * direction switch re-slots only NON-members; save writes the required boolean
    * because position presence alone cannot distinguish auto from user placement.
@@ -388,7 +395,7 @@ export interface Actions {
   loadPlan(id: string): Promise<void>;
   renamePlan(id: string, name: string): Promise<void>;
   deletePlan(id: string): Promise<void>;
-  /** Serialize a stored plan (migrated to v6) as pretty JSON, or null if the
+  /** Serialize a stored plan (migrated to v7) as pretty JSON, or null if the
    *  row is missing/corrupt. Headless — App owns the Blob/anchor download. */
   exportPlan(id: string): Promise<string | null>;
   /** Validate + save an exported plan file's text under the save-over model.
@@ -408,7 +415,7 @@ export type Store = AppState & Actions;
  * Stage 19 (#92): the export-all bundle envelope. A distinct `kind` string makes
  * single-file-vs-bundle sniffing exact (a per-plan file has no `kind`), and
  * `format_version` reserves bundle evolution independently of the per-plan file
- * versions. Each `plans[]` entry is EXACTLY a per-plan file object (latest v6 as
+ * versions. Each `plans[]` entry is EXACTLY a per-plan file object (latest v7 as
  * written by exportPlan's source), revived on import through the SAME
  * `validatePlanFile` path — one migration surface, no second format to version.
  */
@@ -416,7 +423,7 @@ export interface PlanBundle {
   kind: "foundry-plan-bundle";
   format_version: 1;
   exportedAt: string; // ISO
-  plans: PlanFileV6[];
+  plans: PlanFileV7[];
 }
 
 /** The sniff constant (Axis 3): import branches to the bundle arm iff a parsed
@@ -718,7 +725,7 @@ function deriveAllStages(
 }
 
 /**
- * Whole-graph replacement from a loaded `PlanFileV6` (Stage 3 / Phase 3, frozen
+ * Whole-graph replacement from a loaded `PlanFileV7` (Stage 3 / Phase 3, frozen
  * Axis 4; Stage 10 / Phase 1 adds direction + userPlaced). Builds a fresh graph —
  * new stage/link uuids — and applies the frozen load treatments per stage:
  *
@@ -734,7 +741,7 @@ function deriveAllStages(
  *   the FILE's direction — a v1-migrated positionless stage must slot per the
  *   orientation the file was saved in);
  * - flowDirection restored from the file (v1-v4 migration defaults to "LR"); userPlaced
- *   read directly from v6's required boolean. Legacy migration materializes the
+ *   read directly from v7's required boolean. Legacy migration materializes the
  *   conservative original-position rule before this rebuild, so no transient
  *   source-version flag is needed;
  * - stageOrder = array order; links rebuilt from indices; placementSeq =
@@ -747,7 +754,7 @@ function deriveAllStages(
  */
 function rebuildFromPlan(
   slice: GraphSlice,
-  plan: PlanFileV6,
+  plan: PlanFileV7,
 ): GraphSlice & { placementSeq: number } {
   const { catalog } = slice;
   // Current global tiers (the active mirror holds the canonical global value).
@@ -791,7 +798,7 @@ function rebuildFromPlan(
     // Positionless entries (v1-migrated) auto-slot in the FILE's direction; a
     // saved position restores exactly. The fallback direction is plan-level.
     positions[id] = entry.position ?? placementSlot(i, plan.flowDirection);
-    // Validation always returns v6; legacy migration has already materialized
+    // Validation always returns v7; legacy migration has already materialized
     // placement origin into this required boolean.
     if (entry.userPlaced) userPlaced[id] = true;
   });
@@ -1242,7 +1249,7 @@ export function createAppStore(storage?: StateStorage) {
         // savePlanAs). Returns "empty-name" for a whitespace name (caller shapes
         // the message) or "saved" once the row is committed.
         const savePlanFromFile = async (
-          file: PlanFileV6,
+          file: PlanFileV7,
         ): Promise<"saved" | "empty-name"> => {
           const trimmed = file.name.trim();
           if (trimmed === "") return "empty-name";
@@ -1251,7 +1258,7 @@ export function createAppStore(storage?: StateStorage) {
           const now = new Date().toISOString();
           if (match) {
             const prior = await loadPlanFile(match.id);
-            const plan: PlanFileV6 = {
+            const plan: PlanFileV7 = {
               ...file,
               name: trimmed,
               createdAt: prior?.createdAt ?? now,
@@ -1259,7 +1266,7 @@ export function createAppStore(storage?: StateStorage) {
             };
             await savePlanFile(plan, match.id);
           } else {
-            const plan: PlanFileV6 = {
+            const plan: PlanFileV7 = {
               ...file,
               name: trimmed,
               createdAt: now,
@@ -1878,11 +1885,11 @@ export function createAppStore(storage?: StateStorage) {
                 // stageOrder (array order IS stageOrder), each carrying name +
                 // selection + position; links index-encoded (stage id → index).
                 // Position is written unconditionally for exact restoration;
-                // v6 also writes the required placement boolean because position
+                // v7 also writes the required placement boolean because position
                 // presence alone cannot distinguish auto from user placement.
                 const s = get();
                 const indexOf = new Map(s.stageOrder.map((id, i) => [id, i]));
-                const stages: PlanStageV6[] = s.stageOrder.map((id) => {
+                const stages: PlanStageV7[] = s.stageOrder.map((id) => {
                   const node = s.stages[id]!;
                   return {
                     name: node.name,
@@ -1907,8 +1914,8 @@ export function createAppStore(storage?: StateStorage) {
                 }));
                 if (match) {
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV6 = {
-                    format_version: 6,
+                  const plan: PlanFileV7 = {
+                    format_version: 7,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
@@ -1918,8 +1925,8 @@ export function createAppStore(storage?: StateStorage) {
                   };
                   await savePlanFile(plan, match.id);
                 } else {
-                  const plan: PlanFileV6 = {
-                    format_version: 6,
+                  const plan: PlanFileV7 = {
+                    format_version: 7,
                     name: trimmed,
                     createdAt: now,
                     updatedAt: now,
@@ -1940,7 +1947,7 @@ export function createAppStore(storage?: StateStorage) {
             return enqueue(async () => {
               set({ planError: null });
               try {
-                // Load with origin: validation returns v6, whose required
+                // Load with origin: validation returns v7, whose required
                 // userPlaced flag already materializes native or migrated origin.
                 const file = await loadPlanFile(id);
                 if (file === null) {
@@ -1984,9 +1991,9 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                // loadPlanFile returns v6 (migrating older rows), so renaming an
-                // older row rewrites it as v6 under the save-over model.
-                const renamed: PlanFileV6 = {
+                // loadPlanFile returns v7 (migrating older rows), so renaming an
+                // older row rewrites it as v7 under the save-over model.
+                const renamed: PlanFileV7 = {
                   ...plan,
                   name: trimmed,
                   updatedAt: new Date().toISOString(),
@@ -2037,7 +2044,7 @@ export function createAppStore(storage?: StateStorage) {
             await enqueue(async () => {
               const metas = await listPlanFiles();
               if (metas.length === 0) return; // result stays null
-              const plans: PlanFileV6[] = [];
+              const plans: PlanFileV7[] = [];
               for (const meta of metas) {
                 const file = await loadPlanFile(meta.id);
                 // A row that fails to load (corrupt/foreign) is skipped rather

@@ -20,6 +20,7 @@ import type {
   PlanFileV4,
   PlanFileV5,
   PlanFileV6,
+  PlanFileV7,
 } from "./plan-store.ts";
 
 describe("plan-store — v6 extraction and explicit placement (#112)", () => {
@@ -82,7 +83,7 @@ describe("plan-store — v6 extraction and explicit placement (#112)", () => {
     }
   });
 
-  it("validates and round-trips extraction intent including raw clock text", async () => {
+  it("migrates extraction intent including raw clock text", async () => {
     const plan: PlanFileV6 = {
       ...migrateV5(samplePlanV5()),
       stages: [
@@ -96,13 +97,109 @@ describe("plan-store — v6 extraction and explicit placement (#112)", () => {
         },
       ],
     };
-    await savePlan(plan, "v6");
+    const db = await (await import("./db.ts")).openDb();
+    await db.put("plans", plan, "v6");
     const loaded = await loadPlan("v6");
-    expect(loaded?.format_version).toBe(6);
+    expect(loaded?.format_version).toBe(7);
     expect(loaded?.stages[0]!.extraction?.stone).toEqual({
       machineId: "miner_mk3",
       clockPercentText: "bad edit",
     });
+  });
+});
+
+describe("plan-store — v7 purity mix persistence (#124)", () => {
+  it("validates and round-trips all raw purity strings", async () => {
+    const plan = samplePlanV7({
+      stages: [
+        {
+          name: "Stage 1",
+          selection: sampleSelection(),
+          userPlaced: false,
+          extraction: {
+            stone: {
+              machineId: "miner_mk3",
+              clockPercentText: "bad edit",
+              purityMix: {
+                impure: "0002",
+                normal: "1.5",
+                pure: "9007199254740992",
+              },
+            },
+          },
+        },
+      ],
+    });
+    await savePlan(plan, "v7");
+
+    const loaded = await loadPlan("v7");
+    expect(loaded?.format_version).toBe(7);
+    expect(loaded?.stages[0]!.extraction?.stone).toEqual(
+      plan.stages[0]!.extraction?.stone,
+    );
+    expect((await listPlans()).map((entry) => entry.id)).toContain("v7");
+  });
+
+  it.each([
+    null,
+    ["0", "1", "0"],
+    { impure: "0", normal: "1" },
+    { impure: "0", normal: 1, pure: "0" },
+  ])("rejects malformed optional purity mix %j", async (purityMix) => {
+    const db = await (await import("./db.ts")).openDb();
+    const good = samplePlanV7();
+    await db.put(
+      "plans",
+      {
+        ...good,
+        stages: [
+          {
+            ...good.stages[0],
+            extraction: {
+              stone: {
+                machineId: "miner_mk3",
+                clockPercentText: "100",
+                purityMix,
+              },
+            },
+          },
+        ],
+      },
+      "bad-v7",
+    );
+    expect(await loadPlan("bad-v7")).toBeNull();
+  });
+
+  it("migrates v6 by copying only historical fields into a null-prototype record", async () => {
+    const extraction = Object.create(null) as Record<string, unknown>;
+    extraction.__proto__ = {
+      machineId: "miner_mk1",
+      clockPercentText: "bad edit",
+      purityMix: { impure: "9", normal: "8", pure: "7" },
+    };
+    const v6 = samplePlanV6({
+      stages: [
+        {
+          name: "Stage 1",
+          selection: sampleSelection(),
+          userPlaced: false,
+          extraction,
+        } as never,
+      ],
+    });
+    const db = await (await import("./db.ts")).openDb();
+    await db.put("plans", v6, "v6-extra");
+
+    const loaded = await loadPlan("v6-extra");
+    expect(loaded?.format_version).toBe(7);
+    const migrated = loaded!.stages[0]!.extraction!;
+    expect(Object.getPrototypeOf(migrated)).toBeNull();
+    expect(Object.hasOwn(migrated, "__proto__")).toBe(true);
+    expect(migrated.__proto__).toEqual({
+      machineId: "miner_mk1",
+      clockPercentText: "bad edit",
+    });
+    expect(migrated.__proto__?.purityMix).toBeUndefined();
   });
 });
 
@@ -207,6 +304,14 @@ function samplePlanV6(overrides?: Partial<PlanFileV6>): PlanFileV6 {
   };
 }
 
+function samplePlanV7(overrides?: Partial<PlanFileV7>): PlanFileV7 {
+  return {
+    ...samplePlanV6(),
+    format_version: 7,
+    ...overrides,
+  };
+}
+
 /** A well-formed v1 file (the legacy shape, written via raw db.put). */
 function samplePlanV1(overrides?: Partial<PlanFileV1>): PlanFileV1 {
   return {
@@ -239,13 +344,13 @@ describe("plan-store — environment", () => {
   });
 });
 
-describe("plan-store — save/load/delete round-trip (v6)", () => {
+describe("plan-store — save/load/delete round-trip (v7)", () => {
   it("save → load returns the exact plan, fractional clock + override strings intact", async () => {
     const id = crypto.randomUUID();
-    await savePlan(samplePlanV6(), id);
+    await savePlan(samplePlanV7(), id);
     const loaded = await loadPlan(id);
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(6);
+    expect(loaded!.format_version).toBe(7);
     expect(loaded!.stages[0]!.selection.clockPercentText).toBe("37.5");
     expect(loaded!.stages[0]!.selection.overrides.feeds.ore_iron).toEqual([
       "480",
@@ -261,7 +366,7 @@ describe("plan-store — save/load/delete round-trip (v6)", () => {
 
   it("round-trips a multi-stage graph with index-encoded links", async () => {
     const id = crypto.randomUUID();
-    const plan = samplePlanV6({
+    const plan = samplePlanV7({
       stages: [
         {
           name: "A",
@@ -294,7 +399,7 @@ describe("plan-store — save/load/delete round-trip (v6)", () => {
 
   it("round-trips per-link transport verbatim (raw user text intact)", async () => {
     const id = crypto.randomUUID();
-    const plan = samplePlanV6({
+    const plan = samplePlanV7({
       stages: [
         { name: "A", selection: sampleSelection(), userPlaced: false },
         { name: "B", selection: sampleSelection(), userPlaced: false },
@@ -353,7 +458,7 @@ describe("plan-store — save/load/delete round-trip (v6)", () => {
 
   it("deletePlan removes the row; a later load → null", async () => {
     const id = crypto.randomUUID();
-    await savePlan(samplePlanV6(), id);
+    await savePlan(samplePlanV7(), id);
     await deletePlan(id);
     expect(await loadPlan(id)).toBeNull();
   });
@@ -362,15 +467,15 @@ describe("plan-store — save/load/delete round-trip (v6)", () => {
 describe("plan-store — listPlans", () => {
   it("sorts by updatedAt descending", async () => {
     await savePlan(
-      samplePlanV6({ name: "old", updatedAt: "2026-01-01T00:00:00.000Z" }),
+      samplePlanV7({ name: "old", updatedAt: "2026-01-01T00:00:00.000Z" }),
       "id-old",
     );
     await savePlan(
-      samplePlanV6({ name: "new", updatedAt: "2026-12-31T00:00:00.000Z" }),
+      samplePlanV7({ name: "new", updatedAt: "2026-12-31T00:00:00.000Z" }),
       "id-new",
     );
     await savePlan(
-      samplePlanV6({ name: "mid", updatedAt: "2026-06-15T00:00:00.000Z" }),
+      samplePlanV7({ name: "mid", updatedAt: "2026-06-15T00:00:00.000Z" }),
       "id-mid",
     );
     const list = await listPlans();
@@ -378,10 +483,10 @@ describe("plan-store — listPlans", () => {
     expect(list[0]).toMatchObject({ id: "id-new", name: "new" });
   });
 
-  it("lists a legacy v1 row alongside v6 rows (both loadable)", async () => {
+  it("lists a legacy v1 row alongside v7 rows (both loadable)", async () => {
     await savePlan(
-      samplePlanV6({ name: "v6", updatedAt: "2026-06-15T00:00:00.000Z" }),
-      "id-v6",
+      samplePlanV7({ name: "v7", updatedAt: "2026-06-15T00:00:00.000Z" }),
+      "id-v7",
     );
     const db = await (await import("./db.ts")).openDb();
     await db.put(
@@ -390,11 +495,11 @@ describe("plan-store — listPlans", () => {
       "id-v1",
     );
     const list = await listPlans();
-    expect(list.map((e) => e.name)).toEqual(["v1", "v6"]);
+    expect(list.map((e) => e.name)).toEqual(["v1", "v7"]);
   });
 
   it("skips a corrupt row (never crashes) but keeps valid ones", async () => {
-    await savePlan(samplePlanV6({ name: "good" }), "id-good");
+    await savePlan(samplePlanV7({ name: "good" }), "id-good");
     // A foreign / corrupt row written directly under the plans store.
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", { garbage: true }, "id-bad");
@@ -434,8 +539,8 @@ describe("plan-store — isPlanFileV2 accept/reject", () => {
     expect(loaded!.stages[0]!.selection.machineCount).toBeNull();
   });
 
-  it("rejects an unknown format_version (neither 1/2/3/4/5/6 → corrupt)", async () => {
-    await putRaw({ ...samplePlanV3(), format_version: 7 });
+  it("rejects future format_version 8 on an otherwise valid v7 payload", async () => {
+    await putRaw({ ...samplePlanV7(), format_version: 8 });
     expect(await loadPlan("id")).toBeNull();
   });
 
@@ -584,12 +689,12 @@ describe("plan-store — migrateV1", () => {
     expect(v2.name).toBe("Legacy Plan");
   });
 
-  it("loadPlan migrates a stored v1 row transparently (returns v6)", async () => {
+  it("loadPlan migrates a stored v1 row transparently (returns v7)", async () => {
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", samplePlanV1(), "id");
     const loaded = await loadPlan("id");
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(6);
+    expect(loaded!.format_version).toBe(7);
     expect(loaded!.flowDirection).toBe("LR");
     expect(loaded!.stages[0]!.name).toBe("Stage 1");
     expect(loaded!.stages[0]!.selection.clockPercentText).toBe("37.5");
@@ -677,12 +782,12 @@ describe("plan-store — migrateV3 (v3 → v4, identity on links)", () => {
     });
   });
 
-  it("a stored v3 row still loads (migrated to v6) through loadPlan", async () => {
+  it("a stored v3 row still loads (migrated to v7) through loadPlan", async () => {
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", samplePlanV3({ name: "legacy-v3" }), "id");
     const loaded = await loadPlan("id");
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(6);
+    expect(loaded!.format_version).toBe(7);
     expect(loaded!.name).toBe("legacy-v3");
   });
 });
@@ -711,12 +816,12 @@ describe("plan-store — migrateV4 (v4 → v5, direction defaults LR)", () => {
     expect(v5.stages[0]!.userPlaced).toBeUndefined();
   });
 
-  it("a stored v4 row still loads (migrated to v6) through loadPlan", async () => {
+  it("a stored v4 row still loads (migrated to v7) through loadPlan", async () => {
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", samplePlanV4({ name: "legacy-v4" }), "id");
     const loaded = await loadPlan("id");
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(6);
+    expect(loaded!.format_version).toBe(7);
     expect(loaded!.flowDirection).toBe("LR");
     expect(loaded!.name).toBe("legacy-v4");
   });
@@ -745,7 +850,7 @@ describe("plan-store — v5 round-trip (flowDirection + userPlaced)", () => {
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", plan, id);
     const loaded = await loadPlan(id);
-    expect(loaded!.format_version).toBe(6);
+    expect(loaded!.format_version).toBe(7);
     expect(loaded!.flowDirection).toBe("TB");
     expect(loaded!.stages[0]!.userPlaced).toBe(true);
     expect(loaded!.stages[1]!.userPlaced).toBe(false);
