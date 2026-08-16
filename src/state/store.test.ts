@@ -2833,12 +2833,19 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     const store = await readyStore();
     store.getState().selectRecipe("ingot_iron");
     store.getState().setClockPercentText("42");
+    store
+      .getState()
+      .setExtractionSelection(store.getState().activeStageId, "stone", {
+        machineId: "miner_mk3",
+        clockPercentText: "125",
+        purityMix: { impure: "001", normal: "2", pure: "0003" },
+      });
     await store.getState().savePlanAs("Original");
     const srcId = store.getState().plans![0]!.id;
     const json = (await store.getState().exportPlan(srcId))!;
 
     // Rename the payload so it lands as a new row (not an overwrite).
-    const payload = JSON.parse(json) as PlanFileV2;
+    const payload = JSON.parse(json) as PlanFileV7;
     payload.name = "Imported";
     payload.createdAt = "1999-12-31T00:00:00.000Z"; // untrusted foreign stamp
     const before = new Date().toISOString();
@@ -2850,10 +2857,15 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     expect(imported.id).not.toBe(srcId); // fresh id
     // createdAt is NOW (not the foreign 1999 stamp).
     const db = await (await import("../data/db.ts")).openDb();
-    const stored = (await db.get<PlanFileV2>("plans", imported.id))!;
+    const stored = (await db.get<PlanFileV7>("plans", imported.id))!;
     expect(stored.createdAt >= before).toBe(true);
     expect(stored.stages[0]!.selection.clockPercentText).toBe("42");
     expect(stored.stages[0]!.selection.recipeId).toBe("ingot_iron");
+    expect(stored.stages[0]!.extraction?.stone?.purityMix).toEqual({
+      impure: "001",
+      normal: "2",
+      pure: "0003",
+    });
   });
 
   it("import OVER an existing name overwrites in place, preserving the row's createdAt", async () => {

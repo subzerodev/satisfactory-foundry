@@ -305,9 +305,24 @@ function samplePlanV6(overrides?: Partial<PlanFileV6>): PlanFileV6 {
 }
 
 function samplePlanV7(overrides?: Partial<PlanFileV7>): PlanFileV7 {
+  const v6 = samplePlanV6();
   return {
-    ...samplePlanV6(),
+    ...v6,
     format_version: 7,
+    stages: v6.stages.map((stage, index) =>
+      index === 0
+        ? {
+            ...stage,
+            extraction: {
+              stone: {
+                machineId: "miner_mk3",
+                clockPercentText: "125",
+                purityMix: { impure: "01", normal: "2", pure: "003" },
+              },
+            },
+          }
+        : stage,
+    ),
     ...overrides,
   };
 }
@@ -362,6 +377,11 @@ describe("plan-store — save/load/delete round-trip (v7)", () => {
     });
     expect(loaded!.stages[0]!.name).toBe("Stage 1");
     expect(loaded!.stages[0]!.position).toEqual({ x: 40, y: 40 });
+    expect(loaded!.stages[0]!.extraction?.stone?.purityMix).toEqual({
+      impure: "01",
+      normal: "2",
+      pure: "003",
+    });
   });
 
   it("round-trips a multi-stage graph with index-encoded links", async () => {
