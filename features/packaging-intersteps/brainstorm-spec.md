@@ -53,10 +53,15 @@ unpackage recipe from the current catalog. An unknown key remains recoverable
 stale intent, while inconsistent package/unpackage ID combinations are
 unrepresentable. The clock is shared by both ends, raw text, and uses the existing `(0,250]`
 parser/power model. The store exposes `setLinkInterstep(linkId, value|null)`.
-Every call updates the link and recomputes cached reconciliation atomically;
-enable, disable, pair, and clock edits cannot leave findings from the prior
-intent behind. Lifecycle tests pin enable/disable and valid-to-invalid-to-valid
-transitions.
+Enabling atomically writes the interstep, resets forward transport to belt, and
+seeds return transport as belt. Disabling atomically removes the interstep and
+writes explicit pipe transport, the normal fluid default. Every call recomputes
+cached reconciliation; enable, disable, pair, and clock edits cannot leave
+findings from the prior intent behind. Lifecycle tests pin enable/disable from
+non-default modes and valid-to-invalid-to-valid transitions.
+`setLinkTransport` and `clearLinkTransport` also preserve any interstep field and
+recompute reconciliation, because a forward-mode edit can change interstep
+validity. Legal-to-illegal-to-legal forward edits are pinned.
 Changing the pair keeps clock; disabling removes intent. `returnTransport`
 configures the empty-container route independently and defaults to belt.
 Removing a link removes it naturally.
@@ -106,11 +111,18 @@ sum of both machine counts. One pure `deriveLinkPlan` boundary calls an
 `effectiveLinkCargo` projection
 accepts independently resolved producer supply and consumer demand, maps each
 through the package ratio, and returns forward packaged item plus distinct
-packaged supply/demand and the return container item/rate. Inspector results,
-edge chips, reconciliation/train findings, and every transport consumer use
-the resulting derived-link plan rather than independently reading the original fluid item/rate.
-This preserves under/over-supply and is load-bearing for packaged Nitrogen at
-`D/4`.
+packaged supply/demand and the return container item/rate. Inspector transport
+results, edge transport chips, train findings, and every transport consumer use
+the resulting cargo projection rather than independently reading the original
+fluid item/rate. This is load-bearing for packaged Nitrogen at `D/4`.
+
+Material reconciliation remains in the original link item's fluid/gas units.
+Its findings, edge shortage/surplus wording, and producer machine-count apply
+action continue to use original supply/demand: a 100 m3/min Nitrogen shortfall
+still reads and applies as 100 m3/min. The derived-link plan carries both
+explicitly named views: `materialSupply/materialDemand` for reconciliation and
+`cargoSupply/cargoDemand` for transport. Nitrogen tests pin the fluid finding
+beside the independently quarter-scaled cargo transport rate.
 
 The derived-link plan is discriminated. `ready` carries effective cargo, optional
 independently resolved supply/demand, machine math when demand is solved, and
@@ -124,7 +136,7 @@ other route.
 invalid pair, invalid clock, unsafe machine-count overflow, or a pipe/fluid-truck
 mode on either packaged-cargo route. It has no counts, cargo, or transport
 results. This boundary alone interprets projection failure and supplies the
-surface-neutral problem state. Edge status, the one reconciliation finding,
+surface-neutral problem state. Edge status, the one interstep reconciliation finding,
 and the inspector read that result; unavailable never falls through to an `ok`
 fluid edge. The result is pure and recomputable, not a second persisted or
 cached store state.
@@ -157,10 +169,11 @@ For a fluid/gas link with at least one discovered pair, render a `Package for
 transport` checkbox below identity. Also render it whenever saved intent exists,
 even if catalog replacement makes the pair unavailable, so the user can always
 disable/recover. Enabling selects the sole pair, or shows a pair menu when
-several exist, defaults clock to 100, and defaults both routes to belt. The
+several exist, defaults clock to 100, and atomically resets both packaged-cargo
+routes to belt even when the prior fluid route was pipe/train/fluid-truck. The
 existing Mode menu becomes `Forward mode`; a second `Empty return mode` uses the
-same solid-mode controls and trip editors. Disabling restores the normal
-fluid-mode path (pipe default).
+same solid-mode controls and trip editors. Disabling always restores explicit
+pipe rather than retaining a solid-only route.
 
 The interstep block shows package/unpackage machine counts separately, total
 power, packaged/min forward, and empty containers/min return. Forward and return
@@ -182,9 +195,11 @@ count is guessed.
 - Imported packaging plus pipe/fluid-truck is rejected; derive repeats the guard.
 - Inspector, edge chip, train findings, and both route results consume the same
   effective packaged/container projection, including Nitrogen's non-1:1 ratio.
-- Nitrogen under/over-supply maps producer supply and consumer demand separately;
+- Nitrogen under/over-supply keeps fluid reconciliation/apply amounts while
+  mapping producer supply and consumer demand separately for cargo transport;
   stale intent renders a problem edge/finding/error and no transport results.
-- Inspector enable/pair/clock/disable and legal-mode switching.
+- Inspector enable/pair/clock/disable and legal-mode switching, including
+  non-default pre-enable and pre-disable modes.
 - Stale pair IDs still expose disable/recovery; forward and return solid modes
   configure independently.
 - Chromium desktop/mobile interaction and containment with all prior gates.
