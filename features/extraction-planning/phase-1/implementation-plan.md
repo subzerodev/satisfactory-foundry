@@ -230,7 +230,7 @@ node scripts/extraction-panel-browser-check.mjs
 ```
 
 Expected: non-zero exit with a named top/side/bottom overlap or overflow assertion in at least one seeded state.
-- [ ] Add CSS caps of 260px desktop and 220px at `<=720px`, internal vertical scroll, mobile side gutters/top clearance, and no nested card styling.
+- [ ] Add CSS caps of 260px desktop and 170px at `<=720px`, internal vertical scroll, mobile side gutters/top clearance, and no nested card styling. The 170px mobile cap is the measured maximum: at 360px wide the stack starts at y=49 and the real React Flow controls start at y=220, so a 220px cap overlaps them by 49px.
 - [ ] Rerun `node scripts/extraction-panel-browser-check.mjs`; require exit 0 for all six viewport/state rows and inspect the emitted screenshots.
 - [ ] Run:
 

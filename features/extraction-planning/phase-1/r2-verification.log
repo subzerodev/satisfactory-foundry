@@ -57,8 +57,18 @@ restore result: PASS - 1 file, 4 tests
 break: skip malformed restricted-resource members; serialize extractors into a plain object
 command: npm test -- src/data/docs-loader.test.ts src/data/catalog-store.test.ts
 FAIL src/data/docs-loader.test.ts > parseDocsJson - extractor capabilities (#112) > rejects a restricted resource list with a malformed member
-FAIL src/data/catalog-store.test.ts > catalog cache - null-prototype maps survive revive (#28) > round-trips an extractor whose id is __proto__
+FAIL src/data/catalog-store.test.ts > catalog cache - null-prototype maps survive revive (#28) > round-trips an extractor and machine whose shared id is __proto__
 restore result: PASS - 2 files, 73 tests
+
+7. Correctness r2 complete cache and responsive geometry folds
+break A: serialize the extractor's matching machine into a plain object
+command: npm test -- src/data/catalog-store.test.ts
+FAIL src/data/catalog-store.test.ts > catalog cache - null-prototype maps survive revive (#28) > round-trips an extractor whose id is __proto__
+restore result: PASS - 1 file, 14 tests
+break B: raise the measured mobile stack cap from 170px to the previously specified 220px
+command: node scripts/extraction-panel-browser-check.mjs
+FAIL 360/extraction: top-right stack overlaps bottom-left controls; stack y=49..269, controls y=220..324
+restore result: PASS - 9 geometry rows and 3 interaction rows
 
 BROWSER GATE
 command: node scripts/extraction-panel-browser-check.mjs
@@ -68,8 +78,11 @@ PASS geometry 360px combined top=49 bottom=219 height=170
 PASS geometry 720px notice top=49 bottom=91 height=42
 PASS geometry 720px extraction top=49 bottom=219 height=170
 PASS geometry 720px combined top=49 bottom=219 height=170
-PASS interaction pointer/Enter/Space, replacement, live update, disappearance, focus
-screenshots: /tmp/satisfactory-foundry-112-browser/{360,720}-{notice,extraction,combined}.png and interaction.png
+PASS geometry 1280px notice top=16 bottom=58 height=42
+PASS geometry 1280px extraction top=16 bottom=241 height=225
+PASS geometry 1280px combined top=16 bottom=276 height=260
+PASS interaction 360/720/1280 pointer/Enter/Space, Limestone/Water/Oil/Nitrogen, replacement, live update, disappearance, focus
+screenshots: /tmp/satisfactory-foundry-112-browser/{360,720,1280}-{notice,extraction,combined}.png and interaction-{360,720,1280}.png
 
 POST-CODE COMPLETE SUITE
 command: npm test

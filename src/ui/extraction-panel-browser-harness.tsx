@@ -154,6 +154,18 @@ const INTERACTION_DOCS = JSON.stringify([
         mForm: "RF_LIQUID",
         mStackSize: "SS_FLUID",
       },
+      {
+        ClassName: "Desc_LiquidOil_C",
+        mDisplayName: "Crude Oil",
+        mForm: "RF_LIQUID",
+        mStackSize: "SS_FLUID",
+      },
+      {
+        ClassName: "Desc_NitrogenGas_C",
+        mDisplayName: "Nitrogen Gas",
+        mForm: "RF_GAS",
+        mStackSize: "SS_FLUID",
+      },
     ],
   },
   {
@@ -204,6 +216,42 @@ const INTERACTION_DOCS = JSON.stringify([
   },
   {
     NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableResourceExtractor'",
+    Classes: [
+      {
+        ClassName: "Build_OilPump_C",
+        mDisplayName: "Oil Extractor",
+        mItemsPerCycle: "2000",
+        mExtractCycleTime: "1",
+        mAllowedResourceForms: "(RF_LIQUID)",
+        mOnlyAllowCertainResources: "True",
+        mAllowedResources:
+          '("/Game/FactoryGame/Desc_LiquidOil.Desc_LiquidOil_C\'")',
+        mPowerConsumption: "40",
+        mPowerConsumptionExponent: "1.321929",
+      },
+    ],
+  },
+  {
+    NativeClass:
+      "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableFrackingExtractor'",
+    Classes: [
+      {
+        ClassName: "Build_FrackingExtractor_C",
+        mDisplayName: "Resource Well Extractor",
+        mItemsPerCycle: "1000",
+        mExtractCycleTime: "1",
+        mAllowedResourceForms: "(RF_LIQUID,RF_GAS)",
+        mOnlyAllowCertainResources: "True",
+        mAllowedResources:
+          '("/Game/FactoryGame/Desc_LiquidOil.Desc_LiquidOil_C\'","/Game/FactoryGame/Desc_NitrogenGas.Desc_NitrogenGas_C\'")',
+        mPowerConsumption: "0",
+        mPowerConsumptionExponent: "1.321929",
+      },
+    ],
+  },
+  {
+    NativeClass:
       "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'",
     Classes: [
       {
@@ -220,7 +268,7 @@ const INTERACTION_DOCS = JSON.stringify([
         ClassName: "Recipe_Concrete_C",
         mDisplayName: "Concrete",
         mIngredients:
-          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Stone_C\"',Amount=3),(ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Water_C\"',Amount=1000))",
+          "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Stone_C\"',Amount=3),(ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Water_C\"',Amount=1000),(ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_LiquidOil_C\"',Amount=1000),(ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_NitrogenGas_C\"',Amount=1000))",
         mProduct:
           "((ItemClass=BlueprintGeneratedClass'\"/Game/Path/Desc_Concrete_C\"',Amount=1))",
         mManufactoringDuration: "4",

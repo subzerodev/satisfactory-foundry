@@ -35,8 +35,8 @@ reconsideration:
 - **Implementation plan:** `phase-1/implementation-plan.md` frozen at r8 after
   correctness convergence and one-shot parsimony disposition
 - **Production edits:** `1fc4361`, `5bcd381`, `40e4f72`, `b937bfc`, `254e1ae`
-- **Verification:** 39 files / 1022 tests, checked-in Chromium/CDP geometry and
-  interaction gate, and five canonical mutation break/restore probes
+- **Verification:** 39 files / 1024 tests, checked-in Chromium/CDP geometry and
+  interaction gate, and seven canonical mutation break/restore probes
 - **Completion report:** `phase-1/completion-report.md`
 
 ### Phase 2 - purity mix
@@ -176,3 +176,16 @@ the canonical bidirectionality gate requires the verification artifact to name
 an exact revert/break command and capture a genuine failure with production code
 removed or broken, followed by restoration. Initial pre-code reds are useful but
 do not satisfy that contract. Task 6 therefore remains unchanged.
+
+## Phase 1 Diff Review Disposition
+
+- **r1:** folded complete-list validation for `mAllowedResources` and
+  null-prototype extractor serialization, each with a failing regression test.
+- **r2:** folded all findings. Cache serialization now preserves the matching
+  machine for a valid `__proto__` extractor ID, and the corrupt-recipe fixture
+  reaches its intended path. The browser gate now asserts actual scrolling,
+  covers desktop plus 360/720 widths, and exercises Limestone, Water, Crude
+  Oil, and Nitrogen at every width. The stale counts were updated. The proposed
+  220px mobile cap was not retained: direct measurement proved it overlaps
+  controls by 49px, so the frozen design and plan now document the measured
+  170px maximum and the gate pins both the cap and collision boundary.

@@ -216,7 +216,7 @@ export async function loadCatalog(): Promise<CacheLoadResult> {
 }
 
 function serializeCatalog(catalog: Catalog): StoredCatalogData {
-  const recipes: Record<string, StoredRecipe> = {};
+  const recipes: Record<string, StoredRecipe> = Object.create(null);
   for (const [id, r] of Object.entries(catalog.recipes)) {
     recipes[id] = {
       id: r.id,
@@ -228,7 +228,7 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
       primaryOutputId: r.primaryOutputId,
     };
   }
-  const machines: Record<string, StoredCatalogMachine> = {};
+  const machines: Record<string, StoredCatalogMachine> = Object.create(null);
   for (const [id, m] of Object.entries(catalog.machines)) {
     machines[id] = {
       id: m.id,
@@ -236,7 +236,7 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
       power: serializePower(m.power),
     };
   }
-  const items: Record<string, StoredCatalogItem> = {};
+  const items: Record<string, StoredCatalogItem> = Object.create(null);
   for (const [id, it] of Object.entries(catalog.items)) {
     items[id] = serializeItem(it);
   }

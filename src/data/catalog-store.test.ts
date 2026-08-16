@@ -183,6 +183,7 @@ describe("catalog cache — round-trip (spec row 7)", () => {
           items: {},
           machines: {},
           recipes: { bad: null },
+          extractors: {},
           recipeUnlocks: {},
         },
         source_hash: "x",
@@ -325,8 +326,18 @@ describe("catalog cache — null-prototype maps survive revive (#28)", () => {
     expect(Object.getPrototypeOf(result.catalog.recipeUnlocks)).toBeNull();
   });
 
-  it("round-trips an extractor whose id is __proto__", async () => {
+  it("round-trips an extractor and machine whose shared id is __proto__", async () => {
     const catalog = sampleCatalog();
+    catalog.machines = Object.assign(Object.create(null), catalog.machines);
+    catalog.machines["__proto__"] = {
+      id: "__proto__",
+      displayName: "Prototype Extractor",
+      power: {
+        mw: Fraction.from(30),
+        variable: false,
+        exponent: Fraction.of(1321929, 1000000),
+      },
+    };
     catalog.extractors = Object.assign(Object.create(null), catalog.extractors);
     catalog.extractors["__proto__"] = {
       machineId: "__proto__",
@@ -341,6 +352,10 @@ describe("catalog cache — null-prototype maps survive revive (#28)", () => {
     if (result.status !== "hit") return;
 
     expect(Object.hasOwn(result.catalog.extractors, "__proto__")).toBe(true);
+    expect(Object.hasOwn(result.catalog.machines, "__proto__")).toBe(true);
+    expect(result.catalog.machines["__proto__"]!.displayName).toBe(
+      "Prototype Extractor",
+    );
     expect(result.catalog.extractors["__proto__"]!.machineId).toBe("__proto__");
     expect(result.catalog.extractors["__proto__"]!.normalRate.toString()).toBe(
       "120",

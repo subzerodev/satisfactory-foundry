@@ -22,7 +22,7 @@
 - Resource Well selections and cross-item standalone selections produce no stale count or power. Nitrogen names the pressurizer/satellite topology and shows no Miner estimate.
 - Raw demand remains a `Fraction` from solve to panel and recomputes while open.
 - Plan v6 survives save/load, import, bundle, rename/save-over, and export paths through the existing persistence matrix.
-- Browser rows pass at 360px and 720px with a measured 340px canvas, chain power present, and notice-only, extraction-only, and combined states.
+- Nine browser geometry rows pass at 360px, 720px, and 1280px with a measured 340px canvas, chain power present, and notice-only, extraction-only, and combined states. Three interaction rows exercise Limestone, Water, Crude Oil, and Nitrogen at every width.
 - Native pointer, Enter, and Space activation each open exactly once; replacement, close focus restoration, auto-seed persistence, and raw disappearance are exercised in Chromium.
 
 ## Verification
@@ -31,7 +31,7 @@
 - `npm run check`: passed.
 - `npm run build`: passed with only the existing 500 kB chunk-size advisory.
 - `git diff --check develop...HEAD`: passed.
-- Mutation evidence: `r2-verification.log` records six genuine production break/restore probes.
+- Mutation evidence: `r2-verification.log` records seven genuine production break/restore probes.
 - Browser screenshots were inspected under `/tmp/satisfactory-foundry-112-browser`.
 
 ## Commits

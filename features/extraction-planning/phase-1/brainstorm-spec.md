@@ -325,7 +325,7 @@ The stack always has a bounded height and internal vertical scrolling so it
 stops above the bottom-left React Flow controls and bottom-right chain-power
 panel. Desktop top-right content is capped at 260px. At canvas widths `<=720px`,
 it additionally clears the horizontal top-left `+ stage` / flow-direction row,
-fits the canvas width minus side gutters, and caps at 220px; on the app's 340px
+fits the canvas width minus side gutters, and caps at 170px; on the app's 340px
 minimum-height canvas this leaves explicit top and bottom control zones. The
 mobile browser gate inspects 360px and 720px widths at 340px canvas height with
 chain power present, covering notice-only, extraction-only, and combined states.
@@ -524,6 +524,10 @@ Full phase verification remains `npm test`, `npm run check`, `npm run build`,
   and makes the Phase 1 Normal-purity assumption explicit in every result.
 - **r6:** also validates a persisted standalone extractor against the current
   raw item's applicability, and repairs the r5 review-trace links.
+- **r7 implementation correction:** revises the mobile stack cap from 220px to
+  the measured 170px maximum. At 360px wide, the production stack starts at
+  y=49 and React Flow controls start at y=220; 220px overlaps the controls by
+  49px, while 170px ends at y=219 and preserves the required control zone.
 
 ## Unresolved Risks for Review
 

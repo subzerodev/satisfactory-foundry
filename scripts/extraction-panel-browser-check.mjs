@@ -14,7 +14,8 @@ async function freePort() {
     server.listen(0, "127.0.0.1", resolve);
   });
   const address = server.address();
-  const port = typeof address === "object" && address !== null ? address.port : 0;
+  const port =
+    typeof address === "object" && address !== null ? address.port : 0;
   await new Promise((resolve) => server.close(resolve));
   return port;
 }
@@ -30,7 +31,9 @@ async function waitFor(url, label) {
     }
     await delay(100);
   }
-  throw new Error(`${label} did not become ready: ${String(lastError ?? "timeout")}`);
+  throw new Error(
+    `${label} did not become ready: ${String(lastError ?? "timeout")}`,
+  );
 }
 
 class Cdp {
@@ -90,7 +93,9 @@ async function evaluate(cdp, expression) {
     returnByValue: true,
   });
   if (result.exceptionDetails) {
-    throw new Error(result.exceptionDetails.text ?? "browser evaluation failed");
+    throw new Error(
+      result.exceptionDetails.text ?? "browser evaluation failed",
+    );
   }
   return result.result.value;
 }
@@ -117,7 +122,10 @@ async function navigate(cdp, url, width, height = 520) {
 
 async function screenshot(cdp, name) {
   const result = await cdp.send("Page.captureScreenshot", { format: "png" });
-  await writeFile(`${outputDir}/${name}.png`, Buffer.from(result.data, "base64"));
+  await writeFile(
+    `${outputDir}/${name}.png`,
+    Buffer.from(result.data, "base64"),
+  );
 }
 
 const geometryCheck = `(() => {
@@ -142,8 +150,18 @@ const geometryCheck = `(() => {
     .map((el) => el.className || el.tagName);
   if (overflow.length) errors.push('text overflow: ' + overflow.join(','));
   const content = document.querySelector('.graph-top-right-stack');
-  return { errors, scrollable: content ? content.scrollHeight >= content.clientHeight : false,
-    canvas: { width: c.width, height: c.height }, stack: { top: s.top-c.top, bottom: s.bottom-c.top, height: s.height } };
+  const state = new URLSearchParams(location.search).get('state');
+  const expectedCap = innerWidth <= 720 ? 170 : 260;
+  const scrollable = content
+    ? ['auto', 'scroll'].includes(getComputedStyle(content).overflowY) && content.scrollHeight > content.clientHeight
+    : false;
+  if (state === 'combined' && !scrollable) errors.push('combined stack is not internally scrollable');
+  if (state === 'combined' && Math.abs(s.height - expectedCap) > 0.5) errors.push('combined stack does not reach its responsive height cap');
+  return { errors, scrollable,
+    canvas: { width: c.width, height: c.height },
+    stack: { top: s.top-c.top, bottom: s.bottom-c.top, height: s.height },
+    controls: { top: ctl.top-c.top, bottom: ctl.bottom-c.top },
+    power: { top: p.top-c.top, bottom: p.bottom-c.top } };
 })()`;
 
 async function main() {
@@ -153,7 +171,16 @@ async function main() {
   const debugPort = await freePort();
   const vite = spawn(
     "npm",
-    ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(vitePort), "--strictPort"],
+    [
+      "run",
+      "dev",
+      "--",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(vitePort),
+      "--strictPort",
+    ],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
   processes.push(vite);
@@ -174,7 +201,12 @@ async function main() {
   );
   processes.push(chromium);
   await waitFor(`http://127.0.0.1:${debugPort}/json/version`, "Chromium CDP");
-  const targets = await (await waitFor(`http://127.0.0.1:${debugPort}/json/list`, "Chromium page target")).json();
+  const targets = await (
+    await waitFor(
+      `http://127.0.0.1:${debugPort}/json/list`,
+      "Chromium page target",
+    )
+  ).json();
   const page = targets.find((target) => target.type === "page");
   if (page === undefined) throw new Error("Chromium exposed no page target");
   const cdp = new Cdp(page.webSocketDebuggerUrl);
@@ -183,70 +215,255 @@ async function main() {
   await cdp.send("Runtime.enable");
 
   const base = `http://127.0.0.1:${vitePort}/features/extraction-planning/phase-1/browser-harness.html`;
-  for (const width of [360, 720]) {
+  for (const width of [360, 720, 1280]) {
     for (const state of ["notice", "extraction", "combined"]) {
       await navigate(cdp, `${base}?mode=geometry&state=${state}`, width);
-      await waitForExpression(cdp, `document.querySelector('[data-harness-ready="geometry"]') !== null`, `${width}/${state}`);
+      await waitForExpression(
+        cdp,
+        `document.querySelector('[data-harness-ready="geometry"]') !== null`,
+        `${width}/${state}`,
+      );
       const result = await evaluate(cdp, geometryCheck);
       if (result.errors.length > 0) {
-        throw new Error(`${width}/${state}: ${result.errors.join("; ")}`);
+        throw new Error(
+          `${width}/${state}: ${result.errors.join("; ")} ${JSON.stringify(result)}`,
+        );
       }
       await screenshot(cdp, `${width}-${state}`);
-      process.stdout.write(`PASS geometry ${width}px ${state} ${JSON.stringify(result.stack)}\n`);
+      process.stdout.write(
+        `PASS geometry ${width}px ${state} ${JSON.stringify(result.stack)}\n`,
+      );
     }
   }
 
-  await navigate(cdp, `${base}?mode=interaction`, 720, 700);
-  await waitForExpression(cdp, `document.querySelector('[data-harness-ready="interaction"] .raw-feed-node-button') !== null`, "interaction raw feed");
-  await evaluate(cdp, `(() => {
+  for (const width of [360, 720, 1280]) {
+    await navigate(cdp, `${base}?mode=interaction`, width, 700);
+    await waitForExpression(
+      cdp,
+      `document.querySelector('[data-harness-ready="interaction"] .raw-feed-node-button') !== null`,
+      "interaction raw feed",
+    );
+    await evaluate(
+      cdp,
+      `(() => {
     window.__rawClicks = 0;
     document.querySelectorAll('.raw-feed-node-button').forEach((button) => button.addEventListener('click', () => window.__rawClicks++));
     return true;
-  })()`);
-  const center = await evaluate(cdp, `(() => { const r=document.querySelector('.raw-feed-node-button').getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; })()`);
-  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: center.x, y: center.y, button: "left", clickCount: 1 });
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: center.x, y: center.y, button: "left", clickCount: 1 });
-  await waitForExpression(cdp, `document.querySelector('[role="dialog"]') !== null`, "pointer dialog");
-  let clicks = await evaluate(cdp, `window.__rawClicks`);
-  if (clicks !== 1) throw new Error(`pointer activation fired ${clicks} clicks`);
-  await evaluate(cdp, `document.querySelector('[aria-label="Close extraction planning"]').click()`);
-  await delay(100);
-  const restored = await evaluate(cdp, `document.activeElement === document.querySelectorAll('.raw-feed-node-button')[0]`);
-  if (!restored) throw new Error("close did not restore focus to the surviving opener");
+  })()`,
+    );
+    const center = await evaluate(
+      cdp,
+      `(() => { const r=document.querySelector('.raw-feed-node-button').getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; })()`,
+    );
+    await cdp.send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: center.x,
+      y: center.y,
+      button: "left",
+      clickCount: 1,
+    });
+    await cdp.send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: center.x,
+      y: center.y,
+      button: "left",
+      clickCount: 1,
+    });
+    await waitForExpression(
+      cdp,
+      `document.querySelector('[role="dialog"]') !== null`,
+      "pointer dialog",
+    );
+    let clicks = await evaluate(cdp, `window.__rawClicks`);
+    if (clicks !== 1)
+      throw new Error(`pointer activation fired ${clicks} clicks`);
+    await evaluate(
+      cdp,
+      `document.querySelector('[aria-label="Close extraction planning"]').click()`,
+    );
+    await delay(100);
+    const restored = await evaluate(
+      cdp,
+      `document.activeElement === document.querySelectorAll('.raw-feed-node-button')[0]`,
+    );
+    if (!restored)
+      throw new Error("close did not restore focus to the surviving opener");
 
-  await evaluate(cdp, `document.querySelector('.raw-feed-node-button').focus()`);
-  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", text: "\r", unmodifiedText: "\r", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
-  await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-  await waitForExpression(cdp, `document.querySelector('[role="dialog"]') !== null`, "Enter dialog");
-  clicks = await evaluate(cdp, `window.__rawClicks`);
-  if (clicks !== 2) throw new Error(`Enter activation total was ${clicks}, expected 2`);
-  await evaluate(cdp, `document.querySelector('[aria-label="Close extraction planning"]').click()`);
-  await delay(100);
+    await evaluate(
+      cdp,
+      `document.querySelector('.raw-feed-node-button').focus()`,
+    );
+    await cdp.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Enter",
+      code: "Enter",
+      text: "\r",
+      unmodifiedText: "\r",
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13,
+    });
+    await cdp.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+    });
+    await waitForExpression(
+      cdp,
+      `document.querySelector('[role="dialog"]') !== null`,
+      "Enter dialog",
+    );
+    clicks = await evaluate(cdp, `window.__rawClicks`);
+    if (clicks !== 2)
+      throw new Error(`Enter activation total was ${clicks}, expected 2`);
+    await evaluate(
+      cdp,
+      `document.querySelector('[aria-label="Close extraction planning"]').click()`,
+    );
+    await delay(100);
 
-  await evaluate(cdp, `document.querySelector('.raw-feed-node-button').focus()`);
-  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: " ", code: "Space", text: " ", unmodifiedText: " ", windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
-  await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: " ", code: "Space", windowsVirtualKeyCode: 32 });
-  await waitForExpression(cdp, `document.querySelector('[role="dialog"]') !== null`, "Space dialog");
-  clicks = await evaluate(cdp, `window.__rawClicks`);
-  if (clicks !== 3) throw new Error(`Space activation total was ${clicks}, expected 3`);
-  await evaluate(cdp, `window.__setMachineCount(40)`);
-  await waitForExpression(cdp, `document.querySelector('[role="dialog"]')?.textContent.includes('1800/min required') === true`, "live demand update");
-  await evaluate(cdp, `document.querySelector('[aria-label="Close extraction planning"]').click()`);
-  await delay(100);
+    await evaluate(
+      cdp,
+      `document.querySelector('.raw-feed-node-button').focus()`,
+    );
+    await cdp.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: " ",
+      code: "Space",
+      text: " ",
+      unmodifiedText: " ",
+      windowsVirtualKeyCode: 32,
+      nativeVirtualKeyCode: 32,
+    });
+    await cdp.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: " ",
+      code: "Space",
+      windowsVirtualKeyCode: 32,
+    });
+    await waitForExpression(
+      cdp,
+      `document.querySelector('[role="dialog"]') !== null`,
+      "Space dialog",
+    );
+    clicks = await evaluate(cdp, `window.__rawClicks`);
+    if (clicks !== 3)
+      throw new Error(`Space activation total was ${clicks}, expected 3`);
+    await evaluate(cdp, `window.__setMachineCount(40)`);
+    await waitForExpression(
+      cdp,
+      `document.querySelector('[role="dialog"]')?.textContent.includes('1800/min required') === true`,
+      "live demand update",
+    );
+    await evaluate(
+      cdp,
+      `document.querySelector('[aria-label="Close extraction planning"]').click()`,
+    );
+    await delay(100);
 
-  await evaluate(cdp, `document.querySelectorAll('.raw-feed-node-button')[0].click()`);
-  await waitForExpression(cdp, `document.querySelector('[role="dialog"]') !== null`, "replacement source dialog");
-  await evaluate(cdp, `document.querySelectorAll('.raw-feed-node-button')[1].click()`);
-  await waitForExpression(cdp, `document.querySelector('[role="dialog"]')?.textContent.includes('EXTRACTION - Water') === true`, "replacement Water dialog");
-  clicks = await evaluate(cdp, `window.__rawClicks`);
-  if (clicks !== 5) throw new Error(`replacement activations total was ${clicks}, expected 5`);
-  const replacementFocused = await evaluate(cdp, `document.querySelector('[role="dialog"]').contains(document.activeElement)`);
-  if (!replacementFocused) throw new Error("replacement did not focus the new panel");
-  await waitForExpression(cdp, `window.__extractionSelection('water')?.machineId === 'water_pump'`, "Water auto-seed persistence");
-  await evaluate(cdp, `window.__suppressRaw('water')`);
-  await waitForExpression(cdp, `document.querySelector('[role="dialog"]') === null && [...document.querySelectorAll('.raw-feed-node-button')].every((button) => button.dataset.rawItem !== 'water')`, "raw disappearance closure");
-  await screenshot(cdp, "interaction");
-  process.stdout.write("PASS interaction pointer/Enter/Space, replacement, live update, disappearance, focus\n");
+    await evaluate(
+      cdp,
+      `document.querySelectorAll('.raw-feed-node-button')[0].click()`,
+    );
+    await waitForExpression(
+      cdp,
+      `document.querySelector('[role="dialog"]') !== null`,
+      "replacement source dialog",
+    );
+    await evaluate(
+      cdp,
+      `document.querySelectorAll('.raw-feed-node-button')[1].click()`,
+    );
+    await waitForExpression(
+      cdp,
+      `document.querySelector('[role="dialog"]')?.textContent.includes('EXTRACTION - Water') === true`,
+      "replacement Water dialog",
+    );
+    clicks = await evaluate(cdp, `window.__rawClicks`);
+    if (clicks !== 5)
+      throw new Error(
+        `replacement activations total was ${clicks}, expected 5`,
+      );
+    const replacementFocused = await evaluate(
+      cdp,
+      `document.querySelector('[role="dialog"]').contains(document.activeElement)`,
+    );
+    if (!replacementFocused)
+      throw new Error("replacement did not focus the new panel");
+    await waitForExpression(
+      cdp,
+      `window.__extractionSelection('water')?.machineId === 'water_pump'`,
+      "Water auto-seed persistence",
+    );
+    await evaluate(cdp, `window.__suppressRaw('water')`);
+    await waitForExpression(
+      cdp,
+      `document.querySelector('[role="dialog"]') === null && [...document.querySelectorAll('.raw-feed-node-button')].every((button) => button.dataset.rawItem !== 'water')`,
+      "raw disappearance closure",
+    );
+    await evaluate(
+      cdp,
+      `document.querySelector('.raw-feed-node-button[data-raw-item="liquid_oil"]').click()`,
+    );
+    await waitForExpression(
+      cdp,
+      `document.querySelector('[role="dialog"]')?.textContent.includes('EXTRACTION - Crude Oil') === true`,
+      "Crude Oil dialog",
+    );
+    await waitForExpression(
+      cdp,
+      `window.__extractionSelection('liquid_oil')?.machineId === 'oil_pump'`,
+      "Crude Oil auto-seed persistence",
+    );
+    const oilText = await evaluate(
+      cdp,
+      `document.querySelector('[role="dialog"]').textContent`,
+    );
+    if (
+      !oilText.includes("Oil Extractor") ||
+      !oilText.includes("Purity Normal")
+    ) {
+      throw new Error(
+        "Crude Oil did not render its Normal-purity Oil Extractor plan",
+      );
+    }
+    if (oilText.includes("one extractor exceeds")) {
+      throw new Error(
+        "Crude Oil emitted a false total-demand transport warning",
+      );
+    }
+    await evaluate(
+      cdp,
+      `document.querySelector('.raw-feed-node-button[data-raw-item="nitrogen_gas"]').click()`,
+    );
+    await waitForExpression(
+      cdp,
+      `document.querySelector('[role="dialog"]')?.textContent.includes('EXTRACTION - Nitrogen Gas') === true`,
+      "Nitrogen dialog",
+    );
+    const nitrogen = await evaluate(
+      cdp,
+      `(() => { const dialog = document.querySelector('[role="dialog"]'); return { text: dialog.textContent, hasSelect: dialog.querySelector('select') !== null }; })()`,
+    );
+    if (
+      nitrogen.hasSelect ||
+      !nitrogen.text.includes("Resource Well Pressurizer") ||
+      nitrogen.text.includes("Miner")
+    ) {
+      throw new Error(
+        "Nitrogen did not render the explicit Resource Well-only state",
+      );
+    }
+    clicks = await evaluate(cdp, `window.__rawClicks`);
+    if (clicks !== 7)
+      throw new Error(
+        `all-resource activations total was ${clicks}, expected 7`,
+      );
+    await screenshot(cdp, `interaction-${width}`);
+    process.stdout.write(
+      `PASS interaction ${width}px pointer/Enter/Space, Limestone/Water/Oil/Nitrogen, replacement, live update, disappearance, focus\n`,
+    );
+  }
   cdp.close();
 }
 
