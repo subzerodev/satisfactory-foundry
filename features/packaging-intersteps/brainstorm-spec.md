@@ -68,6 +68,10 @@ every state reachable through public actions therefore remains v8-saveable.
 Tests pin refused illegal forward/return edits, unchanged reconciliation, and
 save/reload of the retained valid state. File validation and derive independently
 retain their defensive illegal-mode rejection for malformed external state.
+`addLink` accepts an ordinary-link input type that excludes `interstep`; its
+runtime implementation constructs only the known ordinary fields and refuses an
+extra interstep property rather than spreading it. New links can gain packaging
+intent only through guarded `setLinkInterstep`. A bypass attempt is pinned.
 Changing the pair keeps clock; disabling removes intent. `returnTransport`
 configures the empty-container route independently and defaults to belt.
 Removing a link removes it naturally.
@@ -211,6 +215,7 @@ count is guessed.
 - Imported packaging plus pipe/fluid-truck is rejected; derive repeats the guard.
 - Public setters refuse illegal packaged forward/return modes, preserve the prior
   saveable state, and that state survives save/reload.
+- `addLink` cannot type or runtime-bypass the guarded interstep setter.
 - Inspector, edge chip, train findings, and both route results consume the same
   effective packaged/container projection, including Nitrogen's non-1:1 ratio.
 - Nitrogen under/over-supply keeps fluid reconciliation/apply amounts while
