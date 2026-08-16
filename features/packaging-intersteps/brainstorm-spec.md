@@ -79,17 +79,31 @@ state. A mismatch is an explicit error, never coerced.
 
 Power uses the Packager machine's existing exact/estimated clock model for the
 sum of both machine counts. A single pure `effectiveLinkCargo` projection
-resolves the link into forward packaged item/rate plus return container
-item/rate. Inspector results, edge chips, reconciliation/train findings, and
-every transport consumer use that projection rather than independently reading
-the original fluid item/rate. This is load-bearing for ratios such as packaged
-Nitrogen at `D/4`.
+accepts independently resolved producer supply and consumer demand, maps each
+through the package ratio, and returns forward packaged item plus distinct
+packaged supply/demand and the return container item/rate. Inspector results,
+edge chips, reconciliation/train findings, and every transport consumer use
+that projection rather than independently reading the original fluid item/rate.
+This preserves under/over-supply and is load-bearing for packaged Nitrogen at
+`D/4`.
+
+The projection is discriminated: `ready` carries effective cargo; `unavailable`
+carries an exact stale/missing/invalid-pair message. Every consumer handles
+unavailable identically: edge status is `problem`, reconciliation emits one
+interstep finding, inspector shows the error, and both transport results are
+suppressed. It never falls through to an `ok` fluid edge.
 
 Forward and return each call `computeLinkTransport` with their own solid item,
 rate, and transport config. Belt/truck/tractor/explorer/train/drone are legal on
 both directions; pipe and fluid-truck are not. The separate return config is
 required because sharing the forward route can deadlock and because vehicle/
 train/drone capacity differs by the empty container's stack size.
+
+`returnTransport.sharedEnds.from/to` always names the physical `StageLink`
+sides, not cargo direction: `from` is the producer-side packaging station and
+`to` is the consumer-side unpackaging station. Return cargo travels `to -> from`
+but persisted keys do not invert. Return labels and station-power exclusions use
+those physical names; both one-sided cases are pinned.
 
 The result always warns:
 
@@ -132,6 +146,8 @@ count is guessed.
 - Imported packaging plus pipe/fluid-truck is rejected; derive repeats the guard.
 - Inspector, edge chip, train findings, and both route results consume the same
   effective packaged/container projection, including Nitrogen's non-1:1 ratio.
+- Nitrogen under/over-supply maps producer supply and consumer demand separately;
+  stale intent renders a problem edge/finding/error and no transport results.
 - Inspector enable/pair/clock/disable and legal-mode switching.
 - Stale pair IDs still expose disable/recovery; forward and return solid modes
   configure independently.
@@ -153,3 +169,6 @@ count is guessed.
 - **r1:** folded stale-intent recovery, strict forward/return solid-mode
   invariants, a canonical effective-cargo projection for all consumers, and a
   full independently configured return transport instead of belt-only sizing.
+- **r2:** expanded the projection to preserve separate supply/demand, defined an
+  explicit unavailable/problem path for every consumer, and fixed return train
+  shared-end keys to physical link sides with both one-sided tests.
