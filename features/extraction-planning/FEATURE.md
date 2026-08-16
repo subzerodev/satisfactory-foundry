@@ -46,9 +46,11 @@ reconsideration:
 - **Scope:** exact Impure/Normal/Pure 0.5/1.0/2.0 node inventories,
   coverage/shortfall, power and transport results, plan v7 persistence, and
   production-control browser coverage
-- **Spec:** `phase-2/brainstorm-spec.md`
+- **Spec:** `phase-2/brainstorm-spec.md` frozen after r2 correctness convergence
+  and one-shot simplify approval with no findings
 - **Implementation plan:** `phase-2/implementation-plan.md` frozen at r6 after
-  correctness convergence and one-shot parsimony disposition
+  both reviewers approved the r5 folds; its one-shot parsimony review had
+  already run and was not rerun
 - **Branch:** `feature/s22-124-extraction-p2-purity`
 - **Implementation commits:** `5098796`, `f8f7f89`, `03b9d97`, `8094126`
 - **Current branch verification:** 40 files / 1067 tests; TypeScript, ESLint,

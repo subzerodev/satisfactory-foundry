@@ -2,7 +2,7 @@
 
 **Ticket:** #124 (child of #112 and epic #114)
 **Stage:** 22
-**Status:** candidate for correctness review
+**Status:** frozen after r2 correctness convergence and one-shot simplify approval
 **Date:** 2026-08-16
 
 ## Goal
@@ -186,3 +186,7 @@ controls are reachable by scrolling at 360px and do not overlap chain controls.
   the aggregate is bounded for the existing power API. Plan v6 now has a
   distinct frozen extraction-selection type; v6-to-v7 migration copies only its
   two known fields.
+- **r2:** correctness converged with both reviewers `APPROVED` after the r1
+  findings were folded.
+- **simplify:** the one-shot simplify review returned `APPROVED` with no
+  findings. The design was frozen after this approval.

@@ -377,3 +377,6 @@ Expected: clean feature worktree ready for cumulative `develop...HEAD` review.
   all purity arithmetic and transport to start from `perExtractor`.
 - **r5:** strengthened that case to exact 2100/1100/1200 expectations and added
   exact-balance coverage that classifies equality as zero spare.
+- **r6:** correctness converged after the r5 folds with both reviewers
+  `APPROVED`. The one-shot simplify review had already run once after the
+  earlier correctness convergence and was not rerun.
