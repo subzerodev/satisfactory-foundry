@@ -17,6 +17,12 @@
   transport into packaged units; material and interstep diagnostics coexist.
 - Persists raw editable intent in plan v8, canonicalizes v7 transport data, and
   keeps stale intent recoverable after catalog replacement.
+- Canonicalizes public transport/interstep setter input field-by-field, stripping
+  wider runtime properties and refusing malformed required structure before it
+  can enter strict-v8 state.
+- Rejects non-positive rates on every package/reverse recipe arm before any
+  reciprocal calculation, so malformed uploaded catalog data cannot crash pair
+  discovery.
 - Adds a responsive production `LinkInspector` browser gate driven through
   system Chromium/CDP pointer, key, and text events only.
 
@@ -66,7 +72,7 @@ No mutation remains in the worktree.
 ```text
 npm test
 Test Files  44 passed (44)
-Tests  1127 passed (1127)
+Tests  1135 passed (1135)
 
 npm run check
 TypeScript, ESLint, and Prettier passed.
@@ -98,4 +104,9 @@ No output (passed).
 - The one-shot plan simplification removed compatibility wrappers and reduced
   the browser matrix to one full workflow plus three responsive geometry rows.
 - Cumulative implementation review is intentionally not run by this Task 6
-  commit; the parent workflow dispatches it after the committed diff exists.
+  commit; the parent workflow dispatched r1 after the committed diff existed.
+- Cumulative implementation r1 returned `NEEDS_REWORK` from both correctness
+  reviewers. Both findings were folded with TDD: all six non-positive recipe
+  rates are guarded before division, and both public setters now canonicalize
+  wider/type-erased input while refusing malformed required structure. Strict
+  v8 exact-key validation was not weakened. The r2 rerun remains pending.

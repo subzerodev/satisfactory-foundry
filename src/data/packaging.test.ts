@@ -274,6 +274,53 @@ describe("packaging pair discovery", () => {
     expect(discoverPackagingPairs(catalog, "fluid")).toEqual([]);
     expect(resolvePackagingPair(catalog, "package")).toBeNull();
   });
+
+  it.each([
+    ["package fluid", "packageFluid"],
+    ["package container", "packageContainer"],
+    ["package output", "packageOutput"],
+    ["reverse input", "reverseInput"],
+    ["reverse fluid", "reverseFluid"],
+    ["reverse container", "reverseContainer"],
+  ] as const)(
+    "rejects non-positive %s rates without throwing",
+    (_name, key) => {
+      for (const invalidRate of [0, -1]) {
+        const rates = {
+          packageFluid: 60,
+          packageContainer: 60,
+          packageOutput: 60,
+          reverseInput: 60,
+          reverseFluid: 60,
+          reverseContainer: 60,
+        };
+        rates[key] = invalidRate;
+        const catalog = fixture([
+          recipe(
+            "package",
+            [
+              io("fluid", rates.packageFluid),
+              io("can", rates.packageContainer),
+            ],
+            [io("packaged", rates.packageOutput)],
+          ),
+          recipe(
+            "unpackage",
+            [io("packaged", rates.reverseInput)],
+            [
+              io("fluid", rates.reverseFluid),
+              io("can", rates.reverseContainer),
+            ],
+          ),
+        ]);
+
+        expect(() => discoverPackagingPairs(catalog, "fluid")).not.toThrow();
+        expect(discoverPackagingPairs(catalog, "fluid")).toEqual([]);
+        expect(() => resolvePackagingPair(catalog, "package")).not.toThrow();
+        expect(resolvePackagingPair(catalog, "package")).toBeNull();
+      }
+    },
+  );
 });
 
 function io(itemId: string, perMinute: number) {

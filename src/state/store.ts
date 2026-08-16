@@ -21,9 +21,11 @@ import { reconcileLinks } from "../core/reconcile.ts";
 import type { LinkInput, LinkFinding } from "../core/reconcile.ts";
 import { deriveLinkPlan } from "../core/link-plan.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
-import type {
-  LinkTransport,
-  PackagingInterstep,
+import {
+  canonicalizeLinkTransport,
+  canonicalizePackagingInterstep,
+  type LinkTransport,
+  type PackagingInterstep,
 } from "../core/link-transport.ts";
 import type { Catalog } from "../data/types.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
@@ -1771,24 +1773,24 @@ export function createAppStore(storage?: StateStorage) {
           },
 
           setLinkTransport(linkId: string, transport: LinkTransport) {
-            // Pure link write: transport config never affects a stage solve or
-            // reconciliation (supply/demand are unchanged), so no re-derive is
-            // needed — Zustand re-renders the transport surfaces on `links`
-            // change. Parsing of the raw trip text happens at render time, where
-            // errors surface on the inspector (the clock-error precedent).
+            // Numeric text remains raw until derive, but the public action
+            // rebuilds the structural shape so wider/type-erased callers cannot
+            // create a plan that strict v8 persistence later refuses.
             set((s) => {
+              const canonical = canonicalizeLinkTransport(transport);
+              if (canonical === null) return {};
               const link = s.links.find((l) => l.id === linkId);
               if (link === undefined) return {};
               if (
                 link.interstep !== undefined &&
-                isIllegalPackagedTransport(transport)
+                isIllegalPackagedTransport(canonical)
               ) {
                 return {};
               }
               return recomputeReconciliation({
                 ...s,
                 links: s.links.map((l) =>
-                  l.id === linkId ? { ...l, transport } : l,
+                  l.id === linkId ? { ...l, transport: canonical } : l,
                 ),
               });
             });
@@ -1826,17 +1828,21 @@ export function createAppStore(storage?: StateStorage) {
             set((s) => {
               const link = s.links.find((candidate) => candidate.id === linkId);
               if (link === undefined) return {};
+              const canonical =
+                interstep === null
+                  ? null
+                  : canonicalizePackagingInterstep(interstep);
+              if (interstep !== null && canonical === null) return {};
               if (
-                interstep !== null &&
-                (isIllegalPackagedTransport(interstep.returnTransport) ||
-                  (link.interstep !== undefined &&
-                    isIllegalPackagedTransport(link.transport)))
+                canonical !== null &&
+                link.interstep !== undefined &&
+                isIllegalPackagedTransport(link.transport)
               ) {
                 return {};
               }
 
               const next =
-                interstep === null
+                canonical === null
                   ? linkWithoutInterstep(link, currentLinkItem(s.catalog, link))
                   : {
                       ...link,
@@ -1847,10 +1853,10 @@ export function createAppStore(storage?: StateStorage) {
                       interstep:
                         link.interstep === undefined
                           ? {
-                              ...interstep,
+                              ...canonical,
                               returnTransport: { mode: "belt" } as const,
                             }
-                          : interstep,
+                          : canonical,
                     };
               return recomputeReconciliation({
                 ...s,

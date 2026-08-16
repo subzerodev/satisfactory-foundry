@@ -246,6 +246,14 @@ npm run build
 git diff --check develop...HEAD
 ```
 
+- [x] Fold cumulative diff r1's two correctness findings: reject all six
+      non-positive package/reverse IO rates before reciprocal division, and
+      canonicalize type-erased/wider transport and interstep setter input at
+      runtime while keeping v8's exact-key validator strict.
+- [x] Add table-driven zero/negative catalog cases, malformed setter refusals,
+      wider-variable canonicalization, forward/return v8 save/reload proof, and
+      representative break/fail/restore evidence to `r2-verification.log`.
+
 - [ ] Generate a cumulative `develop...HEAD` diff prompt. Run both correctness
       reviewers in parallel until both approve, then one diff simplify pass,
       disposition findings, rerun correctness if code changes, and only afterward

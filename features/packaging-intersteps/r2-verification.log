@@ -207,6 +207,112 @@ Test Files  1 passed (1)
 Tests  1 passed | 4 skipped (5)
 ```
 
+## 5. Non-positive packaging rates
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/data/packaging.test.ts -t "rejects non-positive package output rates without throwing" --reporter=verbose
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/core/packaging-pair.ts
+@@
+ function isPositiveRate(entry: PackagingRecipeIO): boolean {
+-  return entry.perMinute.num > 0n;
++  return entry.perMinute.num >= 0n;
+ }
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/data/packaging.test.ts > packaging pair discovery > rejects non-positive package output rates without throwing 4ms
+FAIL  src/data/packaging.test.ts > packaging pair discovery > rejects non-positive package output rates without throwing
+AssertionError: expected [Function] to not throw an error but 'RangeError: Fraction division by zero.' was thrown
+Test Files  1 failed (1)
+Tests  1 failed | 12 skipped (13)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/core/packaging-pair.ts
+@@
+ function isPositiveRate(entry: PackagingRecipeIO): boolean {
+-  return entry.perMinute.num >= 0n;
++  return entry.perMinute.num > 0n;
+ }
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/data/packaging.test.ts > packaging pair discovery > rejects non-positive package output rates without throwing 2ms
+Test Files  1 passed (1)
+Tests  1 passed | 12 skipped (13)
+```
+
+## 6. Public setter canonicalization
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/state/store.test.ts -t "canonicalizes wider forward and return transports for v8 save/reload" --reporter=verbose
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/state/store.ts
+@@
+                 ...s,
+                 links: s.links.map((l) =>
+-                  l.id === linkId ? { ...l, transport: canonical } : l,
++                  l.id === linkId ? { ...l, transport } : l,
+                 ),
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > canonicalizes wider forward and return transports for v8 save/reload
+FAIL  src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > canonicalizes wider forward and return transports for v8 save/reload
+AssertionError: expected { mode: 'train', trip: { …(3) }, …(2) } to not have property "ignoredTopLevel"
+Test Files  1 failed (1)
+Tests  1 failed | 178 skipped (179)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/state/store.ts
+@@
+                 ...s,
+                 links: s.links.map((l) =>
+-                  l.id === linkId ? { ...l, transport } : l,
++                  l.id === linkId ? { ...l, transport: canonical } : l,
+                 ),
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > canonicalizes wider forward and return transports for v8 save/reload 36ms
+Test Files  1 passed (1)
+Tests  1 passed | 178 skipped (179)
+```
+
 Temporary break:
 
 ```diff

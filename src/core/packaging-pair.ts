@@ -31,6 +31,10 @@ export interface PackagingPair {
   unpackageContainerRate: Fraction;
 }
 
+function isPositiveRate(entry: PackagingRecipeIO): boolean {
+  return entry.perMinute.num > 0n;
+}
+
 export function discoverPackagingPairs(
   catalog: PackagingCatalog,
   itemId: string,
@@ -66,7 +70,10 @@ export function resolvePackagingPair(
     !containerInput ||
     !packagedOutput ||
     catalog.items[packagedOutput.itemId]?.isFluid !== false ||
-    packagedOutput.itemId === containerInput.itemId
+    packagedOutput.itemId === containerInput.itemId ||
+    !isPositiveRate(fluidInput) ||
+    !isPositiveRate(containerInput) ||
+    !isPositiveRate(packagedOutput)
   ) {
     return null;
   }
@@ -89,6 +96,13 @@ export function resolvePackagingPair(
       );
       if (!reverseFluid || !reverseContainer) return false;
       const reversePackaged = candidate.inputs[0]!;
+      if (
+        !isPositiveRate(reversePackaged) ||
+        !isPositiveRate(reverseFluid) ||
+        !isPositiveRate(reverseContainer)
+      ) {
+        return false;
+      }
       return (
         fluidInput.perMinute
           .div(packagedOutput.perMinute)

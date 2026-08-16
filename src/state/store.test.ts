@@ -15,7 +15,10 @@ import type {
   PlanBundle,
   ProposedByproductRoute,
 } from "./store.ts";
-import type { PackagingInterstep } from "../core/link-transport.ts";
+import type {
+  LinkTransport,
+  PackagingInterstep,
+} from "../core/link-transport.ts";
 import { proposeChain } from "../core/chain-builder.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
 import { applyDrawnDistance } from "../ui/chain-view.ts";
@@ -2084,6 +2087,111 @@ describe("stage graph — packaging interstep persistence actions (#113)", () =>
           plan.links[0]?.interstep?.clockPercentText === "bad edit",
       ),
     ).toBe(true);
+  });
+
+  it("canonicalizes wider forward and return transports for v8 save/reload", async () => {
+    const { store, linkId } = await packagedStore();
+    setInterstep(store, linkId, validIntent);
+
+    const widerForward = {
+      mode: "train" as const,
+      trip: {
+        kind: "estimated" as const,
+        distanceText: "900",
+        ignoredNested: "strip",
+      },
+      sharedEnds: { from: true as const, ignoredNested: true },
+      ignoredTopLevel: "strip",
+    };
+    const typedForward: LinkTransport = widerForward;
+    store.getState().setLinkTransport(linkId, typedForward);
+
+    const widerReturn = {
+      packageRecipeId: "packaged_water",
+      clockPercentText: "125",
+      returnTransport: {
+        mode: "train" as const,
+        trip: {
+          kind: "measured" as const,
+          roundTripSecondsText: "180",
+          ignoredNested: "strip",
+        },
+        sharedEnds: { to: true as const, ignoredNested: true },
+        ignoredTopLevel: "strip",
+      },
+      ignoredInterstep: "strip",
+    };
+    const typedInterstep: PackagingInterstep = widerReturn;
+    setInterstep(store, linkId, typedInterstep);
+
+    expect(store.getState().links[0]).toMatchObject({
+      transport: {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "900" },
+        sharedEnds: { from: true },
+      },
+      interstep: {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "125",
+        returnTransport: {
+          mode: "train",
+          trip: { kind: "measured", roundTripSecondsText: "180" },
+          sharedEnds: { to: true },
+        },
+      },
+    });
+    expect(store.getState().links[0]!.transport).not.toHaveProperty(
+      "ignoredTopLevel",
+    );
+    expect(
+      store.getState().links[0]!.interstep!.returnTransport,
+    ).not.toHaveProperty("ignoredTopLevel");
+
+    await store.getState().savePlanAs("Canonical packaging");
+    const id = store.getState().plans![0]!.id;
+    const exported = JSON.parse((await store.getState().exportPlan(id))!);
+    expect(exported.links[0].transport).toEqual({
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "900" },
+      sharedEnds: { from: true },
+    });
+    expect(exported.links[0].interstep.returnTransport).toEqual({
+      mode: "train",
+      trip: { kind: "measured", roundTripSecondsText: "180" },
+      sharedEnds: { to: true },
+    });
+
+    setInterstep(store, linkId, null);
+    await store.getState().loadPlan(id);
+    expect(store.getState().links[0]!.transport).toEqual(
+      exported.links[0].transport,
+    );
+    expect(store.getState().links[0]!.interstep).toEqual(
+      exported.links[0].interstep,
+    );
+  });
+
+  it("runtime-refuses malformed setter structures without changing state", async () => {
+    const { store, linkId } = await packagedStore();
+    setInterstep(store, linkId, validIntent);
+    const before = store.getState().links[0];
+
+    store.getState().setLinkTransport(linkId, {
+      mode: "train",
+      trip: { kind: "estimated" },
+    } as unknown as LinkTransport);
+    expect(store.getState().links[0]).toBe(before);
+
+    setInterstep(store, linkId, {
+      packageRecipeId: "packaged_water",
+      clockPercentText: "100",
+      returnTransport: {
+        mode: "drone",
+        fuel: "not-a-fuel",
+        trip: { kind: "estimated", flightMetersText: "900" },
+      },
+    } as unknown as PackagingInterstep);
+    expect(store.getState().links[0]).toBe(before);
   });
 
   it("disables stale intent phase-safely for solid and missing items", async () => {
