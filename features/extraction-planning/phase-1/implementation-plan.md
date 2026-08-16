@@ -32,8 +32,14 @@ Expected: all selected baseline tests pass.
 - Modify: `src/data/catalog-store.test.ts`
 - Modify: catalog literals reported by `rg -n 'recipeUnlocks:' src --glob '*.ts'`
 
-- [ ] Add failing parser tests with minimal Docs fragments for all supported native families. Assert exact rates 60/120/240 for miners, 120 for Oil/Water, 60 nominal for Resource Well; topology; and exact applicability. Add rejection rows for missing/non-positive cycle values, unknown forms, invalid textual booleans, and empty/malformed/unresolved restricted resources.
-- [ ] Run the focused loader tests and confirm failures mention missing extractor support.
+- [ ] Add failing parser tests with minimal Docs fragments for all supported native families. Assert exact rates 60/120/240 for miners, 120 for Oil/Water, 60 nominal for Resource Well; topology; and exact applicability. Add rejection rows for missing, non-numeric, malformed, zero, and negative cycle values; unknown forms; invalid textual booleans; and empty/malformed/unresolved restricted resources. Add two reversed-order fixtures where extractor groups precede descriptors: unrestricted miners before solid resources and a restricted Water/Oil extractor before its resource.
+- [ ] Run the parser red phase:
+
+```bash
+npm test -- --run src/data/docs-loader.test.ts
+```
+
+Expected: FAIL in the new `parses extractor capabilities independent of group order` and strict cycle/restriction tests because extractor output is absent.
 - [ ] Add the required contracts:
 
 ```ts
@@ -50,7 +56,15 @@ export interface Catalog {
 }
 ```
 
-- [ ] Widen only the building-family boundary needed for `FGBuildableWaterPump` and `FGBuildableFrackingExtractor`. Parse cycle fields and exact `"True"`/`"False"` restriction text into source-order-independent temporary extractor records; materialize unrestricted forms only after raw resources are known. Do not admit the Pressurizer as a machine for Phase 1.
+- [ ] Widen only the building-family boundary needed for `FGBuildableWaterPump` and `FGBuildableFrackingExtractor`. Parse cycle fields and exact `"True"`/`"False"` restriction text into source-order-independent temporary extractor records; materialize unrestricted forms only after raw resources are known. Do not admit the Pressurizer as a machine for Phase 1. Rerun `npm test -- --run src/data/docs-loader.test.ts` and require green.
+- [ ] Before cache production edits, add failing `catalog-store.test.ts` rows for exact extractor Fraction/topology/applicability round-trip and a parser-version-5 row returning `stale` under version 6.
+- [ ] Run the cache red phase:
+
+```bash
+npm test -- --run src/data/catalog-store.test.ts
+```
+
+Expected: FAIL in the new extractor round-trip/version-6 stale rows because stored catalogs do not carry extractors and the parser version is still 5.
 - [ ] Bump `CATALOG_PARSER_VERSION` from 5 to 6. Add `StoredCatalogExtractor`, serialize `normalRate.toString()`, revive with `parseRational`, and require `extractors` in all catalog literals/round-trip tests.
 - [ ] Run:
 
@@ -76,7 +90,13 @@ git commit -m "feat(112): parse extractor capabilities"
 
 - [ ] Write failing table tests for the frozen worked examples and error arms: Limestone 12,720/min with Miner Mk.3 at 100% gives 53 at 240/min and 2385 MW; Water 10,600/min gives 89 at 120/min and 1780 MW; 250% rows preserve exact count/supply/spare and approximate power; invalid clocks and safe-integer overflow return explicit statuses.
 - [ ] Add adversarial selection tests: Resource Well persisted for Water, Oil Extractor persisted for Water, a removed machine, and Nitrogen with no standalone candidate must produce no count/transport/power.
-- [ ] Run the new test and confirm it fails because `deriveExtractionPlan` does not exist.
+- [ ] Run the derivation red phase:
+
+```bash
+npm test -- --run src/ui/extraction-plan.test.ts
+```
+
+Expected: FAIL in the new worked-example and invalid-selection tests because `deriveExtractionPlan` does not exist.
 - [ ] Implement one pure discriminated result API. Validate the selected extractor with both conditions before arithmetic:
 
 ```ts
@@ -107,8 +127,22 @@ git commit -m "feat(112): derive extraction requirements"
 - Modify: `src/data/plan-store.test.ts`
 
 - [ ] Write failing store tests for setting/clearing `{machineId, clockPercentText}` by stage and raw item, stage isolation, removal cleanup, and recipe-swap retention.
+- [ ] Run the state red phase:
+
+```bash
+npm test -- --run src/state/store.test.ts
+```
+
+Expected: FAIL in the new `persists extraction intent by stage and raw item` tests because the action/state field does not exist.
 - [ ] Add `ExtractionSelection`, optional `StageNode.extraction`, and one atomic store action. Keep catalog semantics out of the write path.
-- [ ] Write failing v6 tests before migration code. Cover valid/invalid extraction shapes; malformed clock text round-trip; v5 with explicit `userPlaced`; v1-v4 with and without original positions; save/load; single import; bundle import; legacy-row rename/save-over; export/reimport; and `listPlans` recognizing versions 1-6.
+- [ ] Write failing v6 tests before migration code. Cover valid/invalid extraction shapes; malformed clock text round-trip; a mixed v5 plan where `userPlaced: true` maps to required `true` and absent maps to required `false`; v1-v4 with and without original positions; save/load; single import; bundle import; legacy-row rename/save-over; export/reimport; and `listPlans` recognizing versions 1-6. The mixed true/absent values must survive every immediate rewrite path.
+- [ ] Run the persistence red phase:
+
+```bash
+npm test -- --run src/data/plan-store.test.ts src/state/store.test.ts
+```
+
+Expected: FAIL in the new v6 validation/migration/rewrite tests because only v5 and transient origin tracking exist.
 - [ ] Define `PlanStageV6` with required `userPlaced: boolean` and optional extraction map, and `PlanFileV6` with `format_version: 6`. Every validator/migration returns explicit v6. For v1-v4, calculate original position presence before any migration synthesizes positions; for v5 use `entry.userPlaced === true`.
 - [ ] Remove `loadPlanWithOrigin` and the `wasV5`/`v5Native` branch. Make `rebuildFromPlan` consume only `entry.userPlaced`. Save every stage as v6 with explicit boolean and extraction intent.
 - [ ] Run:
@@ -134,10 +168,24 @@ git commit -m "feat(112): persist extraction selections"
 - Modify: `src/ui/GraphCanvas.test.ts`
 
 - [ ] Write failing graph tests requiring each derived raw node to carry `stageId`, `itemId`, and the exact `Fraction` demand in addition to display text. Assert linked-input suppression and raw layout positions remain unchanged.
+- [ ] Run the raw-data red phase:
+
+```bash
+npm test -- --run src/ui/graph-flow.test.ts
+```
+
+Expected: FAIL in the new `carries exact raw identity and demand` assertions because raw data contains display strings only.
 - [ ] Extend `RawFlowNode.data` and copy `feed.totalDemand` directly. Never parse `rateText` back into a number.
+- [ ] Before component edits, add failing `GraphCanvas.test.ts` rows for mouse/Enter/Space opening, wrapper exclusion from the tab order, inner-button sole focus, live exact-demand updates, and raw-node disappearance closing the panel.
+- [ ] Run the interaction red phase:
+
+```bash
+npm test -- --run src/ui/GraphCanvas.test.ts
+```
+
+Expected: FAIL in the new raw-card activation/lifecycle tests because the card has no button or open state.
 - [ ] Add component-local open identity `{stageId, itemId}`. On each render resolve it against current derived raw nodes; close when absent. Inject only the open callback at the React Flow boundary so `graphToFlow` stays pure.
 - [ ] Make the raw wrapper `focusable: false` and `pointerEvents: "all"`; render one inner `button.nodrag.nopan` with `aria-haspopup="dialog"` and item/rate accessible name. Preserve non-draggable/non-selectable/non-deletable flags and the `raw:` commit guard.
-- [ ] Test mouse, Enter, and Space activation; wrapper not in tab order; button sole tab stop; exact demand updates while open after an upstream solve change; and linked-input disappearance closes the panel.
 - [ ] Run:
 
 ```bash
@@ -159,11 +207,29 @@ git commit -m "feat(112): open extraction planning from raw feeds"
 - Modify: `src/ui/GraphCanvas.test.ts`
 - Modify: `src/ui/app.css`
 - Modify: `src/ui/smoke.test.tsx` if app-level wiring needs coverage
+- Create: `src/ui/extraction-panel-browser-harness.tsx`
+- Create: `features/extraction-planning/phase-1/browser-harness.html`
+- Create: `scripts/extraction-panel-browser-check.mjs`
 
-- [ ] Write failing UI tests for solid explicit selection, Water/Oil first-open auto-seeding, invalid clock removing stale output, visible `Purity Normal`, exact worked results, per-output Mk5 warning at Miner Mk.3 250%, unavailable persisted selection, explicit Resource Well alternative text, and Nitrogen's no-miner/no-count message.
-- [ ] Replace overlapping top-right Panels with one Panel containing an unframed notice/extraction stack. Render extractor select, clock text input, requirement, count, each/supplied/spare, transport, power, and icon close control. Move focus to the first control on open and restore it to the surviving opener on close.
+- [ ] Write failing UI tests for solid explicit selection, Water/Oil first-open auto-seeding, invalid clock removing stale output, visible `Purity Normal`, exact worked results, per-output Mk5 warning at Miner Mk.3 250%, unavailable persisted selection, explicit Resource Well alternative text, and Nitrogen's no-miner/no-count message. Require the opened region to have `role="dialog"`, `aria-modal="false"`, and `aria-labelledby` pointing to its item heading; require an icon close button with an accessible name and tooltip.
+- [ ] Run the panel red phase:
+
+```bash
+npm test -- --run src/ui/GraphCanvas.test.ts src/ui/smoke.test.tsx
+```
+
+Expected: FAIL in the new planned-result, dialog-semantics, close-control, and focus tests because the extraction panel does not exist.
+- [ ] Replace overlapping top-right Panels with one Panel containing an unframed notice/extraction stack. Render extractor select, clock text input, requirement, count, each/supplied/spare, transport, power, and accessible icon close control. The extraction region is a labeled non-modal dialog. Move focus to the first control on open and restore it to the surviving opener on close.
+- [ ] Add the checked-in browser harness. `browser-harness.html` loads the TSX harness through Vite; the harness seeds notice-only, extraction-only, and combined states with chain power. The Node script starts Vite on an available local port, launches `/usr/bin/chromium --headless --no-sandbox` through the DevTools protocol, evaluates bounding rectangles/text overflow at 360x340 and 720x340, saves screenshots under `/tmp/satisfactory-foundry-112-browser`, and always terminates both processes.
+- [ ] Run the responsive red phase before CSS:
+
+```bash
+node scripts/extraction-panel-browser-check.mjs
+```
+
+Expected: non-zero exit with a named top/side/bottom overlap or overflow assertion in at least one seeded state.
 - [ ] Add CSS caps of 260px desktop and 220px at `<=720px`, internal vertical scroll, mobile side gutters/top clearance, and no nested card styling.
-- [ ] Add browser assertions/screenshots at 360px and 720px width with 340px canvas height and chain power present for notice-only, extraction-only, and combined states. Verify no overlap with top-left, bottom-left, or bottom-right controls and no text overflow.
+- [ ] Rerun `node scripts/extraction-panel-browser-check.mjs`; require exit 0 for all six viewport/state rows and inspect the emitted screenshots.
 - [ ] Run:
 
 ```bash
@@ -174,7 +240,7 @@ Expected: all panel, focus, responsive-contract, and explicit-unavailable tests 
 - [ ] Commit:
 
 ```bash
-git add src/ui/GraphCanvas.tsx src/ui/GraphCanvas.test.ts src/ui/app.css src/ui/smoke.test.tsx
+git add src/ui/GraphCanvas.tsx src/ui/GraphCanvas.test.ts src/ui/app.css src/ui/smoke.test.tsx src/ui/extraction-panel-browser-harness.tsx features/extraction-planning/phase-1/browser-harness.html scripts/extraction-panel-browser-check.mjs
 git commit -m "feat(112): add extraction planning panel"
 ```
 
