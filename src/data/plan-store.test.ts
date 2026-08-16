@@ -72,6 +72,10 @@ describe("plan-store — v6 extraction and explicit placement (#112)", () => {
         ...good.stages[0],
         extraction: { stone: { machineId: "miner", clockPercentText: 100 } },
       },
+      {
+        ...good.stages[0],
+        extraction: [{ machineId: "miner_mk3", clockPercentText: "100" }],
+      },
     ]) {
       await db.put("plans", { ...good, stages: [stage] }, "bad");
       expect(await loadPlan("bad")).toBeNull();

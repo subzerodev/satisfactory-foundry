@@ -36,7 +36,7 @@ reconsideration:
   correctness convergence and one-shot parsimony disposition
 - **Production edits:** `1fc4361`, `5bcd381`, `40e4f72`, `b937bfc`, `254e1ae`
 - **Verification:** 39 files / 1030 tests, checked-in Chromium/CDP geometry and
-  interaction gate, and nine canonical mutation break/restore probes
+  interaction gate, and ten canonical mutation break/restore probes
 - **Completion report:** `phase-1/completion-report.md`
 
 ### Phase 2 - purity mix
@@ -196,3 +196,5 @@ do not satisfy that contract. Task 6 therefore remains unchanged.
 - **r4:** folded Water/Oil clear-option lifecycle and clock-error wording. The
   initial auto-seed is now attempted once per open raw identity, so clearing is
   stable; Propose and extraction planning share one exact clock parser.
+- **r5:** folded malformed v6 extraction-array rejection and removed the
+  duplicated pipe noun from exact output guidance.

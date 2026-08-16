@@ -489,10 +489,10 @@ function transportText(
     return `Output: one extractor exceeds the highest ${transport.kind} tier.`;
   }
   const label = tierLabel(transport.kind, transport.capacity, catalog.tiers);
-  const noun = transport.kind === "belt" ? "belt" : "pipe";
+  const line = transport.kind === "belt" ? `${label} belt` : label;
   return transport.status === "available"
-    ? `Output: ${label} ${noun} or better`
-    : `Output: ${label} ${noun} required (not unlocked)`;
+    ? `Output: ${line} or better`
+    : `Output: ${line} required (not unlocked)`;
 }
 
 /**

@@ -338,6 +338,8 @@ describe("RawFeedNode", () => {
       await act(async () => root.render(<Harness />));
       const select = host.querySelector("select")!;
       expect(select.value).not.toBe("");
+      expect(host.textContent).toContain("Output: Pipe Mk1 or better");
+      expect(host.textContent).not.toContain("Pipe Mk1 pipe");
 
       select.value = "";
       await act(async () =>

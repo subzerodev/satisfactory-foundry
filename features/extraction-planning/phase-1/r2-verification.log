@@ -84,6 +84,14 @@ FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > allows clearing the auto-se
 FAIL src/ui/extraction-plan.test.ts > deriveExtractionPlan > uses the shared clock error for nope
 restore result: PASS - 2 files, 21 tests; ChainBuilder shared-parser suite and browser gate also pass
 
+10. Correctness r5 v6 shape and pipe-copy folds
+break: accept arrays as extraction maps and restore the duplicate pipe noun
+command: npm test -- src/data/plan-store.test.ts src/ui/GraphCanvas.dom.test.tsx
+FAIL src/data/plan-store.test.ts > plan-store - v6 extraction and explicit placement (#112) > rejects malformed v6 placement and extraction shapes
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > allows clearing the auto-seeded water extractor
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > allows clearing the auto-seeded liquid_oil extractor
+restore result: PASS - 2 files, 72 tests
+
 BROWSER GATE
 command: node scripts/extraction-panel-browser-check.mjs
 PASS geometry 360px notice top=49 bottom=91 height=42

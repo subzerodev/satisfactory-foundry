@@ -746,7 +746,13 @@ function isStageV6Shape(stage: unknown): boolean {
   const s = stage as Record<string, unknown>;
   if (typeof s.userPlaced !== "boolean") return false;
   if (s.extraction === undefined) return true;
-  if (s.extraction === null || typeof s.extraction !== "object") return false;
+  if (
+    s.extraction === null ||
+    typeof s.extraction !== "object" ||
+    Array.isArray(s.extraction)
+  ) {
+    return false;
+  }
   for (const [itemId, rawSelection] of Object.entries(s.extraction)) {
     if (
       itemId === "" ||
