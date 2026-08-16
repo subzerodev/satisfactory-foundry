@@ -9,7 +9,12 @@ import type {
 import type { TierTable } from "../data/types.ts";
 import { computeLayout } from "./layout.ts";
 import type { LaneTrack, SchematicLayout } from "./layout.ts";
-import { beltLabel, formatRate, segTooltip } from "./format.ts";
+import {
+  beltLabel,
+  firstLockedTierForOneLine,
+  formatRate,
+  segTooltip,
+} from "./format.ts";
 import { colorForCapacity, ERROR_COLOR } from "./colors.ts";
 
 interface SchematicProps {
@@ -27,12 +32,16 @@ interface TooltipState {
   text: string;
   x: number;
   y: number;
+  maxWidth: number;
 }
 
 /** Tooltip offset from the cursor (px), and the clamp margin from the container
  *  edges so a tooltip near the right/bottom edge doesn't overflow. */
 const TIP_OFFSET = 12;
 const TIP_CLAMP = 8;
+const TIP_MAX_WIDTH = 280;
+const PARALLEL_RAIL_OFFSET = 4;
+const PARALLEL_LABEL_MIN_WIDTH = 20;
 
 /**
  * A segment is in error when a finding implicates it: `segment-over-capacity`
@@ -60,6 +69,20 @@ function segmentErrored(
   });
 }
 
+function parallelRuns(track: LaneTrack): { x1: number; x2: number }[] {
+  const runs: { x1: number; x2: number }[] = [];
+  for (const segment of track.segments) {
+    if (segment.parallelCount !== 2) continue;
+    const previous = runs[runs.length - 1];
+    if (previous !== undefined && previous.x2 === segment.x1) {
+      previous.x2 = segment.x2;
+    } else {
+      runs.push({ x1: segment.x1, x2: segment.x2 });
+    }
+  }
+  return runs;
+}
+
 /** One lane's SVG group: bus segments, seams, entry/break-out arrows.
  *  `onTip`/`offTip` wire each hoverable line into the schematic-level tooltip;
  *  `<title>` markup is gone (Stage 5 item 1) — the tooltip text is carried by
@@ -70,11 +93,13 @@ function LaneG({
   findings,
   belts,
   side,
-  busCapString,
+  busCapacity,
+  unlockedCount,
   tiers,
   itemName,
   machineTopY,
   onTip,
+  onFocusTip,
   offTip,
 }: {
   track: LaneTrack;
@@ -82,16 +107,20 @@ function LaneG({
   findings: Finding[];
   belts: (FeedBelt | BreakoutBelt)[];
   side: "feed" | "output";
-  busCapString: string;
+  busCapacity: FeedBelt["capacity"];
+  unlockedCount: number;
   tiers: TierTable;
   itemName: (id: string) => string;
   machineTopY: number;
   onTip: (text: string, e: React.MouseEvent) => void;
+  onFocusTip: (text: string, e: React.FocusEvent<SVGGElement>) => void;
   offTip: () => void;
 }) {
   // Pipe lanes read a distinct desaturated-blue dashed treatment (Stage 5 item
   // 4); belt lanes keep the plain track. Schematic already knows the lane kind.
   const pipeClass = kind === "pipe" ? " lane-pipe" : "";
+  const busCapString = formatRate(busCapacity);
+  const runs = side === "feed" ? parallelRuns(track) : [];
   return (
     <g className={`lane lane-${side}`} data-item={track.itemId}>
       {/* Output lane names sit BELOW their bus (#76): the output bus is at
@@ -109,13 +138,68 @@ function LaneG({
       </text>
       {track.segments.map((seg) => {
         const belt = belts[seg.beltIndex]!;
-        const color = colorForCapacity(kind, belt.capacity, tiers);
         const errored = segmentErrored(
           findings,
           seg.fromMachine,
           seg.toMachine,
         );
-        const tip = segTooltip(seg, busCapString);
+        const stroke = errored
+          ? ERROR_COLOR
+          : colorForCapacity(
+              kind,
+              seg.parallelCount === 2 ? busCapacity : belt.capacity,
+              tiers,
+            );
+        const oneLineTier =
+          seg.parallelCount === 2
+            ? firstLockedTierForOneLine(
+                kind,
+                seg.peakFlow,
+                tiers,
+                unlockedCount,
+              )
+            : null;
+        const tip = segTooltip(
+          seg,
+          busCapString,
+          seg.parallelCount,
+          oneLineTier,
+        );
+        if (seg.parallelCount === 2) {
+          const railClass = `parallel-rail${errored ? " seg-error" : ""}${pipeClass}`;
+          return (
+            <g
+              key={`seg-${seg.beltIndex}`}
+              className="parallel-segment"
+              data-parallel-segment={`${seg.fromMachine}-${seg.toMachine}`}
+              role="img"
+              tabIndex={0}
+              aria-label={tip}
+              onMouseEnter={(e) => onTip(tip, e)}
+              onMouseMove={(e) => onTip(tip, e)}
+              onMouseLeave={offTip}
+              onFocus={(e) => onFocusTip(tip, e)}
+              onBlur={offTip}
+            >
+              <line
+                className={railClass}
+                x1={seg.x1}
+                x2={seg.x2}
+                y1={track.busY - PARALLEL_RAIL_OFFSET}
+                y2={track.busY - PARALLEL_RAIL_OFFSET}
+                stroke={stroke}
+              />
+              <line
+                className={railClass}
+                x1={seg.x1}
+                x2={seg.x2}
+                y1={track.busY + PARALLEL_RAIL_OFFSET}
+                y2={track.busY + PARALLEL_RAIL_OFFSET}
+                stroke={stroke}
+              />
+            </g>
+          );
+        }
         return (
           <line
             key={`seg-${seg.beltIndex}`}
@@ -124,13 +208,25 @@ function LaneG({
             x2={seg.x2}
             y1={track.busY}
             y2={track.busY}
-            stroke={errored ? ERROR_COLOR : color}
+            stroke={stroke}
             onMouseEnter={(e) => onTip(tip, e)}
             onMouseMove={(e) => onTip(tip, e)}
             onMouseLeave={offTip}
           />
         );
       })}
+      {runs.map((run, index) =>
+        run.x2 - run.x1 >= PARALLEL_LABEL_MIN_WIDTH ? (
+          <text
+            key={`parallel-run-${index}`}
+            className="parallel-run-label"
+            x={(run.x1 + run.x2) / 2}
+            y={track.busY - 9}
+          >
+            x2
+          </text>
+        ) : null,
+      )}
       {track.seams.map((x, i) => (
         <line
           key={`seam-${i}`}
@@ -148,6 +244,7 @@ function LaneG({
           <line
             key={`belt-${arrow.index}`}
             className={`belt-arrow${pipeClass}`}
+            data-feed-index={side === "feed" ? arrow.index : undefined}
             x1={arrow.x}
             x2={arrow.x}
             y1={side === "feed" ? track.y + 16 : machineTopY}
@@ -244,24 +341,50 @@ export function Schematic({
 
   const machineTopY = layout.machineTop;
 
-  // Component-local hover tooltip (Stage 5 item 1): replaces the native SVG
+  // Component-local hover/focus tooltip (Stage 5 item 1): replaces native SVG
   // <title> tooltips. The div is positioned from the mouse event, clamped to
   // the container box so an edge-hovered segment's tip stays visible.
   const containerRef = useRef<HTMLDivElement>(null);
   const [tip, setTip] = useState<TooltipState | null>(null);
 
-  const showTip = (text: string, e: React.MouseEvent) => {
-    const box = containerRef.current?.getBoundingClientRect();
-    if (box === undefined) return;
-    const x = Math.min(
-      e.clientX - box.left + TIP_OFFSET,
-      box.width - TIP_CLAMP,
+  const horizontalTipPlacement = (
+    container: HTMLDivElement,
+    anchorClientX: number,
+  ): { x: number; maxWidth: number } => {
+    const box = container.getBoundingClientRect();
+    const maxWidth = Math.min(
+      TIP_MAX_WIDTH,
+      Math.max(0, box.width - 2 * TIP_CLAMP),
     );
+    const minX = container.scrollLeft + TIP_CLAMP;
+    const maxX = container.scrollLeft + box.width - TIP_CLAMP - maxWidth;
+    const anchoredX =
+      anchorClientX - box.left + container.scrollLeft + TIP_OFFSET;
+    return { x: Math.max(minX, Math.min(anchoredX, maxX)), maxWidth };
+  };
+
+  const showTip = (text: string, e: React.MouseEvent) => {
+    const container = containerRef.current;
+    if (container === null) return;
+    const box = container.getBoundingClientRect();
+    const { x, maxWidth } = horizontalTipPlacement(container, e.clientX);
     const y = Math.min(
       e.clientY - box.top + TIP_OFFSET,
       box.height - TIP_CLAMP,
     );
-    setTip({ text, x, y });
+    setTip({ text, x, y, maxWidth });
+  };
+  const showFocusTip = (text: string, e: React.FocusEvent<SVGGElement>) => {
+    const container = containerRef.current;
+    if (container === null) return;
+    const containerBox = container.getBoundingClientRect();
+    const glyphBox = e.currentTarget.getBoundingClientRect();
+    const { x, maxWidth } = horizontalTipPlacement(container, glyphBox.right);
+    const y = Math.min(
+      glyphBox.top - containerBox.top + TIP_OFFSET,
+      containerBox.height - TIP_CLAMP,
+    );
+    setTip({ text, x, y, maxWidth });
   };
   const hideTip = () => setTip(null);
 
@@ -285,11 +408,13 @@ export function Schematic({
               findings={lane.findings}
               belts={lane.belts}
               side="feed"
-              busCapString={formatRate(busCap)}
+              busCapacity={busCap}
+              unlockedCount={unlocked[lane.kind]}
               tiers={tiers}
               itemName={itemName}
               machineTopY={machineTopY}
               onTip={showTip}
+              onFocusTip={showFocusTip}
               offTip={hideTip}
             />
           );
@@ -336,18 +461,23 @@ export function Schematic({
               findings={lane.findings}
               belts={lane.breakouts}
               side="output"
-              busCapString={formatRate(busCap)}
+              busCapacity={busCap}
+              unlockedCount={unlocked[lane.kind]}
               tiers={tiers}
               itemName={itemName}
               machineTopY={machineTopY + 40}
               onTip={showTip}
+              onFocusTip={showFocusTip}
               offTip={hideTip}
             />
           );
         })}
       </svg>
       {tip !== null && (
-        <div className="tooltip" style={{ left: tip.x, top: tip.y }}>
+        <div
+          className="tooltip"
+          style={{ left: tip.x, top: tip.y, maxWidth: tip.maxWidth }}
+        >
           {tip.text}
         </div>
       )}

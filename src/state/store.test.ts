@@ -1176,6 +1176,32 @@ describe("plan lifecycle (ticket #11)", () => {
     expect(store.getState().solve.status).toBe("solved");
   });
 
+  it("round-trips a huge feed override and re-solves with its later entry clamped", async () => {
+    const store = await readyStore();
+    const hugeOverride = "270215977642229760";
+    store.getState().setUnlockedTiers({ belt: 4, pipe: 1 });
+    store.getState().selectRecipe("ingot_iron");
+    store.getState().setMachineCount(20);
+    store.getState().setOverride("feeds", "ore_iron", 0, hugeOverride);
+
+    expect(store.getState().solve.status).toBe("solved");
+    await store.getState().savePlanAs("Huge override");
+    const id = store.getState().plans![0]!.id;
+
+    store.getState().setOverride("feeds", "ore_iron", 0, "480");
+    store.getState().setMachineCount(3);
+    await store.getState().loadPlan(id);
+
+    expect(store.getState().selection.overrides.feeds.ore_iron).toEqual([
+      hugeOverride,
+    ]);
+    const solve = store.getState().solve;
+    expect(solve.status).toBe("solved");
+    if (solve.status === "solved") {
+      expect(solve.result.feeds[0]!.belts[1]!.entersAfterMachine).toBe(20);
+    }
+  });
+
   it("save-by-name overwrites (same id, bumped updatedAt), never duplicates", async () => {
     const store = await readyStore();
     store.getState().setClockPercentText("100");
