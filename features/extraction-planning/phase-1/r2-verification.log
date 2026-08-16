@@ -53,6 +53,13 @@ command: npm test -- --run src/ui/GraphCanvas.dom.test.tsx
 FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > renders the exact Normal-purity plan and persists control edits
 restore result: PASS - 1 file, 4 tests
 
+6. Correctness r1 parser and cache folds
+break: skip malformed restricted-resource members; serialize extractors into a plain object
+command: npm test -- src/data/docs-loader.test.ts src/data/catalog-store.test.ts
+FAIL src/data/docs-loader.test.ts > parseDocsJson - extractor capabilities (#112) > rejects a restricted resource list with a malformed member
+FAIL src/data/catalog-store.test.ts > catalog cache - null-prototype maps survive revive (#28) > round-trips an extractor whose id is __proto__
+restore result: PASS - 2 files, 73 tests
+
 BROWSER GATE
 command: node scripts/extraction-panel-browser-check.mjs
 PASS geometry 360px notice top=49 bottom=91 height=42
@@ -66,7 +73,7 @@ screenshots: /tmp/satisfactory-foundry-112-browser/{360,720}-{notice,extraction,
 
 POST-CODE COMPLETE SUITE
 command: npm test
-result: PASS - 39 files, 1022 tests
+result: PASS - 39 files, 1024 tests
 command: npm run check
 result: PASS - TypeScript, ESLint, and Prettier
 command: npm run build

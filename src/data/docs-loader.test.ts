@@ -434,6 +434,24 @@ describe("parseDocsJson — extractor capabilities (#112)", () => {
     },
   );
 
+  it("rejects a restricted resource list with a malformed member", () => {
+    const row = extractor(
+      "Build_WaterPump_C",
+      "Water",
+      "2000",
+      "1",
+      "(RF_LIQUID)",
+      "True",
+      `${allowedResources("Water").slice(0, -1)},"malformed")`,
+    );
+    expect(() =>
+      parseDocsJson([
+        RAW_RESOURCE_GROUP,
+        extractorGroup("FGBuildableWaterPump", [row]),
+      ]),
+    ).toThrow(DocsParseError);
+  });
+
   it("rejects unknown forms and manufactured restricted descriptors", () => {
     const unknown = extractor(
       "Build_MinerMk1_C",

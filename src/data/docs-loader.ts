@@ -277,7 +277,8 @@ function isExtractorNativeClass(nativeClass: string): boolean {
 }
 
 const EXTRACTOR_FORMS = new Set(["RF_SOLID", "RF_LIQUID", "RF_GAS"]);
-const ALLOWED_RESOURCE_REF = /\.Desc_([A-Za-z0-9_]+)_C'/g;
+const ALLOWED_RESOURCE_LIST = /^\((.*)\)$/;
+const ALLOWED_RESOURCE_ENTRY = /^"[^"]*\.Desc_([A-Za-z0-9_]+)_C'"$/;
 
 function parseRawExtractor(
   c: Record<string, unknown>,
@@ -329,16 +330,17 @@ function parseRawExtractor(
         `Extractor ${machineId}: restricted mAllowedResources must be non-empty.`,
       );
     }
-    restrictedItemIds = [];
-    ALLOWED_RESOURCE_REF.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = ALLOWED_RESOURCE_REF.exec(c.mAllowedResources)) !== null) {
-      if (match[1] !== undefined) {
-        restrictedItemIds.push(
-          normalizeClassName(`Desc_${match[1]}_C`, "Desc_"),
+    const list = ALLOWED_RESOURCE_LIST.exec(c.mAllowedResources);
+    const entries = list?.[1]?.split(",") ?? [];
+    restrictedItemIds = entries.map((entry) => {
+      const match = ALLOWED_RESOURCE_ENTRY.exec(entry);
+      if (match?.[1] === undefined) {
+        throw new DocsParseError(
+          `Extractor ${machineId}: malformed mAllowedResources.`,
         );
       }
-    }
+      return normalizeClassName(`Desc_${match[1]}_C`, "Desc_");
+    });
     if (restrictedItemIds.length === 0) {
       throw new DocsParseError(
         `Extractor ${machineId}: malformed mAllowedResources.`,

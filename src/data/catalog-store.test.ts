@@ -324,6 +324,28 @@ describe("catalog cache — null-prototype maps survive revive (#28)", () => {
     expect(result.catalog.recipeUnlocks).toEqual({ ingot_iron: 3 });
     expect(Object.getPrototypeOf(result.catalog.recipeUnlocks)).toBeNull();
   });
+
+  it("round-trips an extractor whose id is __proto__", async () => {
+    const catalog = sampleCatalog();
+    catalog.extractors = Object.assign(Object.create(null), catalog.extractors);
+    catalog.extractors["__proto__"] = {
+      machineId: "__proto__",
+      topology: "standalone",
+      normalRate: Fraction.from(120),
+      itemIds: ["ore_iron"],
+    };
+
+    await saveCatalog("raw docs text", catalog);
+    const result = await loadCatalog();
+    expect(result.status).toBe("hit");
+    if (result.status !== "hit") return;
+
+    expect(Object.hasOwn(result.catalog.extractors, "__proto__")).toBe(true);
+    expect(result.catalog.extractors["__proto__"]!.machineId).toBe("__proto__");
+    expect(result.catalog.extractors["__proto__"]!.normalRate.toString()).toBe(
+      "120",
+    );
+  });
 });
 
 /** The JSON-safe shape saveCatalog would write for `sampleCatalog()`, used to

@@ -240,7 +240,8 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
   for (const [id, it] of Object.entries(catalog.items)) {
     items[id] = serializeItem(it);
   }
-  const extractors: Record<string, StoredCatalogExtractor> = {};
+  const extractors: Record<string, StoredCatalogExtractor> =
+    Object.create(null);
   for (const [id, extractor] of Object.entries(catalog.extractors)) {
     extractors[id] = {
       machineId: extractor.machineId,
