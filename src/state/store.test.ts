@@ -375,6 +375,34 @@ describe("invalid-input routing (spec row 5)", () => {
     if (s.status === "invalid") expect(s.reason).toBe("bad-override");
   });
 
+  it.each([
+    ["feeds", "ore_iron"],
+    ["outputs", "iron_ingot"],
+  ] as const)(
+    "negative %s override → invalid bad-override with lane and slot detail",
+    async (side, itemId) => {
+      const store = await readyWithRecipe();
+      store.getState().setOverride(side, itemId, 1, "-5");
+      const s = store.getState().solve;
+      expect(s.status).toBe("invalid");
+      if (s.status === "invalid") {
+        expect(s.reason).toBe("bad-override");
+        expect(s.detail).toBe(
+          `lane ${itemId} override 2 must be zero or positive; got -5.`,
+        );
+      }
+    },
+  );
+
+  it("zero feed and output overrides remain solved", async () => {
+    const store = await readyWithRecipe();
+    store.getState().setOverride("feeds", "ore_iron", 0, "0");
+    expect(store.getState().solve.status).toBe("solved");
+
+    store.getState().setOverride("outputs", "iron_ingot", 0, "0");
+    expect(store.getState().solve.status).toBe("solved");
+  });
+
   it("override on an item absent from the recipe → invalid bad-override (buildLanes throws)", async () => {
     const store = await readyWithRecipe();
     // No membership guard in setOverride; derive's toStageInput/buildLanes

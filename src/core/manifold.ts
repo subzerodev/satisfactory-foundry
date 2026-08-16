@@ -111,6 +111,7 @@ export type Finding =
         | "negative-rate"
         | "nonpositive-clock"
         | "bad-machine-count"
+        | "negative-override"
         | "overrides-exceed-belt-count";
       detail: string;
     };
@@ -246,6 +247,25 @@ function isDegenerate(input: StageInput, rate: Fraction): boolean {
   return input.machineCount === 0 || rate.isZero();
 }
 
+/** Return the first lane-local finding for a negative capacity override. */
+function negativeOverrideFinding(lane: LaneInput): Finding | null {
+  const overrides = lane.overrides;
+  if (overrides === undefined) {
+    return null;
+  }
+  for (let i = 0; i < overrides.length; i++) {
+    const override = overrides[i];
+    if (override !== null && override !== undefined && override.isNegative()) {
+      return {
+        type: "invalid-input",
+        reason: "negative-override",
+        detail: `lane ${lane.itemId} override ${i + 1} must be zero or positive; got ${override.toString()}.`,
+      };
+    }
+  }
+  return null;
+}
+
 /**
  * Result of draining one bus span under the head-first-draw model: how many
  * machines were fully served, the (possibly zero) partial received by the next
@@ -315,6 +335,11 @@ export function solveFeedLane(
     segments: [],
     findings: [],
   };
+  const negativeOverride = negativeOverrideFinding(lane);
+  if (negativeOverride !== null) {
+    base.findings.push(negativeOverride);
+    return base;
+  }
   if (isDegenerate(input, d)) {
     return base;
   }
@@ -452,6 +477,11 @@ export function solveOutputLane(
     segments: [],
     findings: [],
   };
+  const negativeOverride = negativeOverrideFinding(lane);
+  if (negativeOverride !== null) {
+    base.findings.push(negativeOverride);
+    return base;
+  }
   if (isDegenerate(input, p)) {
     return base;
   }
