@@ -473,6 +473,12 @@ body {
   font-style: italic;
 }
 
+.chain-builder-suggestion label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .chain-builder-actions {
   display: flex;
   gap: 8px;

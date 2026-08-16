@@ -190,7 +190,9 @@ describe("proposeChain — byproducts reported, never routed", () => {
   it("lists the non-primary output at its built rate", () => {
     // fuel @ 40/min → 1 fuel machine → 30 residue byproduct.
     const p = proposeChain("fuel", F(40), recipes, []);
-    expect(p.byproducts).toEqual([{ itemId: "residue", rate: F(30) }]);
+    expect(p.byproducts).toEqual([
+      { fromItemId: "fuel", itemId: "residue", rate: F(30) },
+    ]);
     // No stage or link for residue — reported only.
     expect(stageFor(p, "residue")).toBeUndefined();
     expect(p.links.some((l) => l.fromItemId === "residue")).toBe(false);
@@ -662,7 +664,9 @@ describe("proposeChain — clockPercent scaling (S20 P2)", () => {
     // and the byproduct resin scales to 10 × 3/2 = 15/min.
     const p = proposeChain("fuel", F(20), bp, [], new Map(), new Set(), F(150));
     expect(stageFor(p, "fuel")!.machineCount).toBe(1n);
-    expect(p.byproducts).toEqual([{ itemId: "resin", rate: F(15) }]);
+    expect(p.byproducts).toEqual([
+      { fromItemId: "fuel", itemId: "resin", rate: F(15) },
+    ]);
   });
 
   it("the 100% DEFAULT is byte-identical to the 6-arg call (regression pin)", () => {

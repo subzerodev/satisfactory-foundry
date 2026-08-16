@@ -1,7 +1,7 @@
 # Propose follow-ups: consolidation, type-safety, routing (Stage 21 arc)
 
 **Started:** 2026-08-07
-**Status:** IN PROGRESS — P0 DONE, P1 DONE, P2 CLOSED won't-do; P3 (#105) next
+**Status:** DONE — P0 DONE, P1 DONE, P2 CLOSED won't-do, P3 DONE
 **Epic:** #108 (board #21, Stage 21 milestone 92)
 **Directive:** Michael 2026-08-07, handed the four Stage 20 follow-ups:
 **"do them."** That delegates the #104 UX call the ticket had reserved for him.
@@ -72,8 +72,15 @@
   Three design rounds, all NEEDS_REWORK ×2 — the reviewers killed two successive
   justifications, the second time by proving my headline "uncovered seam" was
   behaviour-preserving.
-- **P3 (#105) — explicit byproduct routing**: pending. The largest design;
-  carries both Stage-20 r1 reviewer analyses as input.
+- **P3 (#105) — explicit byproduct routing**: DONE 2026-08-16 (938 tests).
+  Optional ROUTE controls now materialize only unambiguous byproduct lanes: no
+  self routes, primary-lane collisions, multi-source aggregates, or source
+  fan-out. Apply validates against the solved `preview.gated` snapshot and
+  refuses a preview after its base Docs catalog is replaced. Nine boundary
+  rounds converged after interaction findings across self emission,
+  multi-source ambiguity, source fan-out, and catalog replacement; the one-shot
+  diff simplify pass removed an unused key helper and an impossible existing-
+  link collision scan.
 
 ## Grounding (measured 2026-08-07 at arc start, against the bundled catalog)
 

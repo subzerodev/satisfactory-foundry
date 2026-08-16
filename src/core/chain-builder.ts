@@ -68,6 +68,11 @@ export interface ItemRate {
   rate: Fraction;
 }
 
+/** A non-primary output from one proposed stage. */
+export interface ProposedByproduct extends ItemRate {
+  fromItemId: string;
+}
+
 /**
  * The full proposal. `stages`/`links` build the graph; `rawInputs` are the
  * unlinked leaf feeds (ores, raw fluids, excluded forms) the chain expects from
@@ -78,7 +83,7 @@ export interface ChainProposal {
   stages: ProposedStage[];
   links: ProposedLink[];
   rawInputs: ItemRate[];
-  byproducts: ItemRate[];
+  byproducts: ProposedByproduct[];
 }
 
 /**
@@ -325,7 +330,7 @@ export function proposeChain(
   // Emit stages, raw inputs, byproducts from the finished plans.
   const stages: ProposedStage[] = [];
   const rawInputs: ItemRate[] = [];
-  const byproducts: ItemRate[] = [];
+  const byproducts: ProposedByproduct[] = [];
   for (const [itemId, plan] of plans) {
     if (plan.recipe === null) {
       // Raw leaf: report its total demand (a stage only accrues demand if a
@@ -352,6 +357,7 @@ export function proposeChain(
     for (const out of plan.recipe.outputs) {
       if (out.itemId === itemId) continue;
       byproducts.push({
+        fromItemId: itemId,
         itemId: out.itemId,
         rate: Fraction.from(count).mul(out.perMinute.mul(clockScale)),
       });

@@ -27,6 +27,7 @@ import {
   metricsPowerText,
   proposalMetrics,
   byproductSuggestions,
+  byproductRouteSuggestions,
   candidateRowsFor,
   swapMachineCountFor,
   effectiveDefaultRecipe,
@@ -1840,7 +1841,7 @@ describe("S20 P2 — byproductSuggestions", () => {
         stage("rubber", "r_rubber", 1n, 20),
       ],
       links: [],
-      byproducts: [{ itemId: "resin", rate: F(10) }],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
       rawInputs: [{ itemId: "oil", rate: F(30) }],
     };
     const s = byproductSuggestions(proposal, cat);
@@ -1874,7 +1875,7 @@ describe("S20 P2 — byproductSuggestions", () => {
     const proposal: ChainProposal = {
       stages: [stage("fuel", "r_fuel", 1n, 20)],
       links: [],
-      byproducts: [{ itemId: "resin", rate: F(10) }],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
       rawInputs: [{ itemId: "oil", rate: F(30) }],
     };
     expect(byproductSuggestions(proposal, cat)).toEqual([]);
@@ -1932,8 +1933,8 @@ describe("S20 P2 — byproductSuggestions", () => {
       links: [],
       // Two resin entries, no merge (as the core emits them).
       byproducts: [
-        { itemId: "resin", rate: F(10) },
-        { itemId: "resin", rate: F(5) },
+        { fromItemId: "fuel", itemId: "resin", rate: F(10) },
+        { fromItemId: "plastic", itemId: "resin", rate: F(5) },
       ],
       rawInputs: [{ itemId: "oil", rate: F(60) }],
     };
@@ -1993,7 +1994,7 @@ describe("S20 P2 — byproductSuggestions", () => {
         stage("rubber", "r_rubber", 1n, 20),
       ],
       links: [],
-      byproducts: [{ itemId: "resin", rate: F(10) }],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
       rawInputs: [{ itemId: "oil", rate: F(30) }],
     };
     const s = byproductSuggestions(proposal, cat);
@@ -2005,6 +2006,291 @@ describe("S20 P2 — byproductSuggestions", () => {
     // Unique on (itemId, toItemId).
     const keys = s.map((x) => `${x.itemId} ${x.toItemId}`);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("route helper emits a full-key single-source route", () => {
+    const cat = synthCatalog(
+      [
+        item("fuel", "Fuel"),
+        item("resin", "Resin"),
+        item("rubber", "Rubber"),
+        item("oil", "Oil"),
+      ],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_fuel",
+          "Fuel",
+          "refinery",
+          [
+            ["fuel", 20],
+            ["resin", 10],
+          ],
+          [["oil", 30]],
+        ),
+        crecipe(
+          "r_rubber",
+          "Rubber",
+          "refinery",
+          [["rubber", 20]],
+          [["resin", 30]],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [
+        stage("fuel", "r_fuel", 1n, 20),
+        stage("rubber", "r_rubber", 1n, 20),
+      ],
+      links: [],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
+      rawInputs: [{ itemId: "oil", rate: F(30) }],
+    };
+
+    const [route] = byproductRouteSuggestions(proposal, cat);
+
+    expect(route).toMatchObject({
+      key: "fuel resin rubber",
+      fromItemId: "fuel",
+      fromItemName: "Fuel",
+      itemId: "resin",
+      itemName: "Resin",
+      toItemId: "rubber",
+      toItemName: "Rubber",
+    });
+    expect(route!.rate.eq(F(10))).toBe(true);
+  });
+
+  it("route helper suppresses primary-lane collisions", () => {
+    const cat = synthCatalog(
+      [item("fuel", "Fuel"), item("resin", "Resin"), item("rubber", "Rubber")],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_fuel",
+          "Fuel",
+          "refinery",
+          [
+            ["fuel", 20],
+            ["resin", 10],
+          ],
+          [],
+        ),
+        crecipe("r_resin", "Resin", "refinery", [["resin", 20]], []),
+        crecipe(
+          "r_rubber",
+          "Rubber",
+          "refinery",
+          [["rubber", 20]],
+          [["resin", 30]],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [
+        stage("fuel", "r_fuel", 1n, 20),
+        stage("resin", "r_resin", 1n, 20),
+        stage("rubber", "r_rubber", 1n, 20),
+      ],
+      links: [{ fromItemId: "resin", toItemId: "rubber" }],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
+      rawInputs: [],
+    };
+
+    expect(byproductRouteSuggestions(proposal, cat)).toEqual([]);
+  });
+
+  it("route helper suppresses a byproduct route back into its source stage", () => {
+    const cat = synthCatalog(
+      [item("fuel", "Fuel"), item("resin", "Resin")],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_fuel",
+          "Fuel",
+          "refinery",
+          [
+            ["fuel", 20],
+            ["resin", 10],
+          ],
+          [["resin", 5]],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [stage("fuel", "r_fuel", 1n, 20)],
+      links: [],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
+      rawInputs: [],
+    };
+
+    expect(byproductRouteSuggestions(proposal, cat)).toEqual([]);
+  });
+
+  it("counts a self emitter when suppressing a multi-source aggregate", () => {
+    const cat = synthCatalog(
+      [
+        item("silica", "Silica"),
+        item("scrap", "Aluminum Scrap"),
+        item("water", "Water"),
+      ],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_silica",
+          "Silica",
+          "refinery",
+          [
+            ["silica", 20],
+            ["water", 10],
+          ],
+          [["water", 5]],
+        ),
+        crecipe(
+          "r_scrap",
+          "Aluminum Scrap",
+          "refinery",
+          [
+            ["scrap", 20],
+            ["water", 10],
+          ],
+          [],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [
+        stage("silica", "r_silica", 1n, 20),
+        stage("scrap", "r_scrap", 1n, 20),
+      ],
+      links: [],
+      byproducts: [
+        { fromItemId: "silica", itemId: "water", rate: F(10) },
+        { fromItemId: "scrap", itemId: "water", rate: F(10) },
+      ],
+      rawInputs: [],
+    };
+
+    expect(byproductRouteSuggestions(proposal, cat)).toEqual([]);
+  });
+
+  it("does not count self-consumption as source fan-out", () => {
+    const cat = synthCatalog(
+      [
+        item("silica", "Silica"),
+        item("solution", "Solution"),
+        item("water", "Water"),
+      ],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_silica",
+          "Silica",
+          "refinery",
+          [
+            ["silica", 20],
+            ["water", 10],
+          ],
+          [["water", 5]],
+        ),
+        crecipe(
+          "r_solution",
+          "Solution",
+          "refinery",
+          [["solution", 20]],
+          [["water", 5]],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [
+        stage("silica", "r_silica", 1n, 20),
+        stage("solution", "r_solution", 1n, 20),
+      ],
+      links: [],
+      byproducts: [{ fromItemId: "silica", itemId: "water", rate: F(10) }],
+      rawInputs: [],
+    };
+
+    expect(byproductRouteSuggestions(proposal, cat)).toEqual([
+      expect.objectContaining({ key: "silica water solution" }),
+    ]);
+  });
+
+  it("route helper suppresses multi-source aggregate and source fan-out", () => {
+    const cat = synthCatalog(
+      [
+        item("fuel", "Fuel"),
+        item("plastic", "Plastic"),
+        item("resin", "Resin"),
+        item("rubber", "Rubber"),
+        item("paint", "Paint"),
+      ],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_fuel",
+          "Fuel",
+          "refinery",
+          [
+            ["fuel", 20],
+            ["resin", 10],
+          ],
+          [],
+        ),
+        crecipe(
+          "r_plastic",
+          "Plastic",
+          "refinery",
+          [
+            ["plastic", 20],
+            ["resin", 5],
+          ],
+          [],
+        ),
+        crecipe(
+          "r_rubber",
+          "Rubber",
+          "refinery",
+          [["rubber", 20]],
+          [["resin", 30]],
+        ),
+        crecipe(
+          "r_paint",
+          "Paint",
+          "refinery",
+          [["paint", 20]],
+          [["resin", 10]],
+        ),
+      ],
+    );
+
+    const multiSource: ChainProposal = {
+      stages: [
+        stage("fuel", "r_fuel", 1n, 20),
+        stage("plastic", "r_plastic", 1n, 20),
+        stage("rubber", "r_rubber", 1n, 20),
+      ],
+      links: [],
+      byproducts: [
+        { fromItemId: "fuel", itemId: "resin", rate: F(10) },
+        { fromItemId: "plastic", itemId: "resin", rate: F(5) },
+      ],
+      rawInputs: [],
+    };
+    expect(byproductRouteSuggestions(multiSource, cat)).toEqual([]);
+
+    const fanOut: ChainProposal = {
+      stages: [
+        stage("fuel", "r_fuel", 1n, 20),
+        stage("rubber", "r_rubber", 1n, 20),
+        stage("paint", "r_paint", 1n, 20),
+      ],
+      links: [],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
+      rawInputs: [],
+    };
+    expect(byproductRouteSuggestions(fanOut, cat)).toEqual([]);
   });
 });
 
