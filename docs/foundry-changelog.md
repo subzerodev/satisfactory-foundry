@@ -3,6 +3,20 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-16 — Extraction plans now match your node purities
+
+> Hey Michael — the rough Normal-node answer is still the first thing you see,
+> but you can now switch on a node mix and enter the Impure, Normal and Pure
+> nodes you actually plan to use. The panel shows their exact combined supply,
+> spare capacity or shortfall, extractor power, and the belt or pipe needed by
+> the fastest individual extractor in that mix. Your counts are saved with the
+> factory plan and survive extractor or clock changes.
+>
+> Water stays simple because Water Extractors do not use node purity. Crude Oil
+> gets the mix controls; Nitrogen and other Resource Well routes still refuse to
+> invent a standalone count. On narrow screens the controls scroll inside the
+> panel without widening the page.
+
 ## 2026-08-16 — Raw inputs now show the extractors they need
 
 > Hey Michael — click a raw input on the factory canvas and the planner now

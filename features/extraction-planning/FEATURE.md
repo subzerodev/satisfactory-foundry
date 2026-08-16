@@ -1,8 +1,8 @@
 # Extraction planning (Stage 22 arc)
 
 **Started:** 2026-08-16
-**Status:** IN PROGRESS - Phase 2 implementation complete; review pending
-**Current phase:** Phase 2 cumulative implementation review pending
+**Status:** COMPLETE - both extraction phases merged
+**Current phase:** extraction feature complete; Stage 22 continues with #113
 **Epic:** #114 (board #21, Stage 22 milestone 93)
 **Feature ticket:** #112
 **Phase 2 child:** #124
@@ -42,7 +42,7 @@ reconsideration:
 
 ### Phase 2 - purity mix
 
-- **Status:** implementation complete; cumulative review pending
+- **Status:** merged to `develop` at `d5649c2`
 - **Scope:** exact Impure/Normal/Pure 0.5/1.0/2.0 node inventories,
   coverage/shortfall, power and transport results, plan v7 persistence, and
   production-control browser coverage
@@ -53,8 +53,8 @@ reconsideration:
   already run and was not rerun
 - **Branch:** `feature/s22-124-extraction-p2-purity`
 - **Implementation commits:** `5098796`, `f8f7f89`, `03b9d97`, `8094126`,
-  `e076398`, `b15d550`, `73379cd`
-- **Current branch verification:** 40 files / 1067 tests; TypeScript, ESLint,
+  `e076398`, `b15d550`, `73379cd`, `e40efe5`, `43caf18`
+- **Phase verification:** 40 files / 1067 tests; TypeScript, ESLint,
   Prettier, and build pass; the checked-in Chromium/CDP gate passes nine
   geometry rows and three interaction rows at 360px, 720px, and 1280px
 - **Completion report:** `phase-2/completion-report.md`

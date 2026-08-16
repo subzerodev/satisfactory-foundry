@@ -2,7 +2,7 @@
 
 **Ticket:** Forgejo #124
 **Branch:** `feature/s22-124-extraction-p2-purity`
-**Status:** implementation complete; cumulative review pending
+**Status:** accepted and merged to `develop` at `d5649c2`
 
 ## Delivered
 
