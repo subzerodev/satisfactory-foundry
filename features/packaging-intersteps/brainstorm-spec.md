@@ -45,18 +45,22 @@ interface PackagingInterstep {
   packageRecipeId: string;
   unpackageRecipeId: string;
   clockPercentText: string;
+  returnTransport: LinkTransport;
 }
 ```
 
 The clock is shared by both ends, raw text, and uses the existing `(0,250]`
 parser/power model. The store exposes `setLinkInterstep(linkId, value|null)`.
-Changing the pair keeps clock; disabling removes intent. Removing a link removes
-it naturally.
+Changing the pair keeps clock; disabling removes intent. `returnTransport`
+configures the empty-container route independently and defaults to belt.
+Removing a link removes it naturally.
 
 Plan persistence bumps to v8. Plan v7 remains frozen. V7-to-v8 migration copies
-links without intersteps; v8 strictly validates recipe IDs and clock text as
-strings. Save/export/import/bundle write v8. Old builds reject v8 rather than
-accepting and erasing the link intent.
+links without intersteps; v8 strictly validates recipe IDs, clock text, and the
+return transport. A link with an interstep must use solid-cargo modes for both
+its forward `transport` and `returnTransport`; pipe and fluid-truck combinations
+are rejected at the v8 boundary and guarded again by derive. Save/export/import/
+bundle write v8. Old builds reject v8 rather than accepting and erasing intent.
 
 ## Exact Plan
 
@@ -74,12 +78,18 @@ packaged item and returns the same container at ratios that close the steady
 state. A mismatch is an explicit error, never coerced.
 
 Power uses the Packager machine's existing exact/estimated clock model for the
-sum of both machine counts. The forward `computeLinkTransport` call uses the
-packaged solid item and packaged flow, so belt/truck/tractor/explorer/train/drone
-become legal. The return plan is an exact belt-lane count for the empty
-container flow using the unlocked belt tier; it is separate because sharing the
-forward lane can deadlock. Pipe and fluid-truck are not offered while packaging
-is enabled.
+sum of both machine counts. A single pure `effectiveLinkCargo` projection
+resolves the link into forward packaged item/rate plus return container
+item/rate. Inspector results, edge chips, reconciliation/train findings, and
+every transport consumer use that projection rather than independently reading
+the original fluid item/rate. This is load-bearing for ratios such as packaged
+Nitrogen at `D/4`.
+
+Forward and return each call `computeLinkTransport` with their own solid item,
+rate, and transport config. Belt/truck/tractor/explorer/train/drone are legal on
+both directions; pipe and fluid-truck are not. The separate return config is
+required because sharing the forward route can deadlock and because vehicle/
+train/drone capacity differs by the empty container's stack size.
 
 The result always warns:
 
@@ -94,15 +104,18 @@ error and suppresses stale counts.
 ## Inspector Interaction
 
 For a fluid/gas link with at least one discovered pair, render a `Package for
-transport` checkbox below identity. Enabling selects the sole pair, or shows a
-pair menu when several exist, and defaults clock to 100. The existing Mode menu
-immediately switches to solid modes and resets to belt if its prior fluid mode
-is illegal. Disabling restores the normal fluid-mode path (pipe default).
+transport` checkbox below identity. Also render it whenever saved intent exists,
+even if catalog replacement makes the pair unavailable, so the user can always
+disable/recover. Enabling selects the sole pair, or shows a pair menu when
+several exist, defaults clock to 100, and defaults both routes to belt. The
+existing Mode menu becomes `Forward mode`; a second `Empty return mode` uses the
+same solid-mode controls and trip editors. Disabling restores the normal
+fluid-mode path (pipe default).
 
 The interstep block shows package/unpackage machine counts separately, total
-power, packaged/min forward, empty containers/min return, and return belts at
-the unlocked tier. Existing forward transport results remain below and are now
-sized from packaged cargo. All controls are labeled and keyboard reachable.
+power, packaged/min forward, and empty containers/min return. Forward and return
+transport results render separately from the canonical projection. All controls
+are labeled and keyboard reachable.
 
 No Propose changes are made. No graph stages are inserted. No container capital
 count is guessed.
@@ -116,7 +129,12 @@ count is guessed.
 - Clock scaling, invalid clock, safe-integer overflow, ratio mismatch.
 - Forward transport uses packaged item/stack size; return uses container item.
 - Store lifecycle and v8 save/load/import/export/bundle/migration/strictness.
+- Imported packaging plus pipe/fluid-truck is rejected; derive repeats the guard.
+- Inspector, edge chip, train findings, and both route results consume the same
+  effective packaged/container projection, including Nitrogen's non-1:1 ratio.
 - Inspector enable/pair/clock/disable and legal-mode switching.
+- Stale pair IDs still expose disable/recovery; forward and return solid modes
+  configure independently.
 - Chromium desktop/mobile interaction and containment with all prior gates.
 
 ## Assumptions Ledger
@@ -130,3 +148,8 @@ count is guessed.
 | Warnings, not refusals | The factory can run when correctly seeded/routed; lock-up is configuration risk |
 | v8 is required | Older v7 validators would ignore a new link field and writers would erase it |
 
+## Review Disposition
+
+- **r1:** folded stale-intent recovery, strict forward/return solid-mode
+  invariants, a canonical effective-cargo projection for all consumers, and a
+  full independently configured return transport instead of belt-only sizing.
