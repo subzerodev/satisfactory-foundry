@@ -220,10 +220,6 @@ function chooseTier(value: string): void {
   harness!.chooseOption(select, value);
 }
 
-function typeInto(el: HTMLInputElement, value: string): void {
-  harness!.typeInto(el, value);
-}
-
 function clickText(text: string): void {
   harness!.click(
     $$<HTMLButtonElement>("button").find(
@@ -389,7 +385,10 @@ describe("ChainBuilder byproduct routing (#105)", () => {
     mount();
     propose();
 
-    typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "bad");
+    harness!.typeInto(
+      $$<HTMLInputElement>(".chain-builder-controls input")[0]!,
+      "bad",
+    );
     act(() => {
       appStore.setState({
         catalog: { status: "ready", catalog: routeCatalogWithLiveNames() },
@@ -413,7 +412,10 @@ describe("ChainBuilder byproduct routing (#105)", () => {
     mount();
     propose();
 
-    typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "bad");
+    harness!.typeInto(
+      $$<HTMLInputElement>(".chain-builder-controls input")[0]!,
+      "bad",
+    );
     act(() => {
       appStore.setState({
         catalog: {

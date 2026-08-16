@@ -54,10 +54,6 @@ function mount(): void {
 
 const $$ = <T extends Element>(sel: string): T[] => harness!.queryAll<T>(sel);
 
-function typeInto(el: HTMLInputElement, value: string): void {
-  harness!.typeInto(el, value);
-}
-
 function propose(itemId: string, rate: string): void {
   harness!.propose(itemId, rate);
 }
@@ -82,7 +78,10 @@ describe("ChainBuilder OUTPUT metric (#111)", () => {
 
     expect(metricValue("OUTPUT")).toBe("80/min (asked 61/min)");
 
-    typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "999");
+    harness!.typeInto(
+      $$<HTMLInputElement>(".chain-builder-controls input")[0]!,
+      "999",
+    );
 
     expect(metricValue("OUTPUT")).toBe("80/min (asked 61/min)");
   });
