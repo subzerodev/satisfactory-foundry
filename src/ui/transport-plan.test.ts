@@ -14,7 +14,7 @@ import {
   legalModesFor,
   SOLID_MODES,
   FLUID_MODES,
-} from "./transport-plan.ts";
+} from "../core/transport-plan.ts";
 
 const FULL_TIERS = {
   belt: TIER_TABLE.belt.length,

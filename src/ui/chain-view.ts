@@ -16,7 +16,8 @@ import {
 import type { Point, StageLayout } from "../layout/layout.ts";
 import { FOOTPRINTS } from "../layout/footprints.ts";
 import type { Catalog } from "../data/types.ts";
-import type { StageNode, StageLink, LinkTransport } from "../state/store.ts";
+import type { StageNode, StageLink } from "../state/store.ts";
+import type { LinkTransport } from "../core/link-transport.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
 
 // ---------------------------------------------------------------------------

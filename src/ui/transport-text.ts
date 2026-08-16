@@ -22,7 +22,7 @@ import type {
   TransportVehicle,
   TransportTrain,
   TransportDrone,
-} from "./transport-plan.ts";
+} from "../core/transport-plan.ts";
 
 /** The optimistic suffix appended to every estimated-basis result (the tripBasis
  *  echo / train trip.kind drives it — a label, never a recomputation). */

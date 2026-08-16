@@ -21,7 +21,7 @@ import {
   setEstimatedText,
   setMeasuredSeconds,
 } from "./LinkInspector.tsx";
-import type { LinkTransport } from "../state/store.ts";
+import type { LinkTransport } from "../core/link-transport.ts";
 
 // A solved SolveState carrying one output lane (with perMachineOutput for the
 // suggestion) and/or one feed lane — the only fields supplySuggestionFor reads.

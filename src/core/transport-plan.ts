@@ -17,13 +17,13 @@
  * module returns a `{ kind: "unsolved" }` result carrying the parsed config.
  */
 
-import { Fraction } from "../core/fraction.ts";
+import { Fraction } from "./fraction.ts";
 import {
   continuousRuns,
   vehicleFleet,
   trainOptions,
   droneFleet,
-} from "../core/transport.ts";
+} from "./transport.ts";
 import type {
   ContinuousResult,
   VehicleFleetResult,
@@ -32,7 +32,7 @@ import type {
   Cargo,
   TripInput,
   DroneTripInput,
-} from "../core/transport.ts";
+} from "./transport.ts";
 import {
   TRUCK_SLOTS,
   TRACTOR_SLOTS,
@@ -50,10 +50,19 @@ import {
   LOCOMOTIVE_TOP_SPEED_KMH,
   BATTERY_ENERGY_MJ,
   TRUCK_STATION_POWER_MW,
-} from "../core/transport-facts.ts";
-import type { DroneFuel } from "../core/transport-facts.ts";
-import type { LinkTransport, TransportMode } from "../state/store.ts";
-import type { CatalogItem, TierTable } from "../data/types.ts";
+} from "./transport-facts.ts";
+import type { DroneFuel } from "./transport-facts.ts";
+import type { LinkTransport, TransportMode } from "./link-transport.ts";
+
+export interface CatalogItem {
+  isFluid: boolean;
+  stackSize: Fraction | null;
+}
+
+export interface TierTable {
+  belt: Fraction[];
+  pipe: Fraction[];
+}
 
 // ---------------------------------------------------------------------------
 // Result shapes — a discriminated union the inspector + edge chip read.

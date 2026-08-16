@@ -26,8 +26,8 @@ import {
   RAW_NODE_WIDTH,
   RAW_NODE_HEIGHT,
 } from "./graph-flow.ts";
-import { computeLinkTransport } from "./transport-plan.ts";
-import type { LinkTransport } from "../state/store.ts";
+import { computeLinkTransport } from "../core/transport-plan.ts";
+import type { LinkTransport } from "../core/link-transport.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 
 // ---------------------------------------------------------------------------

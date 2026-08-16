@@ -14,7 +14,7 @@ import type {
   TransportVehicle,
   TransportTrain,
   TransportDrone,
-} from "./transport-plan.ts";
+} from "../core/transport-plan.ts";
 import {
   continuousLine,
   vehicleLine,

@@ -43,9 +43,9 @@ import type {
   ConstrainedLever,
 } from "./chain-builder-adapter.ts";
 import type { Catalog, CatalogRecipe } from "../data/types.ts";
-import { parseClockText } from "./clock.ts";
+import { parseClockText } from "../core/clock.ts";
 
-export { parseClockText } from "./clock.ts";
+export { parseClockText } from "../core/clock.ts";
 
 /**
  * Parse the raw rate text into a positive Fraction, or a labeled error (the

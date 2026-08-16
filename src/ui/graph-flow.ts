@@ -14,8 +14,8 @@
 
 import { formatRate } from "./format.ts";
 import { suggestSupply, stagePowerTextFor } from "./advice.ts";
-import { computeLinkTransport } from "./transport-plan.ts";
-import type { TransportPlan } from "./transport-plan.ts";
+import { computeLinkTransport } from "../core/transport-plan.ts";
+import type { TransportPlan } from "../core/transport-plan.ts";
 import {
   edgeChip,
   unsustainableTrainRow,

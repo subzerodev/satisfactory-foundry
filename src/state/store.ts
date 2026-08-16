@@ -20,7 +20,10 @@ import type { StageSolveResult } from "../core/manifold.ts";
 import { reconcileLinks } from "../core/reconcile.ts";
 import type { LinkInput, LinkFinding } from "../core/reconcile.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
-import type { DroneFuel } from "../core/transport-facts.ts";
+import type {
+  LinkTransport,
+  PackagingInterstep,
+} from "../core/link-transport.ts";
 import type { Catalog } from "../data/types.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
@@ -36,7 +39,7 @@ import {
   validatePlanFile,
 } from "../data/plan-store.ts";
 import type {
-  PlanFileV7,
+  PlanFileV8,
   PlanStageV7,
   PlanListEntry,
 } from "../data/plan-store.ts";
@@ -114,66 +117,6 @@ function copyExtractionSelection(
 }
 
 /**
- * Per-link transport configuration (Stage 7 / Phase 2, frozen Axis 1). RAW USER
- * TEXT, parsed at derive time — the established Selection idiom (clock / capacity
- * overrides are stored as strings and Fraction.parse'd in the derive, errors
- * surfaced). MODE-DISCRIMINATED (the P1 Cargo/DroneTripInput discipline: illegal
- * states are unrepresentable, not runtime-guarded):
- *
- * - belt: trip-less continuous;
- * - pipe: trip-less continuous + an optional `deratePercentText` (S8P2 — a
- *   user-supplied sloshing derate, raw text, (0,100] at derive time; belt has
- *   none — sloshing is a pipeline phenomenon);
- * - the four road modes: `trip` is one-way meters (estimated) or a measured
- *   round-trip in seconds, handed to vehicleFleet (which doubles + docks);
- * - train: the same `trip` shape as the road four (routed to trainOptions with a
- *   derive-built roundTripSeconds, Assumption #6) + an optional `sharedEnds`
- *   (S8P2 — a per-end station-power override; a flagged end is billed elsewhere,
- *   so its `50 + 50c` is excluded from THIS link's station MW). The absent-or-
- *   true idiom: a key present is literally `true`, absent means "not shared";
- * - drone: `fuel` + a trip whose distance is ROUND-TRIP flight meters (the P1
- *   DroneTripInput arm names). The measured arm's optional flightMetersText is
- *   the battery-cost add-on; the estimated arm's flightMetersText IS the input.
- *
- * The units trap (one-way vs round-trip) is enforced by field NAMES per arm, not
- * a prose warning; `fuel` cannot exist on a road link, `sharedEnds` only on
- * train, `deratePercentText` only on pipe — illegal pairings are unrepresentable.
- */
-export type LinkTransport =
-  | { mode: "belt" }
-  | { mode: "pipe"; deratePercentText?: string }
-  | {
-      mode: "truck" | "tractor" | "explorer" | "fluid-truck";
-      trip:
-        | { kind: "measured"; roundTripSecondsText: string }
-        | { kind: "estimated"; distanceText: string };
-    }
-  | {
-      mode: "train";
-      trip:
-        | { kind: "measured"; roundTripSecondsText: string }
-        | { kind: "estimated"; distanceText: string };
-      /** Ends whose station set is billed elsewhere (excluded from station MW).
-       *  Absent-or-true: a present key is literally `true`; `from` is the
-       *  producer end, `to` the consumer end (the StageLink's own direction). */
-      sharedEnds?: { from?: true; to?: true };
-    }
-  | {
-      mode: "drone";
-      fuel: DroneFuel;
-      trip:
-        | {
-            kind: "measured";
-            roundTripSecondsText: string;
-            flightMetersText?: string;
-          }
-        | { kind: "estimated"; flightMetersText: string };
-    };
-
-/** The transport mode discriminant across the whole `LinkTransport` union. */
-export type TransportMode = LinkTransport["mode"];
-
-/**
  * The flow-chart orientation (Stage 10 / Phase 1): "LR" lays the chain
  * left-to-right (today's implicit orientation, handles on the left/right edges),
  * "TB" top-to-bottom (handles on the top/bottom). Drives auto-placement + the
@@ -193,7 +136,12 @@ export interface StageLink {
   itemId: string;
   toStageId: string;
   transport?: LinkTransport;
+  interstep?: PackagingInterstep;
 }
+
+export type NewStageLink = Omit<StageLink, "id" | "interstep"> & {
+  interstep?: never;
+};
 
 export interface ProposedByproductRoute {
   fromItemId: string;
@@ -364,7 +312,7 @@ export interface Actions {
   removeStage(id: string): void;
   renameStage(id: string, name: string): void;
   setActiveStage(id: string): void;
-  addLink(link: Omit<StageLink, "id">): void;
+  addLink(link: NewStageLink): void;
   removeLink(id: string): void;
   /** Set a link's transport config (mode + trip). Absent-`transport` ⇒ belt
    *  default, so passing `{ mode: "belt" }` and clearLinkTransport are
@@ -372,6 +320,7 @@ export interface Actions {
   setLinkTransport(linkId: string, transport: LinkTransport): void;
   /** Clear a link's transport config back to the belt default (drops the key). */
   clearLinkTransport(linkId: string): void;
+  setLinkInterstep(linkId: string, interstep: PackagingInterstep | null): void;
   /** Open the LinkInspector for a link (null closes it). */
   selectLink(linkId: string | null): void;
   setStagePosition(id: string, pos: { x: number; y: number }): void;
@@ -404,7 +353,7 @@ export interface Actions {
   loadPlan(id: string): Promise<void>;
   renamePlan(id: string, name: string): Promise<void>;
   deletePlan(id: string): Promise<void>;
-  /** Serialize a stored plan (migrated to v7) as pretty JSON, or null if the
+  /** Serialize a stored plan (migrated to v8) as pretty JSON, or null if the
    *  row is missing/corrupt. Headless — App owns the Blob/anchor download. */
   exportPlan(id: string): Promise<string | null>;
   /** Validate + save an exported plan file's text under the save-over model.
@@ -424,7 +373,7 @@ export type Store = AppState & Actions;
  * Stage 19 (#92): the export-all bundle envelope. A distinct `kind` string makes
  * single-file-vs-bundle sniffing exact (a per-plan file has no `kind`), and
  * `format_version` reserves bundle evolution independently of the per-plan file
- * versions. Each `plans[]` entry is EXACTLY a per-plan file object (latest v7 as
+ * versions. Each `plans[]` entry is EXACTLY a per-plan file object (latest v8 as
  * written by exportPlan's source), revived on import through the SAME
  * `validatePlanFile` path — one migration surface, no second format to version.
  */
@@ -432,7 +381,7 @@ export interface PlanBundle {
   kind: "foundry-plan-bundle";
   format_version: 1;
   exportedAt: string; // ISO
-  plans: PlanFileV7[];
+  plans: PlanFileV8[];
 }
 
 /** The sniff constant (Axis 3): import branches to the bundle arm iff a parsed
@@ -734,7 +683,7 @@ function deriveAllStages(
 }
 
 /**
- * Whole-graph replacement from a loaded `PlanFileV7` (Stage 3 / Phase 3, frozen
+ * Whole-graph replacement from a loaded `PlanFileV8` (Stage 3 / Phase 3, frozen
  * Axis 4; Stage 10 / Phase 1 adds direction + userPlaced). Builds a fresh graph —
  * new stage/link uuids — and applies the frozen load treatments per stage:
  *
@@ -750,7 +699,7 @@ function deriveAllStages(
  *   the FILE's direction — a v1-migrated positionless stage must slot per the
  *   orientation the file was saved in);
  * - flowDirection restored from the file (v1-v4 migration defaults to "LR"); userPlaced
- *   read directly from v7's required boolean. Legacy migration materializes the
+ *   read directly from v8's required boolean. Legacy migration materializes the
  *   conservative original-position rule before this rebuild, so no transient
  *   source-version flag is needed;
  * - stageOrder = array order; links rebuilt from indices; placementSeq =
@@ -763,7 +712,7 @@ function deriveAllStages(
  */
 function rebuildFromPlan(
   slice: GraphSlice,
-  plan: PlanFileV7,
+  plan: PlanFileV8,
 ): GraphSlice & { placementSeq: number } {
   const { catalog } = slice;
   // Current global tiers (the active mirror holds the canonical global value).
@@ -807,7 +756,7 @@ function rebuildFromPlan(
     // Positionless entries (v1-migrated) auto-slot in the FILE's direction; a
     // saved position restores exactly. The fallback direction is plan-level.
     positions[id] = entry.position ?? placementSlot(i, plan.flowDirection);
-    // Validation always returns v7; legacy migration has already materialized
+    // Validation always returns v8; legacy migration has already materialized
     // placement origin into this required boolean.
     if (entry.userPlaced) userPlaced[id] = true;
   });
@@ -820,6 +769,14 @@ function rebuildFromPlan(
     // Selection precedent); absent ⇒ belt default. Fresh link ids, so the prior
     // inspector selection is stale — reset below.
     ...(l.transport !== undefined ? { transport: l.transport } : {}),
+    ...(l.interstep !== undefined
+      ? {
+          interstep: {
+            ...l.interstep,
+            returnTransport: l.interstep.returnTransport,
+          },
+        }
+      : {}),
   }));
   const rebuilt: GraphSlice = {
     ...slice,
@@ -1054,6 +1011,36 @@ export function canLink(
   return "ok";
 }
 
+function isIllegalPackagedTransport(
+  transport: LinkTransport | undefined,
+): boolean {
+  return transport?.mode === "pipe" || transport?.mode === "fluid-truck";
+}
+
+function currentLinkItem(
+  catalog: CatalogState,
+  link: StageLink,
+): { isFluid: boolean } | undefined {
+  return catalog.status === "ready"
+    ? catalog.catalog.items[link.itemId]
+    : undefined;
+}
+
+function linkWithoutInterstep(
+  link: StageLink,
+  item: { isFluid: boolean } | undefined,
+): StageLink {
+  return {
+    id: link.id,
+    fromStageId: link.fromStageId,
+    itemId: link.itemId,
+    toStageId: link.toStageId,
+    ...(item !== undefined
+      ? { transport: { mode: item.isFluid ? "pipe" : "belt" } as LinkTransport }
+      : {}),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Persistence (frozen brainstorm Axis 5)
 // ---------------------------------------------------------------------------
@@ -1258,7 +1245,7 @@ export function createAppStore(storage?: StateStorage) {
         // savePlanAs). Returns "empty-name" for a whitespace name (caller shapes
         // the message) or "saved" once the row is committed.
         const savePlanFromFile = async (
-          file: PlanFileV7,
+          file: PlanFileV8,
         ): Promise<"saved" | "empty-name"> => {
           const trimmed = file.name.trim();
           if (trimmed === "") return "empty-name";
@@ -1267,7 +1254,7 @@ export function createAppStore(storage?: StateStorage) {
           const now = new Date().toISOString();
           if (match) {
             const prior = await loadPlanFile(match.id);
-            const plan: PlanFileV7 = {
+            const plan: PlanFileV8 = {
               ...file,
               name: trimmed,
               createdAt: prior?.createdAt ?? now,
@@ -1275,7 +1262,7 @@ export function createAppStore(storage?: StateStorage) {
             };
             await savePlanFile(plan, match.id);
           } else {
-            const plan: PlanFileV7 = {
+            const plan: PlanFileV8 = {
               ...file,
               name: trimmed,
               createdAt: now,
@@ -1733,8 +1720,9 @@ export function createAppStore(storage?: StateStorage) {
             });
           },
 
-          addLink(link: Omit<StageLink, "id">) {
+          addLink(link: NewStageLink) {
             set((s) => {
+              if (Object.hasOwn(link, "interstep")) return {};
               // Hard refusals: self-link, and duplicate (toStageId,itemId) — a
               // feed lane has exactly one upstream source in v1 chaining.
               if (link.fromStageId === link.toStageId) return {};
@@ -1743,7 +1731,16 @@ export function createAppStore(storage?: StateStorage) {
                   l.toStageId === link.toStageId && l.itemId === link.itemId,
               );
               if (duplicate) return {};
-              const links = [...s.links, { ...link, id: crypto.randomUUID() }];
+              const next: StageLink = {
+                id: crypto.randomUUID(),
+                fromStageId: link.fromStageId,
+                itemId: link.itemId,
+                toStageId: link.toStageId,
+                ...(link.transport !== undefined
+                  ? { transport: link.transport }
+                  : {}),
+              };
+              const links = [...s.links, next];
               // Dangling ends (a stage not producing/consuming itemId) are KEPT
               // and surface as findings, not refused.
               return recomputeReconciliation({ ...s, links });
@@ -1770,12 +1767,20 @@ export function createAppStore(storage?: StateStorage) {
             // change. Parsing of the raw trip text happens at render time, where
             // errors surface on the inspector (the clock-error precedent).
             set((s) => {
-              if (!s.links.some((l) => l.id === linkId)) return {};
-              return {
+              const link = s.links.find((l) => l.id === linkId);
+              if (link === undefined) return {};
+              if (
+                link.interstep !== undefined &&
+                isIllegalPackagedTransport(transport)
+              ) {
+                return {};
+              }
+              return recomputeReconciliation({
+                ...s,
                 links: s.links.map((l) =>
                   l.id === linkId ? { ...l, transport } : l,
                 ),
-              };
+              });
             });
           },
 
@@ -1783,10 +1788,15 @@ export function createAppStore(storage?: StateStorage) {
             // Drop the transport key entirely → the belt default (absent means
             // belt), restoring today's rendering with zero new UI noise.
             set((s) => {
-              if (!s.links.some((l) => l.id === linkId)) return {};
-              return {
+              const link = s.links.find((l) => l.id === linkId);
+              if (link === undefined) return {};
+              return recomputeReconciliation({
+                ...s,
                 links: s.links.map((l) => {
                   if (l.id !== linkId) return l;
+                  if (l.interstep !== undefined) {
+                    return { ...l, transport: { mode: "belt" } };
+                  }
                   // Rebuild without the transport key (absent ⇒ belt default).
                   return {
                     id: l.id,
@@ -1795,7 +1805,49 @@ export function createAppStore(storage?: StateStorage) {
                     toStageId: l.toStageId,
                   };
                 }),
-              };
+              });
+            });
+          },
+
+          setLinkInterstep(
+            linkId: string,
+            interstep: PackagingInterstep | null,
+          ) {
+            set((s) => {
+              const link = s.links.find((candidate) => candidate.id === linkId);
+              if (link === undefined) return {};
+              if (
+                interstep !== null &&
+                (isIllegalPackagedTransport(interstep.returnTransport) ||
+                  (link.interstep !== undefined &&
+                    isIllegalPackagedTransport(link.transport)))
+              ) {
+                return {};
+              }
+
+              const next =
+                interstep === null
+                  ? linkWithoutInterstep(link, currentLinkItem(s.catalog, link))
+                  : {
+                      ...link,
+                      transport:
+                        link.interstep === undefined
+                          ? ({ mode: "belt" } as const)
+                          : link.transport,
+                      interstep:
+                        link.interstep === undefined
+                          ? {
+                              ...interstep,
+                              returnTransport: { mode: "belt" } as const,
+                            }
+                          : interstep,
+                    };
+              return recomputeReconciliation({
+                ...s,
+                links: s.links.map((candidate) =>
+                  candidate.id === linkId ? next : candidate,
+                ),
+              });
             });
           },
 
@@ -1894,7 +1946,7 @@ export function createAppStore(storage?: StateStorage) {
                 // stageOrder (array order IS stageOrder), each carrying name +
                 // selection + position; links index-encoded (stage id → index).
                 // Position is written unconditionally for exact restoration;
-                // v7 also writes the required placement boolean because position
+                // v8 also writes the required placement boolean because position
                 // presence alone cannot distinguish auto from user placement.
                 const s = get();
                 const indexOf = new Map(s.stageOrder.map((id, i) => [id, i]));
@@ -1920,11 +1972,14 @@ export function createAppStore(storage?: StateStorage) {
                   ...(l.transport !== undefined
                     ? { transport: l.transport }
                     : {}),
+                  ...(l.interstep !== undefined
+                    ? { interstep: l.interstep }
+                    : {}),
                 }));
                 if (match) {
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV7 = {
-                    format_version: 7,
+                  const plan: PlanFileV8 = {
+                    format_version: 8,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
@@ -1934,8 +1989,8 @@ export function createAppStore(storage?: StateStorage) {
                   };
                   await savePlanFile(plan, match.id);
                 } else {
-                  const plan: PlanFileV7 = {
-                    format_version: 7,
+                  const plan: PlanFileV8 = {
+                    format_version: 8,
                     name: trimmed,
                     createdAt: now,
                     updatedAt: now,
@@ -1956,7 +2011,7 @@ export function createAppStore(storage?: StateStorage) {
             return enqueue(async () => {
               set({ planError: null });
               try {
-                // Load with origin: validation returns v7, whose required
+                // Load with origin: validation returns v8, whose required
                 // userPlaced flag already materializes native or migrated origin.
                 const file = await loadPlanFile(id);
                 if (file === null) {
@@ -2000,9 +2055,9 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                // loadPlanFile returns v7 (migrating older rows), so renaming an
-                // older row rewrites it as v7 under the save-over model.
-                const renamed: PlanFileV7 = {
+                // loadPlanFile returns v8 (migrating older rows), so renaming an
+                // older row rewrites it as v8 under the save-over model.
+                const renamed: PlanFileV8 = {
                   ...plan,
                   name: trimmed,
                   updatedAt: new Date().toISOString(),
@@ -2053,7 +2108,7 @@ export function createAppStore(storage?: StateStorage) {
             await enqueue(async () => {
               const metas = await listPlanFiles();
               if (metas.length === 0) return; // result stays null
-              const plans: PlanFileV7[] = [];
+              const plans: PlanFileV8[] = [];
               for (const meta of metas) {
                 const file = await loadPlanFile(meta.id);
                 // A row that fails to load (corrupt/foreign) is skipped rather

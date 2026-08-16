@@ -2,7 +2,7 @@ import { Fraction } from "../core/fraction.ts";
 import type { LaneKind } from "../core/manifold.ts";
 import type { Catalog, CatalogExtractor } from "../data/types.ts";
 import { stagePowerText, suggestSupply } from "./advice.ts";
-import { parseClockText } from "./clock.ts";
+import { parseClockText } from "../core/clock.ts";
 
 export interface ExtractionSelection {
   machineId: string;

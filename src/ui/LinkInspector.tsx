@@ -11,12 +11,8 @@
  */
 
 import { useAppStore } from "../state/store.ts";
-import type {
-  LinkTransport,
-  TransportMode,
-  StageLink,
-  StageNode,
-} from "../state/store.ts";
+import type { StageLink, StageNode } from "../state/store.ts";
+import type { LinkTransport, TransportMode } from "../core/link-transport.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
 import type { LinkFinding } from "../core/reconcile.ts";
 import { formatRate } from "./format.ts";
@@ -31,7 +27,7 @@ import {
   applyDrawnDistance,
   isEstimatedLink,
 } from "./chain-view.ts";
-import { computeLinkTransport, legalModesFor } from "./transport-plan.ts";
+import { computeLinkTransport, legalModesFor } from "../core/transport-plan.ts";
 import {
   MODE_LABEL,
   caveatFor,
