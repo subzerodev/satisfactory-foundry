@@ -53,6 +53,10 @@ unpackage recipe from the current catalog. An unknown key remains recoverable
 stale intent, while inconsistent package/unpackage ID combinations are
 unrepresentable. The clock is shared by both ends, raw text, and uses the existing `(0,250]`
 parser/power model. The store exposes `setLinkInterstep(linkId, value|null)`.
+Every call updates the link and recomputes cached reconciliation atomically;
+enable, disable, pair, and clock edits cannot leave findings from the prior
+intent behind. Lifecycle tests pin enable/disable and valid-to-invalid-to-valid
+transitions.
 Changing the pair keeps clock; disabling removes intent. `returnTransport`
 configures the empty-container route independently and defaults to belt.
 Removing a link removes it naturally.
@@ -108,13 +112,22 @@ the resulting derived-link plan rather than independently reading the original f
 This preserves under/over-supply and is load-bearing for packaged Nitrogen at
 `D/4`.
 
-The derived-link plan is discriminated: `ready` carries effective cargo and both
-transport results; `unavailable` carries one exact stale/missing/invalid-pair
-error. This boundary alone interprets the projection failure and supplies the
-surface-neutral problem state. Edge status, the one reconciliation finding, and
-the inspector read that result; unavailable has no transport results and never
-falls through to an `ok` fluid edge. The result is pure and recomputable, not a
-second persisted or cached store state.
+The derived-link plan is discriminated. `ready` carries effective cargo, optional
+independently resolved supply/demand, machine math when demand is solved, and
+both transport results. A missing solved endpoint remains a normal unsolved or
+dangling reconciliation input; `computeLinkTransport` owns its existing
+`unsolved` result. Each route also retains its own transport `error` for invalid
+trip numeric text, without suppressing otherwise-valid cargo, counts, or the
+other route.
+
+`unavailable` carries one exact whole-interstep error for a stale/missing/
+invalid pair, invalid clock, unsafe machine-count overflow, or a pipe/fluid-truck
+mode on either packaged-cargo route. It has no counts, cargo, or transport
+results. This boundary alone interprets projection failure and supplies the
+surface-neutral problem state. Edge status, the one reconciliation finding,
+and the inspector read that result; unavailable never falls through to an `ok`
+fluid edge. The result is pure and recomputable, not a second persisted or
+cached store state.
 
 Forward and return each call `computeLinkTransport` with their own solid item,
 rate, and transport config. Belt/truck/tractor/explorer/train/drone are legal on
