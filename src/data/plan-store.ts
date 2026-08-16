@@ -14,9 +14,9 @@
  * S8P2 extensions (pipe `deratePercentText`, train `sharedEnds`) legal in the
  * per-link config. Stage 10 / Phase 1 adds `PlanFileV5` — the same graph plus a
  * top-level `flowDirection` ("LR"|"TB") and an optional per-stage `userPlaced?:
- * true` flag. Save always writes the LATEST version (v5); read accepts all five,
- * migrating v1/v2/v3/v4 in memory (`migrateV1`/`migrateV2`/`migrateV3`/
- * `migrateV4`).
+ * true` flag. Extraction planning adds `PlanFileV6`, with required placement
+ * origin and optional per-resource extractor intent. Save always writes v6;
+ * read accepts v1-v6 and migrates older files in memory.
  *
  * WHY a v5 bump and not v4-in-place (both new fields are optional-shaped): a
  * pre-Stage-10 build's v4 validator IGNORES the top-level `flowDirection` and the
@@ -39,6 +39,7 @@ import type {
   LinkTransport,
   TransportMode,
   FlowDirection,
+  ExtractionSelection,
 } from "../state/store.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
 import { Fraction } from "../core/fraction.ts";
@@ -173,6 +174,21 @@ export interface PlanFileV5 {
   links: PlanLinkV4[];
 }
 
+export interface PlanStageV6 extends PlanStageV2 {
+  userPlaced: boolean;
+  extraction?: Record<string, ExtractionSelection>;
+}
+
+export interface PlanFileV6 {
+  format_version: 6;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  flowDirection: FlowDirection;
+  stages: PlanStageV6[];
+  links: PlanLinkV4[];
+}
+
 /** The 7-key `DroneFuel` union as a validator lookup set (the file validator
  *  pins the drone arm's `fuel` ∈ these). */
 const DRONE_FUELS: ReadonlySet<string> = new Set<DroneFuel>([
@@ -201,8 +217,8 @@ export interface PlanListEntry {
   updatedAt: string;
 }
 
-/** Persist a plan file under `id` (create or overwrite). Always v5. */
-export async function savePlan(plan: PlanFileV5, id: string): Promise<void> {
+/** Persist a plan file under `id` (create or overwrite). Always v6. */
+export async function savePlan(plan: PlanFileV6, id: string): Promise<void> {
   const db = await openDb();
   await db.put(PLANS_STORE, plan, id);
 }
@@ -220,6 +236,7 @@ export async function listPlans(): Promise<PlanListEntry[]> {
     // Any loadable format renders a row: v1/v2/v3/v4 migrate, v5 is the current
     // shape. Header fields co-locate across all five.
     if (
+      isPlanFileV6(value) ||
       isPlanFileV5(value) ||
       isPlanFileV4(value) ||
       isPlanFileV3(value) ||
@@ -240,13 +257,14 @@ export async function listPlans(): Promise<PlanListEntry[]> {
  * and `importPlan` (uploaded exports): v5 first, else v4 via `migrateV4`, else
  * v3 via `migrateV4∘migrateV3`, else v2/v1 chained up.
  */
-export function validatePlanFile(value: unknown): PlanFileV5 | null {
-  if (isPlanFileV5(value)) return value;
-  if (isPlanFileV4(value)) return migrateV4(value);
-  if (isPlanFileV3(value)) return migrateV4(migrateV3(value));
-  if (isPlanFileV2(value)) return migrateV4(migrateV3(migrateV2(value)));
+export function validatePlanFile(value: unknown): PlanFileV6 | null {
+  if (isPlanFileV6(value)) return value;
+  if (isPlanFileV5(value)) return migrateV5(value);
+  if (isPlanFileV4(value)) return migrateLegacyV4(value);
+  if (isPlanFileV3(value)) return migrateLegacyV4(migrateV3(value));
+  if (isPlanFileV2(value)) return migrateLegacyV4(migrateV3(migrateV2(value)));
   if (isPlanFileV1(value)) {
-    return migrateV4(migrateV3(migrateV2(migrateV1(value))));
+    return migrateLegacyV4(migrateV3(migrateV2(migrateV1(value))));
   }
   return null;
 }
@@ -258,28 +276,10 @@ export function validatePlanFile(value: unknown): PlanFileV5 | null {
  * `migrateV1`. Migration is read-side only — the stored row is untouched until
  * the next save-over (v5).
  */
-export async function loadPlan(id: string): Promise<PlanFileV5 | null> {
+export async function loadPlan(id: string): Promise<PlanFileV6 | null> {
   const db = await openDb();
   const value = await db.get<unknown>(PLANS_STORE, id);
   return validatePlanFile(value);
-}
-
-/**
- * Load + validate one plan AND report whether the STORED row was v5-native
- * (Stage 10 / Phase 1). The store's load rebuild needs this to seed `userPlaced`:
- * a v5-native file carries the explicit per-stage flag (auto stages seed as
- * auto), while a migrated v1–v4 file has no flag — its layout seeds conservatively
- * from position-presence (positioned ⇒ pinned). Migration erases the origin
- * version, so it's captured here, before validate migrates. `wasV5` is false for
- * a null (missing/corrupt) load.
- */
-export async function loadPlanWithOrigin(
-  id: string,
-): Promise<{ file: PlanFileV5 | null; wasV5: boolean }> {
-  const db = await openDb();
-  const value = await db.get<unknown>(PLANS_STORE, id);
-  const wasV5 = isPlanFileV5(value);
-  return { file: validatePlanFile(value), wasV5 };
 }
 
 /**
@@ -358,6 +358,36 @@ export function migrateV4(plan: PlanFileV4): PlanFileV5 {
     flowDirection: "LR",
     stages: plan.stages,
     links: plan.links,
+  };
+}
+
+export function migrateV5(plan: PlanFileV5): PlanFileV6 {
+  return {
+    format_version: 6,
+    name: plan.name,
+    createdAt: plan.createdAt,
+    updatedAt: plan.updatedAt,
+    flowDirection: plan.flowDirection,
+    stages: plan.stages.map((stage) => ({
+      name: stage.name,
+      selection: stage.selection,
+      ...(stage.position !== undefined ? { position: stage.position } : {}),
+      userPlaced: stage.userPlaced === true,
+    })),
+    links: plan.links,
+  };
+}
+
+function migrateLegacyV4(plan: PlanFileV4): PlanFileV6 {
+  const v5 = migrateV4(plan);
+  return {
+    ...migrateV5(v5),
+    stages: v5.stages.map((stage) => ({
+      name: stage.name,
+      selection: stage.selection,
+      ...(stage.position !== undefined ? { position: stage.position } : {}),
+      userPlaced: stage.position !== undefined,
+    })),
   };
 }
 
@@ -502,6 +532,14 @@ function isPlanFileV5(value: unknown): value is PlanFileV5 {
   if (v.format_version !== 5) return false;
   if (v.flowDirection !== "LR" && v.flowDirection !== "TB") return false;
   return isGraphFileBody(v, isTransportShapeV4, isStageV5Shape);
+}
+
+function isPlanFileV6(value: unknown): value is PlanFileV6 {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (v.format_version !== 6) return false;
+  if (v.flowDirection !== "LR" && v.flowDirection !== "TB") return false;
+  return isGraphFileBody(v, isTransportShapeV4, isStageV6Shape);
 }
 
 /**
@@ -700,6 +738,29 @@ function isStageV5Shape(stage: unknown): boolean {
   if (!isStageV2Shape(stage)) return false;
   const s = stage as Record<string, unknown>;
   if (s.userPlaced !== undefined && s.userPlaced !== true) return false;
+  return true;
+}
+
+function isStageV6Shape(stage: unknown): boolean {
+  if (!isStageV2Shape(stage)) return false;
+  const s = stage as Record<string, unknown>;
+  if (typeof s.userPlaced !== "boolean") return false;
+  if (s.extraction === undefined) return true;
+  if (s.extraction === null || typeof s.extraction !== "object") return false;
+  for (const [itemId, rawSelection] of Object.entries(s.extraction)) {
+    if (
+      itemId === "" ||
+      rawSelection === null ||
+      typeof rawSelection !== "object"
+    ) {
+      return false;
+    }
+    const selection = rawSelection as Record<string, unknown>;
+    if (typeof selection.machineId !== "string" || selection.machineId === "") {
+      return false;
+    }
+    if (typeof selection.clockPercentText !== "string") return false;
+  }
   return true;
 }
 
