@@ -43,12 +43,14 @@ expect(mixed.purity.balance.amount.toString()).toBe("160");
 Use Miner Mk3 at 100%, demand 1000, and counts `1 Impure / 1 Normal / 1 Pure`:
 `240 * (1/2 + 1 + 2) = 840`; assert its exact shortfall and exact three-machine
 power. Add a second mix that supplies more than demand and assert exact spare
-and power. Add a transport table with Pure-only (480/min), Normal-only
+and power. Add an equality case whose supply equals demand and assert it is
+classified as `spare` with exact amount `0`. Add a transport table with
+Pure-only (480/min), Normal-only
 (240/min), Impure-only (120/min), and all-zero (`transport.status === "none"`)
-cases so every highest-present-purity branch is pinned. Add a 250% clock case
-whose weighted supply, balance, and highest-purity transport all differ from the
-100% result; this pins the mix to the clock-scaled `perExtractor`, never the
-extractor's unscaled `normalRate`.
+cases so every highest-present-purity branch is pinned. Add the same `1/1/1`,
+demand-1000 mix at 250% and assert exact supply `2100`, exact spare `1100`, and
+transport capacity `1200`; this pins the mix to the clock-scaled
+`perExtractor`, never the extractor's unscaled `normalRate`.
 
 Add a table for `""`, `"1.5"`, `"-1"`, `"1e2"`, an individual value greater
 than `Number.MAX_SAFE_INTEGER`, and three individually safe values whose sum is
@@ -373,3 +375,5 @@ Expected: clean feature worktree ready for cumulative `develop...HEAD` review.
   at the external store-action boundary, not at snapshot rebuild/writer paths.
 - **r4:** folded the clock-scaling gap by adding a 250% mix case and requiring
   all purity arithmetic and transport to start from `perExtractor`.
+- **r5:** strengthened that case to exact 2100/1100/1200 expectations and added
+  exact-balance coverage that classifies equality as zero spare.
