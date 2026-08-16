@@ -32,7 +32,7 @@ Expected: all selected baseline tests pass.
 - Modify: `src/data/catalog-store.test.ts`
 - Modify: catalog literals reported by `rg -n 'recipeUnlocks:' src --glob '*.ts' --glob '*.tsx'`
 
-- [ ] Add failing parser tests with minimal Docs fragments for all supported native families. Assert exact rates 60/120/240 for miners, 120 for Oil/Water, 60 nominal for Resource Well; topology; and exact applicability. Add rejection rows for missing, non-numeric, malformed, zero, and negative cycle values; unknown forms; invalid textual booleans; and empty/malformed/unresolved restricted resources. Add two reversed-order fixtures where extractor groups precede descriptors: unrestricted miners before solid resources and a restricted Water/Oil extractor before its resource.
+- [ ] Add failing parser tests with minimal Docs fragments for all supported native families. Assert exact rates 60/120/240 for miners, 120 for Oil/Water, 60 nominal for Resource Well; topology; and exact applicability. Add rejection rows for missing, non-numeric, malformed, zero, and negative cycle values; unknown forms; invalid textual booleans; empty/malformed/unresolved restricted resources; and a restricted extractor whose resolved reference is an `FGItemDescriptor` rather than a raw `FGResourceDescriptor`. Add two reversed-order fixtures where extractor groups precede descriptors: unrestricted miners before solid resources and a restricted Water/Oil extractor before its resource. Assert the parsed `extractors` record has a null prototype and absent `extractors["constructor"]` is `undefined`.
 - [ ] Run the parser red phase:
 
 ```bash
@@ -57,7 +57,7 @@ export interface Catalog {
 ```
 
 - [ ] Widen only the building-family boundary needed for `FGBuildableWaterPump` and `FGBuildableFrackingExtractor`. Parse cycle fields and exact `"True"`/`"False"` restriction text into source-order-independent temporary extractor records; materialize unrestricted forms only after raw resources are known. Do not admit the Pressurizer as a machine for Phase 1. Rerun `npm test -- --run src/data/docs-loader.test.ts` and require green.
-- [ ] Before cache production edits, add failing `catalog-store.test.ts` rows for exact extractor Fraction/topology/applicability round-trip and a parser-version-5 row returning `stale` under version 6.
+- [ ] Before cache production edits, add failing `catalog-store.test.ts` rows for exact extractor Fraction/topology/applicability round-trip, null-prototype revival with absent `extractors["constructor"] === undefined`, and a parser-version-5 row returning `stale` under version 6.
 - [ ] Run the cache red phase:
 
 ```bash
@@ -126,7 +126,7 @@ git commit -m "feat(112): derive extraction requirements"
 - Modify: `src/data/plan-store.ts`
 - Modify: `src/data/plan-store.test.ts`
 
-- [ ] Write failing store tests for setting/clearing `{machineId, clockPercentText}` by stage and raw item, stage isolation, removal cleanup, and recipe-swap retention.
+- [ ] Write failing store tests for setting/clearing `{machineId, clockPercentText}` by stage and raw item, stage isolation, removal cleanup, and recipe-swap retention. Include raw item ID `"constructor"`: an absent selection must remain absent despite `Object.prototype`, a present selection must be own-property-safe, and both save/load and immediate rewrite paths must preserve it. Require all selection lookups and writes to use null-prototype maps or `Object.hasOwn`, never inherited bracket hits.
 - [ ] Run the state red phase:
 
 ```bash
@@ -177,15 +177,15 @@ npm test -- --run src/ui/graph-flow.test.ts
 
 Expected: FAIL in the new `carries exact raw identity and demand` assertions because raw data contains display strings only.
 - [ ] Extend `RawFlowNode.data` and copy `feed.totalDemand` directly. Never parse `rateText` back into a number.
-- [ ] Before component edits, create `GraphCanvas.dom.test.tsx` with `// @vitest-environment jsdom`, a real `createRoot`/`act` mount harness, deterministic store reset, and cleanup after every test. Mount `RawFeedNode` with an open spy and add failing rows for mouse/Enter/Space invoking it with exact `{stageId,itemId}`, wrapper exclusion from the tab order, and the inner button as sole focus target. Panel lifecycle/focus belongs to Task 5, after the panel exists.
+- [ ] Before component edits, add a failing pure `GraphCanvas.test.ts` row against an extracted raw-node projection helper, asserting the actual XYFlow node returned to `<ReactFlow>` has `focusable: false`, `style.pointerEvents === "all"`, and the exact open callback data. Create `GraphCanvas.dom.test.tsx` with `// @vitest-environment jsdom`, a real `createRoot`/`act` mount harness, deterministic store reset, and cleanup; mount `RawFeedNode` only to assert native `<button>` semantics, sole focus target, and one click callback with exact `{stageId,itemId}`. Do not synthesize Enter/Space in jsdom; browser-native activation is pinned in Task 5. Panel lifecycle/focus belongs to Task 5, after the panel exists.
 - [ ] Run the interaction red phase:
 
 ```bash
 npm test -- --run src/ui/GraphCanvas.dom.test.tsx
 ```
 
-Expected: FAIL in the new raw-card callback/focus tests because the card has no button or open callback.
-- [ ] Add component-local open identity `{stageId, itemId}`. On each render resolve it against current derived raw nodes; close when absent. Inject only the open callback at the React Flow boundary so `graphToFlow` stays pure.
+Expected: FAIL in the new XYFlow projection and raw-card click/focus tests because wrapper flags, the button, and open callback do not exist.
+- [ ] Extract the raw-node-to-XYFlow projection helper and set wrapper `focusable: false` plus `style.pointerEvents = "all"` there. Add component-local open identity `{stageId, itemId}`. On each render resolve it against current derived raw nodes; close when absent. Inject only the open callback at the React Flow boundary so `graphToFlow` stays pure.
 - [ ] Make the raw wrapper `focusable: false` and `pointerEvents: "all"`; render one inner `button.nodrag.nopan` with `aria-haspopup="dialog"` and item/rate accessible name. Preserve non-draggable/non-selectable/non-deletable flags and the `raw:` commit guard.
 - [ ] Run:
 
@@ -222,7 +222,7 @@ npm test -- --run src/ui/GraphCanvas.dom.test.tsx src/ui/smoke.test.tsx
 
 Expected: FAIL in the new planned-result, dialog-semantics, close-control, and focus tests because the extraction panel does not exist.
 - [ ] Replace overlapping top-right Panels with one Panel containing an unframed notice/extraction stack. Extract and export the production `GraphTopRightStack`/`ExtractionPanel` render units from `GraphCanvas.tsx`; `GraphCanvas` itself must consume those same units. Render extractor select, clock text input, requirement, count, each/supplied/spare, transport, power, and accessible icon close control. The extraction region is a labeled non-modal dialog. Move focus to the first control on open and restore it to the surviving opener on close.
-- [ ] Add the checked-in browser harness. `browser-harness.html` loads the TSX harness through Vite. The harness must import and render the exact production `GraphTopRightStack`/`ExtractionPanel` units inside React Flow with the real `Panel`, `Controls`, top-left controls, and chain-power panel; it may supply deterministic notice/extraction props but must not duplicate stack markup or CSS. Force `.graph-canvas` to exactly 340px in the harness and assert its measured rectangle is 340px before collision checks. The Node script starts Vite on an available local port, launches `/usr/bin/chromium --headless --no-sandbox` through the DevTools protocol, evaluates bounding rectangles/text overflow for notice-only, extraction-only, and combined states at 360px and 720px widths, saves screenshots under `/tmp/satisfactory-foundry-112-browser`, and always terminates both processes.
+- [ ] Add the checked-in browser harness. `browser-harness.html` loads the TSX harness through Vite. For geometry, the harness must import and render the exact production `GraphTopRightStack`/`ExtractionPanel` units inside React Flow with the real `Panel`, `Controls`, top-left controls, and chain-power panel; it may supply deterministic notice/extraction props but must not duplicate stack markup or CSS. Force `.graph-canvas` to exactly 340px and assert its measured rectangle is 340px before collision checks. Add a separate interaction state that renders the actual production `GraphCanvas` against a deterministically seeded store with a real raw feed; through Chromium/CDP, verify pointer hit-testing opens its dialog and native Enter and Space activation each open it exactly once without custom key handlers. The Node script starts Vite on an available local port, launches `/usr/bin/chromium --headless --no-sandbox` through the DevTools protocol, evaluates bounding rectangles/text overflow for notice-only, extraction-only, and combined states at 360px and 720px widths, saves screenshots under `/tmp/satisfactory-foundry-112-browser`, and always terminates both processes.
 - [ ] Run the responsive red phase before CSS:
 
 ```bash
