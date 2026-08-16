@@ -177,14 +177,14 @@ npm test -- --run src/ui/graph-flow.test.ts
 
 Expected: FAIL in the new `carries exact raw identity and demand` assertions because raw data contains display strings only.
 - [ ] Extend `RawFlowNode.data` and copy `feed.totalDemand` directly. Never parse `rateText` back into a number.
-- [ ] Before component edits, create `GraphCanvas.dom.test.tsx` with `// @vitest-environment jsdom`, a real `createRoot`/`act` mount harness, deterministic store reset, and cleanup after every test. Add failing rows for mouse/Enter/Space opening, wrapper exclusion from the tab order, inner-button sole focus, live exact-demand updates, raw-node disappearance closing the panel, and opening raw feed B while A is open replacing A without restoring focus to A; final focus must be inside B's panel.
+- [ ] Before component edits, create `GraphCanvas.dom.test.tsx` with `// @vitest-environment jsdom`, a real `createRoot`/`act` mount harness, deterministic store reset, and cleanup after every test. Mount `RawFeedNode` with an open spy and add failing rows for mouse/Enter/Space invoking it with exact `{stageId,itemId}`, wrapper exclusion from the tab order, and the inner button as sole focus target. Panel lifecycle/focus belongs to Task 5, after the panel exists.
 - [ ] Run the interaction red phase:
 
 ```bash
 npm test -- --run src/ui/GraphCanvas.dom.test.tsx
 ```
 
-Expected: FAIL in the new raw-card activation/lifecycle tests because the card has no button or open state.
+Expected: FAIL in the new raw-card callback/focus tests because the card has no button or open callback.
 - [ ] Add component-local open identity `{stageId, itemId}`. On each render resolve it against current derived raw nodes; close when absent. Inject only the open callback at the React Flow boundary so `graphToFlow` stays pure.
 - [ ] Make the raw wrapper `focusable: false` and `pointerEvents: "all"`; render one inner `button.nodrag.nopan` with `aria-haspopup="dialog"` and item/rate accessible name. Preserve non-draggable/non-selectable/non-deletable flags and the `raw:` commit guard.
 - [ ] Run:
@@ -193,7 +193,7 @@ Expected: FAIL in the new raw-card activation/lifecycle tests because the card h
 npm test -- --run src/ui/graph-flow.test.ts src/ui/GraphCanvas.test.ts src/ui/GraphCanvas.dom.test.tsx
 ```
 
-Expected: exact live-demand and interaction tests pass without changing existing raw graph behavior.
+Expected: exact raw identity/demand and raw-button callback/focus tests pass without changing existing raw graph behavior.
 - [ ] Commit:
 
 ```bash
@@ -213,7 +213,7 @@ git commit -m "feat(112): open extraction planning from raw feeds"
 - Create: `features/extraction-planning/phase-1/browser-harness.html`
 - Create: `scripts/extraction-panel-browser-check.mjs`
 
-- [ ] Extend the jsdom `createRoot`/`act` suite with failing UI tests for solid explicit selection, Water/Oil first-open auto-seeding, invalid clock removing stale output, visible `Purity Normal`, exact worked results, per-output Mk5 warning at Miner Mk.3 250%, unavailable persisted selection, explicit Resource Well alternative text, and Nitrogen's no-miner/no-count message. Require the opened region to have `role="dialog"`, `aria-modal="false"`, and `aria-labelledby` pointing to its item heading; require an icon close button with an accessible name and tooltip.
+- [ ] Extend the jsdom `createRoot`/`act` suite with failing UI tests for solid explicit selection, Water/Oil first-open auto-seeding, invalid clock removing stale output, visible `Purity Normal`, exact worked results, per-output Mk5 warning at Miner Mk.3 250%, unavailable persisted selection, explicit Resource Well alternative text, and Nitrogen's no-miner/no-count message. Simulate changing the extractor select and clock input, then assert both the exact rendered result and the owning stage/item's persisted `{machineId,clockPercentText}` update. Require live exact-demand recomputation while open, raw-node disappearance closing/restoring focus, and opening raw B while A is open replacing A without restoring focus to A; final focus must be in B's panel. Require the opened region to have `role="dialog"`, `aria-modal="false"`, and `aria-labelledby` pointing to its item heading; require an icon close button with an accessible name and tooltip.
 - [ ] Run the panel red phase:
 
 ```bash
