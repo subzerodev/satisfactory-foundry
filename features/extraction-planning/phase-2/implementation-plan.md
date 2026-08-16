@@ -41,8 +41,11 @@ expect(mixed.purity.balance.amount.toString()).toBe("160");
 ```
 
 Use Miner Mk3 at 100%, demand 1000, and counts `1 Impure / 1 Normal / 1 Pure`:
-`240 * (1/2 + 1 + 2) = 840`. Add a Pure-only case that proves transport checks
-480/min, and an all-zero case with `transport.status === "none"`.
+`240 * (1/2 + 1 + 2) = 840`; assert its exact shortfall and exact three-machine
+power. Add a second mix that supplies more than demand and assert exact spare
+and power. Add a transport table with Pure-only (480/min), Normal-only
+(240/min), Impure-only (120/min), and all-zero (`transport.status === "none"`)
+cases so every highest-present-purity branch is pinned.
 
 Add a table for `""`, `"1.5"`, `"-1"`, `"1e2"`, an individual value greater
 than `Number.MAX_SAFE_INTEGER`, and three individually safe values whose sum is
@@ -59,6 +62,8 @@ not yet exist.
 
 - [ ] **Step 2: Implement the minimal exact model**
 
+Tasks 1 and 2 are one atomic persistence unit: do not commit or run the app with
+the widened live type until Task 2 has frozen v6 and activated the v7 writer.
 In `src/state/store.ts`, add:
 
 ```ts
@@ -103,16 +108,16 @@ purity:
 Factor the existing tier lookup into a small `transportForOutput` helper and use
 it for both Normal baseline and the greatest nonzero purity output.
 
-- [ ] **Step 3: Verify green and commit**
+- [ ] **Step 3: Verify derivation green; keep the unit uncommitted**
 
 ```bash
 npm test -- --run src/ui/extraction-plan.test.ts
 npm run check
-git add src/state/store.ts src/ui/extraction-plan.ts src/ui/extraction-plan.test.ts
-git commit -m "feat(124): derive exact purity mixes"
 ```
 
-Expected: focused tests and checks pass.
+Expected: focused tests and checks pass. Proceed immediately to Task 2; there
+must never be a commit where the live selection type is widened while the
+writer still emits v6.
 
 ### Task 2: Plan v7 Persistence
 
@@ -124,7 +129,7 @@ Expected: focused tests and checks pass.
 
 - [ ] **Step 1: Write failing v7 boundary tests**
 
-Add a `samplePlanV7` current writer fixture with one extraction mix. Assert
+Before production edits, add a `samplePlanV7` current writer fixture with one extraction mix. Assert
 save/load and export/import preserve all three raw strings. Add malformed v7
 cases for null/array mix, missing keys, and non-string values. Add a v6 row with
 an unknown `purityMix` extra and assert migration returns a v7 selection with
@@ -143,7 +148,8 @@ Expected: FAIL because `PlanFileV7`, migration, and writers do not exist.
 
 - [ ] **Step 2: Freeze v6 and add v7**
 
-Define a historical type and point only v6 at it:
+As the same uncommitted production unit as Task 1, first define a historical
+type and point only v6 at it:
 
 ```ts
 interface ExtractionSelectionV6 {
@@ -182,12 +188,16 @@ copy only the two v6 fields. Validation tries v7 first, then v6 through
 `migrateV6`; all older chains end at v6 then migrate. Save/list/load APIs and
 state imports use `PlanFileV7`. Writers emit `format_version: 7`.
 
+Do not consider the implementation green until every v6 writer constructor in
+`src/state/store.ts` emits typed v7 and the shared live type can no longer flow
+into a v6 file. This ordering is the no-silent-v6-extension invariant.
+
 - [ ] **Step 3: Verify green and commit**
 
 ```bash
 npm test -- --run src/data/plan-store.test.ts src/state/store.test.ts
 npm run check
-git add src/data/plan-store.ts src/data/plan-store.test.ts src/state/store.ts src/state/store.test.ts
+git add src/data/plan-store.ts src/data/plan-store.test.ts src/state/store.ts src/state/store.test.ts src/ui/extraction-plan.ts src/ui/extraction-plan.test.ts
 git commit -m "feat(124): persist purity mixes in plan v7"
 ```
 
@@ -217,9 +227,11 @@ expect(container.querySelector('input[aria-label="Impure nodes"]')).toBeNull();
 ```
 
 After enabling Limestone, assert seed values `0 / baseline count / 0`, edit all
-three fields, and inspect the callback payload. Assert Water has no checkbox and
-Oil does. Feed invalid text and assert the exact inline error is present while
-the mix supply summary is absent.
+three fields, and inspect the callback payload. Then change the extractor and
+clock through the rendered controls and assert both callback payloads retain
+the exact existing `purityMix`. Assert Water has no checkbox and Oil does. Feed
+invalid text and assert the exact inline error is present while the mix supply
+summary is absent.
 
 Run:
 
@@ -255,6 +267,21 @@ Render three labeled number inputs (`min="0"`, `step="1"`) and update one raw
 string at a time. Render exact mix supply, spare/shortfall, transport, and power;
 an invalid mix renders only its error. Keep the existing baseline result and
 focus lifecycle intact.
+
+The extractor handler must preserve inventory explicitly:
+
+```ts
+onSetSelection({
+  machineId,
+  clockPercentText: selection?.clockPercentText ?? "100",
+  ...(selection?.purityMix
+    ? { purityMix: { ...selection.purityMix } }
+    : {}),
+});
+```
+
+The clock handler already spreads `selection`, but its DOM test must still pin
+that behavior so a later payload reconstruction cannot drop the mix.
 
 Add a compact `.extraction-purity-fields` three-column grid that collapses only
 if required to keep every label/input within the panel; do not change the
@@ -321,3 +348,10 @@ git commit -m "test(124): complete purity mix browser gate"
 ```
 
 Expected: clean feature worktree ready for cumulative `develop...HEAD` review.
+
+## Plan Review Disposition
+
+- **r1:** folded all findings. Tasks 1 and 2 are one atomic type/persistence
+  unit with no intermediate v6 writer commit; the UI extractor and clock
+  handlers have explicit mix-preservation DOM coverage; and derivation tests
+  cover Pure/Normal/Impure/zero transport plus exact spare, shortfall, and power.
