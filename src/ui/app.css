@@ -1235,6 +1235,7 @@ body {
    ------------------------------------------------------------------------- */
 
 .graph-canvas {
+  box-sizing: border-box;
   width: 100%;
   /* Bigger + user-resizable (Stage 10 P1 Axis 1): a taller default, vertical
      drag-resize between a floor and 85vh. resize needs overflow ≠ visible (the

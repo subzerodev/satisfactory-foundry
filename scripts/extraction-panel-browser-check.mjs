@@ -118,6 +118,105 @@ async function pressKey(cdp, key, code, text, keyCode) {
   });
 }
 
+async function selectAll(cdp) {
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Control",
+    code: "ControlLeft",
+    modifiers: 2,
+    windowsVirtualKeyCode: 17,
+    nativeVirtualKeyCode: 17,
+  });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "a",
+    code: "KeyA",
+    modifiers: 2,
+    windowsVirtualKeyCode: 65,
+    nativeVirtualKeyCode: 65,
+  });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "a",
+    code: "KeyA",
+    modifiers: 2,
+    windowsVirtualKeyCode: 65,
+    nativeVirtualKeyCode: 65,
+  });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Control",
+    code: "ControlLeft",
+    windowsVirtualKeyCode: 17,
+    nativeVirtualKeyCode: 17,
+  });
+}
+
+async function pointerFocusControl(cdp, selector, label) {
+  const selectorText = JSON.stringify(selector);
+  const measurement = await evaluate(
+    cdp,
+    `(() => {
+      const control = document.querySelector(${selectorText});
+      const panel = document.querySelector('.graph-top-right-stack');
+      if (!control || !panel) return { found: false };
+      control.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      const r = control.getBoundingClientRect();
+      const p = panel.getBoundingClientRect();
+      return {
+        found: true,
+        rect: { left: r.left, right: r.right, top: r.top, bottom: r.bottom },
+        panel: { left: p.left, right: p.right, top: p.top, bottom: p.bottom },
+        scrollTop: panel.scrollTop,
+        contained: r.left >= p.left && r.right <= p.right && r.top >= p.top && r.bottom <= p.bottom && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight,
+        center: { x: r.left + r.width / 2, y: r.top + r.height / 2 },
+      };
+    })()`,
+  );
+  if (!measurement.found || !measurement.contained) {
+    throw new Error(
+      `${label} is not fully contained before interaction ${JSON.stringify(measurement)}`,
+    );
+  }
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: measurement.center.x,
+    y: measurement.center.y,
+    button: "left",
+    clickCount: 1,
+  });
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: measurement.center.x,
+    y: measurement.center.y,
+    button: "left",
+    clickCount: 1,
+  });
+  await waitForExpression(
+    cdp,
+    `document.activeElement === document.querySelector(${selectorText})`,
+    `${label} pointer focus`,
+  );
+  return measurement;
+}
+
+async function documentWidth(cdp) {
+  return evaluate(
+    cdp,
+    `(() => ({
+      document: { scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth },
+      body: { scrollWidth: document.body.scrollWidth, clientWidth: document.body.clientWidth },
+    }))()`,
+  );
+}
+
+function documentFits(measurement) {
+  return (
+    measurement.document.scrollWidth <= measurement.document.clientWidth &&
+    measurement.body.scrollWidth <= measurement.body.clientWidth
+  );
+}
+
 async function waitForExpression(cdp, expression, label) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (await evaluate(cdp, expression)) return;
@@ -157,6 +256,13 @@ const geometryCheck = `(() => {
   const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
   const c = rect(canvas), s = rect(stack), t = rect(topLeft), ctl = rect(controls), p = rect(power);
   const errors = [];
+  const documentWidth = {
+    document: { scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth },
+    body: { scrollWidth: document.body.scrollWidth, clientWidth: document.body.clientWidth },
+  };
+  if (documentWidth.document.scrollWidth > documentWidth.document.clientWidth || documentWidth.body.scrollWidth > documentWidth.body.clientWidth) {
+    errors.push('document has horizontal overflow');
+  }
   if (Math.abs(c.height - 340) > 0.5) errors.push('canvas height is not 340px');
   if (s.left < c.left + 7 || s.right > c.right - 7) errors.push('top-right stack leaves side gutters');
   if (s.top < c.top + 7 || s.bottom > c.bottom - 7) errors.push('top-right stack leaves canvas bounds');
@@ -173,9 +279,27 @@ const geometryCheck = `(() => {
   const scrollable = content
     ? ['auto', 'scroll'].includes(getComputedStyle(content).overflowY) && content.scrollHeight > content.clientHeight
     : false;
-  if (state === 'combined' && !scrollable) errors.push('combined stack is not internally scrollable');
-  if (state === 'combined' && Math.abs(s.height - expectedCap) > 0.5) errors.push('combined stack does not reach its responsive height cap');
-  return { errors, scrollable,
+  if (state !== 'notice' && !scrollable) errors.push('expanded extraction stack is not internally scrollable');
+  if (state !== 'notice' && Math.abs(s.height - expectedCap) > 0.5) errors.push('expanded extraction stack does not reach its responsive height cap');
+  const controlMeasurements = [];
+  if (state !== 'notice') {
+    const purityInputs = ['Impure nodes', 'Normal nodes', 'Pure nodes'];
+    for (const label of purityInputs) {
+      if (!document.querySelector('[aria-label="' + label + '"]')) errors.push('missing ' + label);
+    }
+    if (!document.querySelector('.extraction-purity-result')) errors.push('missing expanded purity result');
+    for (const control of document.querySelectorAll('.extraction-panel select, .extraction-panel input')) {
+      control.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      const r = rect(control), visible = rect(content);
+      const name = control.getAttribute('aria-label') || control.closest('label')?.querySelector('span')?.textContent || control.tagName;
+      const contained = r.left >= visible.left && r.right <= visible.right && r.top >= visible.top && r.bottom <= visible.bottom;
+      const avoidsChrome = !overlap(r, t) && !overlap(r, ctl) && !overlap(r, p);
+      if (!contained) errors.push(name + ' leaves visible panel bounds');
+      if (!avoidsChrome) errors.push(name + ' overlaps chain controls');
+      controlMeasurements.push({ name, contained, avoidsChrome, rect: { left: r.left, right: r.right, top: r.top, bottom: r.bottom }, panel: { left: visible.left, right: visible.right, top: visible.top, bottom: visible.bottom } });
+    }
+  }
+  return { errors, scrollable, documentWidth, controlMeasurements,
     canvas: { width: c.width, height: c.height },
     stack: { top: s.top-c.top, bottom: s.bottom-c.top, height: s.height },
     controls: { top: ctl.top-c.top, bottom: ctl.bottom-c.top },
@@ -249,7 +373,7 @@ async function main() {
       }
       await screenshot(cdp, `${width}-${state}`);
       process.stdout.write(
-        `PASS geometry ${width}px ${state} ${JSON.stringify(result.stack)}\n`,
+        `PASS geometry ${width}px ${state} ${JSON.stringify(result.stack)} document=${result.documentWidth.document.scrollWidth}/${result.documentWidth.document.clientWidth} controls=${result.controlMeasurements.length}\n`,
       );
     }
   }
@@ -261,6 +385,7 @@ async function main() {
       `document.querySelector('[data-harness-ready="interaction"] .raw-feed-node-button') !== null`,
       "interaction raw feed",
     );
+    const initialDocumentWidth = await documentWidth(cdp);
     await evaluate(
       cdp,
       `(() => {
@@ -348,48 +473,54 @@ async function main() {
     clicks = await evaluate(cdp, `window.__rawClicks`);
     if (clicks !== 3)
       throw new Error(`Space activation total was ${clicks}, expected 3`);
-    await evaluate(
+    const extractorGeometry = await pointerFocusControl(
       cdp,
-      `(() => {
-    const select = document.querySelector('[role="dialog"] select');
-    select.value = 'miner_mk3';
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
-  })()`,
+      '[role="dialog"] select',
+      "Extractor select",
     );
+    await pressKey(cdp, "ArrowDown", "ArrowDown", "", 40);
+    await pressKey(cdp, "Enter", "Enter", "\r", 13);
     await waitForExpression(
       cdp,
-      `window.__extractionSelection('stone')?.machineId === 'miner_mk3' && window.__extractionSelection('stone')?.clockPercentText === '100' && document.querySelector('[role="dialog"]')?.textContent.includes('1000/min required') === true && document.querySelector('[role="dialog"]')?.textContent.includes('Normal baseline') === true && document.querySelector('[role="dialog"]')?.textContent.includes('5 × Miner Mk.3') === true`,
+      `document.querySelector('[role="dialog"] select')?.value === 'miner_mk3' && window.__extractionSelection('stone')?.machineId === 'miner_mk3' && window.__extractionSelection('stone')?.clockPercentText === '100' && document.querySelector('[role="dialog"]')?.textContent.includes('1000/min required') === true && document.querySelector('[role="dialog"]')?.textContent.includes('Normal baseline') === true && document.querySelector('[role="dialog"]')?.textContent.includes('5 × Miner Mk.3') === true`,
       "Limestone Normal baseline",
     );
-    await evaluate(
+    const toggleGeometry = await pointerFocusControl(
       cdp,
-      `document.querySelector('[role="dialog"] [aria-label="Use node mix"]').click()`,
+      '[role="dialog"] [aria-label="Use node mix"]',
+      "Use node mix checkbox",
     );
     await waitForExpression(
       cdp,
       `(() => {
     const mix = window.__extractionSelection('stone')?.purityMix;
+    const toggle = document.querySelector('[role="dialog"] [aria-label="Use node mix"]');
     const inputs = [...document.querySelectorAll('[role="dialog"] .extraction-purity-fields input')].map((input) => input.value);
-    return mix?.impure === '0' && mix.normal === '5' && mix.pure === '0' && inputs.join('/') === '0/5/0';
+    return toggle?.checked === true && mix?.impure === '0' && mix.normal === '5' && mix.pure === '0' && inputs.join('/') === '0/5/0';
   })()`,
       "seeded Limestone purity mix",
     );
-    for (const label of ["Impure nodes", "Normal nodes", "Pure nodes"]) {
-      await evaluate(
+    const purityControlGeometry = [];
+    for (const [label, field] of [
+      ["Impure nodes", "impure"],
+      ["Normal nodes", "normal"],
+      ["Pure nodes", "pure"],
+    ]) {
+      purityControlGeometry.push(
+        await pointerFocusControl(
+          cdp,
+          `[role="dialog"] [aria-label="${label}"]`,
+          label,
+        ),
+      );
+      await selectAll(cdp);
+      await cdp.send("Input.insertText", { text: "1" });
+      await waitForExpression(
         cdp,
         `(() => {
     const input = document.querySelector('[role="dialog"] [aria-label="${label}"]');
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-    setter.call(input, '1');
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
+    return input?.value === '1' && window.__extractionSelection('stone')?.purityMix?.${field} === '1';
   })()`,
-      );
-      await waitForExpression(
-        cdp,
-        `document.querySelector('[role="dialog"] [aria-label="${label}"]').value === '1'`,
         `${label} edit`,
       );
     }
@@ -420,30 +551,7 @@ async function main() {
   })()`,
       "persisted Limestone purity mix",
     );
-    let pureVisibility = null;
-    if (width === 360) {
-      pureVisibility = await evaluate(
-        cdp,
-        `(() => {
-    const input = document.querySelector('[role="dialog"] [aria-label="Pure nodes"]');
-    const visiblePanel = document.querySelector('.graph-top-right-stack');
-    input.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    const inputRect = input.getBoundingClientRect();
-    const panelRect = visiblePanel.getBoundingClientRect();
-    return {
-      input: { top: inputRect.top, bottom: inputRect.bottom },
-      panel: { top: panelRect.top, bottom: panelRect.bottom },
-      scrollTop: visiblePanel.scrollTop,
-      visible: visiblePanel.scrollTop > 0 && inputRect.top >= panelRect.top && inputRect.bottom <= panelRect.bottom && inputRect.top >= 0 && inputRect.bottom <= innerHeight,
-    };
-  })()`,
-      );
-      if (!pureVisibility.visible) {
-        throw new Error(
-          `360px Pure input is outside the visible extraction panel ${JSON.stringify(pureVisibility)}`,
-        );
-      }
-    }
+    const pureVisibility = purityControlGeometry[2];
     await evaluate(cdp, `window.__setMachineCount(36)`);
     await waitForExpression(
       cdp,
@@ -551,9 +659,15 @@ async function main() {
       throw new Error(
         `all-resource activations total was ${clicks}, expected 7`,
       );
+    const finalDocumentWidth = await documentWidth(cdp);
+    if (!documentFits(initialDocumentWidth) || !documentFits(finalDocumentWidth)) {
+      throw new Error(
+        `${width}px interaction document has horizontal overflow initial=${JSON.stringify(initialDocumentWidth)} final=${JSON.stringify(finalDocumentWidth)}`,
+      );
+    }
     await screenshot(cdp, `interaction-${width}`);
     process.stdout.write(
-      `PASS interaction ${width}px pointer/Enter/Space, Limestone purity 0/5/0 -> 1/1/1 = 840/min supplied + 160/min shortfall, persistence${pureVisibility === null ? "" : ", Pure visible after scroll"}, Water no mix, Oil mix, Nitrogen refusal, replacement, live update, disappearance, focus\n`,
+      `PASS interaction ${width}px pointer/Enter/Space, realistic controls, Limestone purity 0/5/0 -> 1/1/1 = 840/min supplied + 160/min shortfall, persistence, controls contained (extractor scroll ${extractorGeometry.scrollTop}, toggle ${toggleGeometry.scrollTop}, Pure ${pureVisibility.scrollTop}), document=${finalDocumentWidth.document.scrollWidth}/${finalDocumentWidth.document.clientWidth}, Water no mix, Oil mix, Nitrogen refusal, replacement, live update, disappearance, focus\n`,
     );
   }
   cdp.close();

@@ -20,21 +20,26 @@
 - Extended the checked-in Chromium/CDP gate through real production controls
   and store state without removing any Phase 1 geometry, pointer, Enter, Space,
   resource, replacement, live-update, disappearance, or focus assertions.
+- Moved `border-box` sizing onto the production graph canvas so its 100% width
+  includes its border and cannot create document-level horizontal overflow.
 
 ## Browser Gate
 
 The Limestone fixture supplies an exact `1000/min` demand at Miner Mk.3 100%.
-Each interaction row selects the Miner through the production `<select>`,
-enables the production `Use node mix` checkbox, verifies the seeded `0/5/0`,
-edits the three production number inputs to `1/1/1`, and verifies exactly
-`840/min supplied` plus `160/min shortfall`. Closing and reopening the panel
-proves the three values persist in production store state.
+Each interaction row scrolls every new control fully into the visible panel,
+checks all four rectangle edges, and focuses it with a CDP pointer click. The
+Miner is selected through native ArrowDown/Enter input; each purity number uses
+CDP Control+A plus text insertion, with no direct value assignment or prototype
+setter. DOM and production store state are checked after every edit. The gate
+verifies the seeded `0/5/0`, the edited `1/1/1`, and exactly `840/min supplied`
+plus `160/min shortfall`. Closing and reopening the panel proves the three
+values persist in production store state.
 
 | Width | Notice geometry | Extraction geometry | Combined geometry | Interaction result |
 |---:|---|---|---|---|
-| 360px | top 49, bottom 91, height 42 | top 49, bottom 219, height 170 | top 49, bottom 219, height 170 | purity exact/persisted; Pure input inside the visible panel after scroll; Water no mix; Oil mix; Nitrogen refusal; all Phase 1 interactions pass |
-| 720px | top 49, bottom 91, height 42 | top 49, bottom 219, height 170 | top 49, bottom 219, height 170 | purity exact/persisted; Water no mix; Oil mix; Nitrogen refusal; all Phase 1 interactions pass |
-| 1280px | top 16, bottom 58, height 42 | top 16, bottom 263, height 247 | top 16, bottom 276, height 260 | purity exact/persisted; Water no mix; Oil mix; Nitrogen refusal; all Phase 1 interactions pass |
+| 360px | top 49, bottom 91, height 42 | top 49, bottom 219, height 170 | top 49, bottom 219, height 170 | six expanded controls contained; extractor/toggle/Pure scroll 0/68/112; document 360/360; purity exact/persisted; Water no mix; Oil mix; Nitrogen refusal; all Phase 1 interactions pass |
+| 720px | top 49, bottom 91, height 42 | top 49, bottom 219, height 170 | top 49, bottom 219, height 170 | six expanded controls contained; extractor/toggle/Pure scroll 0/68/112; document 720/720; purity exact/persisted; Water no mix; Oil mix; Nitrogen refusal; all Phase 1 interactions pass |
+| 1280px | top 16, bottom 58, height 42 | top 16, bottom 276, height 260 | top 16, bottom 276, height 260 | six expanded controls contained; extractor/toggle/Pure scroll 0/0/22; document 1280/1280; purity exact/persisted; Water no mix; Oil mix; Nitrogen refusal; all Phase 1 interactions pass |
 
 This is nine passing geometry rows and three passing interaction rows. The
 interaction rows retain exact-once pointer/Enter/Space activation, Limestone's
@@ -47,15 +52,21 @@ Resource Well-only Nitrogen handling.
 
 - TDD red: `node scripts/extraction-panel-browser-check.mjs` failed at
   `Limestone Normal baseline` while the old harness still supplied `900/min`.
+- Quality-hardening TDD red: the expanded, realistic gate reached all controls
+  and then failed because the unmasked 360px interaction document and body were
+  `362px` wide against a `360px` client, both initially and after interaction.
 - `node scripts/extraction-panel-browser-check.mjs`: passed all nine geometry
-  rows and three interaction rows.
+  rows and three realistic interaction rows. Every expanded geometry control
+  is fully contained after internal scrolling; document/body width is at most
+  client width at 360px, 720px, and 1280px.
 - `npm test`: 40 files and 1067 tests passed.
 - `npm run check`: TypeScript, ESLint, and Prettier passed.
 - `npm run build`: 226 modules transformed; production and PWA build passed
   with only the existing chunk-size advisory; 18 entries were precached.
 - `git diff --check develop...HEAD`: passed with no output.
 - Browser screenshots were written under
-  `/tmp/satisfactory-foundry-112-browser`.
+  `/tmp/satisfactory-foundry-112-browser`; the fresh 360px expanded extraction
+  screenshot was inspected with no clipping, horizontal spill, or overlap.
 
 ## Resource Well Refusal
 

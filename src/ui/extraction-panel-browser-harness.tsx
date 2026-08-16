@@ -84,6 +84,7 @@ function GeometryHarness({ state }: { state: string }) {
   const [selection, setSelection] = useState<ExtractionSelection | null>({
     machineId: "miner_mk3",
     clockPercentText: "250",
+    purityMix: { impure: "1", normal: "1", pure: "1" },
   });
   const showNotice = state !== "extraction";
   const showExtraction = state !== "notice";
@@ -93,7 +94,6 @@ function GeometryHarness({ state }: { state: string }) {
         className="graph-canvas"
         data-browser-canvas
         style={{
-          boxSizing: "border-box",
           height: 340,
           minHeight: 340,
           maxHeight: 340,
