@@ -47,6 +47,12 @@ Vite, system Chromium through CDP.
 **Files:**
 - Move implementation: `src/ui/transport-plan.ts` -> `src/core/transport-plan.ts`
 - Keep compatibility re-export: `src/ui/transport-plan.ts`
+- Move implementation: `src/ui/clock.ts` -> `src/core/clock.ts`
+- Keep compatibility re-export: `src/ui/clock.ts`
+- Create: `src/core/machine-power.ts`
+- Create: `src/core/machine-power.test.ts`
+- Modify: `src/ui/advice.ts`
+- Modify: `src/ui/advice.test.ts`
 - Create: `src/core/link-plan.ts`
 - Create: `src/core/link-plan.test.ts`
 - Modify: transport-plan import sites as required by TypeScript
@@ -59,6 +65,13 @@ Vite, system Chromium through CDP.
   invalid clock, and safe-integer overflow.
 - [ ] Move the pure transport derivation to core so both store and UI can use it;
   preserve the UI module as a re-export to avoid broad call-site churn.
+- [ ] Move `parseClockText` to core and preserve `src/ui/clock.ts` as a
+  compatibility re-export. Add a core `machinePowerProjection` that returns an
+  exact `Fraction` result at 100% and a numeric `estimated` result at other
+  clocks, including variable-power bounds. Adapt `stagePowerText` to format that
+  projection instead of owning the calculation; no core module imports UI.
+- [ ] Pin constant and variable machine power at 100% plus non-100% estimated
+  power before using the projection in `deriveLinkPlan`.
 - [ ] Implement `deriveLinkPlan(catalog, link, stages)` with:
   - `ready`: pair, optional `materialSupply/materialDemand`, optional machine
     result when demand is solved, `cargoSupply/cargoDemand`, packaged/container
@@ -68,7 +81,7 @@ Vite, system Chromium through CDP.
 - [ ] Keep trip/derate parse failures inside each independent `TransportPlan`;
   they do not erase valid interstep counts or the other route. Preserve
   `sharedEnds.from/to` as physical producer/consumer sides on return trains.
-- [ ] Run `npm test -- --run src/core/link-plan.test.ts src/ui/transport-plan.test.ts`
+- [ ] Run `npm test -- --run src/core/link-plan.test.ts src/core/machine-power.test.ts src/ui/transport-plan.test.ts src/ui/advice.test.ts`
   and `npm run check`.
 
 ### Task 3: Atomic Plan V8 Persistence
@@ -96,7 +109,7 @@ while any writer still emits v7.
   from recognized fields. Strip ignored/misplaced outer and nested fields.
   Prove v7 load -> v8 save -> v8 reload preserves recognized intent.
 - [ ] Ensure v1-v6 migration chains end at canonical v8 and plan list/load/save,
-  rename, import/export, duplicate, and bundle use `PlanFileV8`.
+  rename, import/export, and bundle use `PlanFileV8`.
 - [ ] Run `npm test -- --run src/data/plan-store.test.ts src/state/store.test.ts`,
   `npm run check`, then commit Tasks 1-3 as one atomic persistence commit.
 
@@ -141,6 +154,10 @@ while any writer still emits v7.
 - [ ] Write failing graph tests proving forward/return chips and train findings
   use packaged/container stack sizes and rates, including Nitrogen's `1/4`
   cargo ratio and both one-sided return `sharedEnds` cases.
+- [ ] Before graph implementation, add failing unavailable x under-supply,
+  over-supply, and dangling rows. Each asserts both diagnostic texts, problem
+  state precedence, finding count two, and preserved apply payload only for the
+  original-unit under-supply row.
 - [ ] Replace direct transport resolution with `deriveLinkPlan`. Keep the main
   edge item/material shortage wording in fluid units; add packaged transport
   chips/results from cargo units.
