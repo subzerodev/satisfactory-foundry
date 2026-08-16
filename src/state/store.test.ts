@@ -2101,6 +2101,92 @@ describe("stage graph — packaging interstep persistence actions (#113)", () =>
     setInterstep(store, base.id, null);
     expect("transport" in store.getState().links[0]!).toBe(false);
   });
+
+  it("reconciles interstep validity atomically across every link mutation", async () => {
+    const { store, linkId } = await packagedStore();
+
+    setInterstep(store, linkId, validIntent);
+    expect(
+      store
+        .getState()
+        .reconciliation.some((finding) => finding.type === "interstep-problem"),
+    ).toBe(false);
+
+    setInterstep(store, linkId, {
+      ...validIntent,
+      clockPercentText: "bad clock",
+    });
+    expect(
+      store
+        .getState()
+        .reconciliation.filter(
+          (finding) => finding.type === "interstep-problem",
+        ),
+    ).toHaveLength(1);
+
+    setInterstep(store, linkId, validIntent);
+    expect(
+      store
+        .getState()
+        .reconciliation.some((finding) => finding.type === "interstep-problem"),
+    ).toBe(false);
+
+    store.getState().setLinkTransport(linkId, {
+      mode: "truck",
+      trip: { kind: "estimated", distanceText: "" },
+    });
+    expect(
+      store
+        .getState()
+        .reconciliation.some((finding) => finding.type === "interstep-problem"),
+    ).toBe(false);
+
+    store.getState().clearLinkTransport(linkId);
+    expect(
+      store
+        .getState()
+        .reconciliation.some((finding) => finding.type === "interstep-problem"),
+    ).toBe(false);
+
+    setInterstep(store, linkId, { ...validIntent, packageRecipeId: "stale" });
+    expect(
+      store
+        .getState()
+        .reconciliation.filter(
+          (finding) => finding.type === "interstep-problem",
+        ),
+    ).toHaveLength(1);
+
+    setInterstep(store, linkId, null);
+    expect(
+      store
+        .getState()
+        .reconciliation.some((finding) => finding.type === "interstep-problem"),
+    ).toBe(false);
+
+    setInterstep(store, linkId, validIntent);
+    store.getState().removeLink(linkId);
+    expect(store.getState().reconciliation).toEqual([]);
+  });
+
+  it("refreshes stale interstep findings when the catalog is replaced", async () => {
+    const { store, linkId } = await packagedStore();
+    setInterstep(store, linkId, validIntent);
+    expect(
+      store
+        .getState()
+        .reconciliation.some((finding) => finding.type === "interstep-problem"),
+    ).toBe(false);
+
+    await store.getState().uploadDocsText(DOCS_TEXT_CHAIN);
+    const problems = store
+      .getState()
+      .reconciliation.filter(
+        (finding) =>
+          finding.linkId === linkId && finding.type === "interstep-problem",
+      );
+    expect(problems).toHaveLength(1);
+  });
 });
 
 describe("stage graph — reconciliation math + cadence (Stage 3 P1)", () => {

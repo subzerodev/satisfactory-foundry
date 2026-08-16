@@ -274,6 +274,15 @@ export function edgeChip(plan: TransportPlan): string | null {
   }
 }
 
+/** Label an interstep route while preserving edgeChip's count and estimate rules. */
+export function routeEdgeChip(
+  route: "forward" | "empty return",
+  plan: TransportPlan,
+): string | null {
+  const summary = edgeChip(plan);
+  return summary === null ? null : `· ${route} ${summary.slice(2)}`;
+}
+
 /** Prefix a chip body with "· " (and "≈" when estimated). */
 function chip(body: string, estimated: boolean): string {
   return estimated ? `· ≈ ${body}` : `· ${body}`;

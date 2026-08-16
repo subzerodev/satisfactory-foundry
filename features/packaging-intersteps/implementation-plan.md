@@ -138,33 +138,33 @@ while any writer still emits v7.
 - Modify: `src/ui/GraphCanvas.tsx`
 - Modify: `src/ui/app.css`
 
-- [ ] Write failing lifecycle tests for enable, pair/clock update, disable,
+- [x] Write failing lifecycle tests for enable, pair/clock update, disable,
       valid-invalid-valid, clear transport, removal, catalog replacement, and stale
       recovery. Public route/addLink refusal tests already land in Task 3.
-- [ ] Add `interstep-problem` to `LinkFinding`. Keep `reconcileLinks` material
+- [x] Add `interstep-problem` to `LinkFinding`. Keep `reconcileLinks` material
       inputs in original units and append at most one interstep finding after the
       material finding for that link.
-- [ ] Update every full-derive/rebuild cadence to derive material reconciliation
+- [x] Update every full-derive/rebuild cadence to derive material reconciliation
       plus the optional interstep problem atomically. Pin unavailable crossed with
       under/over/dangling, deterministic ordering, and no stale findings.
-- [ ] Write failing graph tests proving forward/return chips and train findings
+- [x] Write failing graph tests proving forward/return chips and train findings
       use packaged/container stack sizes and rates, including Nitrogen's `1/4`
       cargo ratio and both one-sided return `sharedEnds` cases.
-- [ ] Before graph implementation, add failing unavailable x under-supply,
+- [x] Before graph implementation, add failing unavailable x under-supply,
       over-supply, and dangling rows. Each asserts both diagnostic texts, problem
       state precedence, finding count two, and preserved apply payload only for the
       original-unit under-supply row.
-- [ ] Replace direct transport resolution with `deriveLinkPlan`. Keep the main
+- [x] Replace direct transport resolution with `deriveLinkPlan`. Keep the main
       edge item/material shortage wording in fluid units; add packaged transport
       chips/results from cargo units.
-- [ ] Add a combined edge diagnostic projection that partitions material and
+- [x] Add a combined edge diagnostic projection that partitions material and
       interstep findings. Problem styling wins, both texts remain visible, and
       finding counts include both. Unavailable suppresses both route results.
-- [ ] Extend plan-wide transport findings to inspect both routes without
+- [x] Extend plan-wide transport findings to inspect both routes without
       duplicating the canonical projection or changing ordinary links.
-- [ ] Add restrained problem styling and verify labels do not resize or overlap
+- [x] Add restrained problem styling and verify labels do not resize or overlap
       fixed graph elements.
-- [ ] Run `npm test -- --run src/core/reconcile.test.ts src/state/store.test.ts src/ui/graph-flow.test.ts src/ui/transport-text.test.ts`
+- [x] Run `npm test -- --run src/core/reconcile.test.ts src/state/store.test.ts src/ui/graph-flow.test.ts src/ui/transport-text.test.ts`
       and `npm run check`; commit reconciliation and graph consumers as one
       compile-safe unit.
 

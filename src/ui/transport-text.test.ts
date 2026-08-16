@@ -26,6 +26,7 @@ import {
   trainBeltFeedFootnote,
   trainSharedEndsFootnote,
   edgeChip,
+  routeEdgeChip,
   unsustainableTrainRow,
   unsustainableTrainText,
   ESTIMATED_SUFFIX,
@@ -296,6 +297,35 @@ describe("transport-text — train rows + chip", () => {
       deratePercent: null,
     };
     expect(edgeChip(plan)).toBeNull();
+  });
+});
+
+describe("routeEdgeChip", () => {
+  it("labels forward and empty-return route summaries independently", () => {
+    expect(routeEdgeChip("forward", vehicle(2n, 100, "measured"))).toBe(
+      "· forward 2 trucks",
+    );
+    expect(routeEdgeChip("empty return", vehicle(3n, 100, "estimated"))).toBe(
+      "· empty return ≈ 3 trucks",
+    );
+  });
+
+  it("omits unsolved, error, and belt route summaries", () => {
+    expect(
+      routeEdgeChip("forward", { kind: "unsolved", mode: "truck" }),
+    ).toBeNull();
+    expect(
+      routeEdgeChip("forward", { kind: "error", message: "bad trip" }),
+    ).toBeNull();
+    expect(
+      routeEdgeChip("forward", {
+        kind: "continuous",
+        mode: "belt",
+        result: continuousRuns("belt", Fraction.from(10), Fraction.from(60)),
+        tierIndex: 1,
+        deratePercent: null,
+      }),
+    ).toBeNull();
   });
 });
 

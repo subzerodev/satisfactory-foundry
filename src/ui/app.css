@@ -1621,6 +1621,12 @@ body {
   stroke-dasharray: 4 3;
 }
 
+.edge-problem .react-flow__edge-path {
+  stroke: var(--error);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
+
 /* Raw-feed edge (Stage 11 P1, ticket #57) — the dashed hairline from a supply
    card to its stage. Lighter than the reconciliation lanes: the pipe-dash
    vocabulary at reduced weight + opacity, muted ink so it reads as auxiliary
@@ -1683,6 +1689,16 @@ body {
 
 .edge-dangling .react-flow__edge-text {
   fill: var(--fg);
+}
+
+.edge-problem .react-flow__edge-textbg {
+  stroke: var(--error);
+  stroke-width: 2;
+  fill: var(--bg);
+}
+
+.edge-problem .react-flow__edge-text {
+  fill: var(--error);
 }
 
 /* -------------------------------------------------------------------------

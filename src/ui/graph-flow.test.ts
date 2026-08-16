@@ -27,7 +27,11 @@ import {
   RAW_NODE_HEIGHT,
 } from "./graph-flow.ts";
 import { computeLinkTransport } from "../core/transport-plan.ts";
-import type { LinkTransport } from "../core/link-transport.ts";
+import { applyBlockFor } from "./LinkInspector.tsx";
+import type {
+  LinkTransport,
+  PackagingInterstep,
+} from "../core/link-transport.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 
 // ---------------------------------------------------------------------------
@@ -943,6 +947,72 @@ describe("graphToFlow — node powerText", () => {
 // transport math needs an unlocked belt/pipe tier to size against).
 const transportCatalog: Catalog = { ...catalog, tiers: TIER_TABLE };
 
+const nitrogenCatalog: Catalog = {
+  ...transportCatalog,
+  items: {
+    ...transportCatalog.items,
+    nitrogen_gas: {
+      id: "nitrogen_gas",
+      displayName: "Nitrogen Gas",
+      isFluid: true,
+      stackSize: null,
+    },
+    packaged_nitrogen: {
+      id: "packaged_nitrogen",
+      displayName: "Packaged Nitrogen Gas",
+      isFluid: false,
+      stackSize: Fraction.from(100),
+    },
+    empty_tank: {
+      id: "empty_tank",
+      displayName: "Empty Fluid Tank",
+      isFluid: false,
+      stackSize: Fraction.from(100),
+    },
+  },
+  machines: {
+    packager: {
+      id: "packager",
+      displayName: "Packager",
+      power: {
+        mw: Fraction.from(10),
+        variable: false,
+        exponent: Fraction.parse("1.321929"),
+      },
+    },
+  },
+  recipes: {
+    ...transportCatalog.recipes,
+    package_nitrogen: {
+      id: "package_nitrogen",
+      displayName: "Package Nitrogen Gas",
+      machineId: "packager",
+      isAlternate: false,
+      inputs: [io("nitrogen_gas", 240), io("empty_tank", 60)],
+      outputs: [io("packaged_nitrogen", 60)],
+      primaryOutputId: "packaged_nitrogen",
+    },
+    unpackage_nitrogen: {
+      id: "unpackage_nitrogen",
+      displayName: "Unpackage Nitrogen Gas",
+      machineId: "packager",
+      isAlternate: false,
+      inputs: [io("packaged_nitrogen", 60)],
+      outputs: [io("nitrogen_gas", 240), io("empty_tank", 60)],
+      primaryOutputId: "nitrogen_gas",
+    },
+  },
+};
+
+const nitrogenIntent: PackagingInterstep = {
+  packageRecipeId: "package_nitrogen",
+  clockPercentText: "100",
+  returnTransport: {
+    mode: "truck",
+    trip: { kind: "measured", roundTripSecondsText: "120" },
+  },
+};
+
 describe("graphToFlow — transport edge chip", () => {
   // A solved consumer with a feed lane so linkRequiredRate resolves (600/min).
   const producer = stage("a", "A", "ingot", 20, solvedWith({}));
@@ -1037,6 +1107,157 @@ describe("graphToFlow — transport edge chip", () => {
   });
 });
 
+describe("graphToFlow — packaged transport projection", () => {
+  const producer = stage(
+    "a",
+    "Nitrogen source",
+    null,
+    1,
+    solvedWith({
+      outputs: [
+        {
+          itemId: "nitrogen_gas",
+          totalOutput: Fraction.from(90000),
+          perMachineOutput: Fraction.from(10000),
+        },
+      ],
+    }),
+  );
+  const consumer = stage(
+    "b",
+    "Nitrogen sink",
+    null,
+    1,
+    solvedWith({
+      feeds: [{ itemId: "nitrogen_gas", totalDemand: Fraction.from(100000) }],
+    }),
+  );
+  const stages = { a: producer, b: consumer };
+  const link: StageLink = {
+    id: "N",
+    fromStageId: "a",
+    toStageId: "b",
+    itemId: "nitrogen_gas",
+    transport: {
+      mode: "truck",
+      trip: { kind: "measured", roundTripSecondsText: "120" },
+    },
+    interstep: nitrogenIntent,
+  };
+
+  it("sizes the forward plan from Nitrogen's quarter-rate packaged cargo", () => {
+    const plan = planForLink(link, nitrogenCatalog, stages);
+    const expected = computeLinkTransport(
+      Fraction.from(25000),
+      link.transport,
+      nitrogenCatalog.items.packaged_nitrogen!,
+      nitrogenCatalog.tiers,
+      globalUnlockedTiers(nitrogenCatalog, stages),
+    );
+    expect(plan).toEqual(expected);
+  });
+
+  it("labels independent forward and empty-return chips", () => {
+    const { edges } = graphToFlow(
+      nitrogenCatalog,
+      stages,
+      ["a", "b"],
+      [link],
+      [],
+      { a: { x: 0, y: 0 }, b: { x: 300, y: 0 } },
+      "a",
+    );
+    expect(edges[0]!.label).toContain("forward");
+    expect(edges[0]!.label).toContain("empty return");
+  });
+
+  it.each([
+    {
+      material: "under-supply",
+      supply: 90000,
+      demand: 100000,
+      materialText: "short 10000/min",
+    },
+    {
+      material: "over-supply",
+      supply: 110000,
+      demand: 100000,
+      materialText: "+10000/min surplus",
+    },
+    {
+      material: "dangling-link",
+      supply: null,
+      demand: 100000,
+      materialText: "dangling (from)",
+    },
+  ] as const)(
+    "keeps $material text beside an interstep problem with problem precedence",
+    ({ material, supply, demand, materialText }) => {
+      const materialFinding = reconcileLinks([
+        {
+          linkId: "N",
+          supply: supply === null ? null : Fraction.from(supply),
+          demand: Fraction.from(demand),
+        },
+      ])[0]!;
+      const reconciliation: LinkFinding[] = [
+        materialFinding,
+        {
+          type: "interstep-problem",
+          linkId: "N",
+          error: "packaging pair is unavailable",
+        },
+      ];
+      const rowStages = {
+        a:
+          supply === null
+            ? stage("a", "Nitrogen source", null, 1, solvedWith({}))
+            : stage(
+                "a",
+                "Nitrogen source",
+                null,
+                1,
+                solvedWith({
+                  outputs: [
+                    {
+                      itemId: "nitrogen_gas",
+                      totalOutput: Fraction.from(supply),
+                      perMachineOutput: Fraction.from(10000),
+                    },
+                  ],
+                }),
+              ),
+        b: consumer,
+      };
+      const staleLink: StageLink = {
+        ...link,
+        interstep: { ...nitrogenIntent, packageRecipeId: "stale" },
+      };
+      const { nodes, edges } = graphToFlow(
+        nitrogenCatalog,
+        rowStages,
+        ["a", "b"],
+        [staleLink],
+        reconciliation,
+        { a: { x: 0, y: 0 }, b: { x: 300, y: 0 } },
+        "a",
+      );
+      expect(edges[0]!.data.state).toBe("problem");
+      expect(edges[0]!.label).toContain("Nitrogen Gas");
+      expect(edges[0]!.label).toContain(materialText);
+      expect(edges[0]!.label).toContain("packaging pair is unavailable");
+      expect(nodes[0]!.data.findingCount).toBe(2);
+      expect(nodes[1]!.data.findingCount).toBe(2);
+
+      const apply = applyBlockFor(staleLink, reconciliation, rowStages, [
+        staleLink,
+      ]);
+      expect(apply === null).toBe(material !== "under-supply");
+      if (material === "under-supply") expect(apply!.shortfall).toBe("10000");
+    },
+  );
+});
+
 // ---------------------------------------------------------------------------
 // computeTransportFindings — the unsustainable-train case (Stage 7 P2, Axis 4).
 // ---------------------------------------------------------------------------
@@ -1104,6 +1325,70 @@ describe("computeTransportFindings", () => {
       [],
     );
   });
+
+  it.each([{ from: true as const }, { to: true as const }])(
+    "checks both packaged train routes and preserves physical return sharedEnds %o",
+    (sharedEnds) => {
+      const producerAt = stage(
+        "a",
+        "Nitrogen source",
+        null,
+        1,
+        solvedWith({
+          outputs: [
+            {
+              itemId: "nitrogen_gas",
+              totalOutput: Fraction.from(1000000),
+            },
+          ],
+        }),
+      );
+      const consumerAt = stage(
+        "b",
+        "Nitrogen sink",
+        null,
+        1,
+        solvedWith({
+          feeds: [
+            {
+              itemId: "nitrogen_gas",
+              totalDemand: Fraction.from(1000000),
+            },
+          ],
+        }),
+      );
+      const packagedLink: StageLink = {
+        id: "N",
+        fromStageId: "a",
+        toStageId: "b",
+        itemId: "nitrogen_gas",
+        transport: {
+          mode: "train",
+          trip: { kind: "measured", roundTripSecondsText: "60" },
+        },
+        interstep: {
+          ...nitrogenIntent,
+          returnTransport: {
+            mode: "train",
+            trip: { kind: "measured", roundTripSecondsText: "60" },
+            sharedEnds,
+          },
+        },
+      };
+      const findings = computeTransportFindings(
+        nitrogenCatalog,
+        { a: producerAt, b: consumerAt },
+        [packagedLink],
+      );
+      expect(findings).toHaveLength(2);
+      expect(findings[0]).toContain(
+        "Forward Packaged Nitrogen Gas: 250000/min",
+      );
+      expect(findings[1]).toContain(
+        "Empty return Empty Fluid Tank: 250000/min",
+      );
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------

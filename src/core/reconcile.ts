@@ -22,6 +22,8 @@ export interface LinkInput {
   /** Consumer's totalDemand for the item, or null if the consumer no longer has
    *  that feed lane (recipe changed). */
   demand: Fraction | null;
+  /** One canonical link-plan derivation error, independent of material flow. */
+  interstepProblem?: string | null;
 }
 
 export type LinkFinding =
@@ -39,24 +41,23 @@ export type LinkFinding =
       demand: Fraction;
       surplus: Fraction;
     }
-  | { type: "dangling-link"; linkId: string; end: "from" | "to" };
+  | { type: "dangling-link"; linkId: string; end: "from" | "to" }
+  | { type: "interstep-problem"; linkId: string; error: string };
 
 /**
- * Reconcile a batch of links, one finding (or none) per link, in input order.
- * Exact match emits nothing. A missing lane on either end is a `dangling-link`;
- * when BOTH ends are absent, exactly one finding is emitted with `end: "from"`
- * (deterministic tie-break: the producer end is reported first).
+ * Reconcile a batch of links in input order. Each link emits at most one
+ * material finding followed by at most one independent interstep problem.
+ * Exact material flow emits no material finding. A missing lane on either end
+ * is a `dangling-link`; when BOTH ends are absent, the producer end wins.
  */
 export function reconcileLinks(inputs: LinkInput[]): LinkFinding[] {
   const findings: LinkFinding[] = [];
-  for (const { linkId, supply, demand } of inputs) {
+  for (const { linkId, supply, demand, interstepProblem } of inputs) {
     // Either lane absent → dangling. Producer end wins the both-null tie-break.
     if (supply === null || demand === null) {
       const end = supply === null ? "from" : "to";
       findings.push({ type: "dangling-link", linkId, end });
-      continue;
-    }
-    if (supply.lt(demand)) {
+    } else if (supply.lt(demand)) {
       findings.push({
         type: "under-supply",
         linkId,
@@ -73,7 +74,14 @@ export function reconcileLinks(inputs: LinkInput[]): LinkFinding[] {
         surplus: supply.sub(demand),
       });
     }
-    // Exact match: no finding.
+    // Exact match: no material finding.
+    if (interstepProblem) {
+      findings.push({
+        type: "interstep-problem",
+        linkId,
+        error: interstepProblem,
+      });
+    }
   }
   return findings;
 }

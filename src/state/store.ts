@@ -19,6 +19,7 @@ import { solveStage } from "../core/manifold.ts";
 import type { StageSolveResult } from "../core/manifold.ts";
 import { reconcileLinks } from "../core/reconcile.ts";
 import type { LinkInput, LinkFinding } from "../core/reconcile.ts";
+import { deriveLinkPlan } from "../core/link-plan.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
 import type {
   LinkTransport,
@@ -619,7 +620,16 @@ function mapLinkInputs(slice: GraphSlice): LinkInput[] {
         ? (to.solve.result.feeds.find((f) => f.itemId === link.itemId)
             ?.totalDemand ?? null)
         : null;
-    return { linkId: link.id, supply, demand };
+    let interstepProblem: string | null = null;
+    if (link.interstep !== undefined) {
+      if (slice.catalog.status !== "ready") {
+        interstepProblem = "packaging catalog is unavailable";
+      } else {
+        const plan = deriveLinkPlan(slice.catalog.catalog, link, slice.stages);
+        interstepProblem = plan.status === "unavailable" ? plan.error : null;
+      }
+    }
+    return { linkId: link.id, supply, demand, interstepProblem };
   });
 }
 
