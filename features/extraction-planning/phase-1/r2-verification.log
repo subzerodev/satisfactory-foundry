@@ -1,0 +1,117 @@
+# Forgejo #112 Phase 1 verification evidence
+# Branch: feature/s22-112-extraction-p1-design
+# Date: 2026-08-16
+
+PRE-IMPLEMENTATION DRIFT GATE
+command: npm test -- --run src/data/docs-loader.test.ts src/data/catalog-store.test.ts src/ui/advice.test.ts src/data/plan-store.test.ts src/state/store.test.ts src/ui/graph-flow.test.ts src/ui/GraphCanvas.test.ts
+result: PASS - 7 files, 348 tests
+
+INITIAL RED/GREEN GATES
+parser red: FAIL - 18 new extractor parser tests; green: 58/58
+cache red: FAIL - extractor round-trip, null-prototype revival, parser v5 stale; green parser+cache: 71/71
+derivation red: FAIL - module absent; green derivation+advice: 30/30
+state red: FAIL - setExtractionSelection absent
+persistence red: FAIL - migrateV5 absent; green plan-store+state: 232/232
+raw data red: FAIL - stageId/itemId/demand absent; green graph-flow: 48/48
+interaction red: FAIL - projectRawFeedNode absent and no native button; green graph/canvas: 54/54
+panel red: FAIL - input edit callback row; green panel+smoke: 70/70
+responsive red: FAIL - 360/extraction top-right stack overlaps bottom-left controls
+responsive green: PASS - all 360/720 notice/extraction/combined rows
+
+CANONICAL POST-CODE BREAK/RESTORE PROBES
+
+1. Extractor parser and cache
+break: use 6 instead of 60 in extractor rate calculation; serialize extractor normalRate as "0"
+command: npm test -- --run src/data/docs-loader.test.ts src/data/catalog-store.test.ts
+FAIL src/data/docs-loader.test.ts > parseDocsJson - extractor capabilities (#112) > parses extractor capabilities independent of group order
+FAIL src/data/catalog-store.test.ts > catalog cache - round-trip (spec row 7) > save -> load returns a hit with Fraction-equal catalog + records a hash
+restore result: PASS - 2 files, 71 tests
+
+2. Exact derivation
+break: divide extractor clock scaling by 1000 instead of 100
+command: npm test -- --run src/ui/extraction-plan.test.ts
+FAIL src/ui/extraction-plan.test.ts > deriveExtractionPlan > derives the exact Limestone and Water worked examples
+FAIL src/ui/extraction-plan.test.ts > deriveExtractionPlan > keeps exact counts and per-output transport at 250 percent
+restore result: PASS - 1 file, 11 tests
+
+3. Plan v6 migration and persistence
+break: map every v5 stage to userPlaced=true
+command: npm test -- --run src/data/plan-store.test.ts src/state/store.test.ts
+FAIL src/data/plan-store.test.ts > plan-store - v6 extraction and explicit placement (#112) > migrates v5 userPlaced true/absent to required booleans
+FAIL src/data/plan-store.test.ts > plan-store - v5 round-trip (flowDirection + userPlaced) > round-trips a TB direction and a per-stage userPlaced flag
+restore result: PASS - 2 files, 232 tests
+
+4. Live exact raw demand
+break: replace feed.totalDemand with Fraction.from(0) in the raw-node projection
+command: npm test -- --run src/ui/graph-flow.test.ts
+FAIL src/ui/graph-flow.test.ts > graphToFlow - rawFeeds > emits a supply card + edge for an unlinked extraction-level input with the exact totalDemand
+restore result: PASS - 1 file, 48 tests
+
+5. Panel rendering contract
+break: render Purity Unknown instead of Purity Normal
+command: npm test -- --run src/ui/GraphCanvas.dom.test.tsx
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > renders the exact Normal-purity plan and persists control edits
+restore result: PASS - 1 file, 4 tests
+
+6. Correctness r1 parser and cache folds
+break: skip malformed restricted-resource members; serialize extractors into a plain object
+command: npm test -- src/data/docs-loader.test.ts src/data/catalog-store.test.ts
+FAIL src/data/docs-loader.test.ts > parseDocsJson - extractor capabilities (#112) > rejects a restricted resource list with a malformed member
+FAIL src/data/catalog-store.test.ts > catalog cache - null-prototype maps survive revive (#28) > round-trips an extractor whose id is __proto__
+restore result: PASS - 2 files, 73 tests
+
+7. Correctness r2 complete cache and responsive geometry folds
+break A: serialize the extractor's matching machine into a plain object
+command: npm test -- src/data/catalog-store.test.ts
+FAIL src/data/catalog-store.test.ts > catalog cache - null-prototype maps survive revive (#28) > round-trips an extractor and machine whose shared id is __proto__
+restore result: PASS - 1 file, 14 tests
+break B: raise the measured mobile stack cap from 170px to the previously specified 220px
+command: node scripts/extraction-panel-browser-check.mjs
+FAIL 360/extraction: top-right stack overlaps bottom-left controls; stack y=49..269, controls y=220..324
+restore result: PASS - 9 geometry rows and 3 interaction rows
+
+8. Correctness r3 explicit solid selection fold
+break: restore the one-candidate auto-seed condition for every resource
+command: npm test -- src/ui/GraphCanvas.dom.test.tsx
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > leaves a single-candidate solid unselected until the user chooses it
+restore result: PASS - 1 file, 5 tests; browser gate also PASS - 9 geometry rows and 3 interaction rows
+
+9. Correctness r4 clear lifecycle and shared clock parser folds
+break: remove the once-per-open auto-seed guard and corrupt the shared malformed-clock message
+command: npm test -- src/ui/GraphCanvas.dom.test.tsx src/ui/extraction-plan.test.ts
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > allows clearing the auto-seeded water extractor
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > allows clearing the auto-seeded liquid_oil extractor
+FAIL src/ui/extraction-plan.test.ts > deriveExtractionPlan > uses the shared clock error for nope
+restore result: PASS - 2 files, 21 tests; ChainBuilder shared-parser suite and browser gate also pass
+
+10. Correctness r5 v6 shape and pipe-copy folds
+break: accept arrays as extraction maps and restore the duplicate pipe noun
+command: npm test -- src/data/plan-store.test.ts src/ui/GraphCanvas.dom.test.tsx
+FAIL src/data/plan-store.test.ts > plan-store - v6 extraction and explicit placement (#112) > rejects malformed v6 placement and extraction shapes
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > allows clearing the auto-seeded water extractor
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > allows clearing the auto-seeded liquid_oil extractor
+restore result: PASS - 2 files, 72 tests
+
+BROWSER GATE
+command: node scripts/extraction-panel-browser-check.mjs
+PASS geometry 360px notice top=49 bottom=91 height=42
+PASS geometry 360px extraction top=49 bottom=219 height=170
+PASS geometry 360px combined top=49 bottom=219 height=170
+PASS geometry 720px notice top=49 bottom=91 height=42
+PASS geometry 720px extraction top=49 bottom=219 height=170
+PASS geometry 720px combined top=49 bottom=219 height=170
+PASS geometry 1280px notice top=16 bottom=58 height=42
+PASS geometry 1280px extraction top=16 bottom=241 height=225
+PASS geometry 1280px combined top=16 bottom=276 height=260
+PASS interaction 360/720/1280 pointer/Enter/Space, Limestone/Water/Oil/Nitrogen, replacement, live update, disappearance, focus
+screenshots: /tmp/satisfactory-foundry-112-browser/{360,720,1280}-{notice,extraction,combined}.png and interaction-{360,720,1280}.png
+
+POST-CODE COMPLETE SUITE
+command: npm test
+result: PASS - 39 files, 1030 tests
+command: npm run check
+result: PASS - TypeScript, ESLint, and Prettier
+command: npm run build
+result: PASS - Vite/PWA build; existing 500 kB chunk-size advisory only
+command: git diff --check develop...HEAD
+result: PASS

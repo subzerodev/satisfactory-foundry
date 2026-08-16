@@ -94,6 +94,13 @@ export interface CatalogRecipe {
   primaryOutputId: string;
 }
 
+export interface CatalogExtractor {
+  machineId: string;
+  topology: "standalone" | "resource-well";
+  normalRate: Fraction;
+  itemIds: string[];
+}
+
 /** Unlocked transport-tier throughputs per kind, ascending. */
 export interface TierTable {
   belt: Fraction[];
@@ -118,4 +125,5 @@ export interface Catalog {
    * silently vanished on the second boot for want of that forcing.
    */
   recipeUnlocks: Record<string, number>;
+  extractors: Record<string, CatalogExtractor>;
 }

@@ -1,5 +1,11 @@
 import type { Fraction } from "../core/fraction.ts";
-import type { Catalog, CatalogItem, MachinePower, RecipeIO } from "./types.ts";
+import type {
+  Catalog,
+  CatalogExtractor,
+  CatalogItem,
+  MachinePower,
+  RecipeIO,
+} from "./types.ts";
 import { TIER_TABLE } from "./tiers.ts";
 import { parseRational } from "./stage-input.ts";
 import { openDb } from "./db.ts";
@@ -37,8 +43,11 @@ const CATALOG_KEY = "current";
  * catalog (the banner flips, loudly) and re-uploads once. Uploaded Docs.json
  * carries FGSchematic identically (same game-export format), so the re-upload
  * lands with full tier data.
+ *
+ * 5 -> 6 (#112): catalogs now include structured extractor rates, topology,
+ * and raw-resource applicability. Older caches cannot reconstruct this data.
  */
-export const CATALOG_PARSER_VERSION = 5;
+export const CATALOG_PARSER_VERSION = 6;
 
 /**
  * JSON-safe CatalogItem: `stackSize` is a toString() string or null. Items
@@ -88,12 +97,19 @@ interface StoredCatalogMachine {
   displayName: string;
   power: StoredMachinePower;
 }
+interface StoredCatalogExtractor {
+  machineId: string;
+  topology: CatalogExtractor["topology"];
+  normalRate: string;
+  itemIds: string[];
+}
 /** JSON-safe catalog: every Fraction is a toString() string. Tiers are NOT
  *  stored — they are always TIER_TABLE, rebuilt on revive. */
 interface StoredCatalogData {
   items: Record<string, StoredCatalogItem>;
   machines: Record<string, StoredCatalogMachine>;
   recipes: Record<string, StoredRecipe>;
+  extractors: Record<string, StoredCatalogExtractor>;
   /**
    * Mirrors Catalog.recipeUnlocks (S20 P3, #102) — plain numbers, so it stores
    * verbatim. It MUST appear in all three enumerating functions
@@ -200,7 +216,7 @@ export async function loadCatalog(): Promise<CacheLoadResult> {
 }
 
 function serializeCatalog(catalog: Catalog): StoredCatalogData {
-  const recipes: Record<string, StoredRecipe> = {};
+  const recipes: Record<string, StoredRecipe> = Object.create(null);
   for (const [id, r] of Object.entries(catalog.recipes)) {
     recipes[id] = {
       id: r.id,
@@ -212,7 +228,7 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
       primaryOutputId: r.primaryOutputId,
     };
   }
-  const machines: Record<string, StoredCatalogMachine> = {};
+  const machines: Record<string, StoredCatalogMachine> = Object.create(null);
   for (const [id, m] of Object.entries(catalog.machines)) {
     machines[id] = {
       id: m.id,
@@ -220,9 +236,19 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
       power: serializePower(m.power),
     };
   }
-  const items: Record<string, StoredCatalogItem> = {};
+  const items: Record<string, StoredCatalogItem> = Object.create(null);
   for (const [id, it] of Object.entries(catalog.items)) {
     items[id] = serializeItem(it);
+  }
+  const extractors: Record<string, StoredCatalogExtractor> =
+    Object.create(null);
+  for (const [id, extractor] of Object.entries(catalog.extractors)) {
+    extractors[id] = {
+      machineId: extractor.machineId,
+      topology: extractor.topology,
+      normalRate: extractor.normalRate.toString(),
+      itemIds: [...extractor.itemIds],
+    };
   }
   // Plain numbers — copied verbatim, no per-entry transform. This half is NOT
   // tsc-forced (the literal below would typecheck without it were the field
@@ -231,6 +257,7 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
     items,
     machines,
     recipes,
+    extractors,
     recipeUnlocks: { ...catalog.recipeUnlocks },
   };
 }
@@ -270,6 +297,7 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
     typeof data.items !== "object" ||
     typeof data.machines !== "object" ||
     typeof data.recipes !== "object" ||
+    typeof data.extractors !== "object" ||
     typeof data.recipeUnlocks !== "object"
   ) {
     throw new Error("catalog-store: corrupted stored catalog shape.");
@@ -302,6 +330,15 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
   for (const [id, it] of Object.entries(data.items)) {
     items[id] = reviveItem(it);
   }
+  const extractors: Catalog["extractors"] = Object.create(null);
+  for (const [id, extractor] of Object.entries(data.extractors)) {
+    extractors[id] = {
+      machineId: extractor.machineId,
+      topology: extractor.topology,
+      normalRate: parseRational(extractor.normalRate),
+      itemIds: [...extractor.itemIds],
+    };
+  }
   // Null-prototype container (#28) — same rebuild rationale as the three maps
   // above: gating reads this map by bracket access on recipe ids.
   const recipeUnlocks: Catalog["recipeUnlocks"] = Object.create(null);
@@ -314,6 +351,7 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
     items,
     machines,
     recipes,
+    extractors,
     tiers: TIER_TABLE,
     recipeUnlocks,
   };

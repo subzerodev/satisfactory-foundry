@@ -32,13 +32,12 @@ import {
   savePlan as savePlanFile,
   listPlans as listPlanFiles,
   loadPlan as loadPlanFile,
-  loadPlanWithOrigin,
   deletePlan as deletePlanFile,
   validatePlanFile,
 } from "../data/plan-store.ts";
 import type {
-  PlanFileV5,
-  PlanStageV5,
+  PlanFileV6,
+  PlanStageV6,
   PlanListEntry,
 } from "../data/plan-store.ts";
 
@@ -90,6 +89,12 @@ export interface StageNode {
   name: string;
   selection: Selection;
   solve: SolveState;
+  extraction?: Record<string, ExtractionSelection>;
+}
+
+export interface ExtractionSelection {
+  machineId: string;
+  clockPercentText: string;
 }
 
 /**
@@ -222,7 +227,7 @@ export interface AppState {
   placementSeq: number;
   /**
    * The flow-chart orientation (Stage 10 / Phase 1), default "LR". Persists
-   * per-plan in the v5 file (orientation is a property of the drawing, like
+   * per-plan in the v6 file (orientation is a property of the drawing, like
    * positions); a switch re-slots every NON-userPlaced stage + flips the handle
    * sides. The store stays window-free — the plan file is its only persistence.
    */
@@ -230,11 +235,10 @@ export interface AppState {
   /**
    * The set of stage ids the user hand-dragged (Stage 10 / Phase 1). `true`-valued
    * membership only; set by `setStagePosition` (the drag-END commit), pruned with
-   * the stage on remove, seeded at load (v5: from the per-stage flag; pre-v5:
-   * from position-presence). A direction switch re-slots only NON-members —
-   * user-placed nodes keep their exact positions. Persists via the v5
-   * `userPlaced?: true` flag because save writes positions unconditionally, so
-   * position-presence alone can't survive a round-trip as the auto-vs-user signal.
+   * the stage on remove, and seeded from v6's required per-stage boolean. Legacy
+   * migration materializes the original position-based intent before rebuild. A
+   * direction switch re-slots only NON-members; save writes the required boolean
+   * because position presence alone cannot distinguish auto from user placement.
    */
   userPlaced: Record<string, true>;
   /**
@@ -333,6 +337,11 @@ export interface Actions {
     capacityText: string | null,
   ): void;
   clearOverrides(): void;
+  setExtractionSelection(
+    stageId: string,
+    itemId: string,
+    selection: ExtractionSelection | null,
+  ): void;
   // Graph actions (Stage 3 / Phase 1) — all synchronous (no IDB this phase):
   // mutate-then-recompute, no plan-op chain.
   addStage(): void;
@@ -379,7 +388,7 @@ export interface Actions {
   loadPlan(id: string): Promise<void>;
   renamePlan(id: string, name: string): Promise<void>;
   deletePlan(id: string): Promise<void>;
-  /** Serialize a stored plan (migrated to v2) as pretty JSON, or null if the
+  /** Serialize a stored plan (migrated to v6) as pretty JSON, or null if the
    *  row is missing/corrupt. Headless — App owns the Blob/anchor download. */
   exportPlan(id: string): Promise<string | null>;
   /** Validate + save an exported plan file's text under the save-over model.
@@ -399,7 +408,7 @@ export type Store = AppState & Actions;
  * Stage 19 (#92): the export-all bundle envelope. A distinct `kind` string makes
  * single-file-vs-bundle sniffing exact (a per-plan file has no `kind`), and
  * `format_version` reserves bundle evolution independently of the per-plan file
- * versions. Each `plans[]` entry is EXACTLY a per-plan file object (latest v5 as
+ * versions. Each `plans[]` entry is EXACTLY a per-plan file object (latest v6 as
  * written by exportPlan's source), revived on import through the SAME
  * `validatePlanFile` path — one migration surface, no second format to version.
  */
@@ -407,7 +416,7 @@ export interface PlanBundle {
   kind: "foundry-plan-bundle";
   format_version: 1;
   exportedAt: string; // ISO
-  plans: PlanFileV5[];
+  plans: PlanFileV6[];
 }
 
 /** The sniff constant (Axis 3): import branches to the bundle arm iff a parsed
@@ -709,7 +718,7 @@ function deriveAllStages(
 }
 
 /**
- * Whole-graph replacement from a loaded `PlanFileV5` (Stage 3 / Phase 3, frozen
+ * Whole-graph replacement from a loaded `PlanFileV6` (Stage 3 / Phase 3, frozen
  * Axis 4; Stage 10 / Phase 1 adds direction + userPlaced). Builds a fresh graph —
  * new stage/link uuids — and applies the frozen load treatments per stage:
  *
@@ -724,13 +733,10 @@ function deriveAllStages(
  * - positions from the file entry, else the auto-slot for the entry's index (in
  *   the FILE's direction — a v1-migrated positionless stage must slot per the
  *   orientation the file was saved in);
- * - flowDirection restored from the file (pre-v5 migrated as "LR"); userPlaced
- *   seeded from the per-stage `userPlaced` flag when the stored row was v5-native
- *   (`v5Native`), else from position-presence (v1–v4 — the distinction is
- *   unrecoverable after this fills the positions map, so pre-v5 layouts load
- *   conservatively pinned, the stated cost). The origin matters because an
- *   all-auto v5 plan and a positioned pre-v5 plan are otherwise identical after
- *   migration (both carry positions, no flags) yet must seed differently;
+ * - flowDirection restored from the file (v1-v4 migration defaults to "LR"); userPlaced
+ *   read directly from v6's required boolean. Legacy migration materializes the
+ *   conservative original-position rule before this rebuild, so no transient
+ *   source-version flag is needed;
  * - stageOrder = array order; links rebuilt from indices; placementSeq =
  *   stages.length; activeStageId = first (matches removeStage's cursor-to-first).
  *
@@ -741,8 +747,7 @@ function deriveAllStages(
  */
 function rebuildFromPlan(
   slice: GraphSlice,
-  plan: PlanFileV5,
-  v5Native: boolean,
+  plan: PlanFileV6,
 ): GraphSlice & { placementSeq: number } {
   const { catalog } = slice;
   // Current global tiers (the active mirror holds the canonical global value).
@@ -769,18 +774,26 @@ function rebuildFromPlan(
       unlockedTiers: { ...globalTiers },
       overrides: saved.overrides,
     };
-    stages[id] = { id, name: entry.name, selection, solve: { status: "idle" } };
+    const extraction: Record<string, ExtractionSelection> = Object.create(null);
+    for (const [itemId, savedSelection] of Object.entries(
+      entry.extraction ?? {},
+    )) {
+      extraction[itemId] = { ...savedSelection };
+    }
+    stages[id] = {
+      id,
+      name: entry.name,
+      selection,
+      solve: { status: "idle" },
+      ...(Object.keys(extraction).length > 0 ? { extraction } : {}),
+    };
     stageOrder.push(id);
     // Positionless entries (v1-migrated) auto-slot in the FILE's direction; a
     // saved position restores exactly. The fallback direction is plan-level.
     positions[id] = entry.position ?? placementSlot(i, plan.flowDirection);
-    // Seed userPlaced: a v5-native row carries the explicit flag (auto stages
-    // omit it → stay auto); a migrated v1–v4 row has no flag, so fall back to
-    // position-presence (positioned ⇒ conservatively pinned, the stated cost).
-    const pinned = v5Native
-      ? entry.userPlaced === true
-      : entry.position !== undefined;
-    if (pinned) userPlaced[id] = true;
+    // Validation always returns v6; legacy migration has already materialized
+    // placement origin into this required boolean.
+    if (entry.userPlaced) userPlaced[id] = true;
   });
   const links: StageLink[] = plan.links.map((l) => ({
     id: crypto.randomUUID(),
@@ -1229,7 +1242,7 @@ export function createAppStore(storage?: StateStorage) {
         // savePlanAs). Returns "empty-name" for a whitespace name (caller shapes
         // the message) or "saved" once the row is committed.
         const savePlanFromFile = async (
-          file: PlanFileV5,
+          file: PlanFileV6,
         ): Promise<"saved" | "empty-name"> => {
           const trimmed = file.name.trim();
           if (trimmed === "") return "empty-name";
@@ -1238,7 +1251,7 @@ export function createAppStore(storage?: StateStorage) {
           const now = new Date().toISOString();
           if (match) {
             const prior = await loadPlanFile(match.id);
-            const plan: PlanFileV5 = {
+            const plan: PlanFileV6 = {
               ...file,
               name: trimmed,
               createdAt: prior?.createdAt ?? now,
@@ -1246,7 +1259,7 @@ export function createAppStore(storage?: StateStorage) {
             };
             await savePlanFile(plan, match.id);
           } else {
-            const plan: PlanFileV5 = {
+            const plan: PlanFileV6 = {
               ...file,
               name: trimmed,
               createdAt: now,
@@ -1577,6 +1590,33 @@ export function createAppStore(storage?: StateStorage) {
             );
           },
 
+          setExtractionSelection(
+            stageId: string,
+            itemId: string,
+            selection: ExtractionSelection | null,
+          ) {
+            set((s) => {
+              const stage = s.stages[stageId];
+              if (stage === undefined || itemId === "") return {};
+              const extraction: Record<string, ExtractionSelection> =
+                Object.create(null);
+              for (const [key, value] of Object.entries(
+                stage.extraction ?? {},
+              )) {
+                extraction[key] = value;
+              }
+              if (selection === null) delete extraction[itemId];
+              else extraction[itemId] = { ...selection };
+              const nextStage: StageNode = {
+                ...stage,
+                ...(Object.keys(extraction).length > 0
+                  ? { extraction }
+                  : { extraction: undefined }),
+              };
+              return { stages: { ...s.stages, [stageId]: nextStage } };
+            });
+          },
+
           // --- Graph actions (Stage 3 / Phase 1) -----------------------------
           // Synchronous, mutate-then-recompute (no IDB this phase). Reconcile
           // recompute follows the cadence table: rename/cursor/addStage don't
@@ -1837,20 +1877,20 @@ export function createAppStore(storage?: StateStorage) {
                 // Capture the WHOLE graph (Stage 3 / Phase 3): stages in
                 // stageOrder (array order IS stageOrder), each carrying name +
                 // selection + position; links index-encoded (stage id → index).
-                // Stage 10 / Phase 1: position is written UNCONDITIONALLY (exact
-                // restore stands); the `userPlaced: true` flag is written ONLY for
-                // a user-placed stage, so a v5 load can seed the auto-vs-user
-                // distinction that position-presence alone can't carry.
+                // Position is written unconditionally for exact restoration;
+                // v6 also writes the required placement boolean because position
+                // presence alone cannot distinguish auto from user placement.
                 const s = get();
                 const indexOf = new Map(s.stageOrder.map((id, i) => [id, i]));
-                const stages: PlanStageV5[] = s.stageOrder.map((id) => {
+                const stages: PlanStageV6[] = s.stageOrder.map((id) => {
                   const node = s.stages[id]!;
                   return {
                     name: node.name,
                     selection: node.selection,
                     position: s.positions[id],
-                    ...(s.userPlaced[id] === true
-                      ? { userPlaced: true as const }
+                    userPlaced: s.userPlaced[id] === true,
+                    ...(node.extraction !== undefined
+                      ? { extraction: node.extraction }
                       : {}),
                   };
                 });
@@ -1867,8 +1907,8 @@ export function createAppStore(storage?: StateStorage) {
                 }));
                 if (match) {
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV5 = {
-                    format_version: 5,
+                  const plan: PlanFileV6 = {
+                    format_version: 6,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
@@ -1878,8 +1918,8 @@ export function createAppStore(storage?: StateStorage) {
                   };
                   await savePlanFile(plan, match.id);
                 } else {
-                  const plan: PlanFileV5 = {
-                    format_version: 5,
+                  const plan: PlanFileV6 = {
+                    format_version: 6,
                     name: trimmed,
                     createdAt: now,
                     updatedAt: now,
@@ -1900,17 +1940,16 @@ export function createAppStore(storage?: StateStorage) {
             return enqueue(async () => {
               set({ planError: null });
               try {
-                // Load with origin: rebuild seeds userPlaced from the explicit
-                // flag for a v5-native row, else from position-presence (Stage 10
-                // / Phase 1 — the origin is unrecoverable after migration).
-                const { file, wasV5 } = await loadPlanWithOrigin(id);
+                // Load with origin: validation returns v6, whose required
+                // userPlaced flag already materializes native or migrated origin.
+                const file = await loadPlanFile(id);
                 if (file === null) {
                   // Corrupt/missing → planError, state untouched.
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
                 // Whole-graph replacement (Stage 3 / Phase 3, frozen Axis 4).
-                set((s) => rebuildFromPlan(s, file, wasV5));
+                set((s) => rebuildFromPlan(s, file));
                 // Loading a plan never touches the catalog or catalogSource.
               } catch (err) {
                 set({ planError: planErrorMessage(err) });
@@ -1945,10 +1984,9 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                // loadPlanFile returns v5 (migrating older rows), so this spread
-                // widens to v5 — renaming an older row rewrites it as v5,
-                // consistent with the save-over model (any write persists v5).
-                const renamed: PlanFileV5 = {
+                // loadPlanFile returns v6 (migrating older rows), so renaming an
+                // older row rewrites it as v6 under the save-over model.
+                const renamed: PlanFileV6 = {
                   ...plan,
                   name: trimmed,
                   updatedAt: new Date().toISOString(),
@@ -1999,7 +2037,7 @@ export function createAppStore(storage?: StateStorage) {
             await enqueue(async () => {
               const metas = await listPlanFiles();
               if (metas.length === 0) return; // result stays null
-              const plans: PlanFileV5[] = [];
+              const plans: PlanFileV6[] = [];
               for (const meta of metas) {
                 const file = await loadPlanFile(meta.id);
                 // A row that fails to load (corrupt/foreign) is skipped rather

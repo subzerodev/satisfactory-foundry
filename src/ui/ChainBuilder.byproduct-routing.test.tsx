@@ -110,6 +110,7 @@ function routeCatalog(): Catalog {
     recipes: Object.fromEntries(recipes.map((r) => [r.id, r])),
     tiers: { belt: [F(60)], pipe: [F(300)] },
     recipeUnlocks: { r_pack: 0 },
+    extractors: {},
   };
 }
 

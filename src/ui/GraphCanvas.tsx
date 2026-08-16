@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
   ReactFlow,
   Background,
@@ -36,7 +37,12 @@ import "@xyflow/react/dist/style.css";
 
 import { useAppStore } from "../state/store.ts";
 import { canLink } from "../state/store.ts";
+import type {
+  ExtractionSelection as StoredExtractionSelection,
+  StageNode as StoredStageNode,
+} from "../state/store.ts";
 import type { Catalog } from "../data/types.ts";
+import type { Fraction } from "../core/fraction.ts";
 import {
   graphToFlow,
   pickLinkItem,
@@ -45,8 +51,13 @@ import {
   RAW_NODE_WIDTH,
   RAW_NODE_HEIGHT,
 } from "./graph-flow.ts";
-import type { StageNodeData, EdgeState } from "./graph-flow.ts";
+import type { StageNodeData, EdgeState, RawFlowNode } from "./graph-flow.ts";
 import { chainPowerText } from "./advice.ts";
+import {
+  deriveExtractionPlan,
+  standaloneExtractors,
+} from "./extraction-plan.ts";
+import { formatRate, tierLabel } from "./format.ts";
 
 /**
  * The card's `data`: the pure StageNodeData plus the per-node callbacks the
@@ -181,11 +192,43 @@ function StageNode({ data, selected }: NodeProps<StageFlowNode>) {
  * Index signature satisfies RF's Node data constraint.
  */
 interface RawFeedCardData extends Record<string, unknown> {
+  stageId: string;
+  itemId: string;
+  demand: Fraction;
   itemName: string;
   rateText: string;
+  onOpen: (identity: RawFeedIdentity) => void;
 }
 
 type RawFeedFlowNode = Node<RawFeedCardData, "rawFeed">;
+
+export interface RawFeedIdentity {
+  stageId: string;
+  itemId: string;
+}
+
+export function projectRawFeedNode(
+  node: RawFlowNode,
+  onOpen: (identity: RawFeedIdentity) => void,
+): RawFeedFlowNode {
+  return {
+    id: node.id,
+    type: "rawFeed",
+    position: node.position,
+    width: node.width,
+    height: node.height,
+    handles: node.handles.map((handle) => ({
+      ...handle,
+      position: handle.position as Position,
+    })),
+    draggable: false,
+    selectable: false,
+    deletable: false,
+    focusable: false,
+    style: { pointerEvents: "all" },
+    data: { ...node.data, onOpen },
+  };
+}
 
 /**
  * One raw-feed supply card — the drafting "supply callout" for an extraction
@@ -209,13 +252,243 @@ export function RawFeedNode({ data }: NodeProps<RawFeedFlowNode>) {
         id="out"
         isConnectable={false}
       />
-      <span className="raw-feed-node-item">{data.itemName}</span>
-      <span className="raw-feed-node-rate">{data.rateText}</span>
+      <button
+        type="button"
+        className="raw-feed-node-button nodrag nopan"
+        aria-haspopup="dialog"
+        aria-label={`Plan extraction for ${data.itemName}, ${data.rateText.replace("/min", " per minute")} required`}
+        data-raw-stage={data.stageId}
+        data-raw-item={data.itemId}
+        onClick={() =>
+          data.onOpen({ stageId: data.stageId, itemId: data.itemId })
+        }
+      >
+        <span className="raw-feed-node-item">{data.itemName}</span>
+        <span className="raw-feed-node-rate">{data.rateText}</span>
+      </button>
     </div>
   );
 }
 
 const NODE_TYPES: NodeTypes = { stage: StageNode, rawFeed: RawFeedNode };
+
+export function GraphTopRightStack({
+  notice,
+  extraction,
+}: {
+  notice: string | null;
+  extraction: ReactNode;
+}) {
+  return (
+    <div className="graph-top-right-stack">
+      {notice !== null && <p className="graph-canvas-notice">{notice}</p>}
+      {extraction}
+    </div>
+  );
+}
+
+export interface ExtractionPanelProps {
+  catalog: Catalog;
+  rawNode: RawFlowNode;
+  stage: StoredStageNode;
+  selection: StoredExtractionSelection | null;
+  onSetSelection: (selection: StoredExtractionSelection | null) => void;
+  onClose: () => void;
+}
+
+export function ExtractionPanel({
+  catalog,
+  rawNode,
+  stage,
+  selection,
+  onSetSelection,
+  onClose,
+}: ExtractionPanelProps) {
+  const candidates = useMemo(
+    () => standaloneExtractors(catalog, rawNode.data.itemId),
+    [catalog, rawNode.data.itemId],
+  );
+  const primaryControlRef = useRef<HTMLSelectElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const headingId = `extraction-${rawNode.data.stageId}-${rawNode.data.itemId}`;
+  const rawIdentity = `${rawNode.data.stageId}:${rawNode.data.itemId}`;
+  const autoSeedAttemptedFor = useRef<string | null>(null);
+  const autoSeedsStandalone =
+    rawNode.data.itemId === "water" || rawNode.data.itemId === "liquid_oil";
+
+  useEffect(() => {
+    const target = primaryControlRef.current ?? closeRef.current;
+    target?.focus();
+  }, [rawNode.data.stageId, rawNode.data.itemId]);
+
+  useEffect(() => {
+    if (autoSeedAttemptedFor.current === rawIdentity) return;
+    autoSeedAttemptedFor.current = rawIdentity;
+    if (autoSeedsStandalone && selection === null && candidates.length === 1) {
+      onSetSelection({
+        machineId: candidates[0]!.machineId,
+        clockPercentText: "100",
+      });
+    }
+  }, [autoSeedsStandalone, candidates, onSetSelection, rawIdentity, selection]);
+
+  const result = deriveExtractionPlan({
+    catalog,
+    itemId: rawNode.data.itemId,
+    demand: rawNode.data.demand,
+    selection,
+    unlockedTiers: stage.selection.unlockedTiers,
+  });
+  const selectedAvailable =
+    selection !== null &&
+    candidates.some((candidate) => candidate.machineId === selection.machineId);
+  const hasResourceWell = Object.values(catalog.extractors).some(
+    (extractor) =>
+      extractor.topology === "resource-well" &&
+      extractor.itemIds.includes(rawNode.data.itemId),
+  );
+
+  const setMachine = (machineId: string) => {
+    if (machineId === "") onSetSelection(null);
+    else
+      onSetSelection({
+        machineId,
+        clockPercentText: selection?.clockPercentText ?? "100",
+      });
+  };
+
+  return (
+    <section
+      className="extraction-panel"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby={headingId}
+    >
+      <header className="extraction-panel-head">
+        <h3 id={headingId}>EXTRACTION - {rawNode.data.itemName}</h3>
+        <button
+          ref={closeRef}
+          type="button"
+          className="extraction-panel-close"
+          aria-label="Close extraction planning"
+          title="close extraction planning"
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </header>
+      <p className="extraction-required">
+        {formatRate(rawNode.data.demand)}/min required
+      </p>
+
+      {candidates.length > 0 && (
+        <div className="extraction-fields">
+          <label>
+            <span>Extractor</span>
+            <select
+              ref={primaryControlRef}
+              value={selection?.machineId ?? ""}
+              onChange={(event) => setMachine(event.target.value)}
+            >
+              <option value="">Select extractor</option>
+              {!selectedAvailable && selection !== null && (
+                <option value={selection.machineId} disabled>
+                  Unavailable ({selection.machineId})
+                </option>
+              )}
+              {candidates.map((candidate) => (
+                <option key={candidate.machineId} value={candidate.machineId}>
+                  {catalog.machines[candidate.machineId]?.displayName ??
+                    candidate.machineId}
+                </option>
+              ))}
+            </select>
+          </label>
+          {selection !== null && (
+            <label>
+              <span>Clock %</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={selection.clockPercentText}
+                onChange={(event) =>
+                  onSetSelection({
+                    ...selection,
+                    clockPercentText: event.target.value,
+                  })
+                }
+              />
+            </label>
+          )}
+        </div>
+      )}
+
+      {result.status === "invalid-clock" && (
+        <p className="extraction-error">{result.detail}</p>
+      )}
+      {result.status === "unavailable" && (
+        <p className="extraction-error">{result.detail}</p>
+      )}
+      {result.status === "pick-extractor" && (
+        <p className="extraction-muted">
+          Choose an extractor to calculate the plan.
+        </p>
+      )}
+      {result.status === "planned" && (
+        <div className="extraction-result">
+          <p>
+            Purity <strong>Normal</strong>
+          </p>
+          <p>
+            <strong>
+              {result.count} ×{" "}
+              {catalog.machines[selection!.machineId]?.displayName ??
+                selection!.machineId}
+            </strong>
+          </p>
+          <p>
+            {formatRate(result.perExtractor)}/min each ·{" "}
+            {formatRate(result.totalSupply)}/min supplied ·{" "}
+            {formatRate(result.surplus)}/min spare
+          </p>
+          <p
+            className={
+              result.transport.status === "available"
+                ? undefined
+                : "extraction-warning"
+            }
+          >
+            {transportText(result.transport, catalog)}
+          </p>
+          <p>Power: {result.powerText}</p>
+        </div>
+      )}
+      {hasResourceWell && rawNode.data.itemId !== "nitrogen_gas" && (
+        <p className="extraction-muted">
+          Resource Well alternative not counted in Phase 1; it needs a
+          pressurizer and a map-specific satellite set.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function transportText(
+  transport: Extract<
+    ReturnType<typeof deriveExtractionPlan>,
+    { status: "planned" }
+  >["transport"],
+  catalog: Catalog,
+): string {
+  if (transport.status === "over-capacity") {
+    return `Output: one extractor exceeds the highest ${transport.kind} tier.`;
+  }
+  const label = tierLabel(transport.kind, transport.capacity, catalog.tiers);
+  const line = transport.kind === "belt" ? `${label} belt` : label;
+  return transport.status === "available"
+    ? `Output: ${line} or better`
+    : `Output: ${line} required (not unlocked)`;
+}
 
 /**
  * The per-change commit decision from onNodesChange, extracted as a pure helper
@@ -331,10 +604,12 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
   const selectLink = useAppStore((s) => s.selectLink);
   const selectedLinkId = useAppStore((s) => s.selectedLinkId);
   const setStagePosition = useAppStore((s) => s.setStagePosition);
+  const setExtractionSelection = useAppStore((s) => s.setExtractionSelection);
 
   // Component-local gesture feedback — NOT store state (meaningless headless).
   // Cleared at the next canvas gesture (success or refusal), no timers.
   const [canvasNotice, setCanvasNotice] = useState<string | null>(null);
+  const [openRawFeed, setOpenRawFeed] = useState<RawFeedIdentity | null>(null);
 
   // The chain-wide power total (Stage 6 P2): "Σ ≈ X MW" over the solved+powered
   // stages, or null when none. Store-wired — GraphCanvas holds stages+catalog.
@@ -356,6 +631,7 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
       recipes: {},
       tiers: { belt: [], pipe: [] },
       recipeUnlocks: {},
+      extractors: {},
     };
     return graphToFlow(
       cat,
@@ -434,23 +710,44 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
   // as unknown-id. The commit-loop raw: skip is the app-level belt-and-braces.
   const rawFeedNodes: RawFeedFlowNode[] = useMemo(
     () =>
-      derived.rawFeeds.nodes.map((n) => ({
-        id: n.id,
-        type: "rawFeed",
-        position: n.position,
-        width: n.width,
-        height: n.height,
-        handles: n.handles.map((h) => ({
-          ...h,
-          position: h.position as Position,
-        })),
-        draggable: false,
-        selectable: false,
-        deletable: false,
-        data: { itemName: n.data.itemName, rateText: n.data.rateText },
-      })),
+      derived.rawFeeds.nodes.map((node) =>
+        projectRawFeedNode(node, setOpenRawFeed),
+      ),
     [derived.rawFeeds.nodes],
   );
+
+  const openRawNode = useMemo(
+    () =>
+      openRawFeed === null
+        ? undefined
+        : derived.rawFeeds.nodes.find(
+            (node) =>
+              node.data.stageId === openRawFeed.stageId &&
+              node.data.itemId === openRawFeed.itemId,
+          ),
+    [derived.rawFeeds.nodes, openRawFeed],
+  );
+  useEffect(() => {
+    if (openRawFeed !== null && openRawNode === undefined) setOpenRawFeed(null);
+  }, [openRawFeed, openRawNode]);
+
+  const closeExtraction = useCallback(() => {
+    const closing = openRawFeed;
+    setOpenRawFeed(null);
+    if (closing === null) return;
+    queueMicrotask(() => {
+      const opener = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(
+          ".raw-feed-node-button[data-raw-stage][data-raw-item]",
+        ),
+      ).find(
+        (button) =>
+          button.dataset.rawStage === closing.stageId &&
+          button.dataset.rawItem === closing.itemId,
+      );
+      opener?.focus();
+    });
+  }, [openRawFeed]);
 
   const rawFeedEdges: Edge[] = useMemo(
     () =>
@@ -668,9 +965,34 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
             <p className="graph-chain-power">{chainPower}</p>
           </Panel>
         )}
-        {canvasNotice !== null && (
+        {(canvasNotice !== null ||
+          (catalog !== null && openRawNode !== undefined)) && (
           <Panel position="top-right">
-            <p className="graph-canvas-notice">{canvasNotice}</p>
+            <GraphTopRightStack
+              notice={canvasNotice}
+              extraction={
+                catalog !== null && openRawNode !== undefined ? (
+                  <ExtractionPanel
+                    catalog={catalog}
+                    rawNode={openRawNode}
+                    stage={stages[openRawNode.data.stageId]!}
+                    selection={
+                      stages[openRawNode.data.stageId]!.extraction?.[
+                        openRawNode.data.itemId
+                      ] ?? null
+                    }
+                    onSetSelection={(selection) =>
+                      setExtractionSelection(
+                        openRawNode.data.stageId,
+                        openRawNode.data.itemId,
+                        selection,
+                      )
+                    }
+                    onClose={closeExtraction}
+                  />
+                ) : null
+              }
+            />
           </Panel>
         )}
       </ReactFlow>

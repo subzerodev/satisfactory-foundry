@@ -315,6 +315,7 @@ function synthCatalog(
     recipes: Object.fromEntries(recipes.map((r) => [r.id, r])),
     tiers: { belt: [F(60)], pipe: [F(300)] },
     recipeUnlocks,
+    extractors: {},
   };
 }
 
@@ -1133,6 +1134,7 @@ describe("S20 P1 — excludableMachines", () => {
       },
       tiers: { belt: [F(60)], pipe: [F(300)] },
       recipeUnlocks: {},
+      extractors: {},
     };
     expect(excludableMachines(cat)).toEqual([
       { machineId: "sm", displayName: "Smelter" },
