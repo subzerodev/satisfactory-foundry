@@ -110,40 +110,25 @@ while any writer still emits v7.
   Prove v7 load -> v8 save -> v8 reload preserves recognized intent.
 - [ ] Ensure v1-v6 migration chains end at canonical v8 and plan list/load/save,
   rename, import/export, and bundle use `PlanFileV8`.
+- [ ] In the same atomic unit, add guarded `setLinkInterstep`, make
+  `setLinkTransport`/`clearLinkTransport` preserve intent, and refuse packaged
+  pipe/fluid-truck routes before mutation. Narrow/runtime-guard `addLink` and
+  explicitly construct ordinary fields. Add red tests for each bypass plus
+  save/reload of the retained valid state.
+- [ ] Enable writes forward belt + return belt atomically. Disable chooses pipe
+  for a current fluid/gas, belt for a current solid, and absent transport when
+  the item is missing. At this stage setters recompute existing material
+  reconciliation; Task 4 adds interstep findings and graph projection together.
 - [ ] Run `npm test -- --run src/data/plan-store.test.ts src/state/store.test.ts`,
   `npm run check`, then commit Tasks 1-3 as one atomic persistence commit.
 
-### Task 4: Store Lifecycle And Combined Reconciliation
+### Task 4: Store, Reconciliation, And Graph Consumers
 
 **Files:**
 - Modify: `src/core/reconcile.ts`
 - Modify: `src/core/reconcile.test.ts`
 - Modify: `src/state/store.ts`
 - Modify: `src/state/store.test.ts`
-
-- [ ] Write failing lifecycle tests for enable, pair/clock update, disable,
-  valid-invalid-valid, refused illegal forward/return edits, clear transport,
-  removal, catalog replacement, stale recovery, and attempted `addLink` bypass.
-- [ ] Add `interstep-problem` to `LinkFinding`. Keep `reconcileLinks` material
-  inputs in original units and append at most one interstep finding after the
-  material finding for that link.
-- [ ] Add guarded `setLinkInterstep`. Enable atomically writes forward belt,
-  package intent at 100%, and return belt. Disable removes intent and chooses
-  pipe for current fluid/gas, belt for current solid, absent transport when the
-  item is missing.
-- [ ] Make `setLinkTransport`/`clearLinkTransport` preserve interstep intent and
-  recompute reconciliation. Refuse pipe/fluid-truck on either packaged route
-  before mutation. Runtime `addLink` rejects extra interstep input and explicitly
-  constructs only ordinary link fields.
-- [ ] Update every full-derive/rebuild cadence to derive material reconciliation
-  plus the optional interstep problem atomically. Pin unavailable crossed with
-  under/over/dangling, deterministic ordering, and no stale findings.
-- [ ] Run `npm test -- --run src/core/reconcile.test.ts src/state/store.test.ts`
-  and `npm run check`; commit the lifecycle unit.
-
-### Task 5: Graph And Transport Consumers
-
-**Files:**
 - Modify: `src/ui/graph-flow.ts`
 - Modify: `src/ui/graph-flow.test.ts`
 - Modify: `src/ui/transport-text.ts`
@@ -151,6 +136,15 @@ while any writer still emits v7.
 - Modify: `src/ui/GraphCanvas.tsx`
 - Modify: `src/ui/app.css`
 
+- [ ] Write failing lifecycle tests for enable, pair/clock update, disable,
+  valid-invalid-valid, clear transport, removal, catalog replacement, and stale
+  recovery. Public route/addLink refusal tests already land in Task 3.
+- [ ] Add `interstep-problem` to `LinkFinding`. Keep `reconcileLinks` material
+  inputs in original units and append at most one interstep finding after the
+  material finding for that link.
+- [ ] Update every full-derive/rebuild cadence to derive material reconciliation
+  plus the optional interstep problem atomically. Pin unavailable crossed with
+  under/over/dangling, deterministic ordering, and no stale findings.
 - [ ] Write failing graph tests proving forward/return chips and train findings
   use packaged/container stack sizes and rates, including Nitrogen's `1/4`
   cargo ratio and both one-sided return `sharedEnds` cases.
@@ -168,10 +162,11 @@ while any writer still emits v7.
   duplicating the canonical projection or changing ordinary links.
 - [ ] Add restrained problem styling and verify labels do not resize or overlap
   fixed graph elements.
-- [ ] Run `npm test -- --run src/ui/graph-flow.test.ts src/ui/transport-text.test.ts`
-  and `npm run check`; commit the graph unit.
+- [ ] Run `npm test -- --run src/core/reconcile.test.ts src/state/store.test.ts src/ui/graph-flow.test.ts src/ui/transport-text.test.ts`
+  and `npm run check`; commit reconciliation and graph consumers as one
+  compile-safe unit.
 
-### Task 6: Link Inspector Interaction
+### Task 5: Link Inspector Interaction
 
 **Files:**
 - Modify: `src/ui/LinkInspector.tsx`
@@ -184,6 +179,9 @@ while any writer still emits v7.
 - [ ] Write failing pure/DOM tests for checkbox visibility, sole/multiple pair
   selection, enable defaults, pair/clock edits, disable, stale disable recovery,
   and independent route mode/trip editors.
+- [ ] Add failing drawn-distance rows for forward and return train routes with
+  `{ from: true }` and `{ to: true }`. Applying estimated distance must target
+  only the chosen route and preserve the physical-side key byte-for-byte.
 - [ ] Extract a small reusable route editor within `LinkInspector.tsx`; do not
   create a new cross-module UI framework. Solid modes only for packaged routes.
 - [ ] Render package/unpackage counts, total power, packaged/min, empty/min,
@@ -200,13 +198,14 @@ while any writer still emits v7.
 - [ ] Run `npm test -- --run src/ui/LinkInspector.test.ts src/ui/LinkInspector.dom.test.tsx src/ui/chain-view.test.ts`,
   `npm run check`; commit the inspector unit.
 
-### Task 7: Browser Evidence And Full Verification
+### Task 6: Browser Evidence And Full Verification
 
 **Files:**
 - Create: `features/packaging-intersteps/browser-harness.html`
 - Create: `src/ui/packaging-intersteps-browser-harness.tsx`
 - Create: `scripts/packaging-intersteps-browser-check.mjs`
 - Create: `features/packaging-intersteps/completion-report.md`
+- Create: `features/packaging-intersteps/r2-verification.log`
 - Modify: `features/packaging-intersteps/FEATURE.md`
 - Modify: `CHANGELOG.md`
 
@@ -220,6 +219,12 @@ while any writer still emits v7.
 - [ ] Re-run the extraction browser gate to protect the existing 360px fix.
 - [ ] Record exact test/browser evidence, user-visible behavior, constraints,
   and review dispositions in the completion report and feature ledger.
+- [ ] Populate `r2-verification.log` with bidirectional evidence per distinct
+  production behavior: exact green command/output; exact temporary
+  `apply_patch` break; focused Vitest output containing a real `FAIL`/`×` line
+  naming the new test; exact restoring `apply_patch`; and green rerun. Cover
+  representative pair/derive math, v8/store guard, combined graph diagnostic,
+  and inspector interaction behavior. Never leave a break applied.
 - [ ] Run fresh branch verification:
 
 ```bash
