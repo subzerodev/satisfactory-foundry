@@ -62,14 +62,18 @@ its forward `transport` and `returnTransport`; pipe and fluid-truck combinations
 are rejected at the v8 boundary and guarded again by derive. Save/export/import/
 bundle write v8. Old builds reject v8 rather than accepting and erasing intent.
 
-V8 validates editable transport as **raw structural intent**: required fields
-and discriminants must exist with string values, but empty/non-positive numeric
-text is accepted by persistence and rejected by the existing derive-time
-parsers. This applies to forward and return routes plus interstep clock. It
+V8 validates editable transport as **raw structural intent**: known mode/trip
+kind/fuel literals, required arm fields, arm-specific field placement, and
+`sharedEnds` absent-or-true structure remain strict. Only numeric text semantics
+are relaxed: empty/non-positive trip text, invalid/out-of-range pipe
+`deratePercentText`, and interstep clock text are accepted by persistence and
+rejected by existing derive-time parsers. This applies to forward and return routes. It
 prevents saving an in-progress train/drone/road edit from creating an unloadable
 plan. Historical v7 keeps its existing strict validator; migration yields valid
 v8. Save/load/export/bundle tests cover empty and malformed-numeric trip/clock
-text round trips followed by exact derive errors.
+text plus malformed, non-positive, and above-100 pipe derates followed by exact
+derive errors. Unknown/misplaced structural fields remain rejected in v8, and
+v7 retains its existing semantic rejections.
 
 ## Exact Plan
 
@@ -184,3 +188,5 @@ count is guessed.
 - **r3:** defined v8 transport/clock validation as raw structural intent so
   incomplete edits survive every persistence path and fail only at derive;
   historical v7 validation remains unchanged.
+- **r4:** clarified that only numeric semantics relax in v8, added every pipe
+  derate raw-text case, and kept discriminants/field placement structurally strict.
