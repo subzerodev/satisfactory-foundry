@@ -381,37 +381,69 @@ describe("RawFeedNode", () => {
     expect(host.querySelector('input[aria-label="Impure nodes"]')).toBeNull();
   });
 
-  it("renders no-output mix text and hides stale totals for an invalid mix", async () => {
-    const renderMix = async (normal: string) => {
-      await act(async () => {
-        root.render(
-          <ExtractionPanel
-            catalog={extractionCatalog()}
-            rawNode={rawNode("stone", "Limestone", 12720)}
-            stage={stage}
-            selection={{
-              machineId: "miner_mk3",
-              clockPercentText: "100",
-              purityMix: { impure: "0", normal, pure: "0" },
-            }}
-            onSetSelection={vi.fn()}
-            onClose={vi.fn()}
-          />,
-        );
-      });
-    };
+  it("preserves invalid node text and associates its dynamic error with every mix input", async () => {
+    const onSelection = vi.fn();
 
-    await renderMix("0");
+    function Harness() {
+      const [selection, setSelection] = useState<
+        ComponentProps<typeof ExtractionPanel>["selection"]
+      >({
+        machineId: "miner_mk3",
+        clockPercentText: "100",
+        purityMix: { impure: "0", normal: "0", pure: "0" },
+      });
+      return (
+        <ExtractionPanel
+          catalog={extractionCatalog()}
+          rawNode={rawNode("stone", "Limestone", 12720)}
+          stage={stage}
+          selection={selection}
+          onSetSelection={(next) => {
+            onSelection(next);
+            setSelection(next);
+          }}
+          onClose={vi.fn()}
+        />
+      );
+    }
+
+    await act(async () => root.render(<Harness />));
+    const inputs = ["Impure nodes", "Normal nodes", "Pure nodes"].map((label) =>
+      host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!,
+    );
     expect(host.textContent).toContain("0 nodes");
     expect(host.textContent).toContain("0/min supplied");
     expect(host.textContent).toContain("12720/min shortfall");
     expect(host.textContent).toContain("Output: no node output.");
     expect(host.textContent).toContain("Power: 0 MW");
+    for (const input of inputs) {
+      expect(input.getAttribute("aria-invalid")).toBeNull();
+      expect(input.getAttribute("aria-describedby")).toBeNull();
+    }
 
-    await renderMix("");
+    await setInputValue(inputs[1]!, "");
+    expect(onSelection).toHaveBeenLastCalledWith({
+      machineId: "miner_mk3",
+      clockPercentText: "100",
+      purityMix: { impure: "0", normal: "", pure: "0" },
+    });
+    expect(
+      host.querySelector<HTMLInputElement>('input[aria-label="Normal nodes"]')!
+        .value,
+    ).toBe("");
+
+    const error = host.querySelector<HTMLElement>(
+      "#extraction-s-stone-purity-error",
+    )!;
+    expect(error).not.toBeNull();
+    expect(error.getAttribute("role")).toBe("alert");
     expect(host.textContent).toContain(
       "Normal node count must be a base-10 nonnegative integer.",
     );
+    for (const input of inputs) {
+      expect(input.getAttribute("aria-invalid")).toBe("true");
+      expect(input.getAttribute("aria-describedby")).toBe(error.id);
+    }
     expect(host.querySelector(".extraction-purity-result")).toBeNull();
     expect(host.textContent).not.toContain("0 nodes");
     expect(host.textContent).not.toContain("Output: no node output.");

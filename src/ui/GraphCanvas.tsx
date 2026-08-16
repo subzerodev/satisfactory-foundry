@@ -339,6 +339,11 @@ export function ExtractionPanel({
     selection,
     unlockedTiers: stage.selection.unlockedTiers,
   });
+  const purityErrorId = `${headingId}-purity-error`;
+  const purityError =
+    result.status === "planned" && result.purity?.status === "invalid"
+      ? result.purity
+      : null;
   const selectedAvailable =
     selection !== null &&
     candidates.some((candidate) => candidate.machineId === selection.machineId);
@@ -510,6 +515,10 @@ export function ExtractionPanel({
                         min="0"
                         step="1"
                         aria-label="Impure nodes"
+                        aria-invalid={purityError !== null ? true : undefined}
+                        aria-describedby={
+                          purityError !== null ? purityErrorId : undefined
+                        }
                         value={selection!.purityMix.impure}
                         onChange={(event) =>
                           setPurityCount("impure", event.target.value)
@@ -523,6 +532,10 @@ export function ExtractionPanel({
                         min="0"
                         step="1"
                         aria-label="Normal nodes"
+                        aria-invalid={purityError !== null ? true : undefined}
+                        aria-describedby={
+                          purityError !== null ? purityErrorId : undefined
+                        }
                         value={selection!.purityMix.normal}
                         onChange={(event) =>
                           setPurityCount("normal", event.target.value)
@@ -536,6 +549,10 @@ export function ExtractionPanel({
                         min="0"
                         step="1"
                         aria-label="Pure nodes"
+                        aria-invalid={purityError !== null ? true : undefined}
+                        aria-describedby={
+                          purityError !== null ? purityErrorId : undefined
+                        }
                         value={selection!.purityMix.pure}
                         onChange={(event) =>
                           setPurityCount("pure", event.target.value)
@@ -543,8 +560,14 @@ export function ExtractionPanel({
                       />
                     </label>
                   </div>
-                  {result.purity?.status === "invalid" && (
-                    <p className="extraction-error">{result.purity.detail}</p>
+                  {purityError !== null && (
+                    <p
+                      id={purityErrorId}
+                      className="extraction-error"
+                      role="alert"
+                    >
+                      {purityError.detail}
+                    </p>
                   )}
                   {result.purity?.status === "planned" && (
                     <div className="extraction-purity-result">
