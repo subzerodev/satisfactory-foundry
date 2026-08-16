@@ -1,8 +1,8 @@
 # Extraction planning (Stage 22 arc)
 
 **Started:** 2026-08-16
-**Status:** IN PROGRESS - Phase 1 implementation plan candidate r2
-**Current phase:** Phase 1 implementation plan review r2
+**Status:** IN PROGRESS - Phase 1 implementation plan candidate r3
+**Current phase:** Phase 1 implementation plan review r3
 **Epic:** #114 (board #21, Stage 22 milestone 93)
 **Feature ticket:** #112
 
@@ -33,7 +33,7 @@ reconsideration:
   and per-plan persistence of the user's extractor choice
 - **Candidate:** `phase-1/brainstorm-spec.md`
 - **Review prompt:** `phase-1/design-r6-prompt.md`
-- **Implementation plan:** `phase-1/implementation-plan.md` candidate r2
+- **Implementation plan:** `phase-1/implementation-plan.md` candidate r3
 - **Production edits:** none
 
 ### Phase 2 - purity mix
@@ -158,7 +158,7 @@ provenance.
 On resume:
 
 1. Read #112 and #114 before this file; the board wins on disagreement.
-2. Resume Phase 1 at implementation-plan review r2.
+2. Resume Phase 1 at implementation-plan review r3.
 3. Do not write a Phase 2 plan until Phase 1 has merged and its phase report has
    been accepted.
 4. Keep Resource Wells explicit. A later decision to build a full well planner

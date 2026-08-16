@@ -30,7 +30,7 @@ Expected: all selected baseline tests pass.
 - Modify: `src/data/docs-loader.test.ts`
 - Modify: `src/data/catalog-store.ts`
 - Modify: `src/data/catalog-store.test.ts`
-- Modify: catalog literals reported by `rg -n 'recipeUnlocks:' src --glob '*.ts'`
+- Modify: catalog literals reported by `rg -n 'recipeUnlocks:' src --glob '*.ts' --glob '*.tsx'`
 
 - [ ] Add failing parser tests with minimal Docs fragments for all supported native families. Assert exact rates 60/120/240 for miners, 120 for Oil/Water, 60 nominal for Resource Well; topology; and exact applicability. Add rejection rows for missing, non-numeric, malformed, zero, and negative cycle values; unknown forms; invalid textual booleans; and empty/malformed/unresolved restricted resources. Add two reversed-order fixtures where extractor groups precede descriptors: unrestricted miners before solid resources and a restricted Water/Oil extractor before its resource.
 - [ ] Run the parser red phase:
@@ -166,6 +166,7 @@ git commit -m "feat(112): persist extraction selections"
 - Modify: `src/ui/graph-flow.test.ts`
 - Modify: `src/ui/GraphCanvas.tsx`
 - Modify: `src/ui/GraphCanvas.test.ts`
+- Create: `src/ui/GraphCanvas.dom.test.tsx`
 
 - [ ] Write failing graph tests requiring each derived raw node to carry `stageId`, `itemId`, and the exact `Fraction` demand in addition to display text. Assert linked-input suppression and raw layout positions remain unchanged.
 - [ ] Run the raw-data red phase:
@@ -176,11 +177,11 @@ npm test -- --run src/ui/graph-flow.test.ts
 
 Expected: FAIL in the new `carries exact raw identity and demand` assertions because raw data contains display strings only.
 - [ ] Extend `RawFlowNode.data` and copy `feed.totalDemand` directly. Never parse `rateText` back into a number.
-- [ ] Before component edits, add failing `GraphCanvas.test.ts` rows for mouse/Enter/Space opening, wrapper exclusion from the tab order, inner-button sole focus, live exact-demand updates, and raw-node disappearance closing the panel.
+- [ ] Before component edits, create `GraphCanvas.dom.test.tsx` with `// @vitest-environment jsdom`, a real `createRoot`/`act` mount harness, deterministic store reset, and cleanup after every test. Add failing rows for mouse/Enter/Space opening, wrapper exclusion from the tab order, inner-button sole focus, live exact-demand updates, raw-node disappearance closing the panel, and opening raw feed B while A is open replacing A without restoring focus to A; final focus must be inside B's panel.
 - [ ] Run the interaction red phase:
 
 ```bash
-npm test -- --run src/ui/GraphCanvas.test.ts
+npm test -- --run src/ui/GraphCanvas.dom.test.tsx
 ```
 
 Expected: FAIL in the new raw-card activation/lifecycle tests because the card has no button or open state.
@@ -189,14 +190,14 @@ Expected: FAIL in the new raw-card activation/lifecycle tests because the card h
 - [ ] Run:
 
 ```bash
-npm test -- --run src/ui/graph-flow.test.ts src/ui/GraphCanvas.test.ts
+npm test -- --run src/ui/graph-flow.test.ts src/ui/GraphCanvas.test.ts src/ui/GraphCanvas.dom.test.tsx
 ```
 
 Expected: exact live-demand and interaction tests pass without changing existing raw graph behavior.
 - [ ] Commit:
 
 ```bash
-git add src/ui/graph-flow.ts src/ui/graph-flow.test.ts src/ui/GraphCanvas.tsx src/ui/GraphCanvas.test.ts
+git add src/ui/graph-flow.ts src/ui/graph-flow.test.ts src/ui/GraphCanvas.tsx src/ui/GraphCanvas.test.ts src/ui/GraphCanvas.dom.test.tsx
 git commit -m "feat(112): open extraction planning from raw feeds"
 ```
 
@@ -205,22 +206,23 @@ git commit -m "feat(112): open extraction planning from raw feeds"
 **Files:**
 - Modify: `src/ui/GraphCanvas.tsx`
 - Modify: `src/ui/GraphCanvas.test.ts`
+- Modify: `src/ui/GraphCanvas.dom.test.tsx`
 - Modify: `src/ui/app.css`
 - Modify: `src/ui/smoke.test.tsx` if app-level wiring needs coverage
 - Create: `src/ui/extraction-panel-browser-harness.tsx`
 - Create: `features/extraction-planning/phase-1/browser-harness.html`
 - Create: `scripts/extraction-panel-browser-check.mjs`
 
-- [ ] Write failing UI tests for solid explicit selection, Water/Oil first-open auto-seeding, invalid clock removing stale output, visible `Purity Normal`, exact worked results, per-output Mk5 warning at Miner Mk.3 250%, unavailable persisted selection, explicit Resource Well alternative text, and Nitrogen's no-miner/no-count message. Require the opened region to have `role="dialog"`, `aria-modal="false"`, and `aria-labelledby` pointing to its item heading; require an icon close button with an accessible name and tooltip.
+- [ ] Extend the jsdom `createRoot`/`act` suite with failing UI tests for solid explicit selection, Water/Oil first-open auto-seeding, invalid clock removing stale output, visible `Purity Normal`, exact worked results, per-output Mk5 warning at Miner Mk.3 250%, unavailable persisted selection, explicit Resource Well alternative text, and Nitrogen's no-miner/no-count message. Require the opened region to have `role="dialog"`, `aria-modal="false"`, and `aria-labelledby` pointing to its item heading; require an icon close button with an accessible name and tooltip.
 - [ ] Run the panel red phase:
 
 ```bash
-npm test -- --run src/ui/GraphCanvas.test.ts src/ui/smoke.test.tsx
+npm test -- --run src/ui/GraphCanvas.dom.test.tsx src/ui/smoke.test.tsx
 ```
 
 Expected: FAIL in the new planned-result, dialog-semantics, close-control, and focus tests because the extraction panel does not exist.
-- [ ] Replace overlapping top-right Panels with one Panel containing an unframed notice/extraction stack. Render extractor select, clock text input, requirement, count, each/supplied/spare, transport, power, and accessible icon close control. The extraction region is a labeled non-modal dialog. Move focus to the first control on open and restore it to the surviving opener on close.
-- [ ] Add the checked-in browser harness. `browser-harness.html` loads the TSX harness through Vite; the harness seeds notice-only, extraction-only, and combined states with chain power. The Node script starts Vite on an available local port, launches `/usr/bin/chromium --headless --no-sandbox` through the DevTools protocol, evaluates bounding rectangles/text overflow at 360x340 and 720x340, saves screenshots under `/tmp/satisfactory-foundry-112-browser`, and always terminates both processes.
+- [ ] Replace overlapping top-right Panels with one Panel containing an unframed notice/extraction stack. Extract and export the production `GraphTopRightStack`/`ExtractionPanel` render units from `GraphCanvas.tsx`; `GraphCanvas` itself must consume those same units. Render extractor select, clock text input, requirement, count, each/supplied/spare, transport, power, and accessible icon close control. The extraction region is a labeled non-modal dialog. Move focus to the first control on open and restore it to the surviving opener on close.
+- [ ] Add the checked-in browser harness. `browser-harness.html` loads the TSX harness through Vite. The harness must import and render the exact production `GraphTopRightStack`/`ExtractionPanel` units inside React Flow with the real `Panel`, `Controls`, top-left controls, and chain-power panel; it may supply deterministic notice/extraction props but must not duplicate stack markup or CSS. Force `.graph-canvas` to exactly 340px in the harness and assert its measured rectangle is 340px before collision checks. The Node script starts Vite on an available local port, launches `/usr/bin/chromium --headless --no-sandbox` through the DevTools protocol, evaluates bounding rectangles/text overflow for notice-only, extraction-only, and combined states at 360px and 720px widths, saves screenshots under `/tmp/satisfactory-foundry-112-browser`, and always terminates both processes.
 - [ ] Run the responsive red phase before CSS:
 
 ```bash
@@ -233,14 +235,14 @@ Expected: non-zero exit with a named top/side/bottom overlap or overflow asserti
 - [ ] Run:
 
 ```bash
-npm test -- --run src/ui/GraphCanvas.test.ts src/ui/smoke.test.tsx
+npm test -- --run src/ui/GraphCanvas.dom.test.tsx src/ui/smoke.test.tsx
 ```
 
 Expected: all panel, focus, responsive-contract, and explicit-unavailable tests pass.
 - [ ] Commit:
 
 ```bash
-git add src/ui/GraphCanvas.tsx src/ui/GraphCanvas.test.ts src/ui/app.css src/ui/smoke.test.tsx src/ui/extraction-panel-browser-harness.tsx features/extraction-planning/phase-1/browser-harness.html scripts/extraction-panel-browser-check.mjs
+git add src/ui/GraphCanvas.tsx src/ui/GraphCanvas.test.ts src/ui/GraphCanvas.dom.test.tsx src/ui/app.css src/ui/smoke.test.tsx src/ui/extraction-panel-browser-harness.tsx features/extraction-planning/phase-1/browser-harness.html scripts/extraction-panel-browser-check.mjs
 git commit -m "feat(112): add extraction planning panel"
 ```
 
