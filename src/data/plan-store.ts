@@ -378,15 +378,19 @@ export function migrateV5(plan: PlanFileV5): PlanFileV6 {
 }
 
 function migrateLegacyV4(plan: PlanFileV4): PlanFileV6 {
-  const v5 = migrateV4(plan);
   return {
-    ...migrateV5(v5),
-    stages: v5.stages.map((stage) => ({
+    format_version: 6,
+    name: plan.name,
+    createdAt: plan.createdAt,
+    updatedAt: plan.updatedAt,
+    flowDirection: "LR",
+    stages: plan.stages.map((stage) => ({
       name: stage.name,
       selection: stage.selection,
       ...(stage.position !== undefined ? { position: stage.position } : {}),
       userPlaced: stage.position !== undefined,
     })),
+    links: plan.links,
   };
 }
 

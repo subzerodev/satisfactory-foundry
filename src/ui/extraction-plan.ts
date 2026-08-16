@@ -1,6 +1,5 @@
 import { Fraction } from "../core/fraction.ts";
 import type { LaneKind } from "../core/manifold.ts";
-import { TIER_TABLE } from "../data/tiers.ts";
 import type { Catalog, CatalogExtractor } from "../data/types.ts";
 import { stagePowerText, suggestSupply } from "./advice.ts";
 import { parseClockText } from "./clock.ts";
@@ -14,13 +13,12 @@ export type ExtractionTransportStatus =
   | {
       status: "available" | "requires-unlock";
       kind: LaneKind;
-      tierIndex: number;
       capacity: Fraction;
     }
   | { status: "over-capacity"; kind: LaneKind };
 
 export type ExtractionPlan =
-  | { status: "pick-extractor"; candidates: CatalogExtractor[] }
+  | { status: "pick-extractor" }
   | { status: "invalid-clock"; detail: string }
   | { status: "unavailable"; detail: string }
   | {
@@ -62,7 +60,7 @@ export function deriveExtractionPlan({
   if (selection === null) {
     return candidates.length === 0
       ? { status: "unavailable", detail: resourceWellDetail(catalog, itemId) }
-      : { status: "pick-extractor", candidates };
+      : { status: "pick-extractor" };
   }
 
   const extractor = Object.hasOwn(catalog.extractors, selection.machineId)
@@ -116,9 +114,8 @@ export function deriveExtractionPlan({
 
   const kind: LaneKind =
     catalog.items[itemId]?.isFluid === true ? "pipe" : "belt";
-  const tierIndex = TIER_TABLE[kind].findIndex((capacity) =>
-    capacity.gte(perExtractor),
-  );
+  const tiers = catalog.tiers[kind];
+  const tierIndex = tiers.findIndex((capacity) => capacity.gte(perExtractor));
   const transport: ExtractionTransportStatus =
     tierIndex < 0
       ? { status: "over-capacity", kind }
@@ -126,8 +123,7 @@ export function deriveExtractionPlan({
           status:
             tierIndex < unlockedTiers[kind] ? "available" : "requires-unlock",
           kind,
-          tierIndex,
-          capacity: TIER_TABLE[kind][tierIndex]!,
+          capacity: tiers[tierIndex]!,
         };
 
   return {

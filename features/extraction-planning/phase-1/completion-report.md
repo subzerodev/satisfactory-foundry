@@ -2,7 +2,7 @@
 
 **Ticket:** Forgejo #112
 **Branch:** `feature/s22-112-extraction-p1-design`
-**Status:** implementation complete; cumulative correctness review pending
+**Status:** implementation complete; post-simplify correctness recheck pending
 
 ## Delivered
 
@@ -27,7 +27,8 @@
 
 ## Verification
 
-- `npm test`: 39 files, 1030 tests passed.
+- `npm test`: 39 files, 1028 tests passed (duplicate invalid-clock cases removed
+  by the one-shot parsimony fold).
 - `npm run check`: passed.
 - `npm run build`: passed with only the existing 500 kB chunk-size advisory.
 - `git diff --check develop...HEAD`: passed.

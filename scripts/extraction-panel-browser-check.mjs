@@ -100,6 +100,24 @@ async function evaluate(cdp, expression) {
   return result.result.value;
 }
 
+async function pressKey(cdp, key, code, text, keyCode) {
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key,
+    code,
+    text,
+    unmodifiedText: text,
+    windowsVirtualKeyCode: keyCode,
+    nativeVirtualKeyCode: keyCode,
+  });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key,
+    code,
+    windowsVirtualKeyCode: keyCode,
+  });
+}
+
 async function waitForExpression(cdp, expression, label) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (await evaluate(cdp, expression)) return;
@@ -302,21 +320,7 @@ async function main() {
       cdp,
       `document.querySelector('.raw-feed-node-button').focus()`,
     );
-    await cdp.send("Input.dispatchKeyEvent", {
-      type: "keyDown",
-      key: "Enter",
-      code: "Enter",
-      text: "\r",
-      unmodifiedText: "\r",
-      windowsVirtualKeyCode: 13,
-      nativeVirtualKeyCode: 13,
-    });
-    await cdp.send("Input.dispatchKeyEvent", {
-      type: "keyUp",
-      key: "Enter",
-      code: "Enter",
-      windowsVirtualKeyCode: 13,
-    });
+    await pressKey(cdp, "Enter", "Enter", "\r", 13);
     await waitForExpression(
       cdp,
       `document.querySelector('[role="dialog"]') !== null`,
@@ -335,21 +339,7 @@ async function main() {
       cdp,
       `document.querySelector('.raw-feed-node-button').focus()`,
     );
-    await cdp.send("Input.dispatchKeyEvent", {
-      type: "keyDown",
-      key: " ",
-      code: "Space",
-      text: " ",
-      unmodifiedText: " ",
-      windowsVirtualKeyCode: 32,
-      nativeVirtualKeyCode: 32,
-    });
-    await cdp.send("Input.dispatchKeyEvent", {
-      type: "keyUp",
-      key: " ",
-      code: "Space",
-      windowsVirtualKeyCode: 32,
-    });
+    await pressKey(cdp, " ", "Space", " ", 32);
     await waitForExpression(
       cdp,
       `document.querySelector('[role="dialog"]') !== null`,

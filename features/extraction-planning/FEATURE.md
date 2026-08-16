@@ -1,8 +1,8 @@
 # Extraction planning (Stage 22 arc)
 
 **Started:** 2026-08-16
-**Status:** IN PROGRESS - Phase 1 implementation complete; cumulative review pending
-**Current phase:** Phase 1 cumulative implementation review
+**Status:** IN PROGRESS - Phase 1 simplify folds complete; correctness recheck pending
+**Current phase:** Phase 1 post-simplify correctness recheck
 **Epic:** #114 (board #21, Stage 22 milestone 93)
 **Feature ticket:** #112
 
@@ -26,7 +26,7 @@ reconsideration:
 
 ### Phase 1 - normal-purity requirement
 
-- **Status:** implementation complete; cumulative correctness review pending
+- **Status:** implementation complete; post-simplify correctness recheck pending
 - **Scope:** structured extractor data, clickable raw inputs, selected extractor,
   clock, exact count/surplus, estimated power, per-extractor belt/pipe saturation,
   and per-plan persistence of the user's extractor choice
@@ -35,7 +35,7 @@ reconsideration:
 - **Implementation plan:** `phase-1/implementation-plan.md` frozen at r8 after
   correctness convergence and one-shot parsimony disposition
 - **Production edits:** `1fc4361`, `5bcd381`, `40e4f72`, `b937bfc`, `254e1ae`
-- **Verification:** 39 files / 1030 tests, checked-in Chromium/CDP geometry and
+- **Verification:** 39 files / 1028 tests, checked-in Chromium/CDP geometry and
   interaction gate, and ten canonical mutation break/restore probes
 - **Completion report:** `phase-1/completion-report.md`
 
@@ -209,3 +209,15 @@ do not satisfy that contract. Task 6 therefore remains unchanged.
 - **r9:** folded the final historical v2/v3 fixture labels and corrected the
   shared validator comment's unmatched parenthesis. Runtime code remained the
   correctness-approved r6 artifact.
+
+## Phase 1 Diff Parsimony Disposition
+
+The one-shot diff simplifier returned five nits; all five were verified and
+folded. Extraction transport now reads the catalog tier table and exposes no
+test-only candidate/tier-index payload, the panel focus ref targets only its
+reachable select, v4-to-v6 migration maps stages once, invalid-clock cases use
+one exact-error table, and the browser harness shares one CDP key helper. The
+new catalog-tier regression failed against the prior global-table lookup before
+the fold. Full verification after the fold passes 39 files / 1028 tests, checks,
+build, nine geometry rows, and all three interaction suites. The simplify lens
+is complete and will not be rerun; only the correctness pair rechecks this fold.

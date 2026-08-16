@@ -308,7 +308,7 @@ export function ExtractionPanel({
     () => standaloneExtractors(catalog, rawNode.data.itemId),
     [catalog, rawNode.data.itemId],
   );
-  const primaryControlRef = useRef<HTMLSelectElement | HTMLInputElement>(null);
+  const primaryControlRef = useRef<HTMLSelectElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const headingId = `extraction-${rawNode.data.stageId}-${rawNode.data.itemId}`;
   const rawIdentity = `${rawNode.data.stageId}:${rawNode.data.itemId}`;
@@ -386,7 +386,7 @@ export function ExtractionPanel({
           <label>
             <span>Extractor</span>
             <select
-              ref={primaryControlRef as React.RefObject<HTMLSelectElement>}
+              ref={primaryControlRef}
               value={selection?.machineId ?? ""}
               onChange={(event) => setMachine(event.target.value)}
             >
@@ -408,11 +408,6 @@ export function ExtractionPanel({
             <label>
               <span>Clock %</span>
               <input
-                ref={
-                  candidates.length === 0
-                    ? (primaryControlRef as React.RefObject<HTMLInputElement>)
-                    : undefined
-                }
                 type="text"
                 inputMode="decimal"
                 value={selection.clockPercentText}

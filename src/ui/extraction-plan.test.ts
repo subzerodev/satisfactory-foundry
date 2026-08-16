@@ -117,7 +117,6 @@ describe("deriveExtractionPlan", () => {
     expect(limestone.surplus.toString()).toBe("0");
     expect(limestone.transport).toMatchObject({
       status: "available",
-      tierIndex: 2,
       kind: "belt",
     });
 
@@ -132,7 +131,6 @@ describe("deriveExtractionPlan", () => {
     expect(water.surplus.toString()).toBe("80");
     expect(water.transport).toMatchObject({
       status: "available",
-      tierIndex: 0,
       kind: "pipe",
     });
   });
@@ -150,7 +148,6 @@ describe("deriveExtractionPlan", () => {
     expect(locked.powerText).toMatch(/^≈ /);
     expect(locked.transport).toMatchObject({
       status: "requires-unlock",
-      tierIndex: 4,
       kind: "belt",
     });
 
@@ -170,23 +167,40 @@ describe("deriveExtractionPlan", () => {
     expect(water.surplus.toString()).toBe("200");
     expect(water.transport).toMatchObject({
       status: "available",
-      tierIndex: 0,
       kind: "pipe",
     });
   });
 
-  it.each(["", "nope", "0", "-1", "251"])(
-    "rejects invalid clock %s",
-    (clock) => {
-      expect(derive("stone", F(1), "miner_mk3", clock).status).toBe(
-        "invalid-clock",
-      );
-    },
-  );
+  it("uses the catalog tier table for extractor transport", () => {
+    const cat = catalog();
+    cat.tiers = { belt: [F(100), F(250)], pipe: [F(200), F(400)] };
+
+    const result = derive(
+      "stone",
+      F(240),
+      "miner_mk3",
+      "100",
+      {
+        belt: 2,
+        pipe: 2,
+      },
+      cat,
+    );
+
+    expect(result.status).toBe("planned");
+    if (result.status !== "planned") return;
+    expect(result.transport).toMatchObject({
+      status: "available",
+      kind: "belt",
+      capacity: F(250),
+    });
+  });
 
   it.each([
+    ["", "clock % must be a number in (0, 250]"],
     ["nope", "clock % must be a number in (0, 250]"],
     ["0", "clock % must be greater than 0"],
+    ["-1", "clock % must be greater than 0"],
     ["251", "clock % must be at most 250"],
   ])("uses the shared clock error for %s", (clock, detail) => {
     expect(derive("stone", F(1), "miner_mk3", clock)).toEqual({
@@ -221,12 +235,7 @@ describe("deriveExtractionPlan", () => {
       selection: null,
       unlockedTiers: { belt: 6, pipe: 2 },
     });
-    expect(result.status).toBe("pick-extractor");
-    if (result.status === "pick-extractor") {
-      expect(result.candidates.map((candidate) => candidate.machineId)).toEqual(
-        ["miner_mk3"],
-      );
-    }
+    expect(result).toEqual({ status: "pick-extractor" });
   });
 
   it("retains the plan with a hard warning when no full tier carries one output", () => {
