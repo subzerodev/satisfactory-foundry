@@ -55,13 +55,19 @@ unrepresentable. The clock is shared by both ends, raw text, and uses the existi
 parser/power model. The store exposes `setLinkInterstep(linkId, value|null)`.
 Enabling atomically writes the interstep, resets forward transport to belt, and
 seeds return transport as belt. Disabling atomically removes the interstep and
-writes explicit pipe transport, the normal fluid default. Every call recomputes
+chooses transport from the current linked item: explicit pipe for fluid/gas,
+explicit belt for a solid, and absent transport (the neutral belt default) when
+the item is missing. Every call recomputes
 cached reconciliation; enable, disable, pair, and clock edits cannot leave
 findings from the prior intent behind. Lifecycle tests pin enable/disable from
 non-default modes and valid-to-invalid-to-valid transitions.
 `setLinkTransport` and `clearLinkTransport` also preserve any interstep field and
-recompute reconciliation, because a forward-mode edit can change interstep
-validity. Legal-to-illegal-to-legal forward edits are pinned.
+recompute reconciliation. While an interstep is active, `setLinkTransport` and
+`setLinkInterstep` refuse pipe/fluid-truck on either route before mutating state;
+every state reachable through public actions therefore remains v8-saveable.
+Tests pin refused illegal forward/return edits, unchanged reconciliation, and
+save/reload of the retained valid state. File validation and derive independently
+retain their defensive illegal-mode rejection for malformed external state.
 Changing the pair keeps clock; disabling removes intent. `returnTransport`
 configures the empty-container route independently and defaults to belt.
 Removing a link removes it naturally.
@@ -181,8 +187,9 @@ disable/recover. Enabling selects the sole pair, or shows a pair menu when
 several exist, defaults clock to 100, and atomically resets both packaged-cargo
 routes to belt even when the prior fluid route was pipe/train/fluid-truck. The
 existing Mode menu becomes `Forward mode`; a second `Empty return mode` uses the
-same solid-mode controls and trip editors. Disabling always restores explicit
-pipe rather than retaining a solid-only route.
+same solid-mode controls and trip editors. Disabling restores pipe for a current
+fluid/gas item, belt for a current solid item, or absent/belt default when catalog
+replacement removed the item; it never leaves a phase-illegal route.
 
 The interstep block shows package/unpackage machine counts separately, total
 power, packaged/min forward, and empty containers/min return. Forward and return
@@ -202,6 +209,8 @@ count is guessed.
 - Forward transport uses packaged item/stack size; return uses container item.
 - Store lifecycle and v8 save/load/import/export/bundle/migration/strictness.
 - Imported packaging plus pipe/fluid-truck is rejected; derive repeats the guard.
+- Public setters refuse illegal packaged forward/return modes, preserve the prior
+  saveable state, and that state survives save/reload.
 - Inspector, edge chip, train findings, and both route results consume the same
   effective packaged/container projection, including Nitrogen's non-1:1 ratio.
 - Nitrogen under/over-supply keeps fluid reconciliation/apply amounts while
@@ -213,7 +222,8 @@ count is guessed.
 - Inspector enable/pair/clock/disable and legal-mode switching, including
   non-default pre-enable and pre-disable modes.
 - Stale pair IDs still expose disable/recovery; forward and return solid modes
-  configure independently.
+  configure independently. Stale intent crossed with current solid and missing
+  items disables to phase-safe belt and absent/belt-default states respectively.
 - Chromium desktop/mobile interaction and containment with all prior gates.
 
 ## Assumptions Ledger
