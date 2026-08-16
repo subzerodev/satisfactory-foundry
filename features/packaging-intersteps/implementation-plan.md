@@ -31,8 +31,8 @@ Vite, system Chromium through CDP.
   exact IO rate. Include Nitrogen's `240 -> 60` package ratio and gas tank.
 - [ ] Add malformed catalog fixtures for incomplete, mismatched, ambiguous, and
   non-Packager candidates; none may be offered.
-- [ ] Move `LinkTransport`/`TransportMode` to `src/core/link-transport.ts` and
-  re-export them from `store.ts` for caller compatibility. Add
+- [ ] Move `LinkTransport`/`TransportMode` to `src/core/link-transport.ts`, retarget
+  all store/data/UI imports directly, and remove the store type export. Add
   `PackagingInterstep { packageRecipeId; clockPercentText; returnTransport }`.
 - [ ] Implement `discoverPackagingPairs(catalog, itemId)` and
   `resolvePackagingPair(catalog, packageRecipeId)`. Match exact IO identity and
@@ -177,6 +177,10 @@ while any writer still emits v7.
 - [ ] Write failing pure/DOM tests for checkbox visibility, sole/multiple pair
   selection, enable defaults, pair/clock edits, disable, stale disable recovery,
   and independent route mode/trip editors.
+- [ ] Add a saved-intent DOM row where catalog replacement removed the linked
+  item entirely. It must bypass the current item-missing early return, render a
+  fallback item-id identity and checked recovery control, render no route math,
+  and disable to a link with absent transport.
 - [ ] Add failing drawn-distance rows for forward and return train routes with
   `{ from: true }` and `{ to: true }`. Applying estimated distance must target
   only the chosen route and preserve the physical-side key byte-for-byte.
