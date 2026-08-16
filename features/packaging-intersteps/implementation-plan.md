@@ -45,10 +45,8 @@ Vite, system Chromium through CDP.
 ### Task 2: Canonical Exact Derived-Link Plan
 
 **Files:**
-- Move implementation: `src/ui/transport-plan.ts` -> `src/core/transport-plan.ts`
-- Keep compatibility re-export: `src/ui/transport-plan.ts`
-- Move implementation: `src/ui/clock.ts` -> `src/core/clock.ts`
-- Keep compatibility re-export: `src/ui/clock.ts`
+- Move: `src/ui/transport-plan.ts` -> `src/core/transport-plan.ts`
+- Move: `src/ui/clock.ts` -> `src/core/clock.ts`
 - Create: `src/core/machine-power.ts`
 - Create: `src/core/machine-power.test.ts`
 - Modify: `src/ui/advice.ts`
@@ -64,9 +62,9 @@ Vite, system Chromium through CDP.
   Oil Residue slower-unpackage rows, clock scaling, pair mismatch, stale ID,
   invalid clock, and safe-integer overflow.
 - [ ] Move the pure transport derivation to core so both store and UI can use it;
-  preserve the UI module as a re-export to avoid broad call-site churn.
-- [ ] Move `parseClockText` to core and preserve `src/ui/clock.ts` as a
-  compatibility re-export. Add a core `machinePowerProjection` that returns an
+  update all imports directly and remove the old UI module path.
+- [ ] Move `parseClockText` to core, update all imports directly, and remove the
+  old UI module path. Add a core `machinePowerProjection` that returns an
   exact `Fraction` result at 100% and a numeric `estimated` result at other
   clocks, including variable-power bounds. Adapt `stagePowerText` to format that
   projection instead of owning the calculation; no core module imports UI.
@@ -212,10 +210,12 @@ while any writer still emits v7.
 - [ ] Build a checked-in Vite/system-Chromium CDP gate using the real
   `LinkInspector` and production CSS. Do not assign input values through JS;
   use pointer/key events and CDP text insertion.
-- [ ] At 360, 720, and 1280 widths exercise enable, clock edit, independent route
+- [ ] At 1280px run the full workflow: enable, clock edit, independent route
   changes, return trip input, stale recovery/disable, and keyboard operation.
-  Assert all four rectangle edges, no overlap, and document/body width no larger
-  than client width. Save and inspect screenshots.
+  At 360, 720, and 1280 assert all four rectangle edges, wrapping, no overlap,
+  and document/body width no larger than client width; perform one real packaged
+  control activation at each width to prove hit-testing/reachability. Save and
+  inspect screenshots.
 - [ ] Re-run the extraction browser gate to protect the existing 360px fix.
 - [ ] Record exact test/browser evidence, user-visible behavior, constraints,
   and review dispositions in the completion report and feature ledger.
