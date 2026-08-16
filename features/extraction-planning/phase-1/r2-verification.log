@@ -1,0 +1,75 @@
+# Forgejo #112 Phase 1 verification evidence
+# Branch: feature/s22-112-extraction-p1-design
+# Date: 2026-08-16
+
+PRE-IMPLEMENTATION DRIFT GATE
+command: npm test -- --run src/data/docs-loader.test.ts src/data/catalog-store.test.ts src/ui/advice.test.ts src/data/plan-store.test.ts src/state/store.test.ts src/ui/graph-flow.test.ts src/ui/GraphCanvas.test.ts
+result: PASS - 7 files, 348 tests
+
+INITIAL RED/GREEN GATES
+parser red: FAIL - 18 new extractor parser tests; green: 58/58
+cache red: FAIL - extractor round-trip, null-prototype revival, parser v5 stale; green parser+cache: 71/71
+derivation red: FAIL - module absent; green derivation+advice: 30/30
+state red: FAIL - setExtractionSelection absent
+persistence red: FAIL - migrateV5 absent; green plan-store+state: 232/232
+raw data red: FAIL - stageId/itemId/demand absent; green graph-flow: 48/48
+interaction red: FAIL - projectRawFeedNode absent and no native button; green graph/canvas: 54/54
+panel red: FAIL - input edit callback row; green panel+smoke: 70/70
+responsive red: FAIL - 360/extraction top-right stack overlaps bottom-left controls
+responsive green: PASS - all 360/720 notice/extraction/combined rows
+
+CANONICAL POST-CODE BREAK/RESTORE PROBES
+
+1. Extractor parser and cache
+break: use 6 instead of 60 in extractor rate calculation; serialize extractor normalRate as "0"
+command: npm test -- --run src/data/docs-loader.test.ts src/data/catalog-store.test.ts
+FAIL src/data/docs-loader.test.ts > parseDocsJson - extractor capabilities (#112) > parses extractor capabilities independent of group order
+FAIL src/data/catalog-store.test.ts > catalog cache - round-trip (spec row 7) > save -> load returns a hit with Fraction-equal catalog + records a hash
+restore result: PASS - 2 files, 71 tests
+
+2. Exact derivation
+break: divide extractor clock scaling by 1000 instead of 100
+command: npm test -- --run src/ui/extraction-plan.test.ts
+FAIL src/ui/extraction-plan.test.ts > deriveExtractionPlan > derives the exact Limestone and Water worked examples
+FAIL src/ui/extraction-plan.test.ts > deriveExtractionPlan > keeps exact counts and per-output transport at 250 percent
+restore result: PASS - 1 file, 11 tests
+
+3. Plan v6 migration and persistence
+break: map every v5 stage to userPlaced=true
+command: npm test -- --run src/data/plan-store.test.ts src/state/store.test.ts
+FAIL src/data/plan-store.test.ts > plan-store - v6 extraction and explicit placement (#112) > migrates v5 userPlaced true/absent to required booleans
+FAIL src/data/plan-store.test.ts > plan-store - v5 round-trip (flowDirection + userPlaced) > round-trips a TB direction and a per-stage userPlaced flag
+restore result: PASS - 2 files, 232 tests
+
+4. Live exact raw demand
+break: replace feed.totalDemand with Fraction.from(0) in the raw-node projection
+command: npm test -- --run src/ui/graph-flow.test.ts
+FAIL src/ui/graph-flow.test.ts > graphToFlow - rawFeeds > emits a supply card + edge for an unlinked extraction-level input with the exact totalDemand
+restore result: PASS - 1 file, 48 tests
+
+5. Panel rendering contract
+break: render Purity Unknown instead of Purity Normal
+command: npm test -- --run src/ui/GraphCanvas.dom.test.tsx
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > renders the exact Normal-purity plan and persists control edits
+restore result: PASS - 1 file, 4 tests
+
+BROWSER GATE
+command: node scripts/extraction-panel-browser-check.mjs
+PASS geometry 360px notice top=49 bottom=91 height=42
+PASS geometry 360px extraction top=49 bottom=219 height=170
+PASS geometry 360px combined top=49 bottom=219 height=170
+PASS geometry 720px notice top=49 bottom=91 height=42
+PASS geometry 720px extraction top=49 bottom=219 height=170
+PASS geometry 720px combined top=49 bottom=219 height=170
+PASS interaction pointer/Enter/Space, replacement, live update, disappearance, focus
+screenshots: /tmp/satisfactory-foundry-112-browser/{360,720}-{notice,extraction,combined}.png and interaction.png
+
+POST-CODE COMPLETE SUITE
+command: npm test
+result: PASS - 39 files, 1022 tests
+command: npm run check
+result: PASS - TypeScript, ESLint, and Prettier
+command: npm run build
+result: PASS - Vite/PWA build; existing 500 kB chunk-size advisory only
+command: git diff --check develop...HEAD
+result: PASS

@@ -1,8 +1,8 @@
 # Extraction planning (Stage 22 arc)
 
 **Started:** 2026-08-16
-**Status:** IN PROGRESS - Phase 1 plan frozen; implementation next
-**Current phase:** Phase 1 implementation
+**Status:** IN PROGRESS - Phase 1 implementation complete; cumulative review pending
+**Current phase:** Phase 1 cumulative implementation review
 **Epic:** #114 (board #21, Stage 22 milestone 93)
 **Feature ticket:** #112
 
@@ -26,8 +26,7 @@ reconsideration:
 
 ### Phase 1 - normal-purity requirement
 
-- **Status:** design frozen at r6 after correctness convergence and one-shot
-  parsimony review
+- **Status:** implementation complete; cumulative correctness review pending
 - **Scope:** structured extractor data, clickable raw inputs, selected extractor,
   clock, exact count/surplus, estimated power, per-extractor belt/pipe saturation,
   and per-plan persistence of the user's extractor choice
@@ -35,7 +34,10 @@ reconsideration:
 - **Review prompt:** `phase-1/design-r6-prompt.md`
 - **Implementation plan:** `phase-1/implementation-plan.md` frozen at r8 after
   correctness convergence and one-shot parsimony disposition
-- **Production edits:** none
+- **Production edits:** `1fc4361`, `5bcd381`, `40e4f72`, `b937bfc`, `254e1ae`
+- **Verification:** 39 files / 1022 tests, checked-in Chromium/CDP geometry and
+  interaction gate, and five canonical mutation break/restore probes
+- **Completion report:** `phase-1/completion-report.md`
 
 ### Phase 2 - purity mix
 
@@ -159,7 +161,8 @@ provenance.
 On resume:
 
 1. Read #112 and #114 before this file; the board wins on disagreement.
-2. Resume Phase 1 at Task 1 of `phase-1/implementation-plan.md`.
+2. Resume Phase 1 at cumulative implementation review using
+   `phase-1/completion-report.md` and `phase-1/r2-verification.log`.
 3. Do not write a Phase 2 plan until Phase 1 has merged and its phase report has
    been accepted.
 4. Keep Resource Wells explicit. A later decision to build a full well planner
