@@ -185,7 +185,15 @@ export function applyDrawnDistance(
   link: StageLink,
   distanceDm: number,
 ): LinkTransport | null {
-  const t = tripTransportOf(link);
+  return applyDrawnDistanceToTransport(link.transport, distanceDm);
+}
+
+/** Apply the graph's drawn distance to one independently configured route. */
+export function applyDrawnDistanceToTransport(
+  transport: LinkTransport | undefined,
+  distanceDm: number,
+): LinkTransport | null {
+  const t = isTripTransport(transport) ? transport : null;
   if (t === null || t.trip.kind !== "estimated") return null;
 
   const oneWayMeters = distanceDm / 10;
@@ -199,8 +207,14 @@ export function applyDrawnDistance(
     };
   }
   // road four + train: one-way meters.
-  return {
-    mode: t.mode,
-    trip: { kind: "estimated", distanceText: String(oneWayMeters) },
-  };
+  const trip = {
+    kind: "estimated",
+    distanceText: String(oneWayMeters),
+  } as const;
+  if (t.mode === "train") {
+    return t.sharedEnds === undefined
+      ? { mode: "train", trip }
+      : { mode: "train", trip, sharedEnds: { ...t.sharedEnds } };
+  }
+  return { mode: t.mode, trip };
 }

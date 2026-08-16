@@ -14,6 +14,7 @@ import type { LinkFinding } from "../core/reconcile.ts";
 import type { SolveState, StageLink, StageNode } from "../state/store.ts";
 import {
   applyBlockFor,
+  packagingOptionsFor,
   setPipeDerate,
   setSharedEnd,
   toEstimated,
@@ -22,6 +23,7 @@ import {
   setMeasuredSeconds,
 } from "./LinkInspector.tsx";
 import type { LinkTransport } from "../core/link-transport.ts";
+import type { PackagingCatalog } from "../core/packaging-pair.ts";
 
 // A solved SolveState carrying one output lane (with perMachineOutput for the
 // suggestion) and/or one feed lane — the only fields supplySuggestionFor reads.
@@ -107,6 +109,66 @@ const L1: StageLink = {
   itemId: "iron_ingot",
   toStageId: "c",
 };
+
+const packagingCatalog: PackagingCatalog = {
+  items: {
+    water: { isFluid: true },
+    canister: { isFluid: false },
+    packaged_water: { isFluid: false },
+  },
+  recipes: {
+    package_water: {
+      id: "package_water",
+      machineId: "packager",
+      inputs: [
+        { itemId: "water", perMinute: Fraction.from(60) },
+        { itemId: "canister", perMinute: Fraction.from(60) },
+      ],
+      outputs: [{ itemId: "packaged_water", perMinute: Fraction.from(60) }],
+    },
+    unpackage_water: {
+      id: "unpackage_water",
+      machineId: "packager",
+      inputs: [{ itemId: "packaged_water", perMinute: Fraction.from(60) }],
+      outputs: [
+        { itemId: "water", perMinute: Fraction.from(60) },
+        { itemId: "canister", perMinute: Fraction.from(60) },
+      ],
+    },
+  },
+};
+
+describe("packagingOptionsFor", () => {
+  const waterLink: StageLink = { ...L1, itemId: "water" };
+
+  it("is hidden without a discoverable pair or saved intent", () => {
+    expect(packagingOptionsFor(packagingCatalog, L1)).toEqual({
+      visible: false,
+      pairs: [],
+    });
+  });
+
+  it("offers the sole discovered pair", () => {
+    const result = packagingOptionsFor(packagingCatalog, waterLink);
+    expect(result.visible).toBe(true);
+    expect(result.pairs.map((pair) => pair.packageRecipe.id)).toEqual([
+      "package_water",
+    ]);
+  });
+
+  it("stays visible for stale saved intent", () => {
+    expect(
+      packagingOptionsFor(packagingCatalog, {
+        ...waterLink,
+        interstep: {
+          packageRecipeId: "removed_recipe",
+          clockPercentText: "100",
+          returnTransport: { mode: "belt" },
+        },
+      }).visible,
+    ).toBe(true);
+  });
+});
 
 function underSupply(shortfall: number): LinkFinding {
   return {

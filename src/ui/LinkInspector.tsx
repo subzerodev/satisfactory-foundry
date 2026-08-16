@@ -13,8 +13,17 @@
 import { useAppStore } from "../state/store.ts";
 import type { StageLink, StageNode } from "../state/store.ts";
 import type { LinkTransport, TransportMode } from "../core/link-transport.ts";
+import type { PackagingInterstep } from "../core/link-transport.ts";
 import type { DroneFuel } from "../core/transport-facts.ts";
 import type { LinkFinding } from "../core/reconcile.ts";
+import type {
+  PackagingCatalog,
+  PackagingPair,
+} from "../core/packaging-pair.ts";
+import { discoverPackagingPairs } from "../data/packaging.ts";
+import { deriveLinkPlan } from "../core/link-plan.ts";
+import type { DerivedLinkPlan } from "../core/link-plan.ts";
+import type { Catalog } from "../data/types.ts";
 import { formatRate } from "./format.ts";
 import {
   linkRequiredRate,
@@ -24,8 +33,7 @@ import {
 import {
   drawnDistanceDm,
   drawnMeters,
-  applyDrawnDistance,
-  isEstimatedLink,
+  applyDrawnDistanceToTransport,
 } from "./chain-view.ts";
 import { computeLinkTransport, legalModesFor } from "../core/transport-plan.ts";
 import {
@@ -87,6 +95,14 @@ function currentMode(link: StageLink): TransportMode {
   return link.transport?.mode ?? "belt";
 }
 
+export function packagingOptionsFor(
+  catalog: PackagingCatalog,
+  link: StageLink,
+): { visible: boolean; pairs: PackagingPair[] } {
+  const pairs = discoverPackagingPairs(catalog, link.itemId);
+  return { visible: pairs.length > 0 || link.interstep !== undefined, pairs };
+}
+
 /** Type guard: a transport config that carries a trip (road + train + drone). */
 function isTripTransport(t: LinkTransport | undefined): t is TripTransport {
   return t !== undefined && t.mode !== "belt" && t.mode !== "pipe";
@@ -103,6 +119,7 @@ export function LinkInspector() {
   );
   const reconciliation = useAppStore((s) => s.reconciliation);
   const setLinkTransport = useAppStore((s) => s.setLinkTransport);
+  const setLinkInterstep = useAppStore((s) => s.setLinkInterstep);
   const setStageMachineCount = useAppStore((s) => s.setStageMachineCount);
   const selectLink = useAppStore((s) => s.selectLink);
 
@@ -111,14 +128,15 @@ export function LinkInspector() {
   if (link === undefined) return null;
 
   const item = catalog.items[link.itemId];
-  if (item === undefined) return null;
+  const packaging = packagingOptionsFor(catalog, link);
+  if (item === undefined && link.interstep === undefined) return null;
 
   const producer = stages[link.fromStageId];
   const consumer = stages[link.toStageId];
   const rate = linkRequiredRate(link, stages);
 
   const mode = currentMode(link);
-  const legal = legalModesFor(item);
+  const legal = item === undefined ? [] : legalModesFor(item);
   // Hoist to a local so the discriminant narrowing below sticks (TS won't narrow
   // a repeated `link.transport` property access on its own).
   const transport = link.transport;
@@ -128,7 +146,9 @@ export function LinkInspector() {
   // so the plan is non-null here (the `!`). An unsolved rate flows through as
   // computeLinkTransport's { kind: "unsolved" } plan, preserving the rendered
   // "solve both stages to size the fleet" line.
-  const plan = planForLink(link, catalog, stages)!;
+  const plan = item === undefined ? null : planForLink(link, catalog, stages);
+  const interstepPlan =
+    link.interstep === undefined ? null : deriveLinkPlan(catalog, link, stages);
 
   // The drawn straight-line distance between the stages (Stage 7 / Phase 3, Axis 3):
   // null when either endpoint is unsolved (not placed in the chain). Estimated-
@@ -166,83 +186,61 @@ export function LinkInspector() {
       </header>
 
       <p className="link-inspector-identity">
-        {stageName(producer)} → {stageName(consumer)} · {item.displayName}
+        {stageName(producer)} → {stageName(consumer)} ·{" "}
+        {item?.displayName ?? link.itemId}
         {rate !== null && <> · {formatRate(rate)}/min required</>}
       </p>
 
-      <label className="link-inspector-mode">
-        Mode{" "}
-        <select
-          value={mode}
-          onChange={(e) =>
-            setLinkTransport(
-              link.id,
-              defaultTransportFor(e.target.value as TransportMode),
-            )
-          }
-        >
-          {legal.map((m) => (
-            <option key={m} value={m}>
-              {MODE_LABEL[m]}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {/* Trip inputs for the modes that take one (belt/pipe are trip-less). The
-          discriminant check narrows link.transport to the trip-carrying arms. */}
-      {isTripTransport(transport) && (
-        <TripFields
-          transport={transport}
-          onChange={(t) => setLinkTransport(link.id, t)}
-        />
+      {packaging.visible && (
+        <label className="link-inspector-package-toggle">
+          <input
+            type="checkbox"
+            checked={link.interstep !== undefined}
+            onChange={(event) => {
+              if (!event.target.checked) {
+                setLinkInterstep(link.id, null);
+                return;
+              }
+              const pair = packaging.pairs[0];
+              if (pair !== undefined) {
+                setLinkInterstep(link.id, {
+                  packageRecipeId: pair.packageRecipe.id,
+                  clockPercentText: "100",
+                  returnTransport: { mode: "belt" },
+                });
+              }
+            }}
+          />{" "}
+          Package for transport
+        </label>
       )}
 
-      {/* Pipe derate (S8P2): an optional (0,100] percentage the pipe fleet math
-          applies. Empty ⇒ the key is stripped (never stored as ""), so plans
-          stay clean. Only rendered for pipe mode. */}
-      {transport?.mode === "pipe" && (
-        <PipeDerateField
-          transport={transport}
-          onChange={(t) => setLinkTransport(link.id, t)}
-        />
-      )}
-
-      {/* Train shared-end overrides (S8P2): flag an end whose station set is
-          billed elsewhere, excluding its 50+50c from this link's station MW.
-          Unchecked ⇒ the key is stripped; all-unchecked ⇒ sharedEnds itself is
-          stripped. Ends are named by the link's stage names. Train mode only. */}
-      {transport?.mode === "train" && (
-        <TrainSharedEndsFields
-          transport={transport}
+      {link.interstep !== undefined ? (
+        <InterstepEditor
+          catalog={catalog}
+          link={{ ...link, interstep: link.interstep }}
+          pairs={packaging.pairs}
+          plan={interstepPlan!}
+          distanceDm={distanceDm}
           fromName={stageName(producer)}
           toName={stageName(consumer)}
-          onChange={(t) => setLinkTransport(link.id, t)}
+          onIntentChange={(intent) => setLinkInterstep(link.id, intent)}
+          onForwardChange={(next) => setLinkTransport(link.id, next)}
         />
-      )}
-
-      {/* Results (solved-only). An unsolved link shows the mode select but no
-          fleet math; an errored config shows its message. The stage names feed
-          the train shared-end asymmetry footnote (S8P2). */}
-      <Results
-        plan={plan}
-        fromName={stageName(producer)}
-        toName={stageName(consumer)}
-      />
-
-      {/* Measure feed (Stage 7 / Phase 3, Axis 3): the drawn
-          straight-line distance. Estimated-mode links get a "use drawn distance"
-          button; measured links a readout only. Absent when either endpoint is
-          unsolved (no chain placement). */}
-      {distanceDm !== null && (
-        <MeasureFeed
-          distanceDm={distanceDm}
-          estimated={isEstimatedLink(link)}
-          onApply={() => {
-            const next = applyDrawnDistance(link, distanceDm);
-            if (next !== null) setLinkTransport(link.id, next);
-          }}
-        />
+      ) : (
+        item !== undefined &&
+        plan !== null && (
+          <RouteEditor
+            title="Mode"
+            transport={transport ?? defaultTransportFor(mode)}
+            legalModes={legal}
+            plan={plan}
+            distanceDm={distanceDm}
+            fromName={stageName(producer)}
+            toName={stageName(consumer)}
+            onChange={(next) => setLinkTransport(link.id, next)}
+          />
+        )
       )}
 
       {/* Apply affordance (Stage 8 / Phase 1, Axis 1): the match-demand button
@@ -261,17 +259,223 @@ export function LinkInspector() {
           }
         />
       )}
+    </div>
+  );
+}
 
-      {/* Pipe's caveat is plan-dependent (S8P2 — a derate replaces the static
-          nominal-ceiling line); other modes keep the fixed caveatFor sentence.
-          The continuous plan (pipe → { kind: "continuous" }) carries the parsed
-          derate; a parse-errored pipe config renders the static caveat (the
-          error already shows above via Results). */}
-      {caveatText(mode, plan) !== null && (
-        <p className="link-inspector-caveat">{caveatText(mode, plan)}</p>
+function InterstepEditor({
+  catalog,
+  link,
+  pairs,
+  plan,
+  distanceDm,
+  fromName,
+  toName,
+  onIntentChange,
+  onForwardChange,
+}: {
+  catalog: Catalog;
+  link: StageLink & { interstep: PackagingInterstep };
+  pairs: PackagingPair[];
+  plan: DerivedLinkPlan;
+  distanceDm: number | null;
+  fromName: string;
+  toName: string;
+  onIntentChange: (intent: PackagingInterstep) => void;
+  onForwardChange: (transport: LinkTransport) => void;
+}) {
+  const intent = link.interstep;
+  const selectedPairKnown = pairs.some(
+    (pair) => pair.packageRecipe.id === intent.packageRecipeId,
+  );
+
+  return (
+    <div className="link-inspector-interstep">
+      {pairs.length > 1 && (
+        <label className="link-inspector-field">
+          Packaging pair{" "}
+          <select
+            value={intent.packageRecipeId}
+            onChange={(event) =>
+              onIntentChange({
+                ...intent,
+                packageRecipeId: event.target.value,
+              })
+            }
+          >
+            {!selectedPairKnown && (
+              <option value={intent.packageRecipeId}>
+                {intent.packageRecipeId} (unavailable)
+              </option>
+            )}
+            {pairs.map((pair) => (
+              <option key={pair.packageRecipe.id} value={pair.packageRecipe.id}>
+                {catalog.recipes[pair.packageRecipe.id]?.displayName ??
+                  pair.packageRecipe.id}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <label className="link-inspector-field">
+        Packager clock %{" "}
+        <input
+          type="text"
+          inputMode="decimal"
+          value={intent.clockPercentText}
+          onChange={(event) =>
+            onIntentChange({ ...intent, clockPercentText: event.target.value })
+          }
+        />
+      </label>
+
+      {plan.status === "unavailable" ? (
+        <p className="link-inspector-error">{plan.error}</p>
+      ) : (
+        <>
+          <div className="link-inspector-interstep-summary">
+            {plan.packageMachines !== null &&
+              plan.unpackageMachines !== null &&
+              plan.power !== null && (
+                <p>
+                  {plan.packageMachines} package · {plan.unpackageMachines}{" "}
+                  unpackage · {powerText(plan.power)}
+                </p>
+              )}
+            {plan.cargoDemand !== null && plan.containerReturnRate !== null && (
+              <p>
+                {formatRate(plan.cargoDemand)}/min packaged ·{" "}
+                {formatRate(plan.containerReturnRate)}/min empty containers
+              </p>
+            )}
+          </div>
+
+          <RouteEditor
+            title="Forward mode"
+            transport={link.transport ?? { mode: "belt" }}
+            legalModes={legalModesFor(catalog.items[plan.packagedItemId]!)}
+            plan={plan.forwardTransport}
+            distanceDm={distanceDm}
+            fromName={fromName}
+            toName={toName}
+            onChange={onForwardChange}
+          />
+          <RouteEditor
+            title="Empty return mode"
+            transport={intent.returnTransport}
+            legalModes={legalModesFor(catalog.items[plan.containerItemId]!)}
+            plan={plan.returnTransport}
+            distanceDm={distanceDm}
+            fromName={fromName}
+            toName={toName}
+            onChange={(returnTransport) =>
+              onIntentChange({ ...intent, returnTransport })
+            }
+          />
+
+          <div className="link-inspector-advisories">
+            <p>seed the loop with containers</p>
+            <p>provide a separate return path</p>
+          </div>
+        </>
       )}
     </div>
   );
+}
+
+function RouteEditor({
+  title,
+  transport,
+  legalModes,
+  plan,
+  distanceDm,
+  fromName,
+  toName,
+  onChange,
+}: {
+  title: string;
+  transport: LinkTransport;
+  legalModes: readonly TransportMode[];
+  plan: ReturnType<typeof computeLinkTransport>;
+  distanceDm: number | null;
+  fromName: string;
+  toName: string;
+  onChange: (transport: LinkTransport) => void;
+}) {
+  return (
+    <section className="link-inspector-route" aria-label={title}>
+      {title !== "Mode" && <h3>{title.replace(/ mode$/, "")}</h3>}
+      <label className="link-inspector-mode">
+        {title}{" "}
+        <select
+          value={transport.mode}
+          onChange={(event) =>
+            onChange(defaultTransportFor(event.target.value as TransportMode))
+          }
+        >
+          {legalModes.map((candidate) => (
+            <option key={candidate} value={candidate}>
+              {MODE_LABEL[candidate]}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {isTripTransport(transport) && (
+        <TripFields
+          transport={transport}
+          labelPrefix={title === "Mode" ? "" : title.replace(/ mode$/, "")}
+          onChange={onChange}
+        />
+      )}
+      {transport.mode === "pipe" && (
+        <PipeDerateField
+          transport={transport}
+          labelPrefix={title === "Mode" ? "" : title.replace(/ mode$/, "")}
+          onChange={onChange}
+        />
+      )}
+      {transport.mode === "train" && (
+        <TrainSharedEndsFields
+          transport={transport}
+          fromName={fromName}
+          toName={toName}
+          labelPrefix={title === "Mode" ? "" : title.replace(/ mode$/, "")}
+          onChange={onChange}
+        />
+      )}
+
+      <Results plan={plan} fromName={fromName} toName={toName} />
+
+      {distanceDm !== null && (
+        <MeasureFeed
+          distanceDm={distanceDm}
+          estimated={
+            isTripTransport(transport) && transport.trip.kind === "estimated"
+          }
+          actionLabel={title === "Mode" ? "route" : title.replace(/ mode$/, "")}
+          onApply={() => {
+            const next = applyDrawnDistanceToTransport(transport, distanceDm);
+            if (next !== null) onChange(next);
+          }}
+        />
+      )}
+
+      {caveatText(transport.mode, plan) !== null && (
+        <p className="link-inspector-caveat">
+          {caveatText(transport.mode, plan)}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function powerText(
+  power: NonNullable<Extract<DerivedLinkPlan, { status: "ready" }>["power"]>,
+): string {
+  if (power.kind === "exact") return `${formatRate(power.mw)} MW`;
+  return `≈ ${Number(power.mw.toFixed(1))} MW`;
 }
 
 /**
@@ -338,9 +542,11 @@ function SupplyApply({
 
 function TripFields({
   transport,
+  labelPrefix,
   onChange,
 }: {
   transport: TripTransport;
+  labelPrefix: string;
   onChange: (t: LinkTransport) => void;
 }) {
   const isDrone = transport.mode === "drone";
@@ -355,7 +561,7 @@ function TripFields({
             checked={kind === "estimated"}
             onChange={() => onChange(toEstimated(transport))}
           />{" "}
-          estimated
+          {labelPrefix && `${labelPrefix} `}estimated
         </label>
         <label>
           <input
@@ -363,13 +569,13 @@ function TripFields({
             checked={kind === "measured"}
             onChange={() => onChange(toMeasured(transport))}
           />{" "}
-          measured
+          {labelPrefix && `${labelPrefix} `}measured
         </label>
       </div>
 
       {isDrone && (
         <label className="link-inspector-fuel">
-          Fuel{" "}
+          {labelPrefix && `${labelPrefix} `}Fuel{" "}
           <select
             value={transport.fuel}
             onChange={(e) =>
@@ -387,7 +593,10 @@ function TripFields({
 
       {kind === "estimated" ? (
         <label className="link-inspector-field">
-          {isDrone ? "round-trip flight distance (m)" : "one-way distance (m)"}{" "}
+          {labelPrefix && `${labelPrefix} `}
+          {isDrone
+            ? "round-trip flight distance (m)"
+            : "one-way distance (m)"}{" "}
           <input
             type="text"
             inputMode="decimal"
@@ -400,7 +609,7 @@ function TripFields({
       ) : (
         <>
           <label className="link-inspector-field">
-            round-trip time (s){" "}
+            {labelPrefix && `${labelPrefix} `}round-trip time (s){" "}
             <input
               type="text"
               inputMode="decimal"
@@ -412,7 +621,8 @@ function TripFields({
           </label>
           {isDrone && (
             <label className="link-inspector-field">
-              round-trip flight distance (m, optional){" "}
+              {labelPrefix && `${labelPrefix} `}round-trip flight distance (m,
+              optional){" "}
               <input
                 type="text"
                 inputMode="decimal"
@@ -443,10 +653,12 @@ function TripFields({
 function MeasureFeed({
   distanceDm,
   estimated,
+  actionLabel,
   onApply,
 }: {
   distanceDm: number;
   estimated: boolean;
+  actionLabel: string;
   onApply: () => void;
 }) {
   return (
@@ -460,7 +672,7 @@ function MeasureFeed({
           className="link-inspector-measure-apply"
           onClick={onApply}
         >
-          use drawn distance
+          use drawn distance for {actionLabel}
         </button>
       )}
     </div>
@@ -563,14 +775,16 @@ function TrainTable({
 
 function PipeDerateField({
   transport,
+  labelPrefix,
   onChange,
 }: {
   transport: Extract<LinkTransport, { mode: "pipe" }>;
+  labelPrefix: string;
   onChange: (t: LinkTransport) => void;
 }) {
   return (
     <label className="link-inspector-field link-inspector-derate">
-      derate %{" "}
+      {labelPrefix && `${labelPrefix} `}derate %{" "}
       <input
         type="text"
         inputMode="decimal"
@@ -598,11 +812,13 @@ function TrainSharedEndsFields({
   transport,
   fromName,
   toName,
+  labelPrefix,
   onChange,
 }: {
   transport: Extract<LinkTransport, { mode: "train" }>;
   fromName: string;
   toName: string;
+  labelPrefix: string;
   onChange: (t: LinkTransport) => void;
 }) {
   const shared = transport.sharedEnds;
@@ -616,7 +832,7 @@ function TrainSharedEndsFields({
             onChange(setSharedEnd(transport, "from", e.target.checked))
           }
         />{" "}
-        station at {fromName} is shared
+        {labelPrefix && `${labelPrefix} `}station at {fromName} is shared
       </label>
       <label>
         <input
@@ -626,7 +842,7 @@ function TrainSharedEndsFields({
             onChange(setSharedEnd(transport, "to", e.target.checked))
           }
         />{" "}
-        station at {toName} is shared
+        {labelPrefix && `${labelPrefix} `}station at {toName} is shared
       </label>
     </div>
   );

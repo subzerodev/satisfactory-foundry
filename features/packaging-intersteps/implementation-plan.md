@@ -179,30 +179,30 @@ while any writer still emits v7.
 - Modify: `src/ui/chain-view.test.ts`
 - Modify: `src/ui/app.css`
 
-- [ ] Write failing pure/DOM tests for checkbox visibility, sole/multiple pair
+- [x] Write failing pure/DOM tests for checkbox visibility, sole/multiple pair
       selection, enable defaults, pair/clock edits, disable, stale disable recovery,
       and independent route mode/trip editors.
-- [ ] Add a saved-intent DOM row where catalog replacement removed the linked
+- [x] Add a saved-intent DOM row where catalog replacement removed the linked
       item entirely. It must bypass the current item-missing early return, render a
       fallback item-id identity and checked recovery control, render no route math,
       and disable to a link with absent transport.
-- [ ] Add failing drawn-distance rows for forward and return train routes with
+- [x] Add failing drawn-distance rows for forward and return train routes with
       `{ from: true }` and `{ to: true }`. Applying estimated distance must target
       only the chosen route and preserve the physical-side key byte-for-byte.
-- [ ] Extract a small reusable route editor within `LinkInspector.tsx`; do not
+- [x] Extract a small reusable route editor within `LinkInspector.tsx`; do not
       create a new cross-module UI framework. Solid modes only for packaged routes.
-- [ ] Render package/unpackage counts, total power, packaged/min, empty/min,
+- [x] Render package/unpackage counts, total power, packaged/min, empty/min,
       forward result, return result, seed-container advisory, and separate-return
       advisory from `deriveLinkPlan` only. Render exact unavailable error and no
       stale counts.
-- [ ] Preserve current fluid identity/rate and material apply action. Make
+- [x] Preserve current fluid identity/rate and material apply action. Make
       `applyBlockFor` search specifically for material under-supply even when an
       interstep problem coexists.
-- [ ] Generalize drawn-distance helpers only enough to edit either route. Return
+- [x] Generalize drawn-distance helpers only enough to edit either route. Return
       train labels retain physical side semantics; no key inversion.
-- [ ] Verify all controls have native labels, keyboard access, stable dimensions,
+- [x] Verify all controls have native labels, keyboard access, stable dimensions,
       mobile wrapping, and no nested-card styling.
-- [ ] Run `npm test -- --run src/ui/LinkInspector.test.ts src/ui/LinkInspector.dom.test.tsx src/ui/chain-view.test.ts`,
+- [x] Run `npm test -- --run src/ui/LinkInspector.test.ts src/ui/LinkInspector.dom.test.tsx src/ui/chain-view.test.ts`,
       `npm run check`; commit the inspector unit.
 
 ### Task 6: Browser Evidence And Full Verification
