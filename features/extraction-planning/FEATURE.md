@@ -5,6 +5,7 @@
 **Current phase:** Phase 2 purity-mix design
 **Epic:** #114 (board #21, Stage 22 milestone 93)
 **Feature ticket:** #112
+**Phase 2 child:** #124
 
 ## Settled Product Direction
 
@@ -41,12 +42,12 @@ reconsideration:
 
 ### Phase 2 - purity mix
 
-- **Status:** ready for design after Phase 1 observation
+- **Status:** brainstorm/spec candidate under review
 - **Scope lock only:** use the shipped Impure/Normal/Pure multipliers
   0.5/1.0/2.0 to adjust the normal-purity requirement into a user-edited purity
   mix
-- **No implementation plan exists.** This is deliberate under the deferred-plans
-  rule.
+- **Candidate:** `phase-2/brainstorm-spec.md`
+- **No implementation plan exists yet.** It follows design convergence.
 
 ## Dependency Shape
 
