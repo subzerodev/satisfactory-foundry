@@ -81,6 +81,7 @@ export interface LaneTrack {
     x2: number;
     beltIndex: number;
     peakFlow: Fraction; // solver's span maximum, passed through for the title
+    parallelCount: number;
   }[];
   seams: number[];
 }
@@ -234,6 +235,7 @@ function feedTrack(
       x2: boundaryX(s.toMachine, pitch),
       beltIndex: s.beltIndex,
       peakFlow: s.peakFlow,
+      parallelCount: s.parallelCount,
     })),
     // Interior seams: each segment start boundary except the head (machine 1).
     seams: lane.segments
@@ -262,6 +264,7 @@ function outputTrack(
       x2: boundaryX(s.toMachine, pitch),
       beltIndex: s.beltIndex,
       peakFlow: s.peakFlow,
+      parallelCount: s.parallelCount,
     })),
     seams: lane.segments
       .filter((s) => s.fromMachine > 1)

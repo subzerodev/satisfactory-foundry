@@ -43,6 +43,7 @@ export interface BusSegment {
   toMachine: number;
   peakFlow: Fraction; // span maximum (feed: at head; output: at tail)
   beltIndex: number; // attribution: the belt whose entry/break-out starts this span
+  parallelCount: number; // derived physical bus lines; feed 1|2, output always 1
 }
 
 export interface FeedLaneResult {
@@ -413,14 +414,23 @@ export function solveFeedLane(
     }
     const span = end - start + 1;
     const peakFlow = available; // feed side: peak at the head, just after entry
+    // A normal incoming slot fits one unlocked line. Head-first drain leaves
+    // survivedIn < d, while d <= B and belt.capacity <= B, so its peak is <2B:
+    // exact ceil division is therefore bounded to 1|2. An oversized explicit
+    // slot remains one invalid line and keeps the capacity finding below.
+    const bundleEligible = belt.capacity.lte(B);
+    const parallelCount = bundleEligible
+      ? Math.max(1, Number(peakFlow.ceilDiv(B)))
+      : 1;
     segments.push({
       fromMachine: start,
       toMachine: end,
       peakFlow,
       beltIndex: belt.index,
+      parallelCount,
     });
 
-    if (peakFlow.gt(B)) {
+    if (!bundleEligible && peakFlow.gt(B)) {
       base.findings.push({
         type: "segment-over-capacity",
         itemId: lane.itemId,
@@ -550,6 +560,7 @@ export function solveOutputLane(
       toMachine: end,
       peakFlow: load,
       beltIndex: b,
+      parallelCount: 1,
     });
 
     // Over-capacity iff the (overridden) belt cannot carry its span load. On
