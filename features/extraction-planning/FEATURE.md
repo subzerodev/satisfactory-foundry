@@ -206,3 +206,6 @@ do not satisfy that contract. Task 6 therefore remains unchanged.
 - **r8:** folded the last current-shape test labels and generalized the shared
   validator comment to v3-v6; remaining v5 references describe v5 migration
   inputs and validators only.
+- **r9:** folded the final historical v2/v3 fixture labels and corrected the
+  shared validator comment's unmatched parenthesis. Runtime code remained the
+  correctness-approved r6 artifact.

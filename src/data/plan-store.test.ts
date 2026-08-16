@@ -121,7 +121,7 @@ function sampleSelection(): Selection {
   };
 }
 
-/** A well-formed v2 file (the current save shape): named stages + index links. */
+/** A well-formed historical v2 writer shape: named stages + index links. */
 function samplePlan(overrides?: Partial<PlanFileV2>): PlanFileV2 {
   return {
     format_version: 2,
@@ -140,7 +140,7 @@ function samplePlan(overrides?: Partial<PlanFileV2>): PlanFileV2 {
   };
 }
 
-/** A well-formed v3 file (the current save shape): v2 + optional link transport. */
+/** A well-formed historical v3 writer shape: v2 + optional link transport. */
 function samplePlanV3(overrides?: Partial<PlanFileV3>): PlanFileV3 {
   return {
     format_version: 3,
