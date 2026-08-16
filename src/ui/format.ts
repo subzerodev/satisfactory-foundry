@@ -68,11 +68,11 @@ export function firstLockedTierForOneLine(
   peakFlow: Fraction,
   tiers: TierTable,
   unlockedCount: number,
-): { capacity: Fraction; label: string } | null {
+): string | null {
   for (let i = unlockedCount; i < tiers[kind].length; i++) {
     const capacity = tiers[kind][i]!;
     if (capacity.gte(peakFlow)) {
-      return { capacity, label: tierLabel(kind, capacity, tiers) };
+      return tierLabel(kind, capacity, tiers);
     }
   }
   return null;

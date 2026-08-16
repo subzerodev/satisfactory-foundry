@@ -58,7 +58,7 @@ export function SummaryCards({
               {lane.belts.length} × {lane.kind}
               {bundled.length > 0 && " · bus up to 2 parallel"}
               {oneLineTier !== null &&
-                ` · ${oneLineTier.label} supports one bus line`}
+                ` · ${oneLineTier} supports one bus line`}
             </span>
           </div>
         );

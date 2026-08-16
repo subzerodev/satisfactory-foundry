@@ -136,12 +136,18 @@ function LaneG({
       </text>
       {track.segments.map((seg) => {
         const belt = belts[seg.beltIndex]!;
-        const color = colorForCapacity(kind, belt.capacity, tiers);
         const errored = segmentErrored(
           findings,
           seg.fromMachine,
           seg.toMachine,
         );
+        const stroke = errored
+          ? ERROR_COLOR
+          : colorForCapacity(
+              kind,
+              seg.parallelCount === 2 ? busCapacity : belt.capacity,
+              tiers,
+            );
         const oneLineTier =
           seg.parallelCount === 2
             ? firstLockedTierForOneLine(
@@ -155,7 +161,7 @@ function LaneG({
           seg,
           busCapString,
           seg.parallelCount,
-          oneLineTier?.label ?? null,
+          oneLineTier,
         );
         if (seg.parallelCount === 2) {
           const railClass = `parallel-rail${errored ? " seg-error" : ""}${pipeClass}`;
@@ -179,11 +185,7 @@ function LaneG({
                 x2={seg.x2}
                 y1={track.busY - PARALLEL_RAIL_OFFSET}
                 y2={track.busY - PARALLEL_RAIL_OFFSET}
-                stroke={
-                  errored
-                    ? ERROR_COLOR
-                    : colorForCapacity(kind, busCapacity, tiers)
-                }
+                stroke={stroke}
               />
               <line
                 className={railClass}
@@ -191,11 +193,7 @@ function LaneG({
                 x2={seg.x2}
                 y1={track.busY + PARALLEL_RAIL_OFFSET}
                 y2={track.busY + PARALLEL_RAIL_OFFSET}
-                stroke={
-                  errored
-                    ? ERROR_COLOR
-                    : colorForCapacity(kind, busCapacity, tiers)
-                }
+                stroke={stroke}
               />
             </g>
           );
@@ -208,7 +206,7 @@ function LaneG({
             x2={seg.x2}
             y1={track.busY}
             y2={track.busY}
-            stroke={errored ? ERROR_COLOR : color}
+            stroke={stroke}
             onMouseEnter={(e) => onTip(tip, e)}
             onMouseMove={(e) => onTip(tip, e)}
             onMouseLeave={offTip}
