@@ -68,10 +68,13 @@ every state reachable through public actions therefore remains v8-saveable.
 Tests pin refused illegal forward/return edits, unchanged reconciliation, and
 save/reload of the retained valid state. File validation and derive independently
 retain their defensive illegal-mode rejection for malformed external state.
-`addLink` accepts an ordinary-link input type that excludes `interstep`; its
+`addLink` accepts `NewStageLink = Omit<StageLink, "id" | "interstep"> & {
+interstep?: never }`, an exact negative constraint rather than plain `Omit`; its
 runtime implementation constructs only the known ordinary fields and refuses an
 extra interstep property rather than spreading it. New links can gain packaging
-intent only through guarded `setLinkInterstep`. A bypass attempt is pinned.
+intent only through guarded `setLinkInterstep`. A compile-time test passes a
+wider `StageLink` variable carrying intent (not merely an object literal) and
+requires rejection; a runtime bypass attempt is also pinned.
 Changing the pair keeps clock; disabling removes intent. `returnTransport`
 configures the empty-container route independently and defaults to belt.
 Removing a link removes it naturally.
