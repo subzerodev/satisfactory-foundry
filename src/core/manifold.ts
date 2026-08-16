@@ -237,11 +237,11 @@ function scaledRate(input: StageInput, lane: LaneInput): Fraction {
 }
 
 /**
- * A lane is degenerate — solves to empty arrays with no findings — when the
- * stage has no machines or the lane's clock-scaled rate is zero. The check
- * precedes every lane solve: a zero-machine stage warns about nothing, oversize
- * overrides included (the stale-overrides finding fires only when a lane
- * actually solves, i.e. N > 0).
+ * After negative overrides have been rejected, a lane is degenerate — solves
+ * to empty arrays with no findings — when the stage has no machines or the
+ * lane's clock-scaled rate is zero. Thus a zero-machine stage warns only about
+ * a negative override; oversize arrays remain silent until a lane actually
+ * solves (N > 0 and a nonzero rate).
  */
 function isDegenerate(input: StageInput, rate: Fraction): boolean {
   return input.machineCount === 0 || rate.isZero();

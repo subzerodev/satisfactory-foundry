@@ -1,6 +1,6 @@
 # Negative load override validation (#121)
 
-Status: Tier 2 brainstorm + specification, awaiting design review.
+Status: Frozen after design correctness convergence and simplify disposition.
 
 ## Problem
 
