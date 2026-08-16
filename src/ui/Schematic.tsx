@@ -32,12 +32,14 @@ interface TooltipState {
   text: string;
   x: number;
   y: number;
+  maxWidth: number;
 }
 
 /** Tooltip offset from the cursor (px), and the clamp margin from the container
  *  edges so a tooltip near the right/bottom edge doesn't overflow. */
 const TIP_OFFSET = 12;
 const TIP_CLAMP = 8;
+const TIP_MAX_WIDTH = 280;
 const PARALLEL_RAIL_OFFSET = 4;
 const PARALLEL_LABEL_MIN_WIDTH = 20;
 
@@ -345,32 +347,44 @@ export function Schematic({
   const containerRef = useRef<HTMLDivElement>(null);
   const [tip, setTip] = useState<TooltipState | null>(null);
 
-  const showTip = (text: string, e: React.MouseEvent) => {
-    const box = containerRef.current?.getBoundingClientRect();
-    if (box === undefined) return;
-    const x = Math.min(
-      e.clientX - box.left + TIP_OFFSET,
-      box.width - TIP_CLAMP,
+  const horizontalTipPlacement = (
+    container: HTMLDivElement,
+    anchorClientX: number,
+  ): { x: number; maxWidth: number } => {
+    const box = container.getBoundingClientRect();
+    const maxWidth = Math.min(
+      TIP_MAX_WIDTH,
+      Math.max(0, box.width - 2 * TIP_CLAMP),
     );
+    const minX = container.scrollLeft + TIP_CLAMP;
+    const maxX = container.scrollLeft + box.width - TIP_CLAMP - maxWidth;
+    const anchoredX =
+      anchorClientX - box.left + container.scrollLeft + TIP_OFFSET;
+    return { x: Math.max(minX, Math.min(anchoredX, maxX)), maxWidth };
+  };
+
+  const showTip = (text: string, e: React.MouseEvent) => {
+    const container = containerRef.current;
+    if (container === null) return;
+    const box = container.getBoundingClientRect();
+    const { x, maxWidth } = horizontalTipPlacement(container, e.clientX);
     const y = Math.min(
       e.clientY - box.top + TIP_OFFSET,
       box.height - TIP_CLAMP,
     );
-    setTip({ text, x, y });
+    setTip({ text, x, y, maxWidth });
   };
   const showFocusTip = (text: string, e: React.FocusEvent<SVGGElement>) => {
-    const containerBox = containerRef.current?.getBoundingClientRect();
-    if (containerBox === undefined) return;
+    const container = containerRef.current;
+    if (container === null) return;
+    const containerBox = container.getBoundingClientRect();
     const glyphBox = e.currentTarget.getBoundingClientRect();
-    const x = Math.min(
-      glyphBox.right - containerBox.left + TIP_OFFSET,
-      containerBox.width - TIP_CLAMP,
-    );
+    const { x, maxWidth } = horizontalTipPlacement(container, glyphBox.right);
     const y = Math.min(
       glyphBox.top - containerBox.top + TIP_OFFSET,
       containerBox.height - TIP_CLAMP,
     );
-    setTip({ text, x, y });
+    setTip({ text, x, y, maxWidth });
   };
   const hideTip = () => setTip(null);
 
@@ -460,7 +474,10 @@ export function Schematic({
         })}
       </svg>
       {tip !== null && (
-        <div className="tooltip" style={{ left: tip.x, top: tip.y }}>
+        <div
+          className="tooltip"
+          style={{ left: tip.x, top: tip.y, maxWidth: tip.maxWidth }}
+        >
           {tip.text}
         </div>
       )}

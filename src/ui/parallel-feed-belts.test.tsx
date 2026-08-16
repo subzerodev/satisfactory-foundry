@@ -302,6 +302,7 @@ describe("parallel feed-bus schematic", () => {
     const container = host.querySelector(".schematic")!;
     const glyph = host.querySelector<SVGGElement>("[data-parallel-segment]")!;
     Object.defineProperty(container, "getBoundingClientRect", {
+      configurable: true,
       value: () => ({
         left: 10,
         top: 5,
@@ -315,6 +316,7 @@ describe("parallel feed-bus schematic", () => {
       }),
     });
     Object.defineProperty(glyph, "getBoundingClientRect", {
+      configurable: true,
       value: () => ({
         left: 60,
         top: 20,
@@ -340,10 +342,34 @@ describe("parallel feed-bus schematic", () => {
     expect(tooltip.textContent).toBe(glyph.getAttribute("aria-label"));
     expect(tooltip.style.left).toBe("122px");
     expect(tooltip.style.top).toBe("27px");
+    expect(tooltip.style.maxWidth).toBe("280px");
     act(() =>
       glyph.dispatchEvent(new FocusEvent("focusout", { bubbles: true })),
     );
     expect(host.querySelector(".tooltip")).toBeNull();
+
+    container.scrollLeft = 400;
+    Object.defineProperty(glyph, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        left: 440,
+        top: 20,
+        right: 500,
+        bottom: 28,
+        width: 60,
+        height: 8,
+        x: 440,
+        y: 20,
+        toJSON: () => {},
+      }),
+    });
+    act(() =>
+      glyph.dispatchEvent(new FocusEvent("focusin", { bubbles: true })),
+    );
+    const scrolledTooltip = host.querySelector<HTMLElement>(".tooltip")!;
+    expect(scrolledTooltip.style.left).toBe("612px");
+    expect(scrolledTooltip.style.maxWidth).toBe("280px");
+    expect(scrolledTooltip.textContent).toBe(glyph.getAttribute("aria-label"));
 
     act(() => root.unmount());
     host.remove();
