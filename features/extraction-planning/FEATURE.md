@@ -198,3 +198,5 @@ do not satisfy that contract. Task 6 therefore remains unchanged.
   stable; Propose and extraction planning share one exact clock parser.
 - **r5:** folded malformed v6 extraction-array rejection and removed the
   duplicated pipe noun from exact output guidance.
+- **r6:** correctness converged; folded the remaining documentation nit by
+  updating all cited persistence comments from v5-current to v6-current.

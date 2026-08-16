@@ -409,7 +409,7 @@ export type Store = AppState & Actions;
  * Stage 19 (#92): the export-all bundle envelope. A distinct `kind` string makes
  * single-file-vs-bundle sniffing exact (a per-plan file has no `kind`), and
  * `format_version` reserves bundle evolution independently of the per-plan file
- * versions. Each `plans[]` entry is EXACTLY a per-plan file object (latest v5 as
+ * versions. Each `plans[]` entry is EXACTLY a per-plan file object (latest v6 as
  * written by exportPlan's source), revived on import through the SAME
  * `validatePlanFile` path — one migration surface, no second format to version.
  */
@@ -1943,9 +1943,8 @@ export function createAppStore(storage?: StateStorage) {
             return enqueue(async () => {
               set({ planError: null });
               try {
-                // Load with origin: rebuild seeds userPlaced from the explicit
-                // flag for a v5-native row, else from position-presence (Stage 10
-                // / Phase 1 — the origin is unrecoverable after migration).
+                // Load with origin: validation returns v6, whose required
+                // userPlaced flag already materializes native or migrated origin.
                 const file = await loadPlanFile(id);
                 if (file === null) {
                   // Corrupt/missing → planError, state untouched.
@@ -1988,9 +1987,8 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                // loadPlanFile returns v5 (migrating older rows), so this spread
-                // widens to v5 — renaming an older row rewrites it as v5,
-                // consistent with the save-over model (any write persists v5).
+                // loadPlanFile returns v6 (migrating older rows), so renaming an
+                // older row rewrites it as v6 under the save-over model.
                 const renamed: PlanFileV6 = {
                   ...plan,
                   name: trimmed,

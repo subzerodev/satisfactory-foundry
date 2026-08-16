@@ -233,8 +233,8 @@ export async function listPlans(): Promise<PlanListEntry[]> {
   const rows = await db.getAllWithKeys<unknown>(PLANS_STORE);
   const entries: PlanListEntry[] = [];
   for (const { key, value } of rows) {
-    // Any loadable format renders a row: v1/v2/v3/v4 migrate, v5 is the current
-    // shape. Header fields co-locate across all five.
+    // Any loadable format renders a row: v1-v5 migrate, v6 is the current
+    // shape. Header fields co-locate across all six.
     if (
       isPlanFileV6(value) ||
       isPlanFileV5(value) ||
@@ -252,10 +252,10 @@ export async function listPlans(): Promise<PlanListEntry[]> {
 
 /**
  * Validate an arbitrary value as a plan file THIS build can use, returning a
- * `PlanFileV5` (migrating a valid v4/v3/v2/v1 in memory) or null on
+ * `PlanFileV6` (migrating a valid v5/v4/v3/v2/v1 in memory) or null on
  * corrupt/foreign. The single acceptance rule shared by `loadPlan` (IDB rows)
- * and `importPlan` (uploaded exports): v5 first, else v4 via `migrateV4`, else
- * v3 via `migrateV4∘migrateV3`, else v2/v1 chained up.
+ * and `importPlan` (uploaded exports): v6 first, then each older format through
+ * its migration chain.
  */
 export function validatePlanFile(value: unknown): PlanFileV6 | null {
   if (isPlanFileV6(value)) return value;
@@ -270,11 +270,10 @@ export function validatePlanFile(value: unknown): PlanFileV6 | null {
 }
 
 /**
- * Load + validate one plan, returning a `PlanFileV5` (migrating v4/v3/v2/v1 files
- * in memory). Returns null on missing OR corrupt-for-this-build. V5 is tried
- * first; older files fall back through `migrateV4`/`migrateV3`/`migrateV2`/
- * `migrateV1`. Migration is read-side only — the stored row is untouched until
- * the next save-over (v5).
+ * Load + validate one plan, returning a `PlanFileV6` (migrating v5 and older
+ * files in memory). Returns null on missing OR corrupt-for-this-build. V6 is
+ * tried first; older files follow their migration chain. Migration is read-side
+ * only — the stored row is untouched until the next save-over (v6).
  */
 export async function loadPlan(id: string): Promise<PlanFileV6 | null> {
   const db = await openDb();
