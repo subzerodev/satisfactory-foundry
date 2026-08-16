@@ -3,6 +3,23 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-16 — Raw inputs now show the extractors they need
+
+> Hey Michael — click a raw input on the factory canvas and the planner now
+> turns its live demand into an exact extraction plan. Pick the Miner, Water
+> Extractor or Oil Extractor, set its clock up to 250%, and it shows the count,
+> total supplied, spare rate, estimated power, and the belt or pipe each
+> extractor needs. The choice is saved with the plan. Water and Crude Oil start
+> with their one standalone extractor selected; solids wait for your Miner
+> choice. Nitrogen and other Resource Well routes are named honestly instead of
+> being shown as fake Miner counts.
+>
+> This check is per extractor, not the old aggregate-bus warning from the Wet
+> Concrete screenshot. That separate warning was fixed by allowing parallel
+> belts and pipes: 840/min can use two Mk5 belts. Here, a Mk3 Miner at 250% makes
+> 600/min, so one Mk5 belt is enough; only a single extractor output above the
+> unlocked line capacity is warned.
+
 ## 2026-08-16 — Big manifolds can use parallel belts
 
 > Hey Michael — you were right about the Wet Concrete plan. Its 106 Refineries

@@ -2,7 +2,7 @@
 
 **Ticket:** Forgejo #112
 **Branch:** `feature/s22-112-extraction-p1-design`
-**Status:** implementation complete; post-simplify correctness recheck pending
+**Status:** accepted and merged to `develop` at `3ca5f71`
 
 ## Delivered
 

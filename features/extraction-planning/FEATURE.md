@@ -1,8 +1,8 @@
 # Extraction planning (Stage 22 arc)
 
 **Started:** 2026-08-16
-**Status:** IN PROGRESS - Phase 1 simplify folds complete; correctness recheck pending
-**Current phase:** Phase 1 post-simplify correctness recheck
+**Status:** IN PROGRESS - Phase 1 merged; Phase 2 ready for design
+**Current phase:** Phase 2 purity-mix design
 **Epic:** #114 (board #21, Stage 22 milestone 93)
 **Feature ticket:** #112
 
@@ -26,7 +26,7 @@ reconsideration:
 
 ### Phase 1 - normal-purity requirement
 
-- **Status:** implementation complete; post-simplify correctness recheck pending
+- **Status:** merged to `develop` at `3ca5f71`
 - **Scope:** structured extractor data, clickable raw inputs, selected extractor,
   clock, exact count/surplus, estimated power, per-extractor belt/pipe saturation,
   and per-plan persistence of the user's extractor choice
@@ -41,7 +41,7 @@ reconsideration:
 
 ### Phase 2 - purity mix
 
-- **Status:** deferred until Phase 1 lands and is observed
+- **Status:** ready for design after Phase 1 observation
 - **Scope lock only:** use the shipped Impure/Normal/Pure multipliers
   0.5/1.0/2.0 to adjust the normal-purity requirement into a user-edited purity
   mix
