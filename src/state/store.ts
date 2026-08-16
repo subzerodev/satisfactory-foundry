@@ -486,7 +486,17 @@ function parseOverrideSide(
       const cell = arr[i] ?? null;
       // A malformed string throws here — Fraction.parse rejects it — and the
       // derive() catch routes it to 'bad-override'.
-      parsed[i] = cell === null ? null : Fraction.parse(cell);
+      if (cell === null) {
+        parsed[i] = null;
+        continue;
+      }
+      const value = Fraction.parse(cell);
+      if (value.isNegative()) {
+        throw new RangeError(
+          `lane ${itemId} override ${i + 1} must be zero or positive; got ${value.toString()}.`,
+        );
+      }
+      parsed[i] = value;
     }
     out[itemId] = parsed;
   }
