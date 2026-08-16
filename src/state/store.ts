@@ -174,6 +174,18 @@ export interface StageLink {
   transport?: LinkTransport;
 }
 
+export interface ProposedByproductRoute {
+  fromItemId: string;
+  itemId: string;
+  toItemId: string;
+}
+
+export interface ApplyChainProposalOptions {
+  clockPercentText?: string;
+  byproductRoutes?: ProposedByproductRoute[];
+  catalog?: Catalog;
+}
+
 export interface AppState {
   catalog: CatalogState;
   /**
@@ -358,7 +370,10 @@ export interface Actions {
    * user-intent-text idiom. The applied graph then solves each stage at that
    * clock natively (existing per-stage clock support). Defaults to "100".
    */
-  applyChainProposal(proposal: ChainProposal, clockPercentText?: string): void;
+  applyChainProposal(
+    proposal: ChainProposal,
+    options?: ApplyChainProposalOptions,
+  ): void;
   refreshPlans(): Promise<void>;
   savePlanAs(name: string): Promise<void>;
   loadPlan(id: string): Promise<void>;
@@ -822,7 +837,7 @@ function applyProposalToSlice(
   slice: GraphSlice,
   placementSeq: number,
   proposal: ChainProposal,
-  clockPercentText: string,
+  options: ApplyChainProposalOptions,
 ): GraphSlice & { placementSeq: number } {
   if (proposal.stages.length === 0) {
     return { ...slice, placementSeq };
@@ -834,6 +849,7 @@ function applyProposalToSlice(
       : recipeId;
   // Tiers seed from the active stage (the canonical global tiers value).
   const globalTiers = slice.selection.unlockedTiers;
+  const clockPercentText = options.clockPercentText ?? "100";
 
   // Fresh uuid per proposed item, keyed by item id (links resolve through this).
   const idByItem = new Map<string, string>();
@@ -880,6 +896,45 @@ function applyProposalToSlice(
     toStageId: idByItem.get(l.toItemId)!,
     itemId: l.fromItemId,
   }));
+  const usedTargetLanes = new Set(
+    newLinks.map((l) => `${l.toStageId} ${l.itemId}`),
+  );
+  const usedSourceOutputs = new Set<string>();
+  const catalogSnapshot = options.catalog;
+  if (catalogSnapshot !== undefined) {
+    for (const route of options.byproductRoutes ?? []) {
+      const fromStage = proposal.stages.find(
+        (stage) => stage.itemId === route.fromItemId,
+      );
+      const toStage = proposal.stages.find(
+        (stage) => stage.itemId === route.toItemId,
+      );
+      if (fromStage === undefined || toStage === undefined) continue;
+      const fromId = idByItem.get(route.fromItemId);
+      const toId = idByItem.get(route.toItemId);
+      if (fromId === undefined || toId === undefined || fromId === toId) {
+        continue;
+      }
+      const fromRecipe = catalogSnapshot.recipes[fromStage.recipeId];
+      const toRecipe = catalogSnapshot.recipes[toStage.recipeId];
+      if (fromRecipe === undefined || toRecipe === undefined) continue;
+      if (!fromRecipe.outputs.some((o) => o.itemId === route.itemId)) continue;
+      if (!toRecipe.inputs.some((i) => i.itemId === route.itemId)) continue;
+      const targetKey = `${toId} ${route.itemId}`;
+      if (usedTargetLanes.has(targetKey)) continue;
+      const sourceKey = `${fromId} ${route.itemId}`;
+      if (usedSourceOutputs.has(sourceKey)) continue;
+      const link: StageLink = {
+        id: crypto.randomUUID(),
+        fromStageId: fromId,
+        toStageId: toId,
+        itemId: route.itemId,
+      };
+      newLinks.push(link);
+      usedTargetLanes.add(targetKey);
+      usedSourceOutputs.add(sourceKey);
+    }
+  }
 
   // Target stage becomes active (focus lands on the user's intent). The proposal
   // doesn't carry the target id, but the target is the unique produced item that
@@ -1725,7 +1780,7 @@ export function createAppStore(storage?: StateStorage) {
 
           applyChainProposal(
             proposal: ChainProposal,
-            clockPercentText = "100",
+            options: ApplyChainProposalOptions = {},
           ) {
             // Append the proposed stages/links (fresh uuids), derive + reconcile
             // + mirror, and focus the target stage. Additive rebuildFromPlan
@@ -1733,12 +1788,7 @@ export function createAppStore(storage?: StateStorage) {
             // helper so the monotonic counter stays never-reused. The clock text
             // (S20 P2) seeds every applied stage's clockPercentText.
             set((s) =>
-              applyProposalToSlice(
-                s,
-                s.placementSeq,
-                proposal,
-                clockPercentText,
-              ),
+              applyProposalToSlice(s, s.placementSeq, proposal, options),
             );
           },
 

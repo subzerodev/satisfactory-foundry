@@ -285,4 +285,99 @@ describe("AltCompare SSR smoke", () => {
       store.getInitialState = realInitial;
     }
   });
+
+  it("marks the ALTERNATE row, whichever row is current (#116)", () => {
+    // Same getInitialState seam as the test above (SSR reads the initial
+    // snapshot, not getState). Rendered TWICE — once with each recipe current —
+    // asserting the SAME markup both times: the marker follows the RECIPE, not
+    // the selection. A single pass would not discriminate; with one alternate
+    // among two candidates isAlternate is a bijection with isCurrent whichever
+    // recipe is current, so `{!row.isCurrent && …}` (or its mirror) emits
+    // byte-identical HTML at one polarity.
+    const store = appStore as unknown as {
+      getInitialState: () => unknown;
+      getState: () => unknown;
+    };
+    const realInitial = store.getInitialState;
+    const renderWithCurrent = (recipeId: string): string => {
+      // Built once per render and returned by reference — getServerSnapshot must
+      // be cached; a fresh object per hook is a hazard if this ever hydrates.
+      const seeded = {
+        ...(store.getState() as object),
+        catalog: { status: "ready" as const, catalog: CAT },
+        activeStageId: "s1",
+        selection: selection(recipeId),
+        solve: solvedWith("ingot", 120),
+      };
+      store.getInitialState = () => seeded;
+      return renderToStaticMarkup(<AltCompare />);
+    };
+    // Both halves are scoped to the CELL on purpose: renderToStaticMarkup
+    // returns ONE flat string holding both rows, so a bare not.toContain("(alt)")
+    // is unusable — it always fails, since the alternate row legitimately
+    // contains "(alt)". Cell-scoping is what makes absence testable at all.
+    // The parens are load-bearing too, but NOT because of the fixture's name:
+    // toContain is case-sensitive, and "Alternate" does not contain "alt". The
+    // markup is saturated with alt-compare / alt-compare-mark / alt-compare-
+    // current class names, so a bare "alt" matches unconditionally.
+    const marked =
+      '<td>Alternate<span class="alt-compare-mark"> (alt)</span></td>';
+    try {
+      const stdCurrent = renderWithCurrent("r_std");
+      expect(stdCurrent).toContain(marked);
+      expect(stdCurrent).toContain("<td>Standard</td>");
+
+      const altCurrent = renderWithCurrent("r_alt");
+      expect(altCurrent).toContain(marked);
+      expect(altCurrent).toContain("<td>Standard</td>");
+    } finally {
+      store.getInitialState = realInitial;
+    }
+  });
+
+  it("labels tier-locked candidates without hiding or disabling apply (#115)", () => {
+    // The explicit unlockedTier is the load-bearing part of this pin:
+    // proposePrefs defaults it to null ("all"), which would make a no-setup test
+    // pass even if tier-lock labeling were never wired.
+    const lockedCat: Catalog = { ...CAT, recipeUnlocks: { r_alt: 1 } };
+    const store = appStore as unknown as {
+      getInitialState: () => unknown;
+      getState: () => unknown;
+    };
+    const realInitial = store.getInitialState;
+    const renderAtTier = (unlockedTier: number | null): string => {
+      const current = store.getState() as { proposePrefs: unknown };
+      const seeded = {
+        ...(current as object),
+        catalog: { status: "ready" as const, catalog: lockedCat },
+        activeStageId: "s1",
+        selection: selection("r_std"),
+        solve: solvedWith("ingot", 120),
+        proposePrefs: {
+          ...(current.proposePrefs as object),
+          unlockedTier,
+        },
+      };
+      store.getInitialState = () => seeded;
+      return renderToStaticMarkup(<AltCompare />);
+    };
+    const lockedCell =
+      '<td>Alternate<span class="alt-compare-mark"> (alt)</span><span class="alt-compare-mark"> (locked T1)</span></td>';
+    try {
+      const tier0 = renderAtTier(0);
+      expect(tier0).toContain(lockedCell);
+      expect(tier0).toContain("<td>Standard</td>");
+      expect(tier0).toContain(
+        '<button type="button" class="alt-compare-apply">apply</button>',
+      );
+
+      const allTiers = renderAtTier(null);
+      expect(allTiers).not.toContain("locked T1");
+      expect(allTiers).toContain(
+        '<td>Alternate<span class="alt-compare-mark"> (alt)</span></td>',
+      );
+    } finally {
+      store.getInitialState = realInitial;
+    }
+  });
 });

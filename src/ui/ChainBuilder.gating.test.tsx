@@ -19,7 +19,12 @@
  *     identically at every seam. A missed seam is a SILENT behavioural
  *     regression, and an adapter-level test cannot catch it — the adapter is
  *     handed whichever catalog the component chose, which is the very thing
- *     under test. (A branded `GatedCatalog` type is deferred to #106.)
+ *     under test. A branded `GatedCatalog` was measured and DECLINED (#106,
+ *     won't-do): 9 of the 15 value-passing gated/ungated slips were already
+ *     caught at #106 close; #117 added the constrained-recovery label row; and
+ *     #118 added four stale-preview repropose rows. These rows ARE the
+ *     enforcement, not a stopgap awaiting a type. Do not retire them as
+ *     "render-only".
  *
  * So this ONE file runs in jsdom (scoped by the pragma above; the global
  * environment and every other test file are untouched) and drives React with
@@ -268,17 +273,18 @@ function click(el: HTMLElement): void {
   });
 }
 
+const proposeButton = (): HTMLButtonElement =>
+  $$<HTMLButtonElement>(".chain-builder-controls button").find(
+    (b) => b.textContent === "Propose",
+  )!;
+
 /** Propose `plate` at 60/min — the entry into the preview block every seam
  *  below lives inside. */
 function propose(): void {
   const selects = $$<HTMLSelectElement>(".chain-builder-controls select");
   chooseOption(selects[0]!, "plate");
   typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "60");
-  click(
-    $$<HTMLButtonElement>(".chain-builder-controls button").find(
-      (b) => b.textContent === "Propose",
-    )!,
-  );
+  click(proposeButton());
 }
 
 const tierSelect = (): HTMLSelectElement =>
@@ -303,6 +309,13 @@ function exclusionCheckbox(machineName: string): HTMLInputElement {
 const stagePicker = (): HTMLSelectElement =>
   $<HTMLSelectElement>('select[aria-label="pick a recipe for this stage"]');
 
+/** The constrained-recovery row's inline picker option labels. */
+function constrainedPickerOptions(): string[] {
+  return $$<HTMLOptionElement>("p.chain-builder-constrained select option").map(
+    (o) => o.textContent!,
+  );
+}
+
 /** The stage row for `Item …` in the rendered preview. Matched on the row
  *  sentence's "<item> — " lead, not the start of textContent: the first row of
  *  each depth is prefixed by a `T<depth>` tier marker. */
@@ -320,6 +333,29 @@ function openPickerOptions(itemName: string): string[] {
   return $$<HTMLOptionElement>(
     'select[aria-label="pick a recipe for this stage"] option',
   ).map((o) => o.textContent!);
+}
+
+/**
+ * Leave the component in the exact state #118 cares about: the visible control
+ * says tier "all", but the live preview was solved at tier 0 because the tier
+ * change could not re-propose while Rate was invalid. The next successful
+ * re-propose must therefore start from the STORE catalog, not from
+ * `preview.gated`, or tier-gated recipes remain impossible to restore.
+ */
+function leaveTierZeroPreviewBehindAtTierAll(): void {
+  mount(splitCatalog(), { unlockedTier: 0 });
+  propose();
+  expect(stageRow("Ingot").textContent).toContain("Ingot — Foundry");
+
+  typeInto(
+    $$<HTMLInputElement>(".chain-builder-controls input")[0]!,
+    "nonsense",
+  );
+  chooseOption(tierSelect(), "");
+  expect(selectedTierLabel()).toBe("all");
+
+  typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "60");
+  expect(stageRow("Ingot").textContent).toContain("Ingot — Foundry");
 }
 
 afterEach(() => {
@@ -379,6 +415,38 @@ describe("S20 P3 seams — the gated world reaches the render (jsdom)", () => {
     // recipes the gated solve then validate-and-ignores — a control that
     // contradicts the hint's own "raise TIER" advice.
     expect(row.querySelector("select")).toBe(null);
+  });
+
+  it("constrained recovery: option labels resolve defaults in the solved gated world after live exclusions drift", () => {
+    // Solve at tier 0 with Foundry excluded: Alpha is tier-gated, Bravo is
+    // machine-excluded, and alternates cannot be defaults, so Ingot is a
+    // constrained raw. The inline picker still offers Charlie as recovery.
+    mount(splitCatalog(), { unlockedTier: 0, excludedMachineIds: ["foundry"] });
+    propose();
+    expect(
+      $<HTMLParagraphElement>("p.chain-builder-constrained").textContent,
+    ).toContain("RAW (no eligible producer): Ingot");
+    expect(constrainedPickerOptions()).toEqual([
+      "pick recipe…",
+      "Charlie (alt)",
+    ]);
+
+    // Now block re-propose and clear Foundry. The constrained cause remains
+    // from the solved world, but the recovery options use the live exclusions.
+    // With correct wiring, Bravo is the gated default. An ungated `recipeLabel`
+    // would compare against Alpha, which is absent from the gated option list,
+    // so no visible option would carry "(default)".
+    typeInto(
+      $$<HTMLInputElement>(".chain-builder-controls input")[0]!,
+      "nonsense",
+    );
+    click(exclusionCheckbox("Foundry"));
+
+    expect(constrainedPickerOptions()).toEqual([
+      "pick recipe…",
+      "Bravo (default)",
+      "Charlie (alt)",
+    ]);
   });
 
   it("constrained recovery: at tier null the wording is P1's exact string (regression)", () => {
@@ -453,6 +521,53 @@ describe("S20 P3 seams — the gated world reaches the render (jsdom)", () => {
     // The CONTROL has moved, though — the documented caveat. The select binds
     // the live tier, so it can lead the solved world until the next propose.
     expect(selectedTierLabel()).toBe("0");
+  });
+
+  it("repropose initial Propose: starts from the store catalog, not a stale gated preview", () => {
+    leaveTierZeroPreviewBehindAtTierAll();
+
+    click(proposeButton());
+
+    expect(stageRow("Ingot").textContent).toContain("Ingot — Smelter");
+  });
+
+  it("repropose chooseRecipe: clearing the stale gated default restores the all-tier default", () => {
+    leaveTierZeroPreviewBehindAtTierAll();
+
+    openPickerOptions("Ingot");
+    chooseOption(stagePicker(), "r_b_std");
+
+    expect(stageRow("Ingot").textContent).toContain("Ingot — Smelter");
+    expect(appStore.getState().proposePrefs.overrides).toEqual({});
+  });
+
+  it("repropose toggleRaw: removing a raw override restores the all-tier default", () => {
+    leaveTierZeroPreviewBehindAtTierAll();
+
+    click(
+      stageRow("Ingot").querySelector<HTMLButtonElement>(
+        ".chain-builder-rawtoggle",
+      )!,
+    );
+    expect(
+      $<HTMLParagraphElement>(".chain-builder-rawstrip").textContent,
+    ).toContain("Ingot");
+
+    click(
+      $<HTMLButtonElement>(
+        'button[aria-label="remove raw override for Ingot"]',
+      ),
+    );
+
+    expect(stageRow("Ingot").textContent).toContain("Ingot — Smelter");
+  });
+
+  it("repropose toggleExclusion: machine changes re-solve from the store catalog", () => {
+    leaveTierZeroPreviewBehindAtTierAll();
+
+    click(exclusionCheckbox("Refinery"));
+
+    expect(stageRow("Ingot").textContent).toContain("Ingot — Smelter");
   });
 
   it("keeps a machine's checkbox reachable when the tier gates its every recipe", () => {
@@ -592,5 +707,52 @@ describe("S20 P3 — TIER select rendering + persistence mirror (jsdom)", () => 
     // with no control able to clear it. The checked count alone cannot catch
     // that (it stays 1 either way).
     expect(boxes).toHaveLength(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S21 P1 (#103) — the picker CHIP under a lone eligible producer.
+//
+// WHY THIS ROW LIVES HERE AND NOT IN THE ADAPTER SUITE. Retiring
+// `candidateRecipesFor` widened `candidateCount`'s range from {0} ∪ [2,∞) to
+// {0,1} ∪ [2,∞) — 63 of the catalog's 195 items now report 1 where they
+// reported 0. The claim carrying that change is that the RENDERED chip is
+// unaffected, because `RecipePicker`'s label branches on `candidateCount >= 2`
+// and both 0 and 1 fall the same side of it. That label is an inline
+// expression inside a NON-EXPORTED component (ChainBuilder.tsx), so no
+// adapter-level test can reach it — an adapter-level "the count is 1"
+// assertion passes whether or not the chip survived, which is exactly the
+// pass-either-way trap this row exists to avoid. It needs a real render.
+// ---------------------------------------------------------------------------
+
+describe("S21 P1 — the chip never prints a lone count", () => {
+  it("reads 'machine excluded', NOT '1 recipes', for a force-included lone producer", () => {
+    // The ONLY state in which candidateCount === 1 reaches the screen at all.
+    // The picker renders iff options ≥ 2 OR the current recipe is
+    // force-included, so a single eligible producer is visible only behind an
+    // override onto an EXCLUDED machine:
+    //   excluding Foundry + Refinery leaves Alpha (Smelter) the lone eligible
+    //   producer → candidateCount 1;
+    //   the override pins Bravo, whose Foundry is excluded → selectProducer
+    //   honours a valid override anyway, so Bravo is the stage's recipe and is
+    //   force-included → options = {Alpha, Bravo} = 2 → the affordance renders.
+    mount(splitCatalog(), {
+      unlockedTier: null,
+      overrides: { ingot: "r_b_std" },
+      excludedMachineIds: ["foundry", "refinery"],
+    });
+    propose();
+
+    // The premise, pinned: the excluded-machine override really IS the stage's
+    // recipe. Without it this row could pass from some other, unexcluded state
+    // in which the chip reads "machine excluded" for an unrelated reason.
+    const row = stageRow("Ingot");
+    expect(row.textContent).toContain("Ingot — Foundry");
+
+    const chip = row.querySelector<HTMLButtonElement>("button")!;
+    expect(chip.textContent).toBe("machine excluded");
+    // Stated negatively too: the guard is against someone "simplifying" the
+    // label to print the raw count now that a bare 1 is reachable at all.
+    expect(chip.textContent).not.toBe("1 recipes");
   });
 });

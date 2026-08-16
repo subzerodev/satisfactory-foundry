@@ -1,0 +1,640 @@
+diff --git a/features/total-output/brainstorm-spec.md b/features/total-output/brainstorm-spec.md
+new file mode 100644
+index 0000000..c04b38c
+--- /dev/null
++++ b/features/total-output/brainstorm-spec.md
+@@ -0,0 +1,90 @@
++# #111 — Cost sheet total OUTPUT
++
++## Status
++
++Tier 2 single-feature design, written from #111's ticket and audit trail on
++2026-08-16.
++
++## Grounding
++
++- `ChainBuilder.tsx` renders the cost sheet as `Σ POWER`, `Σ MACHINES`, and
++  `RAW` inside `.chain-builder-metrics`.
++- `PreviewRow.outputRate` already carries each proposed stage's actual primary
++  output rate as an exact display string.
++- Rows are depth-sorted, with `depth === 0` being the target row (`T0 = target`).
++- The actual output can overshoot the requested rate because machine counts are
++  ceil'd in the core proposal.
++- Rate text does not re-propose on edit. The display must compare against the
++  rate snapshot used to build the current preview, not the live input field.
++- Byproducts already render separately as `Byproducts: ...`; #105 owns routing
++  semantics, so this ticket must not fold byproducts into the OUTPUT metric.
++
++## Design
++
++Add a fourth cost-sheet metric after `RAW`:
++
++```text
++OUTPUT
++<target actual>/min
++```
++
++When the target stage's actual output differs from the requested rate used for
++the proposal, render:
++
++```text
++<target actual>/min (asked <requested>/min)
++```
++
++Keep the metric inside the existing `!view.isEmpty` cost-sheet block. A raw
++target still renders the existing empty-state message and no cost sheet; that
++preserves the S21 P0 accepted behavior that an all-raw target does not repeat the
++typed rate.
++
++Implementation shape:
++
++- Add `rateText` to the component-local `Preview` snapshot, stored as
++  `formatRate(parsed.value)` inside `repropose`.
++- Add a small pure display helper, local to `ChainBuilder.tsx`, that finds the
++  `depth === 0` row and formats:
++  - `"—"` if no target row exists;
++  - `"<actual>/min"` when actual equals the stored requested rate;
++  - `"<actual>/min (asked <requested>/min)"` otherwise.
++- Render `OUTPUT` after `RAW`, using that helper.
++
++## Rejected alternatives
++
++- **Actual only**: simpler, but it hides the exact overshoot #111's audit trail
++  identifies as the useful part of the feature.
++- **Compare against live `rateText`**: wrong after the user edits Rate without
++  pressing Propose again; it would compare a solved preview against an unsolved
++  input.
++- **Include byproducts in OUTPUT**: risks double-speak with the existing
++  byproducts line and crosses into #105's routing semantics.
++- **Show an OUTPUT fallback for raw targets**: would reintroduce the typed rate
++  line that S21 P0 deliberately removed for all-raw targets.
++
++## Test plan
++
++- Add a pure helper test for exact output: actual equals requested, so the string
++  is just `<actual>/min`.
++- Add a pure helper test for overshoot: actual differs from requested, so the
++  string includes `(asked <requested>/min)`.
++- Add a raw/no-target-row helper test returning `"—"` for totality.
++- Add a jsdom render test that proposes a non-divisible rate and asserts the
++  `.chain-builder-metrics` text contains `OUTPUT` and the overshoot wording.
++- Add a jsdom drift test that proposes a non-divisible rate, edits the Rate input
++  without pressing Propose again, and asserts `OUTPUT` still compares against the
++  original requested-rate snapshot, not the live input text.
++- Preserve the existing raw-target test that the all-raw target does not repeat
++  the typed rate.
++- Record bidirectionality by removing the OUTPUT render and showing the new
++  render test fails, then restoring it.
++
++## Revision history
++
++- v1: Initial design. Settles actual-vs-requested output wording, excludes
++  byproducts, and preserves the raw-target no-cost-sheet behavior.
++- v2: Folded design r1 correctness finding from both reviewers: the test plan
++  now pins the load-bearing stale-rate case by editing Rate after Propose and
++  asserting the OUTPUT comparison still uses the solved preview's requested-rate
++  snapshot.
+diff --git a/features/total-output/design-r1-prompt.md b/features/total-output/design-r1-prompt.md
+new file mode 100644
+index 0000000..0142254
+--- /dev/null
++++ b/features/total-output/design-r1-prompt.md
+@@ -0,0 +1,50 @@
++# Design review r1 — #111 cost-sheet total OUTPUT
++
++Worktree: `/home/subzerodev/workspace/satisfactory-foundry`
++Artifact under review:
++`/home/subzerodev/workspace/satisfactory-foundry/features/total-output/brainstorm-spec.md`
++
++Reviewer mode: degraded same-vendor. Apply your assigned reviewer role exactly;
++return one of `APPROVED`, `APPROVED_WITH_NITS`, `NEEDS_REWORK`, or `BLOCKED` as
++the final line. Verify citations against the live worktree before relying on
++them.
++
++## A. Current-state anchors to verify
++
++1. `src/ui/ChainBuilder.tsx` renders the cost sheet as `Σ POWER`, `Σ MACHINES`,
++   and `RAW` inside `.chain-builder-metrics`.
++2. `src/ui/chain-builder-adapter.ts` exposes `PreviewRow.outputRate`, formatted
++   exactly, and rows are depth-sorted with `depth === 0` meaning the target row.
++3. `src/core/chain-builder.ts` computes `outputRate` from ceil'd machine counts,
++   so actual output may overshoot the requested rate.
++4. `ChainBuilder.tsx` does not re-propose on Rate text edits; the live input can
++   drift from the preview. The preview already snapshots `clockText` for this
++   class of problem.
++5. Byproducts already render separately beneath the preview; #105 owns explicit
++   byproduct routing.
++6. `ChainBuilder.rawtarget.test.tsx` pins the accepted behavior that an all-raw
++   target drops the typed rate line.
++
++## B. Proposed design to review
++
++Add an `OUTPUT` metric after `RAW`.
++
++- Store the requested rate used by the current preview as `Preview.rateText =
++  formatRate(parsed.value)`.
++- Format the target output from the `depth === 0` preview row:
++  - no row -> `"—"`;
++  - actual equals requested -> `"<actual>/min"`;
++  - actual differs -> `"<actual>/min (asked <requested>/min)"`.
++- Keep the metric inside the existing non-empty cost-sheet block; raw targets
++  still show no cost sheet.
++- Do not fold byproducts into the OUTPUT metric.
++
++## C. Review focus
++
++- Is the snapshot-rate design necessary, or can the requested value be safely
++  sourced elsewhere?
++- Is `depth === 0` the right target-row selection, or is there a more robust
++  existing identifier?
++- Does the design preserve the raw-target behavior and avoid #105 byproduct
++  routing semantics?
++- Does the test plan close both exact-output and overshoot cases?
+diff --git a/features/total-output/design-r2-prompt.md b/features/total-output/design-r2-prompt.md
+new file mode 100644
+index 0000000..d648324
+--- /dev/null
++++ b/features/total-output/design-r2-prompt.md
+@@ -0,0 +1,42 @@
++# Design review r2 — #111 cost-sheet total OUTPUT
++
++Worktree: `/home/subzerodev/workspace/satisfactory-foundry`
++Artifact under review:
++`/home/subzerodev/workspace/satisfactory-foundry/features/total-output/brainstorm-spec.md`
++
++Reviewer mode: degraded same-vendor. Apply your assigned reviewer role exactly;
++return one of `APPROVED`, `APPROVED_WITH_NITS`, `NEEDS_REWORK`, or `BLOCKED` as
++the final line. Verify citations against the live worktree before relying on
++them.
++
++## A. r1 findings to verify folded
++
++Both correctness reviewers returned `NEEDS_REWORK` on the same IMPORTANT:
++
++- v1 correctly said live `rateText` is unsafe after editing Rate without Propose,
++  but its test plan never required a drift test, so an implementation comparing
++  against live `rateText` could pass the initial render tests.
++
++v2 fold:
++
++- `features/total-output/brainstorm-spec.md` now requires a jsdom drift test:
++  propose a non-divisible rate, edit the Rate input without pressing Propose
++  again, and assert OUTPUT still compares against the original requested-rate
++  snapshot.
++- Revision history records this fold.
++
++## B. Current-state anchors still in scope
++
++1. `src/ui/ChainBuilder.tsx` renders the cost sheet as `Σ POWER`, `Σ MACHINES`,
++   and `RAW` inside `.chain-builder-metrics`.
++2. `PreviewRow.outputRate` is existing exact display data; rows are depth-sorted
++   with `depth === 0` target.
++3. Machine counts are ceil'd, so actual output may overshoot requested rate.
++4. Rate edits update only live state until Propose runs again, so the solved
++   requested rate must be snapshotted.
++5. Byproducts stay separate; #105 owns routing semantics.
++
++## C. Review focus
++
++Please focus on whether v2 fully closes the r1 test-plan gap and whether any
++other design issue remains.
+diff --git a/features/total-output/diff-r1-prompt.md b/features/total-output/diff-r1-prompt.md
+new file mode 100644
+index 0000000..bd421b6
+--- /dev/null
++++ b/features/total-output/diff-r1-prompt.md
+@@ -0,0 +1,58 @@
++# Diff review r1 — #111 cost-sheet total OUTPUT
++
++Worktree: `/home/subzerodev/workspace/satisfactory-foundry`
++Cumulative diff under review:
++`/home/subzerodev/workspace/satisfactory-foundry/features/total-output/diff-r1.diff`
++
++Reviewer mode: degraded same-vendor. Apply your assigned reviewer role exactly;
++return one of `APPROVED`, `APPROVED_WITH_NITS`, `NEEDS_REWORK`, or `BLOCKED` as
++the final line. Verify cited source against the live worktree before relying on
++it.
++
++## A. Current-state anchors
++
++1. #111 asks for the output side of the cost sheet: an OUTPUT total like the RAW
++   input line.
++2. The useful value is actual solved output, not just the typed request, because
++   machine counts are ceil'd and can overshoot.
++3. Rate edits do not re-propose automatically; the preview must compare against
++   the requested-rate snapshot it was solved with.
++4. Raw targets keep the existing no-cost-sheet empty behavior.
++5. Byproducts stay on their separate existing line; #105 owns routing semantics.
++
++## B. What changed
++
++1. `ChainBuilder.tsx` exports `totalOutputText`, snapshots `Preview.rateText`,
++   and renders an `OUTPUT` metric after `RAW`.
++2. The metric reads `totalOutputText(view.rows, preview.rateText)`, not live
++   `rateText`.
++3. `ChainBuilder.test.tsx` adds pure helper pins for exact output, overshoot, and
++   missing target row.
++4. `ChainBuilder.output.test.tsx` adds a jsdom real-catalog render pin:
++   proposing Iron Plate at `61/min` renders `80/min (asked 61/min)`, then editing
++   Rate to `999` without Propose keeps the original `asked 61` snapshot.
++5. `features/total-output/r2-verification.log` records bidirectionality by
++   mutating the render to live `rateText`; the new jsdom test fails with
++   `asked 999`.
++
++## C. Pre-review hygiene already run
++
++```text
++npm run check
++tsc -b && eslint . && prettier --check src
++All matched files use Prettier code style!
++
++npm test
++Test Files  34 passed (34)
++Tests  922 passed (922)
++```
++
++## D. Review focus
++
++- Confirm the OUTPUT metric uses the solved preview's requested-rate snapshot,
++  not live input state.
++- Confirm `depth === 0` target-row selection is sound for this display.
++- Confirm exact-output and overshoot formats are both pinned.
++- Confirm raw-target and byproduct behavior did not move into this feature.
++- Confirm the bidirectionality log contains a real failure line for the new
++  render test.
+diff --git a/features/total-output/diff-simplify-prompt.md b/features/total-output/diff-simplify-prompt.md
+new file mode 100644
+index 0000000..d432f93
+--- /dev/null
++++ b/features/total-output/diff-simplify-prompt.md
+@@ -0,0 +1,32 @@
++# Simplify review — diff at the diff stage
++
++**Artifact under review:** `/home/subzerodev/workspace/satisfactory-foundry/features/total-output/diff-r1.diff`
++**Stage:** diff
++**Worktree (read source here to ground every proposal):** `/home/subzerodev/workspace/satisfactory-foundry`
++
++This artifact has **ALREADY passed correctness review**: `code-reviewer`
++APPROVED and `adversarial-reviewer` APPROVED, both in degraded same-vendor mode.
++Do NOT re-check correctness. Bugs, missing cases, and design-intent disputes are
++the correctness pair's beat, not yours.
++
++Your sole job: find **over-engineering** and propose the **simplest correct
++shape**. For each finding:
++
++1. Cite the lines (`file:line` or a line range into the artifact).
++2. Name the simpler shape concretely.
++3. Say why it stays correct, grounded by reading the worktree.
++
++If it is already as simple as it should be, say so. Do not invent work.
++
++## Diff-stage guidance
++
++Look for needless indirection, duplicated logic, guards beyond the requirement,
++or generality introduced with no caller.
++
++## Verdict
++
++Return exactly one verdict as the final line, uppercase, nothing else on it:
++`APPROVED` / `APPROVED_WITH_NITS` / `NEEDS_REWORK` / `BLOCKED`.
++
++Your verdict is advisory-with-teeth: findings must be folded or rejected with a
++written rationale, but only `BLOCKED` forces a stop.
+diff --git a/features/total-output/r2-verification.log b/features/total-output/r2-verification.log
+new file mode 100644
+index 0000000..75044ac
+--- /dev/null
++++ b/features/total-output/r2-verification.log
+@@ -0,0 +1,65 @@
++# #111 diff verification log
++
++Worktree: `/home/subzerodev/workspace/satisfactory-foundry`
++
++## PASS with production code present
++
++Command:
++
++```sh
++npx vitest run src/ui/ChainBuilder.output.test.tsx
++```
++
++Result:
++
++```text
++Test Files  1 passed (1)
++Tests  1 passed (1)
++```
++
++## BREAK: compare OUTPUT against live rateText
++
++Temporary mutation:
++
++```diff
++-                <dd>{totalOutputText(view.rows, preview.rateText)}</dd>
+++                <dd>{totalOutputText(view.rows, rateText)}</dd>
++```
++
++Command:
++
++```sh
++npx vitest run src/ui/ChainBuilder.output.test.tsx
++```
++
++Result:
++
++```text
++FAIL  src/ui/ChainBuilder.output.test.tsx > ChainBuilder OUTPUT metric (#111) > shows actual target output and keeps the requested-rate snapshot after Rate drifts
++AssertionError: expected '80/min (asked 999/min)' to be '80/min (asked 61/min)' // Object.is equality
++
++Expected: "80/min (asked 61/min)"
++Received: "80/min (asked 999/min)"
++```
++
++## RESTORE: use the solved preview's requested-rate snapshot
++
++Restore:
++
++```diff
++-                <dd>{totalOutputText(view.rows, rateText)}</dd>
+++                <dd>{totalOutputText(view.rows, preview.rateText)}</dd>
++```
++
++Command:
++
++```sh
++npx vitest run src/ui/ChainBuilder.output.test.tsx
++```
++
++Result:
++
++```text
++Test Files  1 passed (1)
++Tests  1 passed (1)
++```
+diff --git a/features/total-output/simplify-prompt.md b/features/total-output/simplify-prompt.md
+new file mode 100644
+index 0000000..85a6837
+--- /dev/null
++++ b/features/total-output/simplify-prompt.md
+@@ -0,0 +1,33 @@
++# Simplify review — design at the design stage
++
++**Artifact under review:** `/home/subzerodev/workspace/satisfactory-foundry/features/total-output/brainstorm-spec.md`
++**Stage:** design
++**Worktree (read source here to ground every proposal):** `/home/subzerodev/workspace/satisfactory-foundry`
++
++This artifact has **ALREADY passed correctness review**: r2 `code-reviewer`
++APPROVED and r2 `adversarial-reviewer` APPROVED, both in degraded same-vendor
++mode. Do NOT re-check correctness. Bugs, missing cases, and design-intent
++disputes are the correctness pair's beat, not yours.
++
++Your sole job: find **over-engineering** and propose the **simplest correct
++shape**. For each finding:
++
++1. Cite the lines (`file:line` or a line range into the artifact).
++2. Name the simpler shape concretely.
++3. Say why it stays correct, grounded by reading the worktree.
++
++If it is already as simple as it should be, say so. Do not invent work.
++
++## Design-stage guidance
++
++Look for unnecessary abstraction layers, premature generality, speculative
++options, defensive machinery beyond the requirement, or process/document
++structure more elaborate than the problem demands.
++
++## Verdict
++
++Return exactly one verdict as the final line, uppercase, nothing else on it:
++`APPROVED` / `APPROVED_WITH_NITS` / `NEEDS_REWORK` / `BLOCKED`.
++
++Your verdict is advisory-with-teeth: findings must be folded or rejected with a
++written rationale, but only `BLOCKED` forces a stop.
+diff --git a/src/ui/ChainBuilder.output.test.tsx b/src/ui/ChainBuilder.output.test.tsx
+new file mode 100644
+index 0000000..e951fd6
+--- /dev/null
++++ b/src/ui/ChainBuilder.output.test.tsx
+@@ -0,0 +1,127 @@
++/**
++ * @vitest-environment jsdom
++ */
++
++/**
++ * ChainBuilder OUTPUT metric tests (#111).
++ *
++ * Like the gating/raw-target seam suites, this needs jsdom because the metric
++ * lives behind component-local `preview` state set by the Propose click handler.
++ */
++
++import { describe, it, expect, afterEach, vi } from "vitest";
++import { act } from "react";
++import { createRoot } from "react-dom/client";
++import type { Root } from "react-dom/client";
++
++import { parseCatalogFromText } from "../data/catalog.ts";
++import type { Catalog } from "../data/types.ts";
++import { appStore } from "../state/store.ts";
++import { ChainBuilder } from "./ChainBuilder.tsx";
++import bundledDocsText from "../../public/bundled-docs/en-US.json?raw";
++
++(
++  globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
++).IS_REACT_ACT_ENVIRONMENT = true;
++
++const storage = vi.hoisted(() => {
++  const memory = new Map<string, string>();
++  const stub: Storage = {
++    getItem: (k) => memory.get(k) ?? null,
++    setItem: (k, v) => void memory.set(k, v),
++    removeItem: (k) => void memory.delete(k),
++    clear: () => memory.clear(),
++    key: (i) => [...memory.keys()][i] ?? null,
++    get length() {
++      return memory.size;
++    },
++  };
++  (globalThis as unknown as { localStorage: Storage }).localStorage = stub;
++  return stub;
++});
++
++const catalog: Catalog = parseCatalogFromText(bundledDocsText);
++
++let container: HTMLDivElement;
++let root: Root;
++
++function mount(): void {
++  appStore.setState({
++    catalog: { status: "ready", catalog },
++    proposePrefs: {
++      overrides: {},
++      excludedMachineIds: ["converter", "packager"],
++      unlockedTier: null,
++    },
++  });
++  container = document.createElement("div");
++  document.body.appendChild(container);
++  root = createRoot(container);
++  act(() => {
++    root.render(<ChainBuilder />);
++  });
++}
++
++const $$ = <T extends Element>(sel: string): T[] =>
++  Array.from(container.querySelectorAll<T>(sel));
++
++function typeInto(el: HTMLInputElement, value: string): void {
++  const setter = Object.getOwnPropertyDescriptor(
++    HTMLInputElement.prototype,
++    "value",
++  )!.set!;
++  act(() => {
++    setter.call(el, value);
++    el.dispatchEvent(new Event("input", { bubbles: true }));
++  });
++}
++
++function chooseTarget(itemId: string): void {
++  const select = $$<HTMLSelectElement>(".chain-builder-controls select")[0]!;
++  act(() => {
++    select.value = itemId;
++    select.dispatchEvent(new Event("change", { bubbles: true }));
++  });
++}
++
++function clickPropose(): void {
++  act(() => {
++    $$<HTMLButtonElement>(".chain-builder-controls button")
++      .find((b) => b.textContent === "Propose")!
++      .click();
++  });
++}
++
++function propose(itemId: string, rate: string): void {
++  chooseTarget(itemId);
++  typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, rate);
++  clickPropose();
++}
++
++function metricValue(label: string): string {
++  const row = $$<HTMLDivElement>(".chain-builder-metrics > div").find(
++    (div) => div.querySelector("dt")?.textContent === label,
++  );
++  return row?.querySelector("dd")?.textContent ?? "";
++}
++
++afterEach(() => {
++  act(() => {
++    root.unmount();
++  });
++  container.remove();
++  storage.clear();
++});
++
++describe("ChainBuilder OUTPUT metric (#111)", () => {
++  it("shows actual target output and keeps the requested-rate snapshot after Rate drifts", () => {
++    mount();
++    propose("iron_plate", "61");
++
++    expect(metricValue("OUTPUT")).toBe("80/min (asked 61/min)");
++
++    typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "999");
++
++    expect(metricValue("OUTPUT")).toBe("80/min (asked 61/min)");
++  });
++});
+diff --git a/src/ui/ChainBuilder.test.tsx b/src/ui/ChainBuilder.test.tsx
+index 8c1b46e..f08ee55 100644
+--- a/src/ui/ChainBuilder.test.tsx
++++ b/src/ui/ChainBuilder.test.tsx
+@@ -13,6 +13,7 @@ import { Fraction } from "../core/fraction.ts";
+ import {
+   parseRateText,
+   parseClockText,
++  totalOutputText,
+   ChainBuilder,
+ } from "./ChainBuilder.tsx";
+
+@@ -102,6 +103,24 @@ describe("parseClockText (S20 P2, (0, 250])", () => {
+   });
+ });
+
++describe("totalOutputText", () => {
++  it("renders actual output only when it matches the requested rate", () => {
++    expect(totalOutputText([{ depth: 0, outputRate: "60" }], "60")).toBe(
++      "60/min",
++    );
++  });
++
++  it("renders the requested rate when integer machine counts overshoot", () => {
++    expect(totalOutputText([{ depth: 0, outputRate: "80" }], "61")).toBe(
++      "80/min (asked 61/min)",
++    );
++  });
++
++  it("returns a total fallback when there is no target row", () => {
++    expect(totalOutputText([{ depth: 1, outputRate: "90" }], "60")).toBe("—");
++  });
++});
++
+ describe("ChainBuilder render smoke", () => {
+   it("renders nothing (null) when the singleton store's catalog isn't ready", () => {
+     // In node the app-wide store boots to `initializing`, so the component
+diff --git a/src/ui/ChainBuilder.tsx b/src/ui/ChainBuilder.tsx
+index 2944a93..552e3d0 100644
+--- a/src/ui/ChainBuilder.tsx
++++ b/src/ui/ChainBuilder.tsx
+@@ -38,6 +38,7 @@ import {
+ } from "./chain-builder-adapter.ts";
+ import type {
+   ProposalPreview,
++  PreviewRow,
+   ConstrainedLever,
+ } from "./chain-builder-adapter.ts";
+ import type { Catalog, CatalogRecipe } from "../data/types.ts";
+@@ -85,10 +86,26 @@ export function parseClockText(
+   return { ok: true, value };
+ }
+
++/** The cost sheet's OUTPUT total: the target row's actual output, with the
++ *  requested preview snapshot shown only when integer machine counts overshoot. */
++export function totalOutputText(
++  rows: Pick<PreviewRow, "depth" | "outputRate">[],
++  requestedRate: string,
++): string {
++  const target = rows.find((r) => r.depth === 0);
++  if (target === undefined) return "—";
++  const actual = `${target.outputRate}/min`;
++  return target.outputRate === requestedRate
++    ? actual
++    : `${actual} (asked ${requestedRate}/min)`;
++}
++
+ /** The preview + the proposal it came from (Apply hands the proposal to the store). */
+ interface Preview {
+   proposal: ChainProposal;
+   view: ProposalPreview;
++  /** The requested rate this preview was solved against, formatted exactly. */
++  rateText: string;
+   /**
+    * The raw clock text the proposal was SOLVED at. Apply seeds from this
+    * snapshot, never the live input: clock (like Rate) does not re-propose on
+@@ -228,6 +245,7 @@ export function ChainBuilder() {
+         // The UNGATED world, for the cause split + the lever matrix.
+         ungatedCatalog: cat,
+       }),
++      rateText: formatRate(parsed.value),
+       clockText,
+       gated: gatedCat,
+     });
+@@ -466,6 +484,10 @@ export function ChainBuilder() {
+                   {naturalRaws.length > 0 ? itemRateLineText(naturalRaws) : "—"}
+                 </dd>
+               </div>
++              <div>
++                <dt>OUTPUT</dt>
++                <dd>{totalOutputText(view.rows, preview.rateText)}</dd>
++              </div>
+             </dl>
+           )}
+           {view.isEmpty ? (

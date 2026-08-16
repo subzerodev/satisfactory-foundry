@@ -1,0 +1,2352 @@
+diff --git a/features/propose-followups/FEATURE.md b/features/propose-followups/FEATURE.md
+index 85565cd..1013a42 100644
+--- a/features/propose-followups/FEATURE.md
++++ b/features/propose-followups/FEATURE.md
+@@ -1,7 +1,7 @@
+ # Propose follow-ups: consolidation, type-safety, routing (Stage 21 arc)
+ 
+ **Started:** 2026-08-07
+-**Status:** IN PROGRESS — P0 DONE, P1 DONE, P2 CLOSED won't-do; P3 (#105) next
++**Status:** IN PROGRESS — P0 DONE, P1 DONE, P2 CLOSED won't-do; P3 (#105) implementation in review
+ **Epic:** #108 (board #21, Stage 21 milestone 92)
+ **Directive:** Michael 2026-08-07, handed the four Stage 20 follow-ups:
+ **"do them."** That delegates the #104 UX call the ticket had reserved for him.
+@@ -72,8 +72,11 @@
+   Three design rounds, all NEEDS_REWORK ×2 — the reviewers killed two successive
+   justifications, the second time by proving my headline "uncovered seam" was
+   behaviour-preserving.
+-- **P3 (#105) — explicit byproduct routing**: pending. The largest design;
+-  carries both Stage-20 r1 reviewer analyses as input.
++- **P3 (#105) — explicit byproduct routing**: implementation drafted
++  2026-08-16; boundary diff review pending. The final reviewed design routes
++  only unambiguous byproduct lanes: no primary-lane collisions, no multi-source
++  aggregates, no source fan-out, explicit `preview.gated` catalog validation in
++  the store, and a single options-bag `applyChainProposal` API.
+ 
+ ## Grounding (measured 2026-08-07 at arc start, against the bundled catalog)
+ 
+diff --git a/features/propose-followups/p3-boundary-r1-prompt.md b/features/propose-followups/p3-boundary-r1-prompt.md
+new file mode 100644
+index 0000000..4d87e64
+--- /dev/null
++++ b/features/propose-followups/p3-boundary-r1-prompt.md
+@@ -0,0 +1,63 @@
++# Boundary diff review r1 — S21 P3 (#105): explicit byproduct routing
++
++Review the cumulative implementation diff in
++`features/propose-followups/p3-boundary-r1.diff` for the worktree
++`/home/subzerodev/workspace/satisfactory-foundry`.
++
++This review is degraded because the third-party Claude reviewer is unavailable
++by user directive. You are a fresh Codex agent copying the requested reviewer
++role. Return exactly one verdict:
++
++`APPROVED` / `APPROVED_WITH_NITS` / `NEEDS_REWORK` / `BLOCKED`
++
++with severity-tagged, line-cited findings. Tag your verdict as
++`(degraded: same-vendor, third-party reviewer unavailable)`.
++
++## Contract to check
++
++Design of record: `features/propose-followups/p3-brainstorm.md` v5.
++
++Required behavior:
++
++1. `ChainProposal.byproducts` carries `fromItemId`; existing aggregate display
++   suggestions remain source-agnostic and unique on `(itemId,toItemId)`.
++2. `byproductRouteSuggestions` emits route controls only for unambiguous rows:
++   one source, one consumer, no primary-lane collision, no self-route, no
++   multi-source aggregate, and no source fan-out. Route keys are
++   `(fromItemId,itemId,toItemId)`.
++3. `applyChainProposal` uses one options-bag API. It seeds clock from
++   `clockPercentText`, defaults to `"100"`, and validates selected byproduct
++   routes against the explicit `catalog` snapshot, not the live store catalog.
++4. Store apply refuses routes with missing catalog snapshots, unresolved
++   endpoints, source recipes that do not output the item, consumer recipes that
++   do not input the item, self-routes, duplicate target lanes, and repeated
++   source spending; primary proposal stages/links still apply.
++5. `ChainBuilder` derives display suggestions, route controls, selected-route
++   filtering, and Apply payloads from `preview.gated`; Apply clears the preview
++   and selected route keys.
++6. Byproduct routing does not implement demand feedback, aggregate lanes,
++   silent auto-routing, or persistence across Discard/session.
++
++## Verification already run
++
++- `npm test -- --run src/core/chain-builder.test.ts src/ui/chain-builder-adapter.test.ts src/state/store.test.ts src/ui/ChainBuilder.byproduct-routing.test.tsx`
++  - PASS: 4 files, 291 tests.
++- `npm run check`
++  - PASS: `tsc -b`, `eslint .`, `prettier --check src`.
++- `npm test`
++  - PASS: 35 files, 930 tests.
++- Bidirectionality log:
++  `features/propose-followups/p3-verification.log`
++  - removing source fan-out suppression fails adapter tests;
++  - removing duplicate target-lane refusal fails store tests;
++  - removing source-output validation fails store tests.
++
++## Review focus
++
++- Hunt for any way a selected byproduct route can still materialize a duplicate
++  or dangling `StageLink`.
++- Verify `preview.gated` is used for route display/routeability/apply filtering,
++  not the live ungated catalog.
++- Check the options-bag migration did not break default or non-default clock
++  seeding.
++- Check tests are discriminating and not pass-either-way.
+diff --git a/features/propose-followups/p3-boundary-r2-prompt.md b/features/propose-followups/p3-boundary-r2-prompt.md
+new file mode 100644
+index 0000000..704f042
+--- /dev/null
++++ b/features/propose-followups/p3-boundary-r2-prompt.md
+@@ -0,0 +1,50 @@
++# Boundary diff review r2 — S21 P3 (#105): test fold
++
++Re-review the cumulative implementation diff in
++`features/propose-followups/p3-boundary-r2.diff` for the worktree
++`/home/subzerodev/workspace/satisfactory-foundry`.
++
++This review is degraded because the third-party Claude reviewer is unavailable
++by user directive. You are a fresh Codex agent copying the requested reviewer
++role. Return exactly one verdict:
++
++`APPROVED` / `APPROVED_WITH_NITS` / `NEEDS_REWORK` / `BLOCKED`
++
++with severity-tagged, line-cited findings. Tag your verdict as
++`(degraded: same-vendor, third-party reviewer unavailable)`.
++
++## Prior r1 verdicts
++
++- code-reviewer: APPROVED_WITH_NITS — route-specific jsdom suite covered only
++  the happy path; stale-selection rows from the frozen design were not pinned.
++- adversarial-reviewer: NEEDS_REWORK — the store repeated-source-spend test sent
++  the same route twice, so duplicate target-lane refusal masked the source-spend
++  guard. Also NIT: missing jsdom stale-route coverage.
++
++## r2 fold to verify
++
++1. `src/state/store.test.ts` route fixture now includes a second Resin consumer
++   (`paint`), and the repeated-source-spend case sends `fuel/resin` to both
++   `rubber` and `paint`. Removing `usedSourceOutputs` now fails that test.
++2. `src/ui/ChainBuilder.byproduct-routing.test.tsx` adds a stale-selection row:
++   check ROUTE, switch the catalog to a fan-out variant, re-propose, assert the
++   route checkbox disappears, Apply, and assert no `resin` route was written.
++3. Verification log records the corrected source-spend mutation probe.
++
++## Verification after fold
++
++- `npm test -- --run src/core/chain-builder.test.ts src/ui/chain-builder-adapter.test.ts src/state/store.test.ts src/ui/ChainBuilder.byproduct-routing.test.tsx`
++  - PASS: 4 files, 291 tests.
++- `npm run check`
++  - PASS: `tsc -b`, `eslint .`, `prettier --check src`.
++- `npm test`
++  - PASS: 35 files, 930 tests.
++
++## Review focus
++
++- Confirm the source-spend test no longer passes through the duplicate
++  target-lane guard.
++- Confirm the jsdom stale-selection row actually exercises re-propose filtering
++  and would fail if selected route keys were not intersected with current
++  routeable rows.
++- Check no production behavior changed beyond the r1 implementation.
+diff --git a/features/propose-followups/p3-boundary-r3-prompt.md b/features/propose-followups/p3-boundary-r3-prompt.md
+new file mode 100644
+index 0000000..06a105e
+--- /dev/null
++++ b/features/propose-followups/p3-boundary-r3-prompt.md
+@@ -0,0 +1,59 @@
++# Boundary diff review r3 — S21 P3 (#105): stale-selection fold
++
++Re-review the cumulative implementation diff in
++`features/propose-followups/p3-boundary-r3.diff` for the worktree
++`/home/subzerodev/workspace/satisfactory-foundry`.
++
++This review is degraded because the third-party Claude reviewer is unavailable
++by user directive. You are a fresh Codex agent copying the requested reviewer
++role. Return exactly one verdict:
++
++`APPROVED` / `APPROVED_WITH_NITS` / `NEEDS_REWORK` / `BLOCKED`
++
++with severity-tagged, line-cited findings. Tag your verdict as
++`(degraded: same-vendor, third-party reviewer unavailable)`.
++
++## Prior r2 verdicts
++
++- code-reviewer: NEEDS_REWORK — the stale-selection jsdom row clicked the
++  manual `Propose` button, whose `onPropose` path clears `selectedRouteKeys`
++  before `repropose`; it did not prove the intersection inside `repropose`.
++- adversarial-reviewer: APPROVED_WITH_NITS — same gap from a different angle:
++  Apply independently rebuilds current routeable rows, so the old row did not
++  pin private stale selection state.
++
++## r3 fold to verify
++
++`src/ui/ChainBuilder.byproduct-routing.test.tsx` now drives a non-resetting
++auto-repropose path:
++
++1. Check `route Resin from Fuel to Rubber`.
++2. Swap the store catalog to a fan-out variant.
++3. Toggle the machine exclusion, which calls `repropose` without the manual
++   `onPropose` selected-key reset, and assert the route checkbox disappears.
++4. Swap the catalog back, toggle the machine exclusion again, and assert the
++   restored route checkbox is **unchecked** before Apply.
++5. Apply and assert no stale `resin` route is written.
++
++The verification log records the mutation probe: removing
++`setSelectedRouteKeys(...filter...)` makes this row fail because the restored
++route checkbox remains checked.
++
++## Verification after fold
++
++- `npm test -- --run src/ui/ChainBuilder.byproduct-routing.test.tsx`
++  - PASS: 1 file, 2 tests.
++- Mutation probe:
++  - Removed `setSelectedRouteKeys(...filter...)`.
++  - `npm test -- --run src/ui/ChainBuilder.byproduct-routing.test.tsx`
++    failed at `src/ui/ChainBuilder.byproduct-routing.test.tsx:287` with the
++    restored route checkbox still checked.
++  - Restored the intersection and reran the suite green.
++
++## Review focus
++
++- Confirm the stale-selection row now exercises a re-propose path that does not
++  pre-clear selected route keys.
++- Confirm it would fail if the selected-key intersection in `repropose` were
++  removed.
++- Check the fold did not change production behavior beyond test coverage.
+diff --git a/features/propose-followups/p3-boundary-r4-prompt.md b/features/propose-followups/p3-boundary-r4-prompt.md
+new file mode 100644
+index 0000000..5e5ccfd
+--- /dev/null
++++ b/features/propose-followups/p3-boundary-r4-prompt.md
+@@ -0,0 +1,44 @@
++# Boundary diff review r4 — S21 P3 (#105): frozen test-contract fold
++
++Re-review the cumulative implementation diff in
++`features/propose-followups/p3-boundary-r4.diff` for the worktree
++`/home/subzerodev/workspace/satisfactory-foundry`.
++
++This review is degraded because the third-party Claude reviewer is unavailable
++by user directive. You are a fresh Codex agent copying the requested reviewer
++role. Return exactly one verdict:
++
++`APPROVED` / `APPROVED_WITH_NITS` / `NEEDS_REWORK` / `BLOCKED`
++
++with severity-tagged, line-cited findings. Tag your verdict as
++`(degraded: same-vendor, third-party reviewer unavailable)`.
++
++## Prior r3 verdicts
++
++- code-reviewer: APPROVED — no findings.
++- adversarial-reviewer: APPROVED_WITH_NITS:
++  1. direct self-route suppression lacked adapter coverage;
++  2. the frozen jsdom plan's same-display/source-change and failed-tier-
++     repropose cases were absent.
++
++## r4 folds to verify
++
++1. `src/ui/chain-builder-adapter.test.ts` now directly pins a byproduct route
++   back into its source stage as suppressed. Removing the self-route guard
++   exposes `fuel resin fuel` and fails the named row.
++2. `src/ui/ChainBuilder.byproduct-routing.test.tsx` now changes a route's source
++   from Fuel to Plastic while retaining the display key `(Resin,Rubber)`, then
++   restores Fuel and proves the old full route key was dropped.
++3. Separate jsdom rows make a tier re-propose fail on invalid Rate and prove
++   route labels and routeability remain derived from `preview.gated`, even when
++   the live catalog changes names or removes the consumer input.
++4. `features/propose-followups/p3-verification.log` records genuine named
++   Vitest failures for all three production guards and the restored green run.
++
++## Review focus
++
++- Confirm each r3 nit is fully folded and mutation-sensitive.
++- Confirm the new fixtures exercise public UI behavior rather than private
++  implementation state.
++- Check the cumulative implementation against the frozen design and issue #105.
++- Confirm no production behavior changed in this fold.
+diff --git a/features/propose-followups/p3-brainstorm.md b/features/propose-followups/p3-brainstorm.md
+new file mode 100644
+index 0000000..eeb883b
+--- /dev/null
++++ b/features/propose-followups/p3-brainstorm.md
+@@ -0,0 +1,284 @@
++# S21 P3 (#105) — explicit byproduct routing from Propose
++
++**Ticket:** #105 · **Epic:** #108 · **Milestone:** 92 · **Status:** v5 — FROZEN (review of record: r5 APPROVED ×2; simplify folded)
++
++## Purpose
++
++Turn S20 P2's display-only byproduct feed suggestions into an explicit,
++user-selected route that Apply can materialize as a normal `StageLink`.
++Nothing routes silently: a route exists only when the user checks its ROUTE
++control before Apply.
++
++## Already settled — do NOT re-litigate
++
++- S20 P2 suggestions are the base and are display-only until this phase. The
++  frozen P2 design (`features/propose-grows-up/p2-brainstorm.md`) deliberately
++  removed ROUTE after both r1 reviewers found unsafe routed-link mechanics.
++- The store invariant stands: at most one feed lane per `(toStageId,itemId)`.
++  `addLink` and `canLink` refuse duplicates; #105 must bring the Propose apply
++  path into the same posture for routed byproducts.
++- Reconciliation is per-link-local today. This phase does not redesign it into
++  an aggregate lane solver.
++- Demand feedback from routed byproducts is deferred. A selected byproduct route
++  does not resize the proposal, subtract raw demand, or create a second producer
++  for the same consumer lane.
++
++## Ground truth (verified against live source)
++
++- `ChainProposal.byproducts` reports non-primary outputs only as `{ itemId,
++rate }`, with no source-stage identity (`src/core/chain-builder.ts:77-82`,
++  `:350-357`). That was correct for P2 display, but a `StageLink` needs a
++  producer stage.
++- `byproductSuggestions` aggregates byproduct rates per item and emits one
++  display row per `(itemId,toItemId)` (`src/ui/chain-builder-adapter.ts:861-894`).
++  The aggregation is intentionally source-less, which is why it cannot directly
++  route two producers of one byproduct into one consumer.
++- `applyProposalToSlice` maps primary proposal links with a plain `.map` and
++  appends them (`src/state/store.ts:875-902`). Its append-only comment is true
++  for primary proposal links, but not sufficient for optional byproduct links.
++- The public graph API refuses self-links and duplicate `(toStageId,itemId)`
++  lanes in both `canLink` and `addLink` (`src/state/store.ts:949-960`,
++  `:1615-1628`).
++- Reconciliation maps each link independently to one producer output total and
++  one consumer demand total (`src/state/store.ts:609-624`), then emits at most
++  one finding per link (`src/core/reconcile.ts:50-78`).
++- The preview stores solved snapshots for rate, clock and gated catalog
++  (`src/ui/ChainBuilder.tsx:103-132`); Apply currently passes only
++  `(proposal, clockText)` (`src/ui/ChainBuilder.tsx:275-284`).
++- The current P2 display call still passes the live ungated `catalog` into
++  `byproductSuggestions` (`src/ui/ChainBuilder.tsx:626`), but route controls
++  must not inherit that posture. Routeability, display decoration, and Apply
++  filtering must use `preview.gated`, the solved catalog snapshot.
++
++## Decision axes
++
++### Axis 1 — Source identity for routed byproducts
++
++Options:
++
++- Re-derive source byproducts in the UI from `proposal.stages` plus recipes.
++- Widen `ChainProposal.byproducts` with `fromItemId`.
++
++**Pick: widen `ChainProposal.byproducts` to `{ fromItemId, itemId, rate }`.**
++Routing consumes source identity, so the proposal should carry it at the same
++layer that emits the byproduct rate. The P2 display helper keeps its aggregate
++output unchanged by ignoring `fromItemId`; #105's route helper consumes it.
++This avoids a UI-side shadow copy of core emission math.
++
++### Axis 2 — Which suggestions get a ROUTE control
++
++**Only unambiguous, collision-free suggestions are routeable in this phase.**
++
++A display suggestion `(itemId,toItemId)` receives a ROUTE checkbox iff:
++
++1. exactly one proposal byproduct source emits `itemId` for that consumer;
++2. `fromItemId !== toItemId`;
++3. no primary proposal link already owns `(toItemId,itemId)`;
++4. no earlier accepted routed byproduct owns `(toItemId,itemId)`.
++5. the same source output `(fromItemId,itemId)` has exactly one possible
++   consumer.
++
++The three excluded cases stay display-only:
++
++- **primary-lane collision**: if the proposal already links the primary producer
++  of B into the consumer of B, a byproduct B route would duplicate the same feed
++  lane. Do not offer it.
++- **multi-source aggregate**: if two stages emit B and one consumer uses B, the
++  P2 display line can honestly show the summed byproduct rate, but a single
++  `StageLink` cannot represent that aggregate. Do not offer a route until the
++  graph has aggregate feed semantics.
++- **source fan-out**: if one source byproduct B could feed two consumers, all of
++  those rows stay display-only. Per-link reconciliation has no aggregate
++  source-consumption ledger, so route controls are suppressed until the user can
++  choose a split or the graph has aggregate semantics.
++
++The store apply path repeats the same duplicate/self checks as a hard guard, so
++the UI is not the enforcer of graph validity. It also validates every route
++payload against the proposal plus the solved catalog snapshot: `fromItemId` must
++name a proposed stage whose recipe outputs `itemId`, and `toItemId` must name a
++proposed stage whose recipe inputs `itemId`. Source fan-out is already
++suppressed before route controls exist; the store still treats a second selected
++route for the same `(fromStageId,itemId)` as invalid and refuses it.
++
++### Axis 3 — Partial-supply semantics
++
++**A routed byproduct link means "send this byproduct lane to that input", not
++"this fully satisfies that input".** Existing reconciliation remains honest:
++it compares the selected byproduct source's output lane against the consumer's
++full demand and may emit under-supply or over-supply.
++
++That is not a false alarm under the one-feed-lane graph model. Because #105
++refuses primary-lane collisions, an under-supply finding means the explicit
++route is not enough by itself and the graph needs further manual adjustment.
++Changing that into an aggregate "byproduct plus raw/top-up supply" model would
++require a new lane representation and is out of scope.
++
++The checkbox label includes the source rate (`ROUTE 10/min from Fuel`) so the
++user opts into a concrete lane amount before Apply. The existing post-Apply
++reconciliation surfaces exact short/surplus diagnostics.
++
++### Axis 4 — Apply payload and stale toggle posture
++
++`applyChainProposal` takes a single options bag with a default:
++
++```ts
++type ApplyChainProposalOptions = {
++  clockPercentText?: string;
++  byproductRoutes?: ProposedByproductRoute[];
++  catalog?: Catalog;
++};
++
++type ProposedByproductRoute = {
++  fromItemId: string;
++  itemId: string;
++  toItemId: string;
++};
++```
++
++Existing clock callers update from `applyChainProposal(proposal, "150")` to
++`applyChainProposal(proposal, { clockPercentText: "150" })`; default callers use
++`applyChainProposal(proposal)` and still seed `"100"`. When byproduct routes are
++present, `catalog` is REQUIRED and is the proposal's solved catalog snapshot
++(`preview.gated`). If routes are passed without a catalog snapshot, the store
++refuses all byproduct routes while still applying the primary proposal
++stages/links. The store never validates route payloads against its live catalog
++slice.
++
++The UI stores selected route keys in component state. The stable key is the full
++route identity `(fromItemId,itemId,toItemId)`, not the display key
++`(itemId,toItemId)`, so a re-propose that changes the source cannot preserve a
++checked stale route. On every successful re-propose it intersects the selection
++with the current routeable key set; Apply also filters through the current
++routeable rows. Stale selections therefore cannot throw and cannot route a
++disappeared stage. Apply and Discard clear the preview-local selection.
++
++### Axis 5 — Demand feedback
++
++Deferred. The proposal solver still sizes the consumer as if the byproduct
++input is externally/raw supplied unless that item already has a normal primary
++producer in the chain. A checked route only affects the applied graph links.
++That matches the ticket's "explicit routing" surface without smuggling in a
++feedback loop whose fixed point has not been designed.
++
++## Spec (file-by-file)
++
++1. **`src/core/chain-builder.ts`** — add `ProposedByproduct extends ItemRate`
++   with `fromItemId`; make `ChainProposal.byproducts` use it; emit
++   `fromItemId: itemId` when recording each non-primary output. Existing
++   byproduct rates stay byte-identical.
++2. **`src/ui/chain-builder-adapter.ts`** — keep `byproductSuggestions` as the
++   aggregate display helper, now ignoring `fromItemId`. Add
++   `byproductRouteSuggestions(proposal,catalog)` returning routeable rows with
++   source identity/rate and a stable key `(fromItemId,itemId,toItemId)`. The
++   helper groups by
++   `(itemId,toItemId)`, suppresses multi-source groups, suppresses primary-link
++   lane collisions, suppresses all source fan-out groups, and suppresses
++   self-routes.
++3. **`src/state/store.ts`** — export `ProposedByproductRoute` and
++   `ApplyChainProposalOptions`; update `applyChainProposal` to accept
++   `(proposal, options: ApplyChainProposalOptions = {})`. In
++   `applyProposalToSlice`, build primary links first. Route validation reads the
++   explicit catalog
++   snapshot from the options bag (the UI passes `preview.gated`) and checks that
++   the route's source proposal stage recipe outputs `itemId` and its consumer
++   proposal stage recipe inputs `itemId`; a missing catalog snapshot refuses all
++   byproduct routes but still applies the proposal's primary stages/links.
++   Append byproduct route links only when both fresh ids resolve, `from !== to`,
++   `(toStageId,itemId)` is not already present among existing/new links, and
++   `(fromStageId,itemId)` has not already been spent by an earlier accepted
++   route.
++4. **`src/ui/ChainBuilder.tsx`** — add preview-local selected route keys.
++   Compute both display suggestions and routeable rows from `preview.gated`, not
++   from the live `catalog`, so a failed re-propose after a tier change cannot
++   decorate or apply a stale preview against the wrong world. Render the existing
++   suggestion line as a checkbox when a routeable row exists for that
++   `(itemId,toItemId)`; otherwise render the P2 display-only line. Apply passes
++   selected route payloads filtered against the current routeable rows and calls
++   `applyChainProposal(preview.proposal, { clockPercentText: preview.clockText,
++byproductRoutes, catalog: preview.gated })`, then clears the selection
++   afterward.
++5. **`src/ui/app.css`** — style the ROUTE checkbox with the existing suggestion
++   line tokens; no layout-wide redesign.
++6. **Tests**:
++   - core proposal test pins `fromItemId` on byproduct emissions;
++   - adapter tests pin routeable single-source output, primary-link collision
++     suppression, multi-source aggregate suppression, source fan-out
++     suppression, full route keys, and self-route suppression;
++   - store tests pin successful routed `StageLink`, duplicate-lane refusal, and
++     no-route default behavior, options-bag `clockPercentText` seeding,
++     non-empty routes without `catalog` refusing only byproduct links while
++     primary stages/links still apply, plus unresolved route payloads, stale
++     source-output payloads, stale consumer-input payloads, self-route
++     filtering, and source fan-out filtering;
++   - jsdom ChainBuilder test pins toggling ROUTE and Apply creating the route,
++     stale selection dropped after a re-propose where the route disappears, the
++     same display `(itemId,toItemId)` remaining while `fromItemId` changes, and
++     a failed re-propose after tier change still deriving routeability/display
++     from `preview.gated`;
++   - bidirectionality log mutates out duplicate refusal and stale filtering.
++
++## Out of scope
++
++- Aggregate feed lanes or multiple producers into one `(toStageId,itemId)`.
++- Byproduct demand feedback into proposal sizing.
++- Store route validation against the live catalog slice.
++- Legacy positional clock argument compatibility.
++- Auto-routing any byproduct without an explicit checked ROUTE control.
++- Persisting route choices across sessions or across Discard.
++
++## Assumptions ledger
++
++- A proposal still has one stage per primary item — grounded in
++  `proposeChain`'s `plans: Map<itemId,Plan>` and `idByItem` apply map.
++- Store output lanes include byproducts, so a `StageLink.itemId` pointing at a
++  non-primary output can reconcile — grounded in `toStageInput` using recipe
++  outputs and `mapLinkInputs` looking up `solve.result.outputs` by item id.
++- Skipping ambiguous/multi-source route controls is acceptable for this phase
++  because P2 already shows the aggregate suggestion and the current graph cannot
++  encode the aggregate route without violating the lane invariant.
++
++## Revision history
++
++- v1 (2026-08-16): initial #105 design. Carries P2 r1 reviewer findings into a
++  scoped routeable subset: route only single-source, no primary collision;
++  repeat duplicate refusal in the store; keep partial-supply reconciliation as
++  a diagnostic; defer demand feedback.
++- v2 (2026-08-16): r1 review fold. **Code-reviewer IMPORTANT (one source
++  byproduct could be routed to multiple consumers, double-counting source supply
++  under per-link reconciliation) — FOLDED**: routeability and apply now spend
++  each `(fromItemId,itemId)` once, leaving later consumers display-only.
++  **Adversarial NIT (stable key unspecified) — FOLDED**: key is explicitly
++  `(fromItemId,itemId,toItemId)`. **Adversarial NIT (store guard tests missing
++  unresolved/self rows) — FOLDED** in the test plan.
++- v3 (2026-08-16): r2 review fold. **Adversarial IMPORTANT (store API could
++  still materialize a dangling byproduct link when stale payload item lanes do
++  not match the still-existing source/consumer stages) — FOLDED**: apply now
++  validates source recipe outputs and consumer recipe inputs against the ready
++  catalog snapshot before writing the route. **Code-reviewer IMPORTANT
++  (`ChainBuilder` route derivation could use live ungated catalog instead of the
++  preview's solved `gated` snapshot) — FOLDED**: display decoration,
++  routeability, and Apply filtering all use `preview.gated`. **Code-reviewer NIT
++  (stale-selection test must cover same display row with changed source) —
++  FOLDED** in the jsdom plan.
++- v4 (2026-08-16): r3 adversarial fold. **IMPORTANT (store route validation
++  world was ambiguous: the store slice's live catalog is not necessarily the
++  proposal's solved `preview.gated` snapshot) — FOLDED**: `applyChainProposal`
++  gains an options bag carrying explicit `catalog: preview.gated` for route
++  validation; missing catalog means no byproduct routes are written. Legacy
++  clock-string callers remain valid.
++- v4 nits folded (2026-08-16): r4 = APPROVED_WITH_NITS ×2. Shared NIT
++  (missing-catalog route fallback not explicitly tested) — **FOLDED** in the
++  store test plan. Code-reviewer NIT (options-bag clock seeding not explicitly
++  tested) — **FOLDED** in the store test plan. Correctness pair CONVERGED.
++- v5 (2026-08-16): one-shot simplify pass (degraded same-vendor
++  claude-simplify-reviewer, NEEDS_REWORK advisory) — **FOLDED both findings**:
++  source fan-out now suppresses all affected rows instead of first-wins, and
++  `applyChainProposal` uses one options-bag API rather than dual positional
++  string/options forms. Because this changes the approved API/routeability
++  contract, correctness pair re-runs on the simplify fold.
++- v6 (2026-08-16): boundary r3 = APPROVED / APPROVED_WITH_NITS. **Adversarial
++  NIT (direct self-route suppression was unpinned) — FOLDED** with a focused
++  adapter row and mutation failure. **Adversarial NIT (the frozen jsdom plan's
++  same-display/source-change and failed-tier-repropose rows were absent) —
++  FOLDED** with full-key selection and separate snapshot label/routeability
++  rows, each backed by mutation failures.
+diff --git a/features/propose-followups/p3-design-r1-prompt.md b/features/propose-followups/p3-design-r1-prompt.md
+new file mode 100644
+index 0000000..3d3dc95
+--- /dev/null
++++ b/features/propose-followups/p3-design-r1-prompt.md
+@@ -0,0 +1,56 @@
++# Design review r1 — S21 P3 (#105): explicit byproduct routing
++
++Review `features/propose-followups/p3-brainstorm.md` in the repo at
++`/home/subzerodev/workspace/satisfactory-foundry`. This is a DESIGN review; no
++implementation diff exists yet.
++
++This review is degraded because the third-party Claude reviewer is unavailable
++by user directive. You are a fresh Codex agent copying the requested reviewer
++role. Return exactly one verdict:
++
++`APPROVED` / `APPROVED_WITH_NITS` / `NEEDS_REWORK` / `BLOCKED`
++
++with severity-tagged, line-cited findings.
++
++## Required context
++
++The P2 design of record is
++`features/propose-grows-up/p2-brainstorm.md`, especially Axis 4 and the revision
++history. P2 removed ROUTE after r1 reviewers found:
++
++1. duplicate `(toStageId,itemId)` lanes could enter through
++   `applyProposalToSlice`, unlike `addLink`/`canLink`;
++2. per-link reconciliation could produce contested partial-supply findings;
++3. stale ROUTE-toggle semantics were unspecified;
++4. demand-feedback semantics were not designed.
++
++## Live source anchors to verify
++
++- `src/core/chain-builder.ts:77-82`, `:350-357` — proposal byproducts currently
++  lack source identity.
++- `src/ui/chain-builder-adapter.ts:861-894` — display suggestions aggregate by
++  item before matching consumers.
++- `src/state/store.ts:875-902` — proposal apply maps primary links then appends.
++- `src/state/store.ts:949-960`, `:1615-1628` — public graph duplicate/self
++  refusal.
++- `src/state/store.ts:609-624` and `src/core/reconcile.ts:50-78` — per-link
++  reconciliation.
++- `src/ui/ChainBuilder.tsx:103-132`, `:275-284` — preview snapshots and current
++  apply call.
++
++## Questions to pressure-test
++
++1. Is widening `ChainProposal.byproducts` with `fromItemId` the right minimal
++   source-identity move, or does it create unnecessary churn compared with
++   re-deriving sources in the adapter?
++2. Does the "routeable only when single-source, no primary collision, no self
++   route" rule fully protect the store's one-feed-lane invariant?
++3. Is the partial-supply decision coherent: route means "send this byproduct
++   lane", and existing under/over reconciliation remains a diagnostic?
++4. Is deferring byproduct demand feedback explicit enough, or does the proposed
++   behavior become misleading without it?
++5. Are stale route toggles total across re-proposes and Apply?
++6. Are the tests sufficient and bidirectional, especially the duplicate-lane
++   refusal and stale-selection rows?
++
++Tag your verdict as `(degraded: same-vendor, third-party reviewer unavailable)`.
+diff --git a/features/propose-followups/p3-design-r2-prompt.md b/features/propose-followups/p3-design-r2-prompt.md
+new file mode 100644
+index 0000000..98e2453
+--- /dev/null
++++ b/features/propose-followups/p3-design-r2-prompt.md
+@@ -0,0 +1,46 @@
++# Design review r2 — S21 P3 (#105): explicit byproduct routing
++
++Re-review `features/propose-followups/p3-brainstorm.md` in the repo at
++`/home/subzerodev/workspace/satisfactory-foundry`. This is a DESIGN re-review
++after r1.
++
++This review is degraded because the third-party Claude reviewer is unavailable
++by user directive. You are a fresh Codex agent copying the requested reviewer
++role. Return exactly one verdict:
++
++`APPROVED` / `APPROVED_WITH_NITS` / `NEEDS_REWORK` / `BLOCKED`
++
++with severity-tagged, line-cited findings. Tag your verdict as
++`(degraded: same-vendor, third-party reviewer unavailable)`.
++
++## Prior r1 verdicts
++
++- code-reviewer: NEEDS_REWORK — one byproduct source could be checked into
++  multiple consumers, double-counting the same source output under per-link
++  reconciliation.
++- adversarial-reviewer: APPROVED_WITH_NITS — stable key unspecified; store guard
++  tests missing unresolved/self route payload rows.
++
++## v2 delta to verify
++
++1. Routeability now spends each source output `(fromItemId,itemId)` once:
++   if one byproduct source could feed two consumers, only the first
++   deterministic consumer row is routeable and the later rows stay display-only.
++   The store apply hard guard also tracks spent `(fromStageId,itemId)` and
++   accepts only the first selected route from that source output.
++2. Stable route key is explicitly `(fromItemId,itemId,toItemId)`.
++3. Test plan now includes source fan-out suppression, full route keys, unresolved
++   payload filtering, self-route filtering, and store-level source fan-out
++   filtering.
++
++## Questions
++
++- Does the v2 source-spending rule close the double-counting gap without
++  creating a new misleading behavior?
++- Does this interact correctly with the existing primary-lane collision and
++  multi-source aggregate suppressions?
++- Are stale route selections now total across source changes?
++- Is the test plan bidirectional enough for the v2 fold?
++
++Do not re-litigate P2 display-only routing or the demand-feedback deferral
++unless the v2 edits create a new concrete defect.
+diff --git a/features/propose-followups/p3-design-r3-prompt.md b/features/propose-followups/p3-design-r3-prompt.md
+new file mode 100644
+index 0000000..0308f3b
+--- /dev/null
++++ b/features/propose-followups/p3-design-r3-prompt.md
+@@ -0,0 +1,48 @@
++# Design review r3 — S21 P3 (#105): explicit byproduct routing
++
++Re-review `features/propose-followups/p3-brainstorm.md` in the repo at
++`/home/subzerodev/workspace/satisfactory-foundry`. This is a DESIGN re-review
++after r2.
++
++This review is degraded because the third-party Claude reviewer is unavailable
++by user directive. You are a fresh Codex agent copying the requested reviewer
++role. Return exactly one verdict:
++
++`APPROVED` / `APPROVED_WITH_NITS` / `NEEDS_REWORK` / `BLOCKED`
++
++with severity-tagged, line-cited findings. Tag your verdict as
++`(degraded: same-vendor, third-party reviewer unavailable)`.
++
++## Prior r2 verdicts
++
++- adversarial-reviewer: NEEDS_REWORK — store hard guard did not validate stale
++  payloads whose source/consumer stage items still resolve but whose item lanes
++  are wrong, creating dangling links.
++- code-reviewer: NEEDS_REWORK — UI spec did not require routeability/display
++  and Apply filtering to use the preview's solved `gated` catalog snapshot.
++  Also NIT: stale-selection tests must include a source change with the same
++  `(itemId,toItemId)` display row.
++
++## v3 delta to verify
++
++1. Store apply validation now checks every route payload against the proposal
++   plus ready catalog snapshot: source proposed stage recipe outputs `itemId`;
++   consumer proposed stage recipe inputs `itemId`. Unready catalog refuses
++   byproduct routes while still applying normal proposal stages/links.
++2. UI design now requires display decoration, routeability, and Apply filtering
++   to use `preview.gated`, not live `catalog`.
++3. Test plan adds stale source-output payload, stale consumer-input payload,
++   same display row with changed source, and failed-re-propose-after-tier-change
++   rows.
++
++## Questions
++
++- Do the new store guards close the dangling-link route API hole without
++  weakening the append-only proposal apply behavior?
++- Is using `preview.gated` sufficient and correctly scoped for route display,
++  checkbox routeability, and Apply filtering?
++- Are the new tests bidirectional against the r2 failures?
++- Any remaining unhandled stale route case?
++
++Do not re-litigate already-approved scope choices unless the v3 edits create a
++new concrete defect.
+diff --git a/features/propose-followups/p3-design-r4-prompt.md b/features/propose-followups/p3-design-r4-prompt.md
+new file mode 100644
+index 0000000..3f16539
+--- /dev/null
++++ b/features/propose-followups/p3-design-r4-prompt.md
+@@ -0,0 +1,47 @@
++# Design review r4 — S21 P3 (#105): explicit byproduct routing
++
++Re-review `features/propose-followups/p3-brainstorm.md` in the repo at
++`/home/subzerodev/workspace/satisfactory-foundry`. This is a DESIGN re-review
++after r3.
++
++This review is degraded because the third-party Claude reviewer is unavailable
++by user directive. You are a fresh Codex agent copying the requested reviewer
++role. Return exactly one verdict:
++
++`APPROVED` / `APPROVED_WITH_NITS` / `NEEDS_REWORK` / `BLOCKED`
++
++with severity-tagged, line-cited findings. Tag your verdict as
++`(degraded: same-vendor, third-party reviewer unavailable)`.
++
++## Prior r3 verdicts
++
++- code-reviewer: APPROVED.
++- adversarial-reviewer: NEEDS_REWORK — store route validation world was
++  ambiguous because `preview.gated` lives in `ChainBuilder`, while the store
++  slice only has the live catalog. A valid implementation could accidentally
++  validate route payloads against the wrong catalog.
++
++## v4 delta to verify
++
++1. `applyChainProposal` gains an options bag:
++   `{ clockPercentText?: string; byproductRoutes?: ProposedByproductRoute[];
++catalog?: Catalog }`.
++2. Legacy `applyChainProposal(proposal, "150")` remains supported for clock-only
++   callers.
++3. When byproduct routes are present, the UI passes
++   `{ clockPercentText: preview.clockText, byproductRoutes, catalog:
++preview.gated }`.
++4. The store validates routes only against the explicit catalog snapshot. Missing
++   catalog snapshot refuses all byproduct routes while still applying primary
++   proposal stages/links. Store validation against the live catalog slice is out
++   of scope/forbidden.
++
++## Questions
++
++- Does the options-bag contract remove the r3 ambiguity completely?
++- Does it preserve existing clock-only/default apply behavior?
++- Is the "missing catalog refuses routes" fallback total and non-surprising?
++- Any new API-shape or test-plan gap introduced by the options bag?
++
++Do not re-litigate already-approved scope choices unless the v4 edits create a
++new concrete defect.
+diff --git a/features/propose-followups/p3-design-r5-prompt.md b/features/propose-followups/p3-design-r5-prompt.md
+new file mode 100644
+index 0000000..9e2ea7a
+--- /dev/null
++++ b/features/propose-followups/p3-design-r5-prompt.md
+@@ -0,0 +1,44 @@
++# Design review r5 — S21 P3 (#105): simplify-fold re-review
++
++Re-review `features/propose-followups/p3-brainstorm.md` in the repo at
++`/home/subzerodev/workspace/satisfactory-foundry`. This is a correctness
++re-review after the one-shot simplify pass was folded.
++
++This review is degraded because the third-party Claude reviewer is unavailable
++by user directive. You are a fresh Codex agent copying the requested reviewer
++role. Return exactly one verdict:
++
++`APPROVED` / `APPROVED_WITH_NITS` / `NEEDS_REWORK` / `BLOCKED`
++
++with severity-tagged, line-cited findings. Tag your verdict as
++`(degraded: same-vendor, third-party reviewer unavailable)`.
++
++## Prior state
++
++Correctness converged at r4 APPROVED_WITH_NITS ×2. The one-shot simplify pass
++then found two simplifications, both folded. Do not rerun simplify.
++
++## v5 delta to verify
++
++1. Source fan-out is no longer first-wins. If one source byproduct can feed
++   multiple proposed consumers, all those rows stay display-only.
++2. `applyChainProposal` no longer supports the legacy positional clock string.
++   It takes `(proposal, options: ApplyChainProposalOptions = {})`, where
++   `clockPercentText` defaults to `"100"` inside the store implementation.
++   Current callers/tests will be updated to pass `{ clockPercentText: "150" }`
++   for non-default clocks.
++3. Route validation still uses explicit `catalog: preview.gated`, refuses
++   routes without catalog, validates source outputs and consumer inputs, refuses
++   duplicate target lanes, self-routes, and repeated source spending.
++
++## Questions
++
++- Does suppress-all source fan-out preserve correctness and simplify the
++  previously approved source-spending contract?
++- Does the single options-bag API preserve existing default and non-default
++  clock behavior without introducing an API ambiguity?
++- Are tests specified for the migrated options-bag clock path and missing-catalog
++  route fallback?
++
++Do not re-litigate already-approved scope choices unless the v5 simplification
++creates a new concrete defect.
+diff --git a/features/propose-followups/p3-verification.log b/features/propose-followups/p3-verification.log
+new file mode 100644
+index 0000000..865378f
+--- /dev/null
++++ b/features/propose-followups/p3-verification.log
+@@ -0,0 +1,104 @@
++S21 P3 #105 byproduct routing verification
++Date: 2026-08-16
++
++Focused verification:
++
++- `npm test -- --run src/core/chain-builder.test.ts src/ui/chain-builder-adapter.test.ts src/state/store.test.ts src/ui/ChainBuilder.byproduct-routing.test.tsx`
++  - PASS: 4 files, 291 tests.
++- `npm run check`
++  - PASS: `tsc -b`, `eslint .`, `prettier --check src`.
++- `npm test`
++  - PASS: 35 files, 930 tests.
++
++Bidirectionality probes:
++
++1. Removed source fan-out suppression from `byproductRouteSuggestions`.
++   - Command: `npm test -- --run src/ui/chain-builder-adapter.test.ts`
++   - Result: FAIL as intended.
++   - Failing row: `route helper suppresses multi-source aggregate and source fan-out`.
++   - Failure showed two routeable rows for one source byproduct:
++     `fuel resin rubber` and `fuel resin paint`.
++   - Restored the source-count filter.
++
++2. Removed the store duplicate `(toStageId,itemId)` target-lane refusal.
++   - Command: `npm test -- --run src/state/store.test.ts`
++   - Result: FAIL as intended.
++   - Failing row: `refuses duplicate, stale, self and repeated-source byproduct routes`.
++   - Failure: duplicate target lane produced 3 links where the test expected 2.
++   - Restored the target-lane guard.
++
++3. Removed the store source-output validation.
++   - Command: `npm test -- --run src/state/store.test.ts`
++   - Result: FAIL as intended.
++   - Failing row: `refuses duplicate, stale, self and repeated-source byproduct routes`.
++   - Failure: stale source output wrote one `resin` link where the test expected 0.
++   - Restored the source-output guard.
++
++4. Removed the store repeated-source-output validation.
++   - Command: `npm test -- --run src/state/store.test.ts`
++   - Result: FAIL as intended.
++   - Failing row: `refuses duplicate, stale, self and repeated-source byproduct routes`.
++   - Failure: repeated source spend wrote two `resin` links where the test expected 1.
++   - Restored the repeated-source guard.
++
++Boundary r1 fold:
++
++- Added store coverage where repeated source spending uses two different
++  consumers, so the target-lane duplicate guard cannot mask the source-spend
++  guard.
++- Added jsdom coverage for a checked route that becomes non-routeable after
++  re-propose; Apply writes no stale `resin` route.
++
++Boundary r2 fold:
++
++- Changed the jsdom stale-route row to use a non-resetting auto-repropose path:
++  a checked route disappears after a machine-exclusion re-propose, then the
++  route reappears after a second machine-exclusion re-propose and must be
++  unchecked.
++- Removed the `setSelectedRouteKeys(...filter...)` intersection in `repropose`.
++  - Command: `npm test -- --run src/ui/ChainBuilder.byproduct-routing.test.tsx`
++  - Result: FAIL as intended.
++  - Failing row: `drops a checked route when re-propose makes it non-routeable`.
++  - Failure: restored route checkbox was still checked (`expected true to be
++    false`) at `src/ui/ChainBuilder.byproduct-routing.test.tsx:287`.
++  - Restored the selected-route intersection.
++- Re-ran `npm test -- --run src/ui/ChainBuilder.byproduct-routing.test.tsx`.
++  - PASS: 1 file, 2 tests.
++
++Boundary r3 fold:
++
++- Added direct self-route suppression coverage.
++  - Removed `if (bp.fromItemId === stage.itemId) continue` from
++    `byproductRouteSuggestions`.
++  - Command: `npm test -- --run src/ui/chain-builder-adapter.test.ts`
++  - Result: FAIL as intended.
++  - Failing row: `route helper suppresses a byproduct route back into its
++    source stage`.
++  - Failure exposed `fuel resin fuel`; restored the self-route guard.
++- Added the frozen same-display/source-change jsdom row.
++  - Removed the selected-route intersection from `repropose`.
++  - Command: `npm test -- --run src/ui/ChainBuilder.byproduct-routing.test.tsx`
++  - Result: FAIL as intended.
++  - Failing rows: `drops a checked route when re-propose makes it
++    non-routeable` and `drops a selected full route key when the same display
++    row changes source`.
++  - Both failures restored an old route checkbox as checked; restored the
++    selected-route intersection.
++- Added separate failed-tier-repropose label and routeability rows.
++  - Replaced `preview.gated` with the live `catalog` in
++    `byproductRouteSuggestions`.
++  - Command: `npm test -- --run src/ui/ChainBuilder.byproduct-routing.test.tsx`
++  - Result: FAIL as intended.
++  - Failing rows: `keeps route labels in preview.gated after a tier re-propose
++    fails` and `keeps routeability in preview.gated after a tier re-propose
++    fails`.
++  - Replaced `preview.gated` with live `catalog` in `byproductSuggestions`.
++  - The same command failed the routeability row as intended.
++  - Restored both snapshot derivations.
++- Re-ran `npm test -- --run src/ui/chain-builder-adapter.test.ts
++  src/ui/ChainBuilder.byproduct-routing.test.tsx`.
++  - PASS: 2 files, 104 tests.
++- Re-ran `npm run check`.
++  - PASS: `tsc -b`, `eslint .`, `prettier --check src`.
++- Re-ran `npm test -- --run`.
++  - PASS: 35 files, 934 tests.
+diff --git a/src/core/chain-builder.test.ts b/src/core/chain-builder.test.ts
+index db71480..d630d72 100644
+--- a/src/core/chain-builder.test.ts
++++ b/src/core/chain-builder.test.ts
+@@ -190,7 +190,9 @@ describe("proposeChain — byproducts reported, never routed", () => {
+   it("lists the non-primary output at its built rate", () => {
+     // fuel @ 40/min → 1 fuel machine → 30 residue byproduct.
+     const p = proposeChain("fuel", F(40), recipes, []);
+-    expect(p.byproducts).toEqual([{ itemId: "residue", rate: F(30) }]);
++    expect(p.byproducts).toEqual([
++      { fromItemId: "fuel", itemId: "residue", rate: F(30) },
++    ]);
+     // No stage or link for residue — reported only.
+     expect(stageFor(p, "residue")).toBeUndefined();
+     expect(p.links.some((l) => l.fromItemId === "residue")).toBe(false);
+@@ -662,7 +664,9 @@ describe("proposeChain — clockPercent scaling (S20 P2)", () => {
+     // and the byproduct resin scales to 10 × 3/2 = 15/min.
+     const p = proposeChain("fuel", F(20), bp, [], new Map(), new Set(), F(150));
+     expect(stageFor(p, "fuel")!.machineCount).toBe(1n);
+-    expect(p.byproducts).toEqual([{ itemId: "resin", rate: F(15) }]);
++    expect(p.byproducts).toEqual([
++      { fromItemId: "fuel", itemId: "resin", rate: F(15) },
++    ]);
+   });
+ 
+   it("the 100% DEFAULT is byte-identical to the 6-arg call (regression pin)", () => {
+diff --git a/src/core/chain-builder.ts b/src/core/chain-builder.ts
+index c4a9fb5..51df84d 100644
+--- a/src/core/chain-builder.ts
++++ b/src/core/chain-builder.ts
+@@ -68,6 +68,11 @@ export interface ItemRate {
+   rate: Fraction;
+ }
+ 
++/** A non-primary output from one proposed stage. */
++export interface ProposedByproduct extends ItemRate {
++  fromItemId: string;
++}
++
+ /**
+  * The full proposal. `stages`/`links` build the graph; `rawInputs` are the
+  * unlinked leaf feeds (ores, raw fluids, excluded forms) the chain expects from
+@@ -78,7 +83,7 @@ export interface ChainProposal {
+   stages: ProposedStage[];
+   links: ProposedLink[];
+   rawInputs: ItemRate[];
+-  byproducts: ItemRate[];
++  byproducts: ProposedByproduct[];
+ }
+ 
+ /**
+@@ -325,7 +330,7 @@ export function proposeChain(
+   // Emit stages, raw inputs, byproducts from the finished plans.
+   const stages: ProposedStage[] = [];
+   const rawInputs: ItemRate[] = [];
+-  const byproducts: ItemRate[] = [];
++  const byproducts: ProposedByproduct[] = [];
+   for (const [itemId, plan] of plans) {
+     if (plan.recipe === null) {
+       // Raw leaf: report its total demand (a stage only accrues demand if a
+@@ -352,6 +357,7 @@ export function proposeChain(
+     for (const out of plan.recipe.outputs) {
+       if (out.itemId === itemId) continue;
+       byproducts.push({
++        fromItemId: itemId,
+         itemId: out.itemId,
+         rate: Fraction.from(count).mul(out.perMinute.mul(clockScale)),
+       });
+diff --git a/src/state/store.test.ts b/src/state/store.test.ts
+index dc24c73..356c24c 100644
+--- a/src/state/store.test.ts
++++ b/src/state/store.test.ts
+@@ -5,9 +5,10 @@ import { resetDbCache } from "../data/db.ts";
+ import { saveCatalog } from "../data/catalog-store.ts";
+ import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
+ import { parseCatalogFromText } from "../data/catalog.ts";
++import type { Catalog } from "../data/types.ts";
+ import type { PlanFileV1, PlanFileV2, PlanFileV5 } from "../data/plan-store.ts";
+ import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
+-import type { StageLink, PlanBundle } from "./store.ts";
++import type { StageLink, PlanBundle, ProposedByproductRoute } from "./store.ts";
+ import { proposeChain } from "../core/chain-builder.ts";
+ import type { ChainProposal } from "../core/chain-builder.ts";
+ import { applyDrawnDistance } from "../ui/chain-view.ts";
+@@ -3132,6 +3133,125 @@ describe("applyChainProposal (Stage 8 / Phase 3)", () => {
+     );
+   }
+ 
++  function routeCatalog(): Catalog {
++    const io = (itemId: string, rate: number) => ({
++      itemId,
++      perMinute: Fraction.from(rate),
++    });
++    return {
++      items: Object.fromEntries(
++        ["oil", "fuel", "resin", "rubber", "paint", "pack"].map((id) => [
++          id,
++          {
++            id,
++            displayName: id,
++            isFluid: false,
++            stackSize: Fraction.from(100),
++          },
++        ]),
++      ),
++      machines: {
++        refinery: {
++          id: "refinery",
++          displayName: "Refinery",
++          power: {
++            mw: Fraction.from(30),
++            variable: false,
++            exponent: Fraction.from(1),
++          },
++        },
++      },
++      recipes: {
++        r_fuel: {
++          id: "r_fuel",
++          displayName: "Fuel",
++          machineId: "refinery",
++          isAlternate: false,
++          primaryOutputId: "fuel",
++          inputs: [io("oil", 30)],
++          outputs: [io("fuel", 20), io("resin", 10)],
++        },
++        r_rubber: {
++          id: "r_rubber",
++          displayName: "Rubber",
++          machineId: "refinery",
++          isAlternate: false,
++          primaryOutputId: "rubber",
++          inputs: [io("resin", 30)],
++          outputs: [io("rubber", 20)],
++        },
++        r_pack: {
++          id: "r_pack",
++          displayName: "Pack",
++          machineId: "refinery",
++          isAlternate: false,
++          primaryOutputId: "pack",
++          inputs: [io("fuel", 20), io("rubber", 20)],
++          outputs: [io("pack", 10)],
++        },
++        r_paint: {
++          id: "r_paint",
++          displayName: "Paint",
++          machineId: "refinery",
++          isAlternate: false,
++          primaryOutputId: "paint",
++          inputs: [io("resin", 10)],
++          outputs: [io("paint", 10)],
++        },
++      },
++      tiers: { belt: [Fraction.from(60)], pipe: [Fraction.from(300)] },
++      recipeUnlocks: {},
++    };
++  }
++
++  function routeProposal(): ChainProposal {
++    return {
++      stages: [
++        {
++          itemId: "fuel",
++          recipeId: "r_fuel",
++          machineCount: 1n,
++          outputRate: Fraction.from(20),
++        },
++        {
++          itemId: "rubber",
++          recipeId: "r_rubber",
++          machineCount: 1n,
++          outputRate: Fraction.from(20),
++        },
++        {
++          itemId: "pack",
++          recipeId: "r_pack",
++          machineCount: 1n,
++          outputRate: Fraction.from(10),
++        },
++        {
++          itemId: "paint",
++          recipeId: "r_paint",
++          machineCount: 1n,
++          outputRate: Fraction.from(10),
++        },
++      ],
++      links: [
++        { fromItemId: "fuel", toItemId: "pack" },
++        { fromItemId: "rubber", toItemId: "pack" },
++      ],
++      rawInputs: [
++        { itemId: "oil", rate: Fraction.from(30) },
++        { itemId: "resin", rate: Fraction.from(30) },
++      ],
++      byproducts: [
++        { fromItemId: "fuel", itemId: "resin", rate: Fraction.from(10) },
++      ],
++    };
++  }
++
++  function routeStore() {
++    const store = createAppStore(makeStorageStub().storage);
++    store.setState({ catalog: { status: "ready", catalog: routeCatalog() } });
++    return store;
++  }
++
+   it("appends fresh stages/links, sizes machines, seeds names + tiers, focuses target", async () => {
+     const store = await chainCatalogStore();
+     // Start with one edited default stage to prove existing state is untouched.
+@@ -3224,7 +3344,7 @@ describe("applyChainProposal (Stage 8 / Phase 3)", () => {
+     const orderBefore = store.getState().stageOrder.length;
+     const proposal = propose(store, "iron_plate", 60);
+     // Pass the propose-time clock text; every appended stage carries it.
+-    store.getState().applyChainProposal(proposal, "150");
++    store.getState().applyChainProposal(proposal, { clockPercentText: "150" });
+     const s = store.getState();
+     const appended = s.stageOrder.slice(orderBefore);
+     expect(appended).toHaveLength(2);
+@@ -3244,6 +3364,97 @@ describe("applyChainProposal (Stage 8 / Phase 3)", () => {
+     }
+   });
+ 
++  it("applies selected byproduct routes as StageLinks", () => {
++    const store = routeStore();
++    const proposal = routeProposal();
++
++    store.getState().applyChainProposal(proposal, {
++      catalog: routeCatalog(),
++      byproductRoutes: [
++        { fromItemId: "fuel", itemId: "resin", toItemId: "rubber" },
++      ],
++    });
++
++    const s = store.getState();
++    const appended = s.stageOrder.slice(1);
++    const byName = new Map(appended.map((id) => [s.stages[id]!.name, id]));
++    expect(s.links).toEqual(
++      expect.arrayContaining([
++        expect.objectContaining({
++          fromStageId: byName.get("Fuel"),
++          itemId: "resin",
++          toStageId: byName.get("Rubber"),
++        }),
++      ]),
++    );
++  });
++
++  it("routes without a catalog are refused while primary links still apply", () => {
++    const store = routeStore();
++
++    store.getState().applyChainProposal(routeProposal(), {
++      byproductRoutes: [
++        { fromItemId: "fuel", itemId: "resin", toItemId: "rubber" },
++      ],
++    });
++
++    const s = store.getState();
++    expect(s.stageOrder.slice(1)).toHaveLength(4);
++    expect(s.links).toHaveLength(2);
++    expect(s.links.some((l) => l.itemId === "resin")).toBe(false);
++  });
++
++  it("refuses duplicate, stale, self and repeated-source byproduct routes", () => {
++    const cases: Array<{ name: string; routes: ProposedByproductRoute[] }> = [
++      {
++        name: "duplicate target lane",
++        routes: [{ fromItemId: "fuel", itemId: "fuel", toItemId: "pack" }],
++      },
++      {
++        name: "stale source output",
++        routes: [{ fromItemId: "pack", itemId: "resin", toItemId: "rubber" }],
++      },
++      {
++        name: "stale consumer input",
++        routes: [{ fromItemId: "fuel", itemId: "resin", toItemId: "pack" }],
++      },
++      {
++        name: "unresolved endpoint",
++        routes: [
++          { fromItemId: "missing", itemId: "resin", toItemId: "rubber" },
++        ],
++      },
++      {
++        name: "self route",
++        routes: [{ fromItemId: "fuel", itemId: "resin", toItemId: "fuel" }],
++      },
++      {
++        name: "repeated source spend",
++        routes: [
++          { fromItemId: "fuel", itemId: "resin", toItemId: "rubber" },
++          { fromItemId: "fuel", itemId: "resin", toItemId: "paint" },
++        ],
++      },
++    ];
++
++    for (const { name, routes } of cases) {
++      const store = routeStore();
++      store.getState().applyChainProposal(routeProposal(), {
++        catalog: routeCatalog(),
++        byproductRoutes: routes,
++      });
++      const resinLinks = store
++        .getState()
++        .links.filter((l) => l.itemId === "resin");
++      expect(resinLinks, name).toHaveLength(
++        name === "repeated source spend" ? 1 : 0,
++      );
++      expect(store.getState().links, name).toHaveLength(
++        name === "repeated source spend" ? 3 : 2,
++      );
++    }
++  });
++
+   it("empty proposal is a no-op", async () => {
+     const store = await chainCatalogStore();
+     store.getState().selectRecipe("iron_plate");
+diff --git a/src/state/store.ts b/src/state/store.ts
+index bd4dcbc..9561fdd 100644
+--- a/src/state/store.ts
++++ b/src/state/store.ts
+@@ -174,6 +174,18 @@ export interface StageLink {
+   transport?: LinkTransport;
+ }
+ 
++export interface ProposedByproductRoute {
++  fromItemId: string;
++  itemId: string;
++  toItemId: string;
++}
++
++export interface ApplyChainProposalOptions {
++  clockPercentText?: string;
++  byproductRoutes?: ProposedByproductRoute[];
++  catalog?: Catalog;
++}
++
+ export interface AppState {
+   catalog: CatalogState;
+   /**
+@@ -358,7 +370,10 @@ export interface Actions {
+    * user-intent-text idiom. The applied graph then solves each stage at that
+    * clock natively (existing per-stage clock support). Defaults to "100".
+    */
+-  applyChainProposal(proposal: ChainProposal, clockPercentText?: string): void;
++  applyChainProposal(
++    proposal: ChainProposal,
++    options?: ApplyChainProposalOptions,
++  ): void;
+   refreshPlans(): Promise<void>;
+   savePlanAs(name: string): Promise<void>;
+   loadPlan(id: string): Promise<void>;
+@@ -822,7 +837,7 @@ function applyProposalToSlice(
+   slice: GraphSlice,
+   placementSeq: number,
+   proposal: ChainProposal,
+-  clockPercentText: string,
++  options: ApplyChainProposalOptions,
+ ): GraphSlice & { placementSeq: number } {
+   if (proposal.stages.length === 0) {
+     return { ...slice, placementSeq };
+@@ -834,6 +849,7 @@ function applyProposalToSlice(
+       : recipeId;
+   // Tiers seed from the active stage (the canonical global tiers value).
+   const globalTiers = slice.selection.unlockedTiers;
++  const clockPercentText = options.clockPercentText ?? "100";
+ 
+   // Fresh uuid per proposed item, keyed by item id (links resolve through this).
+   const idByItem = new Map<string, string>();
+@@ -880,6 +896,45 @@ function applyProposalToSlice(
+     toStageId: idByItem.get(l.toItemId)!,
+     itemId: l.fromItemId,
+   }));
++  const usedTargetLanes = new Set(
++    [...slice.links, ...newLinks].map((l) => `${l.toStageId} ${l.itemId}`),
++  );
++  const usedSourceOutputs = new Set<string>();
++  const catalogSnapshot = options.catalog;
++  if (catalogSnapshot !== undefined) {
++    for (const route of options.byproductRoutes ?? []) {
++      const fromStage = proposal.stages.find(
++        (stage) => stage.itemId === route.fromItemId,
++      );
++      const toStage = proposal.stages.find(
++        (stage) => stage.itemId === route.toItemId,
++      );
++      if (fromStage === undefined || toStage === undefined) continue;
++      const fromId = idByItem.get(route.fromItemId);
++      const toId = idByItem.get(route.toItemId);
++      if (fromId === undefined || toId === undefined || fromId === toId) {
++        continue;
++      }
++      const fromRecipe = catalogSnapshot.recipes[fromStage.recipeId];
++      const toRecipe = catalogSnapshot.recipes[toStage.recipeId];
++      if (fromRecipe === undefined || toRecipe === undefined) continue;
++      if (!fromRecipe.outputs.some((o) => o.itemId === route.itemId)) continue;
++      if (!toRecipe.inputs.some((i) => i.itemId === route.itemId)) continue;
++      const targetKey = `${toId} ${route.itemId}`;
++      if (usedTargetLanes.has(targetKey)) continue;
++      const sourceKey = `${fromId} ${route.itemId}`;
++      if (usedSourceOutputs.has(sourceKey)) continue;
++      const link: StageLink = {
++        id: crypto.randomUUID(),
++        fromStageId: fromId,
++        toStageId: toId,
++        itemId: route.itemId,
++      };
++      newLinks.push(link);
++      usedTargetLanes.add(targetKey);
++      usedSourceOutputs.add(sourceKey);
++    }
++  }
+ 
+   // Target stage becomes active (focus lands on the user's intent). The proposal
+   // doesn't carry the target id, but the target is the unique produced item that
+@@ -1725,7 +1780,7 @@ export function createAppStore(storage?: StateStorage) {
+ 
+           applyChainProposal(
+             proposal: ChainProposal,
+-            clockPercentText = "100",
++            options: ApplyChainProposalOptions = {},
+           ) {
+             // Append the proposed stages/links (fresh uuids), derive + reconcile
+             // + mirror, and focus the target stage. Additive rebuildFromPlan
+@@ -1733,12 +1788,7 @@ export function createAppStore(storage?: StateStorage) {
+             // helper so the monotonic counter stays never-reused. The clock text
+             // (S20 P2) seeds every applied stage's clockPercentText.
+             set((s) =>
+-              applyProposalToSlice(
+-                s,
+-                s.placementSeq,
+-                proposal,
+-                clockPercentText,
+-              ),
++              applyProposalToSlice(s, s.placementSeq, proposal, options),
+             );
+           },
+ 
+diff --git a/src/ui/ChainBuilder.byproduct-routing.test.tsx b/src/ui/ChainBuilder.byproduct-routing.test.tsx
+new file mode 100644
+index 0000000..9614366
+--- /dev/null
++++ b/src/ui/ChainBuilder.byproduct-routing.test.tsx
+@@ -0,0 +1,445 @@
++/**
++ * @vitest-environment jsdom
++ */
++
++import { describe, it, expect, afterEach, vi } from "vitest";
++import { act } from "react";
++import { createRoot } from "react-dom/client";
++import type { Root } from "react-dom/client";
++
++import { Fraction } from "../core/fraction.ts";
++import type {
++  Catalog,
++  CatalogItem,
++  CatalogMachine,
++  CatalogRecipe,
++} from "../data/types.ts";
++import { appStore, createAppStore } from "../state/store.ts";
++import { ChainBuilder } from "./ChainBuilder.tsx";
++
++(
++  globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
++).IS_REACT_ACT_ENVIRONMENT = true;
++
++const storage = vi.hoisted(() => {
++  const memory = new Map<string, string>();
++  const stub: Storage = {
++    getItem: (k) => memory.get(k) ?? null,
++    setItem: (k, v) => void memory.set(k, v),
++    removeItem: (k) => void memory.delete(k),
++    clear: () => memory.clear(),
++    key: (i) => [...memory.keys()][i] ?? null,
++    get length() {
++      return memory.size;
++    },
++  };
++  (globalThis as unknown as { localStorage: Storage }).localStorage = stub;
++  return stub;
++});
++
++const F = (n: number): Fraction => Fraction.from(n);
++
++function item(id: string, displayName: string): CatalogItem {
++  return { id, displayName, isFluid: false, stackSize: F(100) };
++}
++
++function machine(id: string): CatalogMachine {
++  return {
++    id,
++    displayName: id,
++    power: { mw: F(4), variable: false, exponent: F(1) },
++  };
++}
++
++function recipe(
++  id: string,
++  displayName: string,
++  outputs: Array<[string, number]>,
++  inputs: Array<[string, number]>,
++): CatalogRecipe {
++  const out = outputs.map(([itemId, perMinute]) => ({
++    itemId,
++    perMinute: F(perMinute),
++  }));
++  return {
++    id,
++    displayName,
++    machineId: "refinery",
++    isAlternate: false,
++    primaryOutputId: out[0]!.itemId,
++    outputs: out,
++    inputs: inputs.map(([itemId, perMinute]) => ({
++      itemId,
++      perMinute: F(perMinute),
++    })),
++  };
++}
++
++function routeCatalog(): Catalog {
++  const recipes = [
++    recipe(
++      "r_pack",
++      "Pack",
++      [["pack", 10]],
++      [
++        ["fuel", 20],
++        ["rubber", 20],
++      ],
++    ),
++    recipe(
++      "r_fuel",
++      "Fuel",
++      [
++        ["fuel", 20],
++        ["resin", 10],
++      ],
++      [["oil", 30]],
++    ),
++    recipe("r_rubber", "Rubber", [["rubber", 20]], [["resin", 30]]),
++    recipe("r_plastic", "Plastic", [["plastic", 20]], [["resin", 10]]),
++  ];
++  return {
++    items: Object.fromEntries(
++      [
++        item("oil", "Oil"),
++        item("fuel", "Fuel"),
++        item("resin", "Resin"),
++        item("rubber", "Rubber"),
++        item("plastic", "Plastic"),
++        item("pack", "Pack"),
++      ].map((i) => [i.id, i]),
++    ),
++    machines: { refinery: machine("refinery") },
++    recipes: Object.fromEntries(recipes.map((r) => [r.id, r])),
++    tiers: { belt: [F(60)], pipe: [F(300)] },
++    recipeUnlocks: { r_pack: 0 },
++  };
++}
++
++function routeCatalogWithFanOut(): Catalog {
++  const cat = routeCatalog();
++  return {
++    ...cat,
++    recipes: {
++      ...cat.recipes,
++      r_pack: {
++        ...cat.recipes["r_pack"]!,
++        inputs: [
++          ...cat.recipes["r_pack"]!.inputs,
++          { itemId: "plastic", perMinute: F(20) },
++        ],
++      },
++    },
++  };
++}
++
++function routeCatalogWithPlasticSource(): Catalog {
++  const cat = routeCatalog();
++  return {
++    ...cat,
++    recipes: {
++      ...cat.recipes,
++      r_pack: recipe(
++        "r_pack",
++        "Pack",
++        [["pack", 10]],
++        [
++          ["fuel", 20],
++          ["rubber", 20],
++          ["plastic", 20],
++        ],
++      ),
++      r_fuel: recipe("r_fuel", "Fuel", [["fuel", 20]], [["oil", 30]]),
++      r_plastic: recipe(
++        "r_plastic",
++        "Plastic",
++        [
++          ["plastic", 20],
++          ["resin", 10],
++        ],
++        [["oil", 30]],
++      ),
++    },
++  };
++}
++
++function routeCatalogWithLiveNames(): Catalog {
++  const cat = routeCatalog();
++  return {
++    ...cat,
++    items: {
++      ...cat.items,
++      fuel: item("fuel", "Live Fuel"),
++      resin: item("resin", "Live Resin"),
++      rubber: item("rubber", "Live Rubber"),
++    },
++  };
++}
++
++function routeCatalogWithoutRubberInput(): Catalog {
++  const cat = routeCatalog();
++  return {
++    ...cat,
++    recipes: {
++      ...cat.recipes,
++      r_rubber: recipe("r_rubber", "Rubber", [["rubber", 20]], []),
++    },
++  };
++}
++
++let container: HTMLDivElement;
++let root: Root;
++
++function mount(): void {
++  const fresh = createAppStore(storage).getState();
++  appStore.setState({
++    stages: fresh.stages,
++    stageOrder: fresh.stageOrder,
++    activeStageId: fresh.activeStageId,
++    links: [],
++    reconciliation: [],
++    selectedLinkId: null,
++    positions: fresh.positions,
++    placementSeq: fresh.placementSeq,
++    flowDirection: fresh.flowDirection,
++    userPlaced: {},
++    selection: fresh.selection,
++    solve: fresh.solve,
++    catalog: { status: "ready", catalog: routeCatalog() },
++    proposePrefs: {
++      overrides: {},
++      excludedMachineIds: [],
++      unlockedTier: null,
++    },
++  });
++  container = document.createElement("div");
++  document.body.appendChild(container);
++  root = createRoot(container);
++  act(() => {
++    root.render(<ChainBuilder />);
++  });
++}
++
++const $$ = <T extends Element>(sel: string): T[] =>
++  Array.from(container.querySelectorAll<T>(sel));
++
++function chooseTarget(itemId: string): void {
++  const select = $$<HTMLSelectElement>(".chain-builder-controls select")[0]!;
++  act(() => {
++    select.value = itemId;
++    select.dispatchEvent(new Event("change", { bubbles: true }));
++  });
++}
++
++function chooseTier(value: string): void {
++  const select = container.querySelector<HTMLSelectElement>(
++    ".chain-builder-tier-select",
++  )!;
++  act(() => {
++    select.value = value;
++    select.dispatchEvent(new Event("change", { bubbles: true }));
++  });
++}
++
++function typeInto(el: HTMLInputElement, value: string): void {
++  const setter = Object.getOwnPropertyDescriptor(
++    HTMLInputElement.prototype,
++    "value",
++  )!.set!;
++  act(() => {
++    setter.call(el, value);
++    el.dispatchEvent(new Event("input", { bubbles: true }));
++  });
++}
++
++function clickText(text: string): void {
++  act(() => {
++    $$<HTMLButtonElement>("button")
++      .find((button) => button.textContent === text)!
++      .click();
++  });
++}
++
++function clickPropose(): void {
++  clickText("Propose");
++}
++
++function toggleMachineExclusion(): void {
++  const checkbox = container.querySelector<HTMLInputElement>(
++    ".chain-builder-exclusions input[type='checkbox']",
++  )!;
++  act(() => {
++    checkbox.click();
++  });
++}
++
++function propose(): void {
++  chooseTarget("pack");
++  typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "10");
++  clickPropose();
++}
++
++afterEach(() => {
++  act(() => {
++    root.unmount();
++  });
++  container.remove();
++  storage.clear();
++});
++
++describe("ChainBuilder byproduct routing (#105)", () => {
++  it("checks ROUTE and applies the selected byproduct StageLink", () => {
++    mount();
++    propose();
++
++    const route = $$<HTMLInputElement>(
++      'input[aria-label="route Resin from Fuel to Rubber"]',
++    )[0]!;
++    act(() => {
++      route.click();
++    });
++    clickText("Apply");
++
++    const s = appStore.getState();
++    const byRecipe = new Map(
++      s.stageOrder.map((id) => [s.stages[id]!.selection.recipeId, id]),
++    );
++    expect(s.links).toEqual(
++      expect.arrayContaining([
++        expect.objectContaining({
++          fromStageId: byRecipe.get("r_fuel"),
++          itemId: "resin",
++          toStageId: byRecipe.get("r_rubber"),
++        }),
++      ]),
++    );
++  });
++
++  it("drops a checked route when re-propose makes it non-routeable", () => {
++    mount();
++    propose();
++
++    act(() => {
++      $$<HTMLInputElement>(
++        'input[aria-label="route Resin from Fuel to Rubber"]',
++      )[0]!.click();
++    });
++
++    act(() => {
++      appStore.setState({
++        catalog: { status: "ready", catalog: routeCatalogWithFanOut() },
++      });
++    });
++    toggleMachineExclusion();
++
++    expect(
++      $$<HTMLInputElement>(
++        'input[aria-label="route Resin from Fuel to Rubber"]',
++      ),
++    ).toHaveLength(0);
++
++    act(() => {
++      appStore.setState({
++        catalog: { status: "ready", catalog: routeCatalog() },
++      });
++    });
++    toggleMachineExclusion();
++
++    const restoredRoute = $$<HTMLInputElement>(
++      'input[aria-label="route Resin from Fuel to Rubber"]',
++    )[0]!;
++    expect(restoredRoute.checked).toBe(false);
++    clickText("Apply");
++
++    expect(appStore.getState().links.some((l) => l.itemId === "resin")).toBe(
++      false,
++    );
++  });
++
++  it("drops a selected full route key when the same display row changes source", () => {
++    mount();
++    propose();
++
++    act(() => {
++      $$<HTMLInputElement>(
++        'input[aria-label="route Resin from Fuel to Rubber"]',
++      )[0]!.click();
++      appStore.setState({
++        catalog: { status: "ready", catalog: routeCatalogWithPlasticSource() },
++      });
++    });
++    chooseTier("0");
++
++    expect(
++      $$<HTMLInputElement>(
++        'input[aria-label="route Resin from Fuel to Rubber"]',
++      ),
++    ).toHaveLength(0);
++    expect(
++      $$<HTMLInputElement>(
++        'input[aria-label="route Resin from Plastic to Rubber"]',
++      )[0]!.checked,
++    ).toBe(false);
++
++    act(() => {
++      appStore.setState({
++        catalog: { status: "ready", catalog: routeCatalog() },
++      });
++    });
++    chooseTier("");
++
++    expect(
++      $$<HTMLInputElement>(
++        'input[aria-label="route Resin from Fuel to Rubber"]',
++      )[0]!.checked,
++    ).toBe(false);
++  });
++
++  it("keeps route labels in preview.gated after a tier re-propose fails", () => {
++    mount();
++    propose();
++
++    typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "bad");
++    act(() => {
++      appStore.setState({
++        catalog: { status: "ready", catalog: routeCatalogWithLiveNames() },
++      });
++    });
++    chooseTier("0");
++
++    expect(
++      $$<HTMLInputElement>(
++        'input[aria-label="route Resin from Fuel to Rubber"]',
++      ),
++    ).toHaveLength(1);
++    const suggestion = container.querySelector<HTMLElement>(
++      ".chain-builder-suggestion",
++    )!;
++    expect(suggestion.textContent).toContain(
++      "from Fuel: Resin could feed Rubber",
++    );
++    expect(suggestion.textContent).not.toContain("Live Resin");
++  });
++
++  it("keeps routeability in preview.gated after a tier re-propose fails", () => {
++    mount();
++    propose();
++
++    typeInto($$<HTMLInputElement>(".chain-builder-controls input")[0]!, "bad");
++    act(() => {
++      appStore.setState({
++        catalog: {
++          status: "ready",
++          catalog: routeCatalogWithoutRubberInput(),
++        },
++      });
++    });
++    chooseTier("");
++
++    expect(
++      $$<HTMLInputElement>(
++        'input[aria-label="route Resin from Fuel to Rubber"]',
++      ),
++    ).toHaveLength(1);
++  });
++});
+diff --git a/src/ui/ChainBuilder.tsx b/src/ui/ChainBuilder.tsx
+index 552e3d0..5559252 100644
+--- a/src/ui/ChainBuilder.tsx
++++ b/src/ui/ChainBuilder.tsx
+@@ -34,6 +34,7 @@ import {
+   pickerOptionsFor,
+   excludableMachines,
+   byproductSuggestions,
++  byproductRouteSuggestions,
+   gateCatalog,
+ } from "./chain-builder-adapter.ts";
+ import type {
+@@ -155,6 +156,9 @@ export function ChainBuilder() {
+   const [clockText, setClockText] = useState("100");
+   const [error, setError] = useState<string | null>(null);
+   const [preview, setPreview] = useState<Preview | null>(null);
++  const [selectedRouteKeys, setSelectedRouteKeys] = useState<Set<string>>(
++    () => new Set(),
++  );
+ 
+   // The customization controls. Component state remains the live per-run truth;
+   // the three PERSISTED ones (overrides, exclusions, tier) are seeded from
+@@ -236,6 +240,12 @@ export function ChainBuilder() {
+       parsed.value,
+       opts,
+     );
++    const routeKeys = new Set(
++      byproductRouteSuggestions(proposal, gatedCat).map((r) => r.key),
++    );
++    setSelectedRouteKeys(
++      (prev) => new Set([...prev].filter((key) => routeKeys.has(key))),
++    );
+     setPreview({
+       proposal,
+       view: toProposalPreview(proposal, gatedCat, {
+@@ -254,6 +264,7 @@ export function ChainBuilder() {
+   function onPropose() {
+     setError(null);
+     setPreview(null);
++    setSelectedRouteKeys(new Set());
+     if (catalog === null) return;
+     if (targetItemId === "") {
+       setError("pick a target item");
+@@ -274,19 +285,35 @@ export function ChainBuilder() {
+ 
+   function onApply() {
+     if (preview === null) return;
++    const byproductRoutes = byproductRouteSuggestions(
++      preview.proposal,
++      preview.gated,
++    )
++      .filter((route) => selectedRouteKeys.has(route.key))
++      .map(({ fromItemId, itemId, toItemId }) => ({
++        fromItemId,
++        itemId,
++        toItemId,
++      }));
+     // Seed the applied stages with the SNAPSHOT clock text (S20 P2) — the one
+     // the proposal's counts were solved at. The live input may have drifted
+     // since propose (clock, like Rate, only takes effect on the next Propose).
+-    applyChainProposal(preview.proposal, preview.clockText);
++    applyChainProposal(preview.proposal, {
++      clockPercentText: preview.clockText,
++      byproductRoutes,
++      catalog: preview.gated,
++    });
+     // Clear the preview so a double-apply is an explicit re-propose (Axis 6);
+     // KEEP the customization choices (the user's session intent — Axis 3).
+     setPreview(null);
++    setSelectedRouteKeys(new Set());
+     setPickerItemId(null);
+   }
+ 
+   function onDiscard() {
+     // Clear the preview, KEEP the choices (Axis 3).
+     setPreview(null);
++    setSelectedRouteKeys(new Set());
+     setPickerItemId(null);
+   }
+ 
+@@ -390,6 +417,18 @@ export function ChainBuilder() {
+     unlockedTier !== null && tierOptions.includes(unlockedTier)
+       ? String(unlockedTier)
+       : "";
++  const routeableSuggestions =
++    preview === null
++      ? new Map<string, ReturnType<typeof byproductRouteSuggestions>[number]>()
++      : new Map(
++          byproductRouteSuggestions(preview.proposal, preview.gated).map(
++            (route) => [`${route.itemId} ${route.toItemId}`, route],
++          ),
++        );
++  const byproductSuggestionRows =
++    preview === null
++      ? []
++      : byproductSuggestions(preview.proposal, preview.gated);
+ 
+   return (
+     <div className="chain-builder">
+@@ -620,18 +659,38 @@ export function ChainBuilder() {
+               Byproducts: {itemRateLineText(view.byproducts)}
+             </p>
+           )}
+-          {/* Byproduct-feed suggestions (S20 P2) — DISPLAY-ONLY: a surplus
+-              byproduct that could feed a proposed stage. No toggle, no routing
+-              (that is #105); recomputed per re-propose (pure derivation). */}
+-          {byproductSuggestions(preview.proposal, catalog).map((s) => (
+-            <p
+-              key={`${s.itemId} ${s.toItemId}`}
+-              className="chain-builder-suggestion"
+-            >
+-              {catalog.items[s.itemId]?.displayName ?? s.itemId}{" "}
+-              {formatRate(s.rate)}/min could feed {s.toItemName}
+-            </p>
+-          ))}
++          {byproductSuggestionRows.map((s) => {
++            const key = `${s.itemId} ${s.toItemId}`;
++            const route = routeableSuggestions.get(key);
++            return (
++              <p key={key} className="chain-builder-suggestion">
++                {route === undefined ? (
++                  <>
++                    {preview.gated.items[s.itemId]?.displayName ?? s.itemId}{" "}
++                    {formatRate(s.rate)}/min could feed {s.toItemName}
++                  </>
++                ) : (
++                  <label>
++                    <input
++                      type="checkbox"
++                      checked={selectedRouteKeys.has(route.key)}
++                      aria-label={`route ${route.itemName} from ${route.fromItemName} to ${route.toItemName}`}
++                      onChange={() => {
++                        setSelectedRouteKeys((prev) => {
++                          const next = new Set(prev);
++                          if (next.has(route.key)) next.delete(route.key);
++                          else next.add(route.key);
++                          return next;
++                        });
++                      }}
++                    />
++                    ROUTE {formatRate(route.rate)}/min from {route.fromItemName}
++                    : {route.itemName} could feed {route.toItemName}
++                  </label>
++                )}
++              </p>
++            );
++          })}
+           <div className="chain-builder-actions">
+             <button type="button" onClick={onApply} disabled={view.isEmpty}>
+               Apply
+diff --git a/src/ui/app.css b/src/ui/app.css
+index fbeabfa..9c74110 100644
+--- a/src/ui/app.css
++++ b/src/ui/app.css
+@@ -473,6 +473,12 @@ body {
+   font-style: italic;
+ }
+ 
++.chain-builder-suggestion label {
++  display: inline-flex;
++  align-items: center;
++  gap: 6px;
++}
++
+ .chain-builder-actions {
+   display: flex;
+   gap: 8px;
+diff --git a/src/ui/chain-builder-adapter.test.ts b/src/ui/chain-builder-adapter.test.ts
+index 93b5543..76d85f7 100644
+--- a/src/ui/chain-builder-adapter.test.ts
++++ b/src/ui/chain-builder-adapter.test.ts
+@@ -27,6 +27,8 @@ import {
+   metricsPowerText,
+   proposalMetrics,
+   byproductSuggestions,
++  byproductRouteKey,
++  byproductRouteSuggestions,
+   candidateRowsFor,
+   swapMachineCountFor,
+   effectiveDefaultRecipe,
+@@ -1840,7 +1842,7 @@ describe("S20 P2 — byproductSuggestions", () => {
+         stage("rubber", "r_rubber", 1n, 20),
+       ],
+       links: [],
+-      byproducts: [{ itemId: "resin", rate: F(10) }],
++      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
+       rawInputs: [{ itemId: "oil", rate: F(30) }],
+     };
+     const s = byproductSuggestions(proposal, cat);
+@@ -1874,7 +1876,7 @@ describe("S20 P2 — byproductSuggestions", () => {
+     const proposal: ChainProposal = {
+       stages: [stage("fuel", "r_fuel", 1n, 20)],
+       links: [],
+-      byproducts: [{ itemId: "resin", rate: F(10) }],
++      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
+       rawInputs: [{ itemId: "oil", rate: F(30) }],
+     };
+     expect(byproductSuggestions(proposal, cat)).toEqual([]);
+@@ -1932,8 +1934,8 @@ describe("S20 P2 — byproductSuggestions", () => {
+       links: [],
+       // Two resin entries, no merge (as the core emits them).
+       byproducts: [
+-        { itemId: "resin", rate: F(10) },
+-        { itemId: "resin", rate: F(5) },
++        { fromItemId: "fuel", itemId: "resin", rate: F(10) },
++        { fromItemId: "plastic", itemId: "resin", rate: F(5) },
+       ],
+       rawInputs: [{ itemId: "oil", rate: F(60) }],
+     };
+@@ -1993,7 +1995,7 @@ describe("S20 P2 — byproductSuggestions", () => {
+         stage("rubber", "r_rubber", 1n, 20),
+       ],
+       links: [],
+-      byproducts: [{ itemId: "resin", rate: F(10) }],
++      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
+       rawInputs: [{ itemId: "oil", rate: F(30) }],
+     };
+     const s = byproductSuggestions(proposal, cat);
+@@ -2006,6 +2008,202 @@ describe("S20 P2 — byproductSuggestions", () => {
+     const keys = s.map((x) => `${x.itemId} ${x.toItemId}`);
+     expect(new Set(keys).size).toBe(keys.length);
+   });
++
++  it("route helper emits a full-key single-source route", () => {
++    const cat = synthCatalog(
++      [
++        item("fuel", "Fuel"),
++        item("resin", "Resin"),
++        item("rubber", "Rubber"),
++        item("oil", "Oil"),
++      ],
++      [machine("refinery", 30)],
++      [
++        crecipe(
++          "r_fuel",
++          "Fuel",
++          "refinery",
++          [
++            ["fuel", 20],
++            ["resin", 10],
++          ],
++          [["oil", 30]],
++        ),
++        crecipe(
++          "r_rubber",
++          "Rubber",
++          "refinery",
++          [["rubber", 20]],
++          [["resin", 30]],
++        ),
++      ],
++    );
++    const proposal: ChainProposal = {
++      stages: [
++        stage("fuel", "r_fuel", 1n, 20),
++        stage("rubber", "r_rubber", 1n, 20),
++      ],
++      links: [],
++      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
++      rawInputs: [{ itemId: "oil", rate: F(30) }],
++    };
++
++    const [route] = byproductRouteSuggestions(proposal, cat);
++
++    expect(route).toMatchObject({
++      key: "fuel resin rubber",
++      fromItemId: "fuel",
++      fromItemName: "Fuel",
++      itemId: "resin",
++      itemName: "Resin",
++      toItemId: "rubber",
++      toItemName: "Rubber",
++    });
++    expect(route!.rate.eq(F(10))).toBe(true);
++    expect(byproductRouteKey(route!)).toBe("fuel resin rubber");
++  });
++
++  it("route helper suppresses primary-lane collisions", () => {
++    const cat = synthCatalog(
++      [item("fuel", "Fuel"), item("resin", "Resin"), item("rubber", "Rubber")],
++      [machine("refinery", 30)],
++      [
++        crecipe(
++          "r_fuel",
++          "Fuel",
++          "refinery",
++          [
++            ["fuel", 20],
++            ["resin", 10],
++          ],
++          [],
++        ),
++        crecipe("r_resin", "Resin", "refinery", [["resin", 20]], []),
++        crecipe(
++          "r_rubber",
++          "Rubber",
++          "refinery",
++          [["rubber", 20]],
++          [["resin", 30]],
++        ),
++      ],
++    );
++    const proposal: ChainProposal = {
++      stages: [
++        stage("fuel", "r_fuel", 1n, 20),
++        stage("resin", "r_resin", 1n, 20),
++        stage("rubber", "r_rubber", 1n, 20),
++      ],
++      links: [{ fromItemId: "resin", toItemId: "rubber" }],
++      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
++      rawInputs: [],
++    };
++
++    expect(byproductRouteSuggestions(proposal, cat)).toEqual([]);
++  });
++
++  it("route helper suppresses a byproduct route back into its source stage", () => {
++    const cat = synthCatalog(
++      [item("fuel", "Fuel"), item("resin", "Resin")],
++      [machine("refinery", 30)],
++      [
++        crecipe(
++          "r_fuel",
++          "Fuel",
++          "refinery",
++          [
++            ["fuel", 20],
++            ["resin", 10],
++          ],
++          [["resin", 5]],
++        ),
++      ],
++    );
++    const proposal: ChainProposal = {
++      stages: [stage("fuel", "r_fuel", 1n, 20)],
++      links: [],
++      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
++      rawInputs: [],
++    };
++
++    expect(byproductRouteSuggestions(proposal, cat)).toEqual([]);
++  });
++
++  it("route helper suppresses multi-source aggregate and source fan-out", () => {
++    const cat = synthCatalog(
++      [
++        item("fuel", "Fuel"),
++        item("plastic", "Plastic"),
++        item("resin", "Resin"),
++        item("rubber", "Rubber"),
++        item("paint", "Paint"),
++      ],
++      [machine("refinery", 30)],
++      [
++        crecipe(
++          "r_fuel",
++          "Fuel",
++          "refinery",
++          [
++            ["fuel", 20],
++            ["resin", 10],
++          ],
++          [],
++        ),
++        crecipe(
++          "r_plastic",
++          "Plastic",
++          "refinery",
++          [
++            ["plastic", 20],
++            ["resin", 5],
++          ],
++          [],
++        ),
++        crecipe(
++          "r_rubber",
++          "Rubber",
++          "refinery",
++          [["rubber", 20]],
++          [["resin", 30]],
++        ),
++        crecipe(
++          "r_paint",
++          "Paint",
++          "refinery",
++          [["paint", 20]],
++          [["resin", 10]],
++        ),
++      ],
++    );
++
++    const multiSource: ChainProposal = {
++      stages: [
++        stage("fuel", "r_fuel", 1n, 20),
++        stage("plastic", "r_plastic", 1n, 20),
++        stage("rubber", "r_rubber", 1n, 20),
++      ],
++      links: [],
++      byproducts: [
++        { fromItemId: "fuel", itemId: "resin", rate: F(10) },
++        { fromItemId: "plastic", itemId: "resin", rate: F(5) },
++      ],
++      rawInputs: [],
++    };
++    expect(byproductRouteSuggestions(multiSource, cat)).toEqual([]);
++
++    const fanOut: ChainProposal = {
++      stages: [
++        stage("fuel", "r_fuel", 1n, 20),
++        stage("rubber", "r_rubber", 1n, 20),
++        stage("paint", "r_paint", 1n, 20),
++      ],
++      links: [],
++      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
++      rawInputs: [],
++    };
++    expect(byproductRouteSuggestions(fanOut, cat)).toEqual([]);
++  });
+ });
+ 
+ // ---------------------------------------------------------------------------
+diff --git a/src/ui/chain-builder-adapter.ts b/src/ui/chain-builder-adapter.ts
+index 1ae1cc1..225bbb6 100644
+--- a/src/ui/chain-builder-adapter.ts
++++ b/src/ui/chain-builder-adapter.ts
+@@ -14,6 +14,7 @@ import { proposeChain } from "../core/chain-builder.ts";
+ import type {
+   ChainProposal,
+   ItemRate,
++  ProposedByproduct,
+   ProposedStage,
+ } from "../core/chain-builder.ts";
+ import { Fraction } from "../core/fraction.ts";
+@@ -835,6 +836,23 @@ export interface ByproductSuggestion {
+   toItemName: string;
+ }
+ 
++export interface ByproductRouteSuggestion {
++  key: string;
++  fromItemId: string;
++  fromItemName: string;
++  itemId: string;
++  itemName: string;
++  rate: Fraction;
++  toItemId: string;
++  toItemName: string;
++}
++
++export function byproductRouteKey(
++  route: Pick<ByproductRouteSuggestion, "fromItemId" | "itemId" | "toItemId">,
++): string {
++  return `${route.fromItemId} ${route.itemId} ${route.toItemId}`;
++}
++
+ /**
+  * Scan a proposal for byproduct → consumer feed suggestions (Axis 4), in two
+  * exact steps:
+@@ -893,6 +911,67 @@ export function byproductSuggestions(
+   return suggestions;
+ }
+ 
++export function byproductRouteSuggestions(
++  proposal: ChainProposal,
++  catalog: Catalog,
++): ByproductRouteSuggestion[] {
++  const itemName = (id: string): string => catalog.items[id]?.displayName ?? id;
++  const sourceTotals = new Map<string, ProposedByproduct>();
++  for (const bp of proposal.byproducts) {
++    const key = `${bp.fromItemId} ${bp.itemId}`;
++    const prev = sourceTotals.get(key);
++    sourceTotals.set(
++      key,
++      prev === undefined ? bp : { ...bp, rate: prev.rate.add(bp.rate) },
++    );
++  }
++
++  const candidates: ProposedByproductRouteCandidate[] = [];
++  for (const bp of sourceTotals.values()) {
++    for (const stage of proposal.stages) {
++      if (bp.fromItemId === stage.itemId) continue;
++      if (
++        proposal.links.some(
++          (l) => l.fromItemId === bp.itemId && l.toItemId === stage.itemId,
++        )
++      ) {
++        continue;
++      }
++      const recipe = catalog.recipes[stage.recipeId];
++      if (recipe === undefined) continue;
++      if (!recipe.inputs.some((i) => i.itemId === bp.itemId)) continue;
++      candidates.push({ ...bp, toItemId: stage.itemId });
++    }
++  }
++
++  const displayCounts = new Map<string, number>();
++  const sourceCounts = new Map<string, number>();
++  for (const c of candidates) {
++    const displayKey = `${c.itemId} ${c.toItemId}`;
++    displayCounts.set(displayKey, (displayCounts.get(displayKey) ?? 0) + 1);
++    const sourceKey = `${c.fromItemId} ${c.itemId}`;
++    sourceCounts.set(sourceKey, (sourceCounts.get(sourceKey) ?? 0) + 1);
++  }
++
++  return candidates
++    .filter((c) => (displayCounts.get(`${c.itemId} ${c.toItemId}`) ?? 0) === 1)
++    .filter((c) => (sourceCounts.get(`${c.fromItemId} ${c.itemId}`) ?? 0) === 1)
++    .map((c) => ({
++      key: byproductRouteKey(c),
++      fromItemId: c.fromItemId,
++      fromItemName: itemName(c.fromItemId),
++      itemId: c.itemId,
++      itemName: itemName(c.itemId),
++      rate: c.rate,
++      toItemId: c.toItemId,
++      toItemName: itemName(c.toItemId),
++    }));
++}
++
++interface ProposedByproductRouteCandidate extends ProposedByproduct {
++  toItemId: string;
++}
++
+ /**
+  * The subtree power total as the labeled display string — reusing
+  * `stagePowerText` (the S6 discipline) at 100% clock, so the exact-Fraction

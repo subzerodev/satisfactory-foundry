@@ -1,7 +1,7 @@
 # Propose follow-ups: consolidation, type-safety, routing (Stage 21 arc)
 
 **Started:** 2026-08-07
-**Status:** IN PROGRESS — P0 DONE, P1 next
+**Status:** DONE — P0 DONE, P1 DONE, P2 CLOSED won't-do, P3 DONE
 **Epic:** #108 (board #21, Stage 21 milestone 92)
 **Directive:** Michael 2026-08-07, handed the four Stage 20 follow-ups:
 **"do them."** That delegates the #104 UX call the ticket had reserved for him.
@@ -35,11 +35,52 @@
   Walk: all five cases live, including both rule-killers — excluding
   Constructor keeps coal's machine lever; un-excluding Converter at tier 8
   keeps Iron Ore's tier lever.
-- **P1 (#103) — adapter consolidation + compare tier-awareness**: pending.
-- **P2 (#106) — branded `GatedCatalog`**: pending, blocked-by P1
-  (consolidating first means fewer call sites to brand).
-- **P3 (#105) — explicit byproduct routing**: pending. The largest design;
-  carries both Stage-20 r1 reviewer analyses as input.
+- **P1 (#103) — adapter consolidation + compare tier-awareness**: DONE
+  2026-08-15 (merge `0805af0`; design v4 FROZEN after THREE rounds; 912 tests).
+  `candidateRecipesFor` is retired onto `producerRecipesFor` with no comparator
+  and no ordering shim — safe only because **#116** shipped an explicit `(alt)`
+  marker first (`b3ed867`), so the grouped ordering was no longer the compare
+  table's only alternate signal. The #103 research probe was
+  RE-RUN rather than trusted from the audit trail; it reproduced 0 set diffs /
+  3 order-only diffs and surfaced a number the original probe never reported —
+  **63 items have exactly one eligible producer**, so `candidateCount`'s
+  documented range (`0 or ≥2 by construction`) becomes false for a third of the
+  catalog. The render survives (the sole consumer branches on `>= 2`, and both
+  `0` and `1` sit below it), but the prose invariant and the test guarding it
+  (`chain-builder-adapter.test.ts:841`, "Never a bare 1") both become lies.
+  That test is flagged as the phase's pass-either-way danger point: it must be
+  rewritten to pin the CHIP, not the count.
+  Compare tier-awareness (the S20 P3 scope addition) is DECIDED here — label
+  locked candidates, never hide them — and split to **#115** for the build, so
+  a refactor does not carry a feature.
+- **P2 (#106) — branded `GatedCatalog`**: **CLOSED won't-do** 2026-08-15, on
+  measurement rather than judgement (report + harness in
+  `features/branded-gated-catalog/`). Ran after P1 landed, so the count is of
+  the consolidated surface the blocker was there to produce. Of the fifteen
+  value-passing places in ChainBuilder where the gated/ungated swap compiles,
+  **nine already turn `ChainBuilder.gating.test.tsx` red**; of the six that do
+  not, one (`byproductSuggestions`) is provably inert, one (`recipeLabel` in the
+  recovery `<select>`) is a real but untested gap split to **#117**, and four
+  `repropose` callers are unproven gaps split to **#118**. The measured
+  five-seam brand would have closed nothing the suite misses; a sixth
+  `recipeLabel` narrowing could catch #117 but not #118. Ships as one
+  `gateCatalog` doc comment recording why the type stays out. #117 later
+  proved the `recipeLabel` label slip reachable and pinned it with a jsdom row;
+  #118 later proved the four `repropose` slips reachable and pinned them with
+  stale-preview jsdom rows. After those follow-ups, only the inert
+  `byproductSuggestions` row remains green.
+  Three design rounds, all NEEDS_REWORK ×2 — the reviewers killed two successive
+  justifications, the second time by proving my headline "uncovered seam" was
+  behaviour-preserving.
+- **P3 (#105) — explicit byproduct routing**: DONE 2026-08-16 (938 tests).
+  Optional ROUTE controls now materialize only unambiguous byproduct lanes: no
+  self routes, primary-lane collisions, multi-source aggregates, or source
+  fan-out. Apply validates against the solved `preview.gated` snapshot and
+  refuses a preview after its base Docs catalog is replaced. Nine boundary
+  rounds converged after interaction findings across self emission,
+  multi-source ambiguity, source fan-out, and catalog replacement; the one-shot
+  diff simplify pass removed an unused key helper and an impossible existing-
+  link collision scan.
 
 ## Grounding (measured 2026-08-07 at arc start, against the bundled catalog)
 

@@ -1,0 +1,357 @@
+# S21 P1 (#103) — verification log
+
+Branch `feature/s21-p1`, worktree `.worktrees/s21-p1`, cut from `develop` @
+`fec7031`. Frozen spec: `features/propose-followups/p1-brainstorm.md` (v4).
+
+Commands are run INSIDE the worktree. Every mutant below is COMPILED before it
+is run (`npx tsc -b`, exit 0 recorded per row) — a mutant that fails to compile
+reddens whole files at import time and proves nothing about any single pin.
+
+---
+
+## 0. Pre-implementation drift hunt
+
+The spec grounds test migration on the SYMBOL rather than line numbers, so the
+grep it names was re-run first:
+
+```
+$ grep -n candidateRecipesFor src/ui/chain-builder-adapter.test.ts
+30, 346, 375, 387, 588, 619, 851, 877, 924, 1026, 1031, 1033, 1043, 1044,
+1134, 1140, 1141, 1312
+```
+
+IDENTICAL to the list spec item 6 records. Every hit was worked; the four
+executable failures the spec names were each handled deliberately (§2 below).
+
+Production citations re-read and confirmed against live source:
+`candidateRecipesFor` at `:549-565`; `candidateRowsFor` at `:945` calling it at
+`:951`; `toProposalPreview`'s `candidateCount` at `:341`; `AltCompare.tsx:22`
+import + `:80` call + `:81` gate; `ChainBuilder.tsx:729-730` chip. Signatures,
+paths, and shapes all match. **Zero drift — no escalation needed.**
+
+### The spec's MEASURED claims, independently re-measured
+
+A throwaway probe over the bundled catalog (`public/bundled-docs/en-US.json`,
+parsed through `parseCatalogFromText` — the same pipeline the app uses),
+deleted after reading:
+
+```
+TOTAL ITEMS: 195
+DIST: 0:69  1:63  2:28  3:21  4:11  5:3
+ORDER DIFFS (3):
+liquid_fuel  cand=[liquid_fuel,residual_fuel,alternate_diluted_fuel]
+             prod=[liquid_fuel,alternate_diluted_fuel,residual_fuel]
+plastic      cand=[plastic,residual_plastic,alternate_plastic_1]
+             prod=[plastic,alternate_plastic_1,residual_plastic]
+rubber       cand=[residual_rubber,rubber,alternate_recycled_rubber]
+             prod=[residual_rubber,alternate_recycled_rubber,rubber]
+LONE COUNT: 63
+RUBBER prod: [residual_rubber, alternate_recycled_rubber, rubber]
+COAL  prod: [alternate_coal_1, alternate_coal_2]
+```
+
+Every figure in the spec's grounding section reproduces EXACTLY: the 195-item
+total, the 69/63/28/21/11/3 distribution (including the twin `63`s the r1
+reviewer suspected of being a transcription slip — they are a genuine
+coincidence), the three diverging items, their position-2/3-only divergence,
+the identical leading row in all three, spec item 8's `rubber` order, and the
+`coal` counterexample's shared leading recipe. **Nothing in the spec was found
+incorrect.**
+
+---
+
+## 1. Behaviour: the comparison table takes `producerRecipesFor`'s order
+
+`candidateRowsFor` sources `producerRecipesFor` and uses its order DIRECTLY —
+no comparator, no ordering-preservation shim (Axis 2 (d)). Safe only because
+#116 (`b3ed867`) shipped an explicit `(alt)` marker, so alternate status is no
+longer encoded by position.
+
+**PASSING with the code present:**
+
+```
+$ npx vitest run src/ui/chain-builder-adapter.test.ts -t "compares rubber"
+ ✓ S21 P1 — producerRecipesFor is the comparison enumerator >
+   compares rubber in producerRecipesFor's order — the ALTERNATE in the MIDDLE
+```
+
+**BREAK** — restore the retired grouping comparator on the comparison path, in
+`src/ui/chain-builder-adapter.ts`, `candidateRowsFor`:
+
+```ts
+-  const candidates = producerRecipesFor(catalog, itemId);
++  const candidates = producerRecipesFor(catalog, itemId).sort((a, b) => {
++    if (a.isAlternate !== b.isAlternate) return a.isAlternate ? 1 : -1;
++    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
++  });
+```
+
+Compiles: `npx tsc -b` → exit 0.
+
+**GENUINE FAIL:**
+
+```
+ × compares rubber in producerRecipesFor's order — the ALTERNATE in the MIDDLE
+ FAIL src/ui/chain-builder-adapter.test.ts > S21 P1 — producerRecipesFor is
+      the comparison enumerator > compares rubber in producerRecipesFor's
+      order — the ALTERNATE in the MIDDLE
+ AssertionError: expected [ 'residual_rubber', 'rubber', …(1) ]
+                 to deeply equal [ 'residual_rubber', …(2) ]
+ Tests  1 failed | 94 passed (95)
+```
+
+Exactly ONE test dies, and it is the intended one. `rubber` is the only item in
+the whole catalog whose alternate lands in a NON-TERMINAL position, which the
+grouping comparator can never emit — that is what makes this row a real
+revert-detector rather than a restatement.
+
+**RESTORE + RE-RUN GREEN:** reverted; `git status --short` empty; suite green
+(see §6).
+
+---
+
+## 2. Behaviour: `candidateCount` is the raw eligible-producer count
+
+Range widens from `{0} ∪ [2,∞)` to `{0,1} ∪ [2,∞)` — 63 of 195 items.
+
+**PASSING with the code present:** the three rows below all pass at HEAD.
+
+**BREAK** — re-add the retired `< 2 ⇒ 0` gate at the `candidateCount` site
+(`chain-builder-adapter.ts:341`):
+
+```ts
+-    candidateCount: producerRecipesFor(catalog, s.itemId, excludedMachineIds)
+-      .length,
++    candidateCount: ((n: number): number => (n < 2 ? 0 : n))(
++      producerRecipesFor(catalog, s.itemId, excludedMachineIds).length,
++    ),
+```
+
+Compiles: `npx tsc -b` → exit 0.
+
+**GENUINE FAIL** (full suite):
+
+```
+ FAIL  src/ui/chain-builder-adapter.test.ts > S21 P1 — producerRecipesFor is
+       the comparison enumerator > counts a LONE eligible producer as 1 on a
+       real preview row
+ AssertionError: expected +0 to be 1 // Object.is equality
+
+ FAIL  src/ui/chain-builder-adapter.test.ts > S20 P0 — candidateCount on
+       preview rows > counts EVERY eligible producer per item (0, 1, or more)
+       from the catalog
+ AssertionError: expected +0 to be 1 // Object.is equality
+
+ FAIL  src/ui/chain-builder-adapter.test.ts > S20 P1 — toProposalPreview
+       candidateCount under exclusions > counts a LONE surviving producer as 1
+       (S21 P1 — no ≥2 gate)
+ AssertionError: expected +0 to be 1 // Object.is equality
+
+ Tests  3 failed | 909 passed (912)
+```
+
+All three of the spec's count rows fire, on synthetic AND bundled fixtures.
+
+**RESTORE + RE-RUN GREEN:** reverted; tree clean; suite green.
+
+---
+
+## 3. Behaviour: the converter/packager row asserts POSITIVELY
+
+Spec item 6 calls this an upgrade: the retired `toEqual([])` was satisfied by a
+filter that dropped EVERYTHING, so it could not distinguish exclusion from
+over-exclusion.
+
+**PASSING with the code present:**
+
+```
+$ npx vitest run src/ui/chain-builder-adapter.test.ts \
+    -t "excludes converter/packager"
+ ✓ alt-compare — candidate enumeration >
+   excludes converter/packager recipes from candidacy
+```
+
+**BREAK** — an enumeration filter that drops the surviving non-alternate, in
+`producerRecipesFor`:
+
+```ts
+-    (r) => r.primaryOutputId === itemId && !excluded.has(r.machineId),
++    (r) =>
++      r.primaryOutputId === itemId &&
++      !excluded.has(r.machineId) &&
++      r.isAlternate,
+```
+
+Compiles: `npx tsc -b` → exit 0.
+
+**GENUINE FAIL:**
+
+```
+ FAIL  src/ui/chain-builder-adapter.test.ts > alt-compare — candidate
+       enumeration > excludes converter/packager recipes from candidacy
+ AssertionError: expected [] to deeply equal [ 'r_std' ]
+```
+
+**The upgrade, demonstrated by the measured value.** The mutant's actual output
+is `[]` — which is byte-for-byte what the RETIRED expectation (`toEqual([])`)
+asserted. So this mutant would have PASSED the pre-change row and FAILS the
+post-change one. The spec's claim about this row is confirmed against a real
+measurement, not argued.
+
+(This mutant also reddens 29 other rows across the adapter suite, as any
+enumerator-wide break must; the isolated `-t` run above is what attributes the
+kill to this pin specifically.)
+
+**RESTORE + RE-RUN GREEN:** reverted; tree clean; suite green.
+
+---
+
+## 4. Behaviour: the chip label survives a bare count of 1 (GUARD PIN)
+
+Spec item 7. Lives in `ChainBuilder.gating.test.tsx`, NOT the adapter suite —
+the label is an inline expression in the non-exported `RecipePicker`, so an
+adapter-level count assertion would pass whether or not the chip survived.
+
+The force-included lone-producer state was constructed as Axis 3 describes:
+`splitCatalog()` with Foundry + Refinery excluded (leaving Alpha/Smelter the
+lone eligible producer → `candidateCount` 1) and `overrides: {ingot: "r_b_std"}`
+pinning Bravo, whose Foundry is excluded — so `selectProducer` honours the
+override, Bravo becomes the stage's recipe and is force-included, options reach
+2, and the affordance renders. The row pins `"Ingot — Foundry"` first so it
+cannot pass from some unrelated unexcluded state.
+
+**PASSING with the code present:**
+
+```
+$ npx vitest run src/ui/ChainBuilder.gating.test.tsx -t "S21 P1"
+ ✓ S21 P1 — the chip never prints a lone count > reads 'machine excluded',
+   NOT '1 recipes', for a force-included lone producer  31ms
+ Tests  1 passed | 18 skipped (19)
+```
+
+**BREAK** — "simplify" the chip to print the raw count now that a bare 1 is
+reachable (`ChainBuilder.tsx:729-730`):
+
+```ts
+-    candidateCount >= 2 ? `${candidateCount} recipes` : "machine excluded";
++    candidateCount >= 1 ? `${candidateCount} recipes` : "machine excluded";
+```
+
+Compiles: `npx tsc -b` → exit 0.
+
+**GENUINE FAIL:**
+
+```
+ FAIL  src/ui/ChainBuilder.gating.test.tsx > S21 P1 — the chip never prints a
+       lone count > reads 'machine excluded', NOT '1 recipes', for a
+       force-included lone producer
+ AssertionError: expected '1 recipes' to be 'machine excluded'
+ Tests  1 failed | 911 passed (912)
+```
+
+The leaked string is literally `'1 recipes'` — the exact regression the spec
+predicted, and the entire reason `candidateCount`'s widened range is safe. This
+row is the ONLY thing in the repo that catches it: 911 other tests pass.
+
+**RESTORE + RE-RUN GREEN:** reverted; tree clean; suite green.
+
+---
+
+## 5. Behaviour: `AltCompare.tsx:81` is the now-ONLY comparison gate (GUARD PIN)
+
+The spec's r2 IMPORTANT: `:81` is LIVE, not dead. Post-swap it is the only
+gate, so `candidateRowsFor` returning one row for a lone producer is suppressed
+here or not at all. The guard already exists (`AltCompare.test.tsx:138-151`) —
+per the spec it was NOT duplicated, only re-verified.
+
+**PASSING with the code present:** passes at HEAD.
+
+**BREAK** — remove the gate's effect (`AltCompare.tsx`):
+
+```ts
+-  if (candidates.length < 2) return null; // nothing to compare
++  if (candidates.length < 1) return null; // nothing to compare
+```
+
+Compiles: `npx tsc -b` → exit 0.
+
+**GENUINE FAIL:**
+
+```
+ FAIL  src/ui/AltCompare.test.tsx > altCompareModel — presence gate >
+       returns null when the primary item has fewer than 2 candidates
+ AssertionError: expected { itemName: 'Ingot', …(1) } to be null
+ Tests  1 failed | 911 passed (912)
+```
+
+The failure's SHAPE confirms the spec's correction precisely: a NON-NULL
+`{itemName, rows}` rather than the absent block — which is what would render as
+the `.alt-compare` header over a pointless table.
+
+**RESTORE + RE-RUN GREEN:** reverted; tree clean; suite green.
+
+---
+
+## 6. #116's three pins — VERIFIED SURVIVING, not edited
+
+The spec (and both r3 reviewers) predicted these survive the reordering because
+all three fixtures carry exactly ONE non-alternate, so the two orderings
+coincide. Run rather than argued:
+
+```
+$ npx vitest run src/ui/chain-builder-adapter.test.ts src/ui/AltCompare.test.tsx -t "116"
+ ✓ AltCompare.test.tsx > AltCompare SSR smoke >
+   marks the ALTERNATE row, whichever row is current (#116)
+ ✓ chain-builder-adapter.test.ts > alt-compare — per-candidate metrics >
+   carries isAlternate from the RECIPE, not from the selection (#116)
+ ✓ chain-builder-adapter.test.ts > alt-compare — bundled Iron Ingot alternates >
+   flags isAlternate against REAL parsed names, not a name prefix (#116)
+ Tests  3 passed | 102 skipped (105)
+```
+
+All three pass UNTOUCHED — no pin was edited. Prediction confirmed.
+
+---
+
+## 7. Final state — restored, green, clean
+
+```
+$ git status --short
+(empty)
+
+$ npm run check
+> tsc -b && eslint . && prettier --check src
+Checking formatting...
+All matched files use Prettier code style!
+(exit 0 — no errors, no warnings)
+
+$ npm test
+ Test Files  33 passed (33)
+      Tests  912 passed (912)
+```
+
+**Test count:** 910 before → 912 after (+2 net).
+  −1  `it("returns empty when the item has fewer than 2 candidates")`, deleted
+      per spec item 6 (existed solely to pin the retired gate; its fixture is
+      duplicated by the surviving lone-candidate test).
+  +3  the new pins: the `rubber` compare-order row, the lone-eligible-producer
+      count row, and the chip guard row.
+
+(The 910 baseline is the trunk figure. Note that `npm test` run from the REPO
+ROOT also sweeps `.worktrees/**` — it reported 1819 = 910 trunk + 909
+worktree-at-the-time. All figures in this log are from inside the worktree.)
+
+---
+
+## 8. Coverage against the frozen spec's test plan
+
+| Spec pin | Kind | Status |
+|---|---|---|
+| `rubber` order is `[residual_rubber, alternate_recycled_rubber, rubber]` | revert-bidirectional | §1 — NEW, killed M1 |
+| `candidateCount` for a lone-producer item is `1` | revert-bidirectional | §2 — retitled + flipped, killed M2 |
+| An item with ≥2 producers keeps its exact `candidateCount` | revert-bidirectional | pre-existing (`Ingot`=3/2 under exclusions; bundled Iron Ingot=5), all green |
+| The converter/packager row yields `["r_std"]` | revert-bidirectional (upgrade) | §3 — upgraded, killed M3 |
+| Chip reads `"machine excluded"`, never `"1 recipes"` | guard pin | §4 — NEW in the component suite, killed M4 |
+| `altCompareModel` → `null` for a lone-producer item | guard pin | §5 — pre-existing, NOT duplicated, killed M5 |
+
+Six of six covered; five carry a compiled, surgically-attributed mutant.

@@ -14,6 +14,7 @@ import { proposeChain } from "../core/chain-builder.ts";
 import type {
   ChainProposal,
   ItemRate,
+  ProposedByproduct,
   ProposedStage,
 } from "../core/chain-builder.ts";
 import { Fraction } from "../core/fraction.ts";
@@ -106,9 +107,11 @@ export interface PreviewRow {
    */
   feeds: string[];
   /**
-   * How many candidate producer recipes exist for this item
-   * (candidateRecipesFor length — 0 or ≥2 by construction). Nonzero ⇒ the
-   * "N recipes" chip; this is exactly what P1's picker will offer. S20 P0 Axis 3.
+   * How many ELIGIBLE producer recipes exist for this item under the current
+   * exclusions (`producerRecipesFor` length — 0, 1, or more; S21 P1 retired the
+   * ≥2-gated enumerator this used to count). The chip's own `>= 2` rule keeps
+   * the display unchanged: a lone producer reads "machine excluded" exactly as
+   * zero does. S20 P0 Axis 3.
    */
   candidateCount: number;
 }
@@ -278,7 +281,7 @@ export interface PreviewOptions {
 /**
  * Build the display-ready preview from a proposal + the catalog for names.
  * Rows gain depth (longest-path tier from the target), feeds (direct-consumer
- * display names), and candidateCount (alternate-recipe count) — S20 P0. Rows are
+ * display names), and candidateCount (eligible-producer count) — S20 P0. Rows are
  * ordered by (depth asc, existing stage order); the target unique sink is the
  * root, so it renders T0 first. `metrics` carries the cost-sheet totals.
  *
@@ -334,11 +337,11 @@ export function toProposalPreview(
     outputRate: formatRate(s.outputRate),
     depth: depthOf.get(s.itemId) ?? Number.MAX_SAFE_INTEGER,
     feeds: (consumersOf.get(s.itemId) ?? []).map(itemName),
-    // The "N recipes" chip counts eligible candidates under the CURRENT
-    // exclusions (design r1) — else the chip and the picker's list disagree.
-    // Chip semantics (≥2 gate) are unchanged from P0; only the exclusion set
-    // it reads is now the live one.
-    candidateCount: candidateRecipesFor(catalog, s.itemId, excludedMachineIds)
+    // Counts eligible producers under the CURRENT exclusions (design r1) —
+    // else the chip and the picker's list disagree. UNGATED since S21 P1: a
+    // lone producer counts 1, not 0. The ≥2 rule lives in the CHIP alone
+    // (ChainBuilder.tsx), which is why the rendered label is unaffected.
+    candidateCount: producerRecipesFor(catalog, s.itemId, excludedMachineIds)
       .length,
   }));
   // Stable sort by depth (asc); Array.prototype.sort is stable, so equal-depth
@@ -502,9 +505,11 @@ export function metricsPowerText(metrics: ProposalMetrics): string {
 // ---------------------------------------------------------------------------
 // Alternate-recipe comparison (Stage 8 / Phase 4, ticket #40).
 //
-// Candidate enumeration for an item X = every catalog recipe that
+// Candidates come from `producerRecipesFor` (below): every catalog recipe that
 // primary-produces X on a NON-excluded machine — the isAlternate filter is
 // LIFTED (that is the whole phase), the converter/packager exclusion stands.
+// S21 P1 retired the near-duplicate, ≥2-gated enumerator that used to live
+// here; the gate is now the caller's alone (AltCompare.tsx).
 // Each candidate's metrics come from ONE proposeChain run with the item pinned
 // to that candidate (overrides = {X: candidateId}) — N runs of the SAME builder,
 // no comparison-specific solver (the epic-mandated one-traversal reuse).
@@ -518,6 +523,11 @@ export interface CandidateRow {
   recipeName: string;
   /** true ⇒ this row IS the stage's current recipe (marked, no Apply). */
   isCurrent: boolean;
+  /** true ⇒ this row's recipe is an ALTERNATE. The parser strips the game's
+   *  "Alternate: " prefix (docs-loader.ts:190), so `recipeName` cannot carry it. */
+  isAlternate: boolean;
+  /** Minimum unlock tier when this recipe sits above the current Propose tier. */
+  lockedTier: number | null;
   /** Total machine count across the candidate's whole subtree (Σ, exact). */
   machines: string;
   /** The candidate's actual produced rate of the compared item — the PRIMARY
@@ -535,30 +545,6 @@ export interface CandidateRow {
   /** The subtree's byproducts as compact text, or null when there are none
    *  (a note, never a cost column — byproducts are a bonus, not ranked). */
   byproducts: string | null;
-}
-
-/**
- * Every candidate recipe for item X, ordered default (non-alternate) first then
- * alternates ascending by recipe id — the enumeration the comparison table maps
- * over. Excluded-machine recipes (converter/packager) are never candidates.
- * Fewer than 2 candidates ⇒ empty (nothing to compare; the UI gate).
- */
-export function candidateRecipesFor(
-  catalog: Catalog,
-  itemId: string,
-  excludedMachineIds: Iterable<string> = EXCLUDED_MACHINE_IDS,
-): CatalogRecipe[] {
-  const excluded = new Set(excludedMachineIds);
-  const candidates = Object.values(catalog.recipes).filter(
-    (r) => r.primaryOutputId === itemId && !excluded.has(r.machineId),
-  );
-  if (candidates.length < 2) return [];
-  // Non-alternate before alternate; within each group, ascending recipe id. The
-  // default candidate is the baseline row, so it leads.
-  return candidates.sort((a, b) => {
-    if (a.isAlternate !== b.isAlternate) return a.isAlternate ? 1 : -1;
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -597,9 +583,12 @@ export function effectiveDefaultRecipe(
 /**
  * The UNGATED eligible producer list for `itemId` under `exclusions` (Axis 4):
  * EVERY primary-producing recipe on a non-excluded machine — alternates
- * INCLUDED, NO ≥2 gate (unlike candidateRecipesFor, which is a comparison
- * affordance that hides a lone option). This is the picker's option source and
- * the constrained-row recovery list. Ordering: the effective default FIRST when
+ * INCLUDED, NO ≥2 gate. It is the SOLE enumerator (S21 P1): the picker's option
+ * source, the constrained-row recovery list, the preview's `candidateCount`,
+ * and the comparison table's rows. A consumer wanting a "nothing to compare"
+ * affordance applies that gate itself — hiding a lone option is a UI decision
+ * and does not belong in a data function. Ordering: the effective default
+ * FIRST when
  * it is non-null (its id leads), then the remaining recipes ascending by id;
  * when the effective default is null (alternate-only / fully-excluded) the list
  * degenerates cleanly to plain ascending id.
@@ -666,9 +655,27 @@ export function pickerOptionsFor(
  * `items`, `machines`, `tiers` and `recipeUnlocks` are carried through
  * untouched — only `recipes` is projected.
  *
- * Note this returns a plain `Catalog`, so passing the gated or the ungated
- * world typechecks identically at every call site: the wiring is pinned by
- * tests, not by the compiler (a branded type is ticket #106).
+ * This returns a plain `Catalog`, so passing the gated or the ungated world
+ * typechecks identically wherever both are in scope — the wiring is pinned by
+ * tests, not by the compiler. MEASURED, not an omission (#106, closed won't-do;
+ * harness + full matrix in `features/branded-gated-catalog/`): ChainBuilder has
+ * fifteen value-passing places where swapping the two worlds compiles. Nine
+ * turned `ChainBuilder.gating.test.tsx` red at #106 close; #117 added the
+ * constrained-recovery label row; and #118 added four stale-preview repropose
+ * rows. Those jsdom rows are what enforce the wiring — do not retire them as
+ * "render-only".
+ *
+ * The one that still stays green is different:
+ *   - `byproductSuggestions` is inert — it reads only `items` (shared by
+ *     reference with the ungated catalog) and recipes of stages the gated solve
+ *     already produced, so both worlds return the same value.
+ *
+ * One fact any future branding attempt must answer, measured: a NEGATIVE brand
+ * (`Catalog & { readonly [b]?: never }`) does not reject
+ * `preview?.gated ?? catalog` — TypeScript subtype-reduces that union to plain
+ * `Catalog`, which then satisfies the optional `?: never`. That idiom is
+ * exactly the regression the `excludableMachines(preview?.gated ?? catalog)`
+ * jsdom row guards against.
  */
 export function gateCatalog(
   catalog: Catalog,
@@ -829,6 +836,17 @@ export interface ByproductSuggestion {
   toItemName: string;
 }
 
+export interface ByproductRouteSuggestion {
+  key: string;
+  fromItemId: string;
+  fromItemName: string;
+  itemId: string;
+  itemName: string;
+  rate: Fraction;
+  toItemId: string;
+  toItemName: string;
+}
+
 /**
  * Scan a proposal for byproduct → consumer feed suggestions (Axis 4), in two
  * exact steps:
@@ -887,6 +905,69 @@ export function byproductSuggestions(
   return suggestions;
 }
 
+export function byproductRouteSuggestions(
+  proposal: ChainProposal,
+  catalog: Catalog,
+): ByproductRouteSuggestion[] {
+  const itemName = (id: string): string => catalog.items[id]?.displayName ?? id;
+  const sourceTotals = new Map<string, ProposedByproduct>();
+  for (const bp of proposal.byproducts) {
+    const key = `${bp.fromItemId} ${bp.itemId}`;
+    const prev = sourceTotals.get(key);
+    sourceTotals.set(
+      key,
+      prev === undefined ? bp : { ...bp, rate: prev.rate.add(bp.rate) },
+    );
+  }
+
+  const candidates: ProposedByproductRouteCandidate[] = [];
+  for (const bp of sourceTotals.values()) {
+    for (const stage of proposal.stages) {
+      if (
+        proposal.links.some(
+          (l) => l.fromItemId === bp.itemId && l.toItemId === stage.itemId,
+        )
+      ) {
+        continue;
+      }
+      const recipe = catalog.recipes[stage.recipeId];
+      if (recipe === undefined) continue;
+      if (!recipe.inputs.some((i) => i.itemId === bp.itemId)) continue;
+      candidates.push({ ...bp, toItemId: stage.itemId });
+    }
+  }
+
+  const displayCounts = new Map<string, number>();
+  const sourceCounts = new Map<string, number>();
+  for (const c of candidates) {
+    const displayKey = `${c.itemId} ${c.toItemId}`;
+    displayCounts.set(displayKey, (displayCounts.get(displayKey) ?? 0) + 1);
+    if (c.fromItemId !== c.toItemId) {
+      const sourceKey = `${c.fromItemId} ${c.itemId}`;
+      sourceCounts.set(sourceKey, (sourceCounts.get(sourceKey) ?? 0) + 1);
+    }
+  }
+
+  return candidates
+    .filter((c) => c.fromItemId !== c.toItemId)
+    .filter((c) => (displayCounts.get(`${c.itemId} ${c.toItemId}`) ?? 0) === 1)
+    .filter((c) => (sourceCounts.get(`${c.fromItemId} ${c.itemId}`) ?? 0) === 1)
+    .map((c) => ({
+      key: `${c.fromItemId} ${c.itemId} ${c.toItemId}`,
+      fromItemId: c.fromItemId,
+      fromItemName: itemName(c.fromItemId),
+      itemId: c.itemId,
+      itemName: itemName(c.itemId),
+      rate: c.rate,
+      toItemId: c.toItemId,
+      toItemName: itemName(c.toItemId),
+    }));
+}
+
+interface ProposedByproductRouteCandidate extends ProposedByproduct {
+  toItemId: string;
+}
+
 /**
  * The subtree power total as the labeled display string — reusing
  * `stagePowerText` (the S6 discipline) at 100% clock, so the exact-Fraction
@@ -934,20 +1015,24 @@ function itemRateDot(
 
 /**
  * The comparison rows for the item X currently produced by `currentRecipeId`, at
- * demand `rate` (the compared stage's current primary-output rate). One row per
- * candidate (default first, alternates ascending); each scored from a single
- * `proposeChain(X, rate, …, {X: candidate})` run. Empty when X has <2 candidates
- * (nothing to compare — the caller gates the whole block on this).
+ * demand `rate` (the compared stage's current primary-output rate). ONE ROW PER
+ * ELIGIBLE PRODUCER, in `producerRecipesFor`'s order (the effective default
+ * leads, then ascending id); each scored from a single
+ * `proposeChain(X, rate, …, {X: candidate})` run. NO ≥2 gate — a lone producer
+ * yields one row and the CALLER gates the block (AltCompare.tsx's `< 2` check
+ * is what makes it absent rather than an empty table).
  */
 export function candidateRowsFor(
   catalog: Catalog,
   itemId: string,
   currentRecipeId: string,
   rate: Fraction,
+  unlockedTier: number | null = null,
 ): CandidateRow[] {
-  const candidates = candidateRecipesFor(catalog, itemId);
+  const candidates = producerRecipesFor(catalog, itemId);
   const recipes = Object.values(catalog.recipes);
   return candidates.map((candidate) => {
+    const unlock = catalog.recipeUnlocks[candidate.id];
     const proposal = proposeChain(
       itemId,
       rate,
@@ -974,6 +1059,11 @@ export function candidateRowsFor(
       recipeId: candidate.id,
       recipeName: candidate.displayName,
       isCurrent: candidate.id === currentRecipeId,
+      isAlternate: candidate.isAlternate,
+      lockedTier:
+        unlockedTier !== null && unlock !== undefined && unlock > unlockedTier
+          ? unlock
+          : null,
       machines: machines.toString(),
       output,
       power: subtreePowerText(proposal, catalog),

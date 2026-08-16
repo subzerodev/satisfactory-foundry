@@ -27,7 +27,7 @@ import {
   metricsPowerText,
   proposalMetrics,
   byproductSuggestions,
-  candidateRecipesFor,
+  byproductRouteSuggestions,
   candidateRowsFor,
   swapMachineCountFor,
   effectiveDefaultRecipe,
@@ -319,7 +319,7 @@ function synthCatalog(
 }
 
 describe("alt-compare — candidate enumeration", () => {
-  it("lists default (non-alternate) first, then alternates ascending by id", () => {
+  it("lists the effective default first, then everything else ascending by id", () => {
     const cat = synthCatalog(
       [item("ingot", "Ingot"), item("ore", "Ore")],
       [machine("smelter", 4)],
@@ -343,8 +343,15 @@ describe("alt-compare — candidate enumeration", () => {
         ),
       ],
     );
-    const ids = candidateRecipesFor(cat, "ingot").map((r) => r.id);
-    // Default first; alternates ascending (r_alt_a before r_alt_z).
+    const ids = producerRecipesFor(cat, "ingot").map((r) => r.id);
+    // The fixture is declared SCRAMBLED (r_alt_z, r_std, r_alt_a) on purpose:
+    // that is what kills a mutant returning `eligible` unsorted. The sibling at
+    // "orders effective-default first, then ascending id" declares its fixture
+    // already in the expected order and cannot — so a future dedupe must retire
+    // THAT one, not this one.
+    // NB the rule is default-first-then-ascending, NOT the retired
+    // non-alternates-before-alternates grouping: #103 deleted that comparator,
+    // and this phase's rubber pin expects an alternate ahead of a non-alternate.
     expect(ids).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
   });
 
@@ -372,19 +379,11 @@ describe("alt-compare — candidate enumeration", () => {
         ),
       ],
     );
-    const ids = candidateRecipesFor(cat, "ingot").map((r) => r.id);
-    // Converter/packager never listed → only the smelter recipe survives → <2 →
-    // empty (nothing to compare against).
-    expect(ids).toEqual([]);
-  });
-
-  it("returns empty when the item has fewer than 2 candidates", () => {
-    const cat = synthCatalog(
-      [item("ingot", "Ingot"), item("ore", "Ore")],
-      [machine("smelter", 4)],
-      [crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]])],
-    );
-    expect(candidateRecipesFor(cat, "ingot")).toEqual([]);
+    const ids = producerRecipesFor(cat, "ingot").map((r) => r.id);
+    // Converter/packager never listed → only the smelter recipe survives. Named
+    // POSITIVELY (S21 P1): the old `toEqual([])` was satisfied by a filter that
+    // dropped EVERYTHING, so it could not tell exclusion from over-exclusion.
+    expect(ids).toEqual(["r_std"]);
   });
 });
 
@@ -424,6 +423,22 @@ describe("alt-compare — per-candidate metrics (synthetic, exact)", () => {
     expect(alt!.machines).toBe("2"); // ceil(120/60)
     expect(alt!.power).toBe("32 MW"); // 2 × 16 MW, exact
     expect(alt!.rawDraw).toBe("Ore 90/min"); // 2 × 45 ore
+  });
+
+  it("carries isAlternate from the RECIPE, not from the selection (#116)", () => {
+    // Asserted at BOTH polarities, and that the assertion is IDENTICAL at both
+    // is the point. isAlternate is set one line below `isCurrent: candidate.id
+    // === currentRecipeId`, and with two candidates of which exactly one is an
+    // alternate the two fields are a bijection whichever recipe is current — so
+    // a single call passes against a verbatim copy of that line (`=== current`
+    // rotates to `!== current`, but one of them always survives). The pair
+    // breaks the correlation that no single call can.
+    expect(
+      candidateRowsFor(cat, "ingot", "r_std", F(120)).map((r) => r.isAlternate),
+    ).toEqual([false, true]);
+    expect(
+      candidateRowsFor(cat, "ingot", "r_alt", F(120)).map((r) => r.isAlternate),
+    ).toEqual([false, true]);
   });
 
   it("pins each candidate's OUTPUT as its own actual produced rate, incl. the current row + a ceil-overshoot (#83)", () => {
@@ -568,8 +583,8 @@ describe("alt-compare — per-candidate metrics (synthetic, exact)", () => {
     // A recipe listing its own primary output among its inputs passes candidacy
     // but is demoted to RAW by proposeChain's cycle guard — leaving NO stage for
     // itemId. The guarded lookup degrades to "—"; an unguarded .find().outputRate
-    // would TypeError inside the render (r2 IMPORTANT/MAJOR). Two candidates so
-    // the item is comparable at all (candidateRecipesFor needs ≥2).
+    // would TypeError inside the render (r2 IMPORTANT/MAJOR). Two producers so
+    // the item is comparable at all (AltCompare's ≥2 gate).
     const selfCat = synthCatalog(
       [item("ingot", "Ingot"), item("ore", "Ore")],
       [machine("smelter", 4)],
@@ -600,9 +615,9 @@ describe("alt-compare — per-candidate metrics (synthetic, exact)", () => {
 
 describe("alt-compare — bundled Iron Ingot alternates", () => {
   it("surfaces exactly 5 candidates: default + Iron Alloy, Basic, Leached, Pure Iron", () => {
-    const cands = candidateRecipesFor(catalog, "iron_ingot");
+    const cands = producerRecipesFor(catalog, "iron_ingot");
     expect(cands.map((c) => c.id)).toEqual([
-      "ingot_iron", // default (Smelter), non-alternate → first
+      "ingot_iron", // the effective default (Smelter) → first
       "alternate_ingot_iron", // Iron Alloy Ingot
       "alternate_iron_ingot_basic", // Basic Iron Ingot
       "alternate_iron_ingot_leached", // Leached Iron Ingot
@@ -629,6 +644,76 @@ describe("alt-compare — bundled Iron Ingot alternates", () => {
     // of the comparison): at least two rows differ on machines OR raw draw.
     const fingerprints = new Set(rows.map((r) => `${r.machines}|${r.rawDraw}`));
     expect(fingerprints.size).toBeGreaterThan(1);
+  });
+
+  it("flags isAlternate against REAL parsed names, not a name prefix (#116)", () => {
+    // The synthetic pins cannot catch an implementation that reads the NAME
+    // (`displayName.startsWith("Alternate")`) — their fixture recipe is literally
+    // named "Alternate", so such a mutant scores identically there. Real data
+    // does catch it: docs-loader.ts:190 STRIPS the game's "Alternate: " prefix,
+    // so every parsed name here is bare ("Iron Alloy Ingot", "Pure Iron Ingot"),
+    // and a name-derived flag would report all-false against the true [F,T,T,T,T].
+    const rows = candidateRowsFor(catalog, "iron_ingot", "ingot_iron", F(60));
+    expect(rows.map((r) => r.isAlternate)).toEqual([
+      false,
+      true,
+      true,
+      true,
+      true,
+    ]);
+    // The premise, pinned so this row cannot rot into a tautology if the parser
+    // ever stops stripping: no parsed name carries the prefix.
+    expect(rows.some((r) => r.recipeName.startsWith("Alternate"))).toBe(false);
+  });
+});
+
+// ===========================================================================
+// S21 P1 (#103) — the SINGLE enumerator, pinned against the bundled catalog.
+// Two facts the retirement of `candidateRecipesFor` newly puts at risk, both
+// stated so a revert to a ≥2-gated, non-alternate-first enumerator FAILS here.
+// ===========================================================================
+
+describe("S21 P1 — producerRecipesFor is the comparison enumerator", () => {
+  it("compares rubber in producerRecipesFor's order — the ALTERNATE in the MIDDLE", () => {
+    // The single item that proves the ordering actually changed hands. Rubber
+    // has THREE eligible producers, TWO of them non-alternate, so the retired
+    // "all non-alternates, then all alternates" grouping and the surviving
+    // "effective default first, then ascending id" rule genuinely disagree:
+    //   retired:   [residual_rubber, rubber, alternate_recycled_rubber]
+    //   surviving: [residual_rubber, alternate_recycled_rubber, rubber]
+    // An alternate in a NON-TERMINAL position is unreachable under grouping, so
+    // this row cannot pass against the old comparator — it is the phase's
+    // load-bearing revert-detector. (liquid_fuel and plastic are the only other
+    // two items in the whole 195-item catalog that diverge; all three differ at
+    // positions 2/3 only, never on the leading row.)
+    const rows = candidateRowsFor(catalog, "rubber", "rubber", F(60));
+    expect(rows.map((r) => r.recipeId)).toEqual([
+      "residual_rubber",
+      "alternate_recycled_rubber",
+      "rubber",
+    ]);
+    // …and #116's marker is what makes that order legible, so the alternate is
+    // still identifiable now that position no longer encodes it.
+    expect(rows.map((r) => r.isAlternate)).toEqual([false, true, false]);
+  });
+
+  it("counts a LONE eligible producer as 1 on a real preview row", () => {
+    // 63 of the bundled catalog's 195 items have exactly ONE eligible producer
+    // — a third of the catalog, every one of which read candidateCount 0 under
+    // the retired ≥2 gate. Pinned on a REAL row rather than a synthetic fixture
+    // because the range widening is precisely a bundled-catalog claim.
+    const lone = Object.keys(catalog.items).filter(
+      (id) => producerRecipesFor(catalog, id).length === 1,
+    );
+    expect(lone.length).toBeGreaterThan(0);
+    expect(lone).toContain("aluminum_plate");
+
+    const view = toProposalPreview(
+      proposeChainForCatalog(catalog, "aluminum_plate", F(60)),
+      catalog,
+    );
+    const row = view.rows.find((r) => r.itemName === "Alclad Aluminum Sheet")!;
+    expect(row.candidateCount).toBe(1);
   });
 });
 
@@ -810,9 +895,10 @@ describe("S20 P0 — depth on a diamond DAG (longest-path + feeds)", () => {
 });
 
 describe("S20 P0 — candidateCount on preview rows", () => {
-  it("counts candidates per item (0 or >=2 by construction) from the catalog", () => {
-    // ingot has TWO producers (default + alternate) → count 2; plate has one →
-    // count 0 (candidateRecipesFor returns [] below 2).
+  it("counts EVERY eligible producer per item (0, 1, or more) from the catalog", () => {
+    // ingot has TWO producers (default + alternate) → count 2; plate has ONE →
+    // count 1. S21 P1: the count is the raw eligible-producer count, so a lone
+    // producer reads 1, not 0 — the chip's own ≥2 rule preserves the display.
     const cat = synthCatalog(
       [item("plate", "Plate"), item("ingot", "Ingot"), item("ore", "Ore")],
       [machine("m", 4)],
@@ -837,11 +923,7 @@ describe("S20 P0 — candidateCount on preview rows", () => {
       view.rows.map((r) => [r.itemName, r.candidateCount]),
     );
     expect(countByName.get("Ingot")).toBe(2); // default + alternate
-    expect(countByName.get("Plate")).toBe(0); // single producer → []
-    // Never a bare 1 — candidateRecipesFor returns [] below 2.
-    expect([...countByName.values()].every((c) => c === 0 || c >= 2)).toBe(
-      true,
-    );
+    expect(countByName.get("Plate")).toBe(1); // its single producer, counted
   });
 
   it("counts the real bundled Iron Ingot alternates (5) on its preview row", () => {
@@ -885,7 +967,7 @@ describe("S20 P0 — compare-path regression (candidateRowsFor unchanged)", () =
 
 // ===========================================================================
 // S20 P1 — Propose customization core (ticket #100). Adapter families per the
-// frozen spec item 5: options plumbing, candidateRecipesFor exclusions param,
+// frozen spec item 5: options plumbing, the enumerator's exclusions param,
 // excludableMachines, effectiveDefaultRecipe (incl. null), producerRecipesFor
 // (UNGATED), pickerOptionsFor (TOTAL + the reachability pin), toProposalPreview
 // candidateCount under exclusions, and the rawInputs cause annotation.
@@ -987,16 +1069,14 @@ describe("S20 P1 — proposeChainForCatalog options plumbing", () => {
   });
 });
 
-describe("S20 P1 — candidateRecipesFor custom exclusions", () => {
-  it("an excluded machine's recipe drops out of candidacy", () => {
+describe("S20 P1 — producerRecipesFor custom exclusions", () => {
+  it("an excluded machine's recipe drops out of the eligible list", () => {
     // ingot has 3 producers (std + 2 alternates). Excluding the foundry drops
-    // r_alt_a → 2 remain (still ≥2, so a non-empty list).
+    // r_alt_a → 2 remain.
     const cat = ingotCatalog();
-    const all = candidateRecipesFor(cat, "ingot").map((r) => r.id);
+    const all = producerRecipesFor(cat, "ingot").map((r) => r.id);
     expect(all).toEqual(["r_std", "r_alt_a", "r_alt_z"]);
-    const excl = candidateRecipesFor(cat, "ingot", ["foundry"]).map(
-      (r) => r.id,
-    );
+    const excl = producerRecipesFor(cat, "ingot", ["foundry"]).map((r) => r.id);
     expect(excl).toEqual(["r_std", "r_alt_z"]);
   });
 
@@ -1004,12 +1084,10 @@ describe("S20 P1 — candidateRecipesFor custom exclusions", () => {
     // The default exclusion set is the module constant (converter/packager);
     // an unexcluded synthetic catalog is unaffected either way.
     const cat = ingotCatalog();
-    const dflt = candidateRecipesFor(cat, "ingot").map((r) => r.id);
-    const explicit = candidateRecipesFor(
-      cat,
-      "ingot",
-      EXCLUDED_MACHINE_IDS,
-    ).map((r) => r.id);
+    const dflt = producerRecipesFor(cat, "ingot").map((r) => r.id);
+    const explicit = producerRecipesFor(cat, "ingot", EXCLUDED_MACHINE_IDS).map(
+      (r) => r.id,
+    );
     expect(dflt).toEqual(explicit);
   });
 });
@@ -1095,14 +1173,12 @@ describe("S20 P1 — effectiveDefaultRecipe (matches selectProducer)", () => {
 });
 
 describe("S20 P1 — producerRecipesFor (UNGATED eligible list)", () => {
-  it("lists a LONE eligible candidate (no ≥2 gate, unlike candidateRecipesFor)", () => {
+  it("lists a LONE eligible candidate (no ≥2 gate)", () => {
     const cat = synthCatalog(
       [item("ingot", "Ingot"), item("ore", "Ore")],
       [machine("smelter", 4)],
       [crecipe("r_std", "Standard", "smelter", [["ingot", 30]], [["ore", 30]])],
     );
-    // candidateRecipesFor gates at ≥2 → []; producerRecipesFor lists the one.
-    expect(candidateRecipesFor(cat, "ingot")).toEqual([]);
     expect(producerRecipesFor(cat, "ingot").map((r) => r.id)).toEqual([
       "r_std",
     ]);
@@ -1271,9 +1347,10 @@ describe("S20 P1 — toProposalPreview candidateCount under exclusions", () => {
     );
   });
 
-  it("keeps the P0 ≥2-gate semantics (a lone candidate → 0)", () => {
-    // Excluding two of the three producers leaves ONE eligible → the ≥2 gate in
-    // candidateRecipesFor returns [] → candidateCount 0 (P0 chip semantics).
+  it("counts a LONE surviving producer as 1 (S21 P1 — no ≥2 gate)", () => {
+    // Excluding two of the three producers leaves ONE eligible. Under the
+    // retired gate this read 0; it now reads the honest 1. Bidirectional: this
+    // row FAILS if the swap back to a ≥2-gated enumerator is ever made.
     const cat = ingotCatalog();
     const opts = { excludedMachineIds: ["foundry", "refinery"] };
     const view = toProposalPreview(
@@ -1282,7 +1359,7 @@ describe("S20 P1 — toProposalPreview candidateCount under exclusions", () => {
       opts,
     );
     expect(view.rows.find((r) => r.itemName === "Ingot")!.candidateCount).toBe(
-      0,
+      1,
     );
   });
 });
@@ -1764,7 +1841,7 @@ describe("S20 P2 — byproductSuggestions", () => {
         stage("rubber", "r_rubber", 1n, 20),
       ],
       links: [],
-      byproducts: [{ itemId: "resin", rate: F(10) }],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
       rawInputs: [{ itemId: "oil", rate: F(30) }],
     };
     const s = byproductSuggestions(proposal, cat);
@@ -1798,7 +1875,7 @@ describe("S20 P2 — byproductSuggestions", () => {
     const proposal: ChainProposal = {
       stages: [stage("fuel", "r_fuel", 1n, 20)],
       links: [],
-      byproducts: [{ itemId: "resin", rate: F(10) }],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
       rawInputs: [{ itemId: "oil", rate: F(30) }],
     };
     expect(byproductSuggestions(proposal, cat)).toEqual([]);
@@ -1856,8 +1933,8 @@ describe("S20 P2 — byproductSuggestions", () => {
       links: [],
       // Two resin entries, no merge (as the core emits them).
       byproducts: [
-        { itemId: "resin", rate: F(10) },
-        { itemId: "resin", rate: F(5) },
+        { fromItemId: "fuel", itemId: "resin", rate: F(10) },
+        { fromItemId: "plastic", itemId: "resin", rate: F(5) },
       ],
       rawInputs: [{ itemId: "oil", rate: F(60) }],
     };
@@ -1917,7 +1994,7 @@ describe("S20 P2 — byproductSuggestions", () => {
         stage("rubber", "r_rubber", 1n, 20),
       ],
       links: [],
-      byproducts: [{ itemId: "resin", rate: F(10) }],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
       rawInputs: [{ itemId: "oil", rate: F(30) }],
     };
     const s = byproductSuggestions(proposal, cat);
@@ -1929,6 +2006,291 @@ describe("S20 P2 — byproductSuggestions", () => {
     // Unique on (itemId, toItemId).
     const keys = s.map((x) => `${x.itemId} ${x.toItemId}`);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("route helper emits a full-key single-source route", () => {
+    const cat = synthCatalog(
+      [
+        item("fuel", "Fuel"),
+        item("resin", "Resin"),
+        item("rubber", "Rubber"),
+        item("oil", "Oil"),
+      ],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_fuel",
+          "Fuel",
+          "refinery",
+          [
+            ["fuel", 20],
+            ["resin", 10],
+          ],
+          [["oil", 30]],
+        ),
+        crecipe(
+          "r_rubber",
+          "Rubber",
+          "refinery",
+          [["rubber", 20]],
+          [["resin", 30]],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [
+        stage("fuel", "r_fuel", 1n, 20),
+        stage("rubber", "r_rubber", 1n, 20),
+      ],
+      links: [],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
+      rawInputs: [{ itemId: "oil", rate: F(30) }],
+    };
+
+    const [route] = byproductRouteSuggestions(proposal, cat);
+
+    expect(route).toMatchObject({
+      key: "fuel resin rubber",
+      fromItemId: "fuel",
+      fromItemName: "Fuel",
+      itemId: "resin",
+      itemName: "Resin",
+      toItemId: "rubber",
+      toItemName: "Rubber",
+    });
+    expect(route!.rate.eq(F(10))).toBe(true);
+  });
+
+  it("route helper suppresses primary-lane collisions", () => {
+    const cat = synthCatalog(
+      [item("fuel", "Fuel"), item("resin", "Resin"), item("rubber", "Rubber")],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_fuel",
+          "Fuel",
+          "refinery",
+          [
+            ["fuel", 20],
+            ["resin", 10],
+          ],
+          [],
+        ),
+        crecipe("r_resin", "Resin", "refinery", [["resin", 20]], []),
+        crecipe(
+          "r_rubber",
+          "Rubber",
+          "refinery",
+          [["rubber", 20]],
+          [["resin", 30]],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [
+        stage("fuel", "r_fuel", 1n, 20),
+        stage("resin", "r_resin", 1n, 20),
+        stage("rubber", "r_rubber", 1n, 20),
+      ],
+      links: [{ fromItemId: "resin", toItemId: "rubber" }],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
+      rawInputs: [],
+    };
+
+    expect(byproductRouteSuggestions(proposal, cat)).toEqual([]);
+  });
+
+  it("route helper suppresses a byproduct route back into its source stage", () => {
+    const cat = synthCatalog(
+      [item("fuel", "Fuel"), item("resin", "Resin")],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_fuel",
+          "Fuel",
+          "refinery",
+          [
+            ["fuel", 20],
+            ["resin", 10],
+          ],
+          [["resin", 5]],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [stage("fuel", "r_fuel", 1n, 20)],
+      links: [],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
+      rawInputs: [],
+    };
+
+    expect(byproductRouteSuggestions(proposal, cat)).toEqual([]);
+  });
+
+  it("counts a self emitter when suppressing a multi-source aggregate", () => {
+    const cat = synthCatalog(
+      [
+        item("silica", "Silica"),
+        item("scrap", "Aluminum Scrap"),
+        item("water", "Water"),
+      ],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_silica",
+          "Silica",
+          "refinery",
+          [
+            ["silica", 20],
+            ["water", 10],
+          ],
+          [["water", 5]],
+        ),
+        crecipe(
+          "r_scrap",
+          "Aluminum Scrap",
+          "refinery",
+          [
+            ["scrap", 20],
+            ["water", 10],
+          ],
+          [],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [
+        stage("silica", "r_silica", 1n, 20),
+        stage("scrap", "r_scrap", 1n, 20),
+      ],
+      links: [],
+      byproducts: [
+        { fromItemId: "silica", itemId: "water", rate: F(10) },
+        { fromItemId: "scrap", itemId: "water", rate: F(10) },
+      ],
+      rawInputs: [],
+    };
+
+    expect(byproductRouteSuggestions(proposal, cat)).toEqual([]);
+  });
+
+  it("does not count self-consumption as source fan-out", () => {
+    const cat = synthCatalog(
+      [
+        item("silica", "Silica"),
+        item("solution", "Solution"),
+        item("water", "Water"),
+      ],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_silica",
+          "Silica",
+          "refinery",
+          [
+            ["silica", 20],
+            ["water", 10],
+          ],
+          [["water", 5]],
+        ),
+        crecipe(
+          "r_solution",
+          "Solution",
+          "refinery",
+          [["solution", 20]],
+          [["water", 5]],
+        ),
+      ],
+    );
+    const proposal: ChainProposal = {
+      stages: [
+        stage("silica", "r_silica", 1n, 20),
+        stage("solution", "r_solution", 1n, 20),
+      ],
+      links: [],
+      byproducts: [{ fromItemId: "silica", itemId: "water", rate: F(10) }],
+      rawInputs: [],
+    };
+
+    expect(byproductRouteSuggestions(proposal, cat)).toEqual([
+      expect.objectContaining({ key: "silica water solution" }),
+    ]);
+  });
+
+  it("route helper suppresses multi-source aggregate and source fan-out", () => {
+    const cat = synthCatalog(
+      [
+        item("fuel", "Fuel"),
+        item("plastic", "Plastic"),
+        item("resin", "Resin"),
+        item("rubber", "Rubber"),
+        item("paint", "Paint"),
+      ],
+      [machine("refinery", 30)],
+      [
+        crecipe(
+          "r_fuel",
+          "Fuel",
+          "refinery",
+          [
+            ["fuel", 20],
+            ["resin", 10],
+          ],
+          [],
+        ),
+        crecipe(
+          "r_plastic",
+          "Plastic",
+          "refinery",
+          [
+            ["plastic", 20],
+            ["resin", 5],
+          ],
+          [],
+        ),
+        crecipe(
+          "r_rubber",
+          "Rubber",
+          "refinery",
+          [["rubber", 20]],
+          [["resin", 30]],
+        ),
+        crecipe(
+          "r_paint",
+          "Paint",
+          "refinery",
+          [["paint", 20]],
+          [["resin", 10]],
+        ),
+      ],
+    );
+
+    const multiSource: ChainProposal = {
+      stages: [
+        stage("fuel", "r_fuel", 1n, 20),
+        stage("plastic", "r_plastic", 1n, 20),
+        stage("rubber", "r_rubber", 1n, 20),
+      ],
+      links: [],
+      byproducts: [
+        { fromItemId: "fuel", itemId: "resin", rate: F(10) },
+        { fromItemId: "plastic", itemId: "resin", rate: F(5) },
+      ],
+      rawInputs: [],
+    };
+    expect(byproductRouteSuggestions(multiSource, cat)).toEqual([]);
+
+    const fanOut: ChainProposal = {
+      stages: [
+        stage("fuel", "r_fuel", 1n, 20),
+        stage("rubber", "r_rubber", 1n, 20),
+        stage("paint", "r_paint", 1n, 20),
+      ],
+      links: [],
+      byproducts: [{ fromItemId: "fuel", itemId: "resin", rate: F(10) }],
+      rawInputs: [],
+    };
+    expect(byproductRouteSuggestions(fanOut, cat)).toEqual([]);
   });
 });
 

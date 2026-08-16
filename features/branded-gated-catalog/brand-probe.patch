@@ -1,0 +1,92 @@
+diff --git a/src/ui/ChainBuilder.tsx b/src/ui/ChainBuilder.tsx
+index 2944a93..799ea0f 100644
+--- a/src/ui/ChainBuilder.tsx
++++ b/src/ui/ChainBuilder.tsx
+@@ -35,6 +35,7 @@ import {
+   excludableMachines,
+   byproductSuggestions,
+   gateCatalog,
++  type GatedCatalog,
+ } from "./chain-builder-adapter.ts";
+ import type {
+   ProposalPreview,
+@@ -111,7 +112,7 @@ interface Preview {
+    * reading — the control reports what the user chose, these surfaces report
+    * what was solved — and it is pinned by its own test.
+    */
+-  gated: Catalog;
++  gated: GatedCatalog;
+ }
+ 
+ /** The stage row for `itemId` in the current preview, or undefined. */
+@@ -674,7 +675,7 @@ function recipeLabel(
+ }
+ 
+ interface RecipePickerProps {
+-  catalog: Catalog;
++  catalog: GatedCatalog;
+   itemId: string;
+   candidateCount: number;
+   currentRecipeId: string | undefined;
+diff --git a/src/ui/chain-builder-adapter.ts b/src/ui/chain-builder-adapter.ts
+index 8449fe1..28d5512 100644
+--- a/src/ui/chain-builder-adapter.ts
++++ b/src/ui/chain-builder-adapter.ts
+@@ -274,7 +274,7 @@ export interface PreviewOptions {
+    * its recovery line.
+    * ABSENT ⇒ the passed catalog, so null-tier callers are byte-identical.
+    */
+-  ungatedCatalog?: Catalog;
++  ungatedCatalog?: UngatedCatalog;
+ }
+ 
+ /**
+@@ -642,6 +642,10 @@ export function pickerOptionsFor(
+ // simply receive whichever world the caller wants.
+ // ---------------------------------------------------------------------------
+ 
++declare const gatedBrand: unique symbol;
++export type GatedCatalog = Catalog & { readonly [gatedBrand]: true };
++export type UngatedCatalog = Catalog & { readonly [gatedBrand]?: never };
++
+ /**
+  * The catalog as seen at `unlockedTier`: recipes whose MIN unlock tier exceeds
+  * it are removed. A recipe with NO `recipeUnlocks` entry is never gated (no
+@@ -659,8 +663,8 @@ export function pickerOptionsFor(
+ export function gateCatalog(
+   catalog: Catalog,
+   unlockedTier: number | null,
+-): Catalog {
+-  if (unlockedTier === null) return catalog;
++): GatedCatalog {
++  if (unlockedTier === null) return catalog as GatedCatalog;
+   // Null-prototype container (#28): this is the THIRD construction site of the
+   // recipes map (after the parse and revive boundaries), and a natural
+   // Object.fromEntries/spread would silently regress it for every non-null
+@@ -671,7 +675,7 @@ export function gateCatalog(
+     if (unlock !== undefined && unlock > unlockedTier) continue;
+     recipes[id] = recipe;
+   }
+-  return { ...catalog, recipes };
++  return { ...catalog, recipes } as GatedCatalog;
+ }
+ 
+ /**
+@@ -681,7 +685,7 @@ export function gateCatalog(
+  * renders a checkbox per entry (checked = excluded).
+  */
+ export function excludableMachines(
+-  catalog: Catalog,
++  catalog: UngatedCatalog,
+ ): { machineId: string; displayName: string }[] {
+   const referenced = new Set<string>();
+   for (const r of Object.values(catalog.recipes)) referenced.add(r.machineId);
+@@ -840,7 +844,7 @@ export interface ByproductSuggestion {
+  */
+ export function byproductSuggestions(
+   proposal: ChainProposal,
+-  catalog: Catalog,
++  catalog: UngatedCatalog,
+ ): ByproductSuggestion[] {
+   // Step 1: aggregate byproduct rates per distinct item (exact Fraction sum).
+   // A Map preserves first-seen order; the byproducts array is already item-

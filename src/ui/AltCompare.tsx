@@ -19,7 +19,7 @@ import type { Selection, SolveState } from "../state/store.ts";
 import type { Catalog, CatalogRecipe } from "../data/types.ts";
 import { Fraction } from "../core/fraction.ts";
 import {
-  candidateRecipesFor,
+  producerRecipesFor,
   candidateRowsFor,
   swapMachineCountFor,
 } from "./chain-builder-adapter.ts";
@@ -69,6 +69,7 @@ export function altCompareModel(
   stageId: string,
   selection: Selection,
   solve: SolveState,
+  unlockedTier: number | null = null,
 ): AltCompareModel | null {
   if (solve.status !== "solved") return null;
   const recipeId = selection.recipeId;
@@ -77,7 +78,10 @@ export function altCompareModel(
   if (recipe === undefined) return null;
 
   const itemId = recipe.primaryOutputId;
-  const candidates = candidateRecipesFor(catalog, itemId);
+  const candidates = producerRecipesFor(catalog, itemId);
+  // The ONLY ≥2 gate (S21 P1 retired the enumerator's internal one). Load-
+  // bearing: without it a lone producer yields a non-null model with one row,
+  // which renders as the .alt-compare header over a pointless one-row table.
   if (candidates.length < 2) return null; // nothing to compare
 
   // R = the primary output lane's totalOutput (per-lane; no scalar). Gate off if
@@ -87,14 +91,18 @@ export function altCompareModel(
   const rate = lane.totalOutput;
 
   const byId = new Map(candidates.map((c) => [c.id, c]));
-  const rows = candidateRowsFor(catalog, itemId, recipeId, rate).map(
-    (row): CompareRow => ({
-      row,
-      apply: row.isCurrent
-        ? null
-        : swapPayloadFor(stageId, byId.get(row.recipeId)!, rate),
-    }),
-  );
+  const rows = candidateRowsFor(
+    catalog,
+    itemId,
+    recipeId,
+    rate,
+    unlockedTier,
+  ).map((row): CompareRow => ({
+    row,
+    apply: row.isCurrent
+      ? null
+      : swapPayloadFor(stageId, byId.get(row.recipeId)!, rate),
+  }));
 
   return { itemName: catalog.items[itemId]?.displayName ?? itemId, rows };
 }
@@ -123,10 +131,17 @@ export function AltCompare() {
   const activeStageId = useAppStore((s) => s.activeStageId);
   const selection = useAppStore((s) => s.selection);
   const solve = useAppStore((s) => s.solve);
+  const unlockedTier = useAppStore((s) => s.proposePrefs.unlockedTier);
   const applyRecipeSwap = useAppStore((s) => s.applyRecipeSwap);
 
   if (catalog === null) return null;
-  const model = altCompareModel(catalog, activeStageId, selection, solve);
+  const model = altCompareModel(
+    catalog,
+    activeStageId,
+    selection,
+    solve,
+    unlockedTier,
+  );
   if (model === null) return null;
 
   return (
@@ -153,6 +168,15 @@ export function AltCompare() {
             >
               <td>
                 {row.recipeName}
+                {row.isAlternate && (
+                  <span className="alt-compare-mark"> (alt)</span>
+                )}
+                {row.lockedTier !== null && (
+                  <span className="alt-compare-mark">
+                    {" "}
+                    (locked T{row.lockedTier})
+                  </span>
+                )}
                 {row.byproducts !== null && (
                   <span className="alt-compare-byproducts">
                     {" "}
