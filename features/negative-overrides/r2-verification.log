@@ -1,0 +1,185 @@
+# R2 bidirectional test verification: negative overrides
+
+Date: 2026-08-16
+Worktree: /home/subzerodev/workspace/satisfactory-foundry/.worktrees/s22-121-negative-overrides
+Production commit under test: ec74c820701d6d9ff692f2959115b98f24de0ed0
+
+All commands below ran from the worktree root. Temporary production mutations
+were applied with Codex's apply_patch tool and fully restored before this log
+was added.
+
+## Baseline GREEN with production behavior present
+
+Command:
+
+  npm test -- --run src/core/manifold.test.ts src/state/store.test.ts --reporter=dot
+
+Output:
+
+  > satisfactory-foundry@0.0.0 test
+  > vitest run --run src/core/manifold.test.ts src/state/store.test.ts --reporter=dot
+
+   RUN  v4.1.10 /home/subzerodev/workspace/satisfactory-foundry/.worktrees/s22-121-negative-overrides
+
+   Test Files  2 passed (2)
+        Tests  207 passed (207)
+     Start at  11:36:23
+     Duration  444ms (transform 370ms, setup 0ms, import 431ms, tests 94ms, environment 0ms)
+
+## Behavior 1: store rejects negative override text
+
+Break command (exact patch applied):
+
+  *** Begin Patch
+  *** Update File: src/state/store.ts
+  @@
+         }
+         const value = Fraction.parse(cell);
+  -      if (value.isNegative()) {
+  -        throw new RangeError(
+  -          `lane ${itemId} override ${i + 1} must be zero or positive; got ${value.toString()}.`,
+  -        );
+  -      }
+         parsed[i] = value;
+  *** End Patch
+
+Failing command:
+
+  npm test -- --run src/core/manifold.test.ts src/state/store.test.ts --reporter=dot
+
+Genuine Vitest failure output:
+
+  FAIL  src/state/store.test.ts > invalid-input routing (spec row 5) > negative feeds override → invalid bad-override with lane and slot detail
+  FAIL  src/state/store.test.ts > invalid-input routing (spec row 5) > negative outputs override → invalid bad-override with lane and slot detail
+  AssertionError: expected 'solved' to be 'invalid' // Object.is equality
+
+  Expected: "invalid"
+  Received: "solved"
+
+   Test Files  1 failed | 1 passed (2)
+        Tests  2 failed | 205 passed (207)
+     Start at  11:36:33
+     Duration  363ms (transform 282ms, setup 0ms, import 335ms, tests 89ms, environment 0ms)
+
+Restore command (exact patch applied):
+
+  *** Begin Patch
+  *** Update File: src/state/store.ts
+  @@
+         }
+         const value = Fraction.parse(cell);
+  +      if (value.isNegative()) {
+  +        throw new RangeError(
+  +          `lane ${itemId} override ${i + 1} must be zero or positive; got ${value.toString()}.`,
+  +        );
+  +      }
+         parsed[i] = value;
+  *** End Patch
+
+Restoration GREEN command:
+
+  npm test -- --run src/core/manifold.test.ts src/state/store.test.ts --reporter=dot
+
+Output:
+
+   Test Files  2 passed (2)
+        Tests  207 passed (207)
+     Start at  11:36:42
+     Duration  400ms (transform 344ms, setup 0ms, import 389ms, tests 86ms, environment 0ms)
+
+## Behavior 2: pure lane solvers reject negative overrides first
+
+Break command (exact patch applied to both lane solvers):
+
+  *** Begin Patch
+  *** Update File: src/core/manifold.ts
+  @@
+       segments: [],
+       findings: [],
+     };
+  -  const negativeOverride = negativeOverrideFinding(lane);
+  -  if (negativeOverride !== null) {
+  -    base.findings.push(negativeOverride);
+  -    return base;
+  -  }
+     if (isDegenerate(input, d)) {
+  @@
+       segments: [],
+       findings: [],
+     };
+  -  const negativeOverride = negativeOverrideFinding(lane);
+  -  if (negativeOverride !== null) {
+  -    base.findings.push(negativeOverride);
+  -    return base;
+  -  }
+     if (isDegenerate(input, p)) {
+  *** End Patch
+
+Failing command:
+
+  npm test -- --run src/core/manifold.test.ts src/state/store.test.ts --reporter=dot
+
+Genuine Vitest failure output:
+
+  FAIL  src/core/manifold.test.ts > solveFeedLane — negative and zero overrides > rejects the first negative override before belt math
+  FAIL  src/core/manifold.test.ts > solveFeedLane — negative and zero overrides > negative override wins over N=0
+  FAIL  src/core/manifold.test.ts > solveFeedLane — negative and zero overrides > negative override wins over zero-rate
+  FAIL  src/core/manifold.test.ts > solveFeedLane — negative and zero overrides > negative override wins over d > B
+  FAIL  src/core/manifold.test.ts > solveFeedLane — negative and zero overrides > negative override wins over oversize array
+  FAIL  src/core/manifold.test.ts > solveOutputLane — negative and zero overrides > rejects the first negative override before break-out math
+  FAIL  src/core/manifold.test.ts > solveOutputLane — negative and zero overrides > negative override wins over N=0
+  FAIL  src/core/manifold.test.ts > solveOutputLane — negative and zero overrides > negative override wins over zero-rate
+  FAIL  src/core/manifold.test.ts > solveOutputLane — negative and zero overrides > negative override wins over p > T
+  FAIL  src/core/manifold.test.ts > solveOutputLane — negative and zero overrides > negative override wins over oversize array
+  FAIL  src/core/manifold.test.ts > solveStage — full 20-smelter integration > keeps negative overrides lane-local while valid siblings solve
+
+   Test Files  1 failed | 1 passed (2)
+        Tests  11 failed | 196 passed (207)
+     Start at  11:36:52
+     Duration  397ms (transform 367ms, setup 0ms, import 411ms, tests 96ms, environment 0ms)
+
+Restore command (exact patch applied to both lane solvers):
+
+  *** Begin Patch
+  *** Update File: src/core/manifold.ts
+  @@
+       segments: [],
+       findings: [],
+     };
+  +  const negativeOverride = negativeOverrideFinding(lane);
+  +  if (negativeOverride !== null) {
+  +    base.findings.push(negativeOverride);
+  +    return base;
+  +  }
+     if (isDegenerate(input, d)) {
+  @@
+       segments: [],
+       findings: [],
+     };
+  +  const negativeOverride = negativeOverrideFinding(lane);
+  +  if (negativeOverride !== null) {
+  +    base.findings.push(negativeOverride);
+  +    return base;
+  +  }
+     if (isDegenerate(input, p)) {
+  *** End Patch
+
+Restoration GREEN command:
+
+  npm test -- --run src/core/manifold.test.ts src/state/store.test.ts --reporter=dot
+
+Output:
+
+   Test Files  2 passed (2)
+        Tests  207 passed (207)
+     Start at  11:37:02
+     Duration  590ms (transform 503ms, setup 0ms, import 577ms, tests 115ms, environment 0ms)
+
+## Restoration integrity
+
+Command:
+
+  git diff --exit-code -- src/core/manifold.ts src/state/store.ts
+
+Output: empty; exit status 0. Both temporary production mutations were fully
+restored to production commit ec74c820701d6d9ff692f2959115b98f24de0ed0.
