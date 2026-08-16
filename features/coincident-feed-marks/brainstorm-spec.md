@@ -1,6 +1,6 @@
 # Coincident feed marks: bounded render grouping
 
-Forgejo #123 | Tier 2 single feature | design v5
+Forgejo #123 | Tier 2 single feature | design v5 frozen
 
 ## Problem and source-grounded scope
 
