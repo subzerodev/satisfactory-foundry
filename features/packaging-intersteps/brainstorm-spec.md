@@ -43,13 +43,15 @@ container. A catalog regression pins all pair identities and exact rates.
 ```ts
 interface PackagingInterstep {
   packageRecipeId: string;
-  unpackageRecipeId: string;
   clockPercentText: string;
   returnTransport: LinkTransport;
 }
 ```
 
-The clock is shared by both ends, raw text, and uses the existing `(0,250]`
+The package recipe ID is the pair's canonical key; discovery derives its unique
+unpackage recipe from the current catalog. An unknown key remains recoverable
+stale intent, while inconsistent package/unpackage ID combinations are
+unrepresentable. The clock is shared by both ends, raw text, and uses the existing `(0,250]`
 parser/power model. The store exposes `setLinkInterstep(linkId, value|null)`.
 Changing the pair keeps clock; disabling removes intent. `returnTransport`
 configures the empty-container route independently and defaults to belt.
@@ -96,20 +98,23 @@ packaged item and returns the same container at ratios that close the steady
 state. A mismatch is an explicit error, never coerced.
 
 Power uses the Packager machine's existing exact/estimated clock model for the
-sum of both machine counts. A single pure `effectiveLinkCargo` projection
+sum of both machine counts. One pure `deriveLinkPlan` boundary calls an
+`effectiveLinkCargo` projection
 accepts independently resolved producer supply and consumer demand, maps each
 through the package ratio, and returns forward packaged item plus distinct
 packaged supply/demand and the return container item/rate. Inspector results,
 edge chips, reconciliation/train findings, and every transport consumer use
-that projection rather than independently reading the original fluid item/rate.
+the resulting derived-link plan rather than independently reading the original fluid item/rate.
 This preserves under/over-supply and is load-bearing for packaged Nitrogen at
 `D/4`.
 
-The projection is discriminated: `ready` carries effective cargo; `unavailable`
-carries an exact stale/missing/invalid-pair message. Every consumer handles
-unavailable identically: edge status is `problem`, reconciliation emits one
-interstep finding, inspector shows the error, and both transport results are
-suppressed. It never falls through to an `ok` fluid edge.
+The derived-link plan is discriminated: `ready` carries effective cargo and both
+transport results; `unavailable` carries one exact stale/missing/invalid-pair
+error. This boundary alone interprets the projection failure and supplies the
+surface-neutral problem state. Edge status, the one reconciliation finding, and
+the inspector read that result; unavailable has no transport results and never
+falls through to an `ok` fluid edge. The result is pure and recomputable, not a
+second persisted or cached store state.
 
 Forward and return each call `computeLinkTransport` with their own solid item,
 rate, and transport config. Belt/truck/tractor/explorer/train/drone are legal on
@@ -123,15 +128,15 @@ sides, not cargo direction: `from` is the producer-side packaging station and
 but persisted keys do not invert. Return labels and station-power exclusions use
 those physical names; both one-sided cases are pinned.
 
-The result always warns:
+The result always advises:
 
 - seed the loop with containers (capital cannot be derived without route
   inventory/length/timing);
 - provide a separate return path;
-- forward and return lane saturation are independent.
 
-Warnings are advisory, not hard refusals. A missing/invalid pair or clock is an
-error and suppresses stale counts.
+Forward and return saturation is shown by their independently computed route
+results rather than duplicated as a permanent warning. Advisories are not hard
+refusals. A missing/invalid pair or clock is an error and suppresses stale counts.
 
 ## Inspector Interaction
 
