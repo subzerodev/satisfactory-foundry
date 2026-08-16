@@ -73,18 +73,26 @@ three strings from the current exact baseline count. Disabling it removes the
 field. Changing extractor or clock keeps an existing explicit mix because it is
 the user's node inventory; the baseline and coverage recompute around it.
 
-Plan persistence bumps to v7. `PlanFileV6` remains the historical extraction
-shape. `migrateV6` produces v7 selections with no `purityMix`; v1-v5 continue
-through their existing migrations and then v6-to-v7. The v7 validator requires
-all three mix keys to be strings when the optional object is present and
-rejects nulls and arrays. Save/export/bundle writers emit v7. This makes old
-builds reject the newer file instead of accepting and erasing purity intent.
+Plan persistence bumps to v7. A new frozen `ExtractionSelectionV6` contains
+only `machineId` and `clockPercentText`, and `PlanStageV6` uses that historical
+type instead of the widened live-state type. `PlanStageV7` uses the current
+selection with optional `purityMix`. `migrateV6` constructs each v7 selection
+by explicitly copying the two historical fields, so an unknown extra field in
+a hand-authored v6 cannot be smuggled through or silently treated as v7 intent.
+v1-v5 continue through their existing migrations and then v6-to-v7. The v7
+validator requires all three mix keys to be strings when the optional object is
+present and rejects nulls and arrays. Save/export/bundle writers emit v7. This
+makes old builds reject the newer file instead of accepting and erasing purity
+intent.
 
 ## Exact Derivation
 
-Each count must be a base-10 non-negative safe integer. Blank, decimal,
-negative, exponential, and unsafe values are invalid and identify the offending
-field. Validation happens at derive time; raw text remains persisted.
+Each count must be a base-10 non-negative integer. Blank, decimal, negative,
+and exponential values are invalid and identify the offending field. Parse the
+three values exactly as `BigInt`, sum them exactly, and reject either an
+individual value or the aggregate when it exceeds `Number.MAX_SAFE_INTEGER`.
+Only after that aggregate guard converts all counts to numbers for the existing
+power helper. Validation happens at derive time; raw text remains persisted.
 
 Let `r` be the selected extractor's exact Normal output after clock scaling and
 let `(i, n, p)` be the three counts:
@@ -142,8 +150,8 @@ controls are reachable by scrolling at 360px and do not overlap chain controls.
 
 - Pure derivation tests for exact weighted supply, shortfall/spare, power, and
   highest-present-purity transport.
-- Parser tests for zero, blanks, decimals, negatives, exponent notation, and
-  safe-integer overflow.
+- Parser tests for zero, blanks, decimals, negatives, exponent notation,
+  individual safe-integer overflow, and aggregate safe-integer overflow.
 - Store tests for enable/edit/disable, extractor/clock preservation, and
   prototype-like raw item keys.
 - Plan v7 save/load/import/export/bundle tests, strict malformed-mix rejection,
@@ -172,3 +180,9 @@ controls are reachable by scrolling at 360px and do not overlap chain controls.
 | v7 is required | Live v6 validator accepts the existing selection shape and older writers would drop an unknown mix field |
 | User inventory survives clock/extractor edits | The counts describe available nodes, while those controls describe how the selected machine uses them |
 
+## Design Review Disposition
+
+- **r1:** folded both findings. Counts are exact-parsed before conversion and
+  the aggregate is bounded for the existing power API. Plan v6 now has a
+  distinct frozen extraction-selection type; v6-to-v7 migration copies only its
+  two known fields.
