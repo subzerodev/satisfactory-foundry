@@ -14,6 +14,7 @@ import { proposeChain } from "../core/chain-builder.ts";
 import type {
   ChainProposal,
   ItemRate,
+  ProposedByproduct,
   ProposedStage,
 } from "../core/chain-builder.ts";
 import { Fraction } from "../core/fraction.ts";
@@ -835,6 +836,17 @@ export interface ByproductSuggestion {
   toItemName: string;
 }
 
+export interface ByproductRouteSuggestion {
+  key: string;
+  fromItemId: string;
+  fromItemName: string;
+  itemId: string;
+  itemName: string;
+  rate: Fraction;
+  toItemId: string;
+  toItemName: string;
+}
+
 /**
  * Scan a proposal for byproduct → consumer feed suggestions (Axis 4), in two
  * exact steps:
@@ -891,6 +903,69 @@ export function byproductSuggestions(
     }
   }
   return suggestions;
+}
+
+export function byproductRouteSuggestions(
+  proposal: ChainProposal,
+  catalog: Catalog,
+): ByproductRouteSuggestion[] {
+  const itemName = (id: string): string => catalog.items[id]?.displayName ?? id;
+  const sourceTotals = new Map<string, ProposedByproduct>();
+  for (const bp of proposal.byproducts) {
+    const key = `${bp.fromItemId} ${bp.itemId}`;
+    const prev = sourceTotals.get(key);
+    sourceTotals.set(
+      key,
+      prev === undefined ? bp : { ...bp, rate: prev.rate.add(bp.rate) },
+    );
+  }
+
+  const candidates: ProposedByproductRouteCandidate[] = [];
+  for (const bp of sourceTotals.values()) {
+    for (const stage of proposal.stages) {
+      if (
+        proposal.links.some(
+          (l) => l.fromItemId === bp.itemId && l.toItemId === stage.itemId,
+        )
+      ) {
+        continue;
+      }
+      const recipe = catalog.recipes[stage.recipeId];
+      if (recipe === undefined) continue;
+      if (!recipe.inputs.some((i) => i.itemId === bp.itemId)) continue;
+      candidates.push({ ...bp, toItemId: stage.itemId });
+    }
+  }
+
+  const displayCounts = new Map<string, number>();
+  const sourceCounts = new Map<string, number>();
+  for (const c of candidates) {
+    const displayKey = `${c.itemId} ${c.toItemId}`;
+    displayCounts.set(displayKey, (displayCounts.get(displayKey) ?? 0) + 1);
+    if (c.fromItemId !== c.toItemId) {
+      const sourceKey = `${c.fromItemId} ${c.itemId}`;
+      sourceCounts.set(sourceKey, (sourceCounts.get(sourceKey) ?? 0) + 1);
+    }
+  }
+
+  return candidates
+    .filter((c) => c.fromItemId !== c.toItemId)
+    .filter((c) => (displayCounts.get(`${c.itemId} ${c.toItemId}`) ?? 0) === 1)
+    .filter((c) => (sourceCounts.get(`${c.fromItemId} ${c.itemId}`) ?? 0) === 1)
+    .map((c) => ({
+      key: `${c.fromItemId} ${c.itemId} ${c.toItemId}`,
+      fromItemId: c.fromItemId,
+      fromItemName: itemName(c.fromItemId),
+      itemId: c.itemId,
+      itemName: itemName(c.itemId),
+      rate: c.rate,
+      toItemId: c.toItemId,
+      toItemName: itemName(c.toItemId),
+    }));
+}
+
+interface ProposedByproductRouteCandidate extends ProposedByproduct {
+  toItemId: string;
 }
 
 /**

@@ -5,9 +5,10 @@ import { resetDbCache } from "../data/db.ts";
 import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
+import type { Catalog } from "../data/types.ts";
 import type { PlanFileV1, PlanFileV2, PlanFileV5 } from "../data/plan-store.ts";
 import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
-import type { StageLink, PlanBundle } from "./store.ts";
+import type { StageLink, PlanBundle, ProposedByproductRoute } from "./store.ts";
 import { proposeChain } from "../core/chain-builder.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
 import { applyDrawnDistance } from "../ui/chain-view.ts";
@@ -3132,6 +3133,125 @@ describe("applyChainProposal (Stage 8 / Phase 3)", () => {
     );
   }
 
+  function routeCatalog(): Catalog {
+    const io = (itemId: string, rate: number) => ({
+      itemId,
+      perMinute: Fraction.from(rate),
+    });
+    return {
+      items: Object.fromEntries(
+        ["oil", "fuel", "resin", "rubber", "paint", "pack"].map((id) => [
+          id,
+          {
+            id,
+            displayName: id,
+            isFluid: false,
+            stackSize: Fraction.from(100),
+          },
+        ]),
+      ),
+      machines: {
+        refinery: {
+          id: "refinery",
+          displayName: "Refinery",
+          power: {
+            mw: Fraction.from(30),
+            variable: false,
+            exponent: Fraction.from(1),
+          },
+        },
+      },
+      recipes: {
+        r_fuel: {
+          id: "r_fuel",
+          displayName: "Fuel",
+          machineId: "refinery",
+          isAlternate: false,
+          primaryOutputId: "fuel",
+          inputs: [io("oil", 30)],
+          outputs: [io("fuel", 20), io("resin", 10)],
+        },
+        r_rubber: {
+          id: "r_rubber",
+          displayName: "Rubber",
+          machineId: "refinery",
+          isAlternate: false,
+          primaryOutputId: "rubber",
+          inputs: [io("resin", 30)],
+          outputs: [io("rubber", 20)],
+        },
+        r_pack: {
+          id: "r_pack",
+          displayName: "Pack",
+          machineId: "refinery",
+          isAlternate: false,
+          primaryOutputId: "pack",
+          inputs: [io("fuel", 20), io("rubber", 20)],
+          outputs: [io("pack", 10)],
+        },
+        r_paint: {
+          id: "r_paint",
+          displayName: "Paint",
+          machineId: "refinery",
+          isAlternate: false,
+          primaryOutputId: "paint",
+          inputs: [io("resin", 10)],
+          outputs: [io("paint", 10)],
+        },
+      },
+      tiers: { belt: [Fraction.from(60)], pipe: [Fraction.from(300)] },
+      recipeUnlocks: {},
+    };
+  }
+
+  function routeProposal(): ChainProposal {
+    return {
+      stages: [
+        {
+          itemId: "fuel",
+          recipeId: "r_fuel",
+          machineCount: 1n,
+          outputRate: Fraction.from(20),
+        },
+        {
+          itemId: "rubber",
+          recipeId: "r_rubber",
+          machineCount: 1n,
+          outputRate: Fraction.from(20),
+        },
+        {
+          itemId: "pack",
+          recipeId: "r_pack",
+          machineCount: 1n,
+          outputRate: Fraction.from(10),
+        },
+        {
+          itemId: "paint",
+          recipeId: "r_paint",
+          machineCount: 1n,
+          outputRate: Fraction.from(10),
+        },
+      ],
+      links: [
+        { fromItemId: "fuel", toItemId: "pack" },
+        { fromItemId: "rubber", toItemId: "pack" },
+      ],
+      rawInputs: [
+        { itemId: "oil", rate: Fraction.from(30) },
+        { itemId: "resin", rate: Fraction.from(30) },
+      ],
+      byproducts: [
+        { fromItemId: "fuel", itemId: "resin", rate: Fraction.from(10) },
+      ],
+    };
+  }
+
+  function routeStore() {
+    const store = createAppStore(makeStorageStub().storage);
+    store.setState({ catalog: { status: "ready", catalog: routeCatalog() } });
+    return store;
+  }
+
   it("appends fresh stages/links, sizes machines, seeds names + tiers, focuses target", async () => {
     const store = await chainCatalogStore();
     // Start with one edited default stage to prove existing state is untouched.
@@ -3224,7 +3344,7 @@ describe("applyChainProposal (Stage 8 / Phase 3)", () => {
     const orderBefore = store.getState().stageOrder.length;
     const proposal = propose(store, "iron_plate", 60);
     // Pass the propose-time clock text; every appended stage carries it.
-    store.getState().applyChainProposal(proposal, "150");
+    store.getState().applyChainProposal(proposal, { clockPercentText: "150" });
     const s = store.getState();
     const appended = s.stageOrder.slice(orderBefore);
     expect(appended).toHaveLength(2);
@@ -3241,6 +3361,97 @@ describe("applyChainProposal (Stage 8 / Phase 3)", () => {
     const s = store.getState();
     for (const id of s.stageOrder.slice(orderBefore)) {
       expect(s.stages[id]!.selection.clockPercentText).toBe("100");
+    }
+  });
+
+  it("applies selected byproduct routes as StageLinks", () => {
+    const store = routeStore();
+    const proposal = routeProposal();
+
+    store.getState().applyChainProposal(proposal, {
+      catalog: routeCatalog(),
+      byproductRoutes: [
+        { fromItemId: "fuel", itemId: "resin", toItemId: "rubber" },
+      ],
+    });
+
+    const s = store.getState();
+    const appended = s.stageOrder.slice(1);
+    const byName = new Map(appended.map((id) => [s.stages[id]!.name, id]));
+    expect(s.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fromStageId: byName.get("Fuel"),
+          itemId: "resin",
+          toStageId: byName.get("Rubber"),
+        }),
+      ]),
+    );
+  });
+
+  it("routes without a catalog are refused while primary links still apply", () => {
+    const store = routeStore();
+
+    store.getState().applyChainProposal(routeProposal(), {
+      byproductRoutes: [
+        { fromItemId: "fuel", itemId: "resin", toItemId: "rubber" },
+      ],
+    });
+
+    const s = store.getState();
+    expect(s.stageOrder.slice(1)).toHaveLength(4);
+    expect(s.links).toHaveLength(2);
+    expect(s.links.some((l) => l.itemId === "resin")).toBe(false);
+  });
+
+  it("refuses duplicate, stale, self and repeated-source byproduct routes", () => {
+    const cases: Array<{ name: string; routes: ProposedByproductRoute[] }> = [
+      {
+        name: "duplicate target lane",
+        routes: [{ fromItemId: "fuel", itemId: "fuel", toItemId: "pack" }],
+      },
+      {
+        name: "stale source output",
+        routes: [{ fromItemId: "pack", itemId: "resin", toItemId: "rubber" }],
+      },
+      {
+        name: "stale consumer input",
+        routes: [{ fromItemId: "fuel", itemId: "resin", toItemId: "pack" }],
+      },
+      {
+        name: "unresolved endpoint",
+        routes: [
+          { fromItemId: "missing", itemId: "resin", toItemId: "rubber" },
+        ],
+      },
+      {
+        name: "self route",
+        routes: [{ fromItemId: "fuel", itemId: "resin", toItemId: "fuel" }],
+      },
+      {
+        name: "repeated source spend",
+        routes: [
+          { fromItemId: "fuel", itemId: "resin", toItemId: "rubber" },
+          { fromItemId: "fuel", itemId: "resin", toItemId: "paint" },
+        ],
+      },
+    ];
+
+    for (const { name, routes } of cases) {
+      const store = routeStore();
+      store.getState().applyChainProposal(routeProposal(), {
+        catalog: routeCatalog(),
+        byproductRoutes: routes,
+      });
+      const resinLinks = store
+        .getState()
+        .links.filter((l) => l.itemId === "resin");
+      expect(resinLinks, name).toHaveLength(
+        name === "repeated source spend" ? 1 : 0,
+      );
+      expect(store.getState().links, name).toHaveLength(
+        name === "repeated source spend" ? 3 : 2,
+      );
     }
   });
 

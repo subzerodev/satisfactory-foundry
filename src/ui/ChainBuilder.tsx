@@ -34,6 +34,7 @@ import {
   pickerOptionsFor,
   excludableMachines,
   byproductSuggestions,
+  byproductRouteSuggestions,
   gateCatalog,
 } from "./chain-builder-adapter.ts";
 import type {
@@ -129,6 +130,9 @@ interface Preview {
    * what was solved — and it is pinned by its own test.
    */
   gated: Catalog;
+  /** Base catalog identity used to solve this preview. A successful Docs
+   * replacement creates a new object; Apply must not mix those two worlds. */
+  sourceCatalog: Catalog;
 }
 
 /** The stage row for `itemId` in the current preview, or undefined. */
@@ -155,6 +159,9 @@ export function ChainBuilder() {
   const [clockText, setClockText] = useState("100");
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [selectedRouteKeys, setSelectedRouteKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   // The customization controls. Component state remains the live per-run truth;
   // the three PERSISTED ones (overrides, exclusions, tier) are seeded from
@@ -236,6 +243,12 @@ export function ChainBuilder() {
       parsed.value,
       opts,
     );
+    const routeKeys = new Set(
+      byproductRouteSuggestions(proposal, gatedCat).map((r) => r.key),
+    );
+    setSelectedRouteKeys(
+      (prev) => new Set([...prev].filter((key) => routeKeys.has(key))),
+    );
     setPreview({
       proposal,
       view: toProposalPreview(proposal, gatedCat, {
@@ -248,12 +261,14 @@ export function ChainBuilder() {
       rateText: formatRate(parsed.value),
       clockText,
       gated: gatedCat,
+      sourceCatalog: cat,
     });
   }
 
   function onPropose() {
     setError(null);
     setPreview(null);
+    setSelectedRouteKeys(new Set());
     if (catalog === null) return;
     if (targetItemId === "") {
       setError("pick a target item");
@@ -274,19 +289,42 @@ export function ChainBuilder() {
 
   function onApply() {
     if (preview === null) return;
+    if (catalog !== preview.sourceCatalog) {
+      setError("catalog changed; propose again");
+      setPreview(null);
+      setSelectedRouteKeys(new Set());
+      setPickerItemId(null);
+      return;
+    }
+    const byproductRoutes = byproductRouteSuggestions(
+      preview.proposal,
+      preview.gated,
+    )
+      .filter((route) => selectedRouteKeys.has(route.key))
+      .map(({ fromItemId, itemId, toItemId }) => ({
+        fromItemId,
+        itemId,
+        toItemId,
+      }));
     // Seed the applied stages with the SNAPSHOT clock text (S20 P2) — the one
     // the proposal's counts were solved at. The live input may have drifted
     // since propose (clock, like Rate, only takes effect on the next Propose).
-    applyChainProposal(preview.proposal, preview.clockText);
+    applyChainProposal(preview.proposal, {
+      clockPercentText: preview.clockText,
+      byproductRoutes,
+      catalog: preview.gated,
+    });
     // Clear the preview so a double-apply is an explicit re-propose (Axis 6);
     // KEEP the customization choices (the user's session intent — Axis 3).
     setPreview(null);
+    setSelectedRouteKeys(new Set());
     setPickerItemId(null);
   }
 
   function onDiscard() {
     // Clear the preview, KEEP the choices (Axis 3).
     setPreview(null);
+    setSelectedRouteKeys(new Set());
     setPickerItemId(null);
   }
 
@@ -390,6 +428,18 @@ export function ChainBuilder() {
     unlockedTier !== null && tierOptions.includes(unlockedTier)
       ? String(unlockedTier)
       : "";
+  const routeableSuggestions =
+    preview === null
+      ? new Map<string, ReturnType<typeof byproductRouteSuggestions>[number]>()
+      : new Map(
+          byproductRouteSuggestions(preview.proposal, preview.gated).map(
+            (route) => [`${route.itemId} ${route.toItemId}`, route],
+          ),
+        );
+  const byproductSuggestionRows =
+    preview === null
+      ? []
+      : byproductSuggestions(preview.proposal, preview.gated);
 
   return (
     <div className="chain-builder">
@@ -620,18 +670,38 @@ export function ChainBuilder() {
               Byproducts: {itemRateLineText(view.byproducts)}
             </p>
           )}
-          {/* Byproduct-feed suggestions (S20 P2) — DISPLAY-ONLY: a surplus
-              byproduct that could feed a proposed stage. No toggle, no routing
-              (that is #105); recomputed per re-propose (pure derivation). */}
-          {byproductSuggestions(preview.proposal, catalog).map((s) => (
-            <p
-              key={`${s.itemId} ${s.toItemId}`}
-              className="chain-builder-suggestion"
-            >
-              {catalog.items[s.itemId]?.displayName ?? s.itemId}{" "}
-              {formatRate(s.rate)}/min could feed {s.toItemName}
-            </p>
-          ))}
+          {byproductSuggestionRows.map((s) => {
+            const key = `${s.itemId} ${s.toItemId}`;
+            const route = routeableSuggestions.get(key);
+            return (
+              <p key={key} className="chain-builder-suggestion">
+                {route === undefined ? (
+                  <>
+                    {preview.gated.items[s.itemId]?.displayName ?? s.itemId}{" "}
+                    {formatRate(s.rate)}/min could feed {s.toItemName}
+                  </>
+                ) : (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={selectedRouteKeys.has(route.key)}
+                      aria-label={`route ${route.itemName} from ${route.fromItemName} to ${route.toItemName}`}
+                      onChange={() => {
+                        setSelectedRouteKeys((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(route.key)) next.delete(route.key);
+                          else next.add(route.key);
+                          return next;
+                        });
+                      }}
+                    />
+                    ROUTE {formatRate(route.rate)}/min from {route.fromItemName}
+                    : {route.itemName} could feed {route.toItemName}
+                  </label>
+                )}
+              </p>
+            );
+          })}
           <div className="chain-builder-actions">
             <button type="button" onClick={onApply} disabled={view.isEmpty}>
               Apply

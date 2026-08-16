@@ -1,0 +1,190 @@
+S21 P3 #105 byproduct routing verification
+Date: 2026-08-16
+
+Focused verification:
+
+- `npm test -- --run src/core/chain-builder.test.ts src/ui/chain-builder-adapter.test.ts src/state/store.test.ts src/ui/ChainBuilder.byproduct-routing.test.tsx`
+  - PASS: 4 files, 291 tests.
+- `npm run check`
+  - PASS: `tsc -b`, `eslint .`, `prettier --check src`.
+- `npm test`
+  - PASS: 35 files, 930 tests.
+
+Bidirectionality probes:
+
+1. Removed source fan-out suppression from `byproductRouteSuggestions`.
+   - Command: `npm test -- --run src/ui/chain-builder-adapter.test.ts`
+   - Result: FAIL as intended.
+   - Failing row: `route helper suppresses multi-source aggregate and source fan-out`.
+   - Failure showed two routeable rows for one source byproduct:
+     `fuel resin rubber` and `fuel resin paint`.
+   - Restored the source-count filter.
+
+2. Removed the store duplicate `(toStageId,itemId)` target-lane refusal.
+   - Command: `npm test -- --run src/state/store.test.ts`
+   - Result: FAIL as intended.
+   - Failing row: `refuses duplicate, stale, self and repeated-source byproduct routes`.
+   - Failure: duplicate target lane produced 3 links where the test expected 2.
+   - Restored the target-lane guard.
+
+3. Removed the store source-output validation.
+   - Command: `npm test -- --run src/state/store.test.ts`
+   - Result: FAIL as intended.
+   - Failing row: `refuses duplicate, stale, self and repeated-source byproduct routes`.
+   - Failure: stale source output wrote one `resin` link where the test expected 0.
+   - Restored the source-output guard.
+
+4. Removed the store repeated-source-output validation.
+   - Command: `npm test -- --run src/state/store.test.ts`
+   - Result: FAIL as intended.
+   - Failing row: `refuses duplicate, stale, self and repeated-source byproduct routes`.
+   - Failure: repeated source spend wrote two `resin` links where the test expected 1.
+   - Restored the repeated-source guard.
+
+Boundary r1 fold:
+
+- Added store coverage where repeated source spending uses two different
+  consumers, so the target-lane duplicate guard cannot mask the source-spend
+  guard.
+- Added jsdom coverage for a checked route that becomes non-routeable after
+  re-propose; Apply writes no stale `resin` route.
+
+Boundary r2 fold:
+
+- Changed the jsdom stale-route row to use a non-resetting auto-repropose path:
+  a checked route disappears after a machine-exclusion re-propose, then the
+  route reappears after a second machine-exclusion re-propose and must be
+  unchecked.
+- Removed the `setSelectedRouteKeys(...filter...)` intersection in `repropose`.
+  - Command: `npm test -- --run src/ui/ChainBuilder.byproduct-routing.test.tsx`
+  - Result: FAIL as intended.
+  - Failing row: `drops a checked route when re-propose makes it non-routeable`.
+  - Failure: restored route checkbox was still checked (`expected true to be
+    false`) at `src/ui/ChainBuilder.byproduct-routing.test.tsx:287`.
+  - Restored the selected-route intersection.
+- Re-ran `npm test -- --run src/ui/ChainBuilder.byproduct-routing.test.tsx`.
+  - PASS: 1 file, 2 tests.
+
+Boundary r3 fold:
+
+- Added direct self-route suppression coverage.
+  - Removed `if (bp.fromItemId === stage.itemId) continue` from
+    `byproductRouteSuggestions`.
+  - Command: `npm test -- --run src/ui/chain-builder-adapter.test.ts`
+  - Result: FAIL as intended.
+  - Failing row: `route helper suppresses a byproduct route back into its
+    source stage`.
+  - Failure exposed `fuel resin fuel`; restored the self-route guard.
+- Added the frozen same-display/source-change jsdom row.
+  - Removed the selected-route intersection from `repropose`.
+  - Command: `npm test -- --run src/ui/ChainBuilder.byproduct-routing.test.tsx`
+  - Result: FAIL as intended.
+  - Failing rows: `drops a checked route when re-propose makes it
+    non-routeable` and `drops a selected full route key when the same display
+    row changes source`.
+  - Both failures restored an old route checkbox as checked; restored the
+    selected-route intersection.
+- Added separate failed-tier-repropose label and routeability rows.
+  - Replaced `preview.gated` with the live `catalog` in
+    `byproductRouteSuggestions`.
+  - Command: `npm test -- --run src/ui/ChainBuilder.byproduct-routing.test.tsx`
+  - Result: FAIL as intended.
+  - Failing rows: `keeps route labels in preview.gated after a tier re-propose
+    fails` and `keeps routeability in preview.gated after a tier re-propose
+    fails`.
+  - Replaced `preview.gated` with live `catalog` in `byproductSuggestions`.
+  - The same command failed the routeability row as intended.
+  - Restored both snapshot derivations.
+- Re-ran `npm test -- --run src/ui/chain-builder-adapter.test.ts
+  src/ui/ChainBuilder.byproduct-routing.test.tsx`.
+  - PASS: 2 files, 104 tests.
+- Re-ran `npm run check`.
+  - PASS: `tsc -b`, `eslint .`, `prettier --check src`.
+- Re-ran `npm test -- --run`.
+  - PASS: 35 files, 934 tests.
+
+Boundary r4 fold:
+
+- Added the self-emitter plus second-emitter interaction row before changing
+  production code.
+  - Command: `npm test -- --run src/ui/chain-builder-adapter.test.ts`
+  - Result: FAIL as intended against the r4 implementation.
+  - Failing row: `counts a self emitter when suppressing a multi-source
+    aggregate`.
+  - Failure exposed `scrap water silica` as a false single-source route.
+- Moved self-route filtering after candidate ambiguity counting.
+  - Re-ran the same command.
+  - PASS: 1 file, 100 tests.
+- Re-ran `npm run check`.
+  - PASS: `tsc -b`, `eslint .`, `prettier --check src`.
+- Re-ran `npm test -- --run`.
+  - PASS: 35 files, 935 tests.
+
+Boundary r5 fold:
+
+- Added the self-consumption plus external-consumer interaction row before
+  changing production code.
+  - Command: `npm test -- --run src/ui/chain-builder-adapter.test.ts`
+  - Result: FAIL as intended against the r5 implementation.
+  - Failing row: `does not count self-consumption as source fan-out`.
+  - Failure returned no route instead of `silica water solution`.
+- Limited `sourceCounts` to non-self candidates while preserving self
+  participation in `displayCounts`.
+  - Re-ran the same command.
+  - PASS: 1 file, 101 tests.
+- Re-ran `npm run check`.
+  - PASS: `tsc -b`, `eslint .`, `prettier --check src`.
+- Re-ran `npm test -- --run`.
+  - PASS: 35 files, 936 tests.
+
+Boundary r6 fold:
+
+- Added a Docs-catalog-replacement Apply row before changing production code.
+  - Command: `npm test -- --run src/ui/ChainBuilder.byproduct-routing.test.tsx`
+  - Result: FAIL as intended against the r6 implementation.
+  - Failing row: `refuses Apply after the base catalog replaces the preview
+    snapshot`.
+  - Failure appended three proposal stages after the catalog replacement.
+- Added the preview base-catalog identity guard. A mismatched Apply clears the
+  stale preview and route selection, writes no graph state, and reports
+  `catalog changed; propose again`.
+  - Re-ran the same command.
+  - PASS: 1 file, 6 tests.
+- Re-ran `npm run check`.
+  - PASS: `tsc -b`, `eslint .`, `prettier --check src`.
+- Re-ran `npm test -- --run`.
+  - PASS: 35 files, 937 tests.
+
+Boundary r7 fold:
+
+- Added a successful non-null-tier Apply row.
+  - Command: `npm test -- --run src/ui/ChainBuilder.byproduct-routing.test.tsx`
+  - PASS: 1 file, 7 tests.
+- Mutated the replacement guard to compare the live base catalog against
+  `preview.gated` instead of `preview.sourceCatalog`.
+  - Re-ran the same command.
+  - Result: FAIL as intended.
+  - Failing row: `applies a tier-gated preview against its unchanged base
+    catalog`.
+  - Failure wrote no route because the derived gated object falsely looked like
+    a catalog replacement. Restored the base-identity comparison and reran
+    green.
+- Re-ran `npm run check`.
+  - PASS: `tsc -b`, `eslint .`, `prettier --check src`.
+- Re-ran `npm test -- --run`.
+  - PASS: 35 files, 938 tests.
+
+One-shot diff simplify fold:
+
+- Inlined the stable full route key and removed the otherwise unused exported
+  helper plus its redundant assertion.
+- Seeded `usedTargetLanes` from new proposal links only. Existing graph links
+  cannot target proposal stages because every proposal stage receives a fresh
+  UUID before links are built.
+- Ran `npm test -- --run src/ui/chain-builder-adapter.test.ts
+  src/state/store.test.ts`.
+  - PASS: 2 files, 261 tests.
+- Re-ran `npm run check`.
+  - PASS: `tsc -b`, `eslint .`, `prettier --check src`.
+- Re-ran `npm test -- --run`.
+  - PASS: 35 files, 938 tests.
