@@ -181,7 +181,7 @@ Expected: FAIL in the new `carries exact raw identity and demand` assertions bec
 - [ ] Run the interaction red phase:
 
 ```bash
-npm test -- --run src/ui/GraphCanvas.dom.test.tsx
+npm test -- --run src/ui/GraphCanvas.test.ts src/ui/GraphCanvas.dom.test.tsx
 ```
 
 Expected: FAIL in the new XYFlow projection and raw-card click/focus tests because wrapper flags, the button, and open callback do not exist.
