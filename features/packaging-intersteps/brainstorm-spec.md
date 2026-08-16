@@ -56,8 +56,11 @@ configures the empty-container route independently and defaults to belt.
 Removing a link removes it naturally.
 
 Plan persistence bumps to v8. Plan v7 remains frozen. V7-to-v8 migration copies
-links without intersteps; v8 strictly validates recipe IDs, clock text, and the
-return transport. A link with an interstep must use solid-cargo modes for both
+links without intersteps but **canonicalizes each accepted legacy transport arm**:
+it rebuilds the discriminated union from that arm's recognized fields and drops
+historically tolerated unknown or arm-misplaced fields. V8 strictly validates
+recipe-ID and clock fields as strings plus the return-transport structure; numeric
+clock semantics remain deferred to derive. A link with an interstep must use solid-cargo modes for both
 its forward `transport` and `returnTransport`; pipe and fluid-truck combinations
 are rejected at the v8 boundary and guarded again by derive. Save/export/import/
 bundle write v8. Old builds reject v8 rather than accepting and erasing intent.
@@ -65,15 +68,17 @@ bundle write v8. Old builds reject v8 rather than accepting and erasing intent.
 V8 validates editable transport as **raw structural intent**: known mode/trip
 kind/fuel literals, required arm fields, arm-specific field placement, and
 `sharedEnds` absent-or-true structure remain strict. Only numeric text semantics
-are relaxed: empty/non-positive trip text, invalid/out-of-range pipe
-`deratePercentText`, and interstep clock text are accepted by persistence and
-rejected by existing derive-time parsers. This applies to forward and return routes. It
+are relaxed: empty/non-positive trip text on either legal route, invalid/out-of-range
+pipe `deratePercentText` on legal non-interstep forward pipe links, and interstep
+clock text are accepted by persistence and rejected by existing derive-time parsers. It
 prevents saving an in-progress train/drone/road edit from creating an unloadable
-plan. Historical v7 keeps its existing strict validator; migration yields valid
-v8. Save/load/export/bundle tests cover empty and malformed-numeric trip/clock
+plan. Historical v7 keeps its existing validator; migration always yields canonical,
+closed-world v8. Save/load/export/bundle tests cover empty and malformed-numeric trip/clock
 text plus malformed, non-positive, and above-100 pipe derates followed by exact
 derive errors. Unknown/misplaced structural fields remain rejected in v8, and
-v7 retains its existing semantic rejections.
+v7 retains its existing semantic rejections. A fixture accepted by v7 despite an
+ignored arm-misplaced field must pass v7 load -> v8 save -> v8 reload with that
+field removed and all recognized transport intent preserved.
 
 ## Exact Plan
 
