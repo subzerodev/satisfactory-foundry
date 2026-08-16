@@ -45,7 +45,10 @@ Use Miner Mk3 at 100%, demand 1000, and counts `1 Impure / 1 Normal / 1 Pure`:
 power. Add a second mix that supplies more than demand and assert exact spare
 and power. Add a transport table with Pure-only (480/min), Normal-only
 (240/min), Impure-only (120/min), and all-zero (`transport.status === "none"`)
-cases so every highest-present-purity branch is pinned.
+cases so every highest-present-purity branch is pinned. Add a 250% clock case
+whose weighted supply, balance, and highest-purity transport all differ from the
+100% result; this pins the mix to the clock-scaled `perExtractor`, never the
+extractor's unscaled `normalRate`.
 
 Add a table for `""`, `"1.5"`, `"-1"`, `"1e2"`, an individual value greater
 than `Number.MAX_SAFE_INTEGER`, and three individually safe values whose sum is
@@ -107,6 +110,8 @@ purity:
 
 Factor the existing tier lookup into a small `transportForOutput` helper and use
 it for both Normal baseline and the greatest nonzero purity output.
+All weighted supply, balance, and purity transport calculations start from the
+already clock-scaled `perExtractor` local.
 
 - [ ] **Step 3: Verify derivation green; keep the unit uncommitted**
 
@@ -366,3 +371,5 @@ Expected: clean feature worktree ready for cumulative `develop...HEAD` review.
   checkbox/removing purity intent.
 - **simplify:** folded the one-shot parsimony nit by cloning the nested mix only
   at the external store-action boundary, not at snapshot rebuild/writer paths.
+- **r4:** folded the clock-scaling gap by adding a 250% mix case and requiring
+  all purity arithmetic and transport to start from `perExtractor`.
