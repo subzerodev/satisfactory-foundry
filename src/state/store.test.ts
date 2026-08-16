@@ -6,7 +6,7 @@ import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
 import type { Catalog } from "../data/types.ts";
-import type { PlanFileV1, PlanFileV2, PlanFileV6 } from "../data/plan-store.ts";
+import type { PlanFileV1, PlanFileV2, PlanFileV7 } from "../data/plan-store.ts";
 import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
 import type { StageLink, PlanBundle, ProposedByproductRoute } from "./store.ts";
 import { proposeChain } from "../core/chain-builder.ts";
@@ -1631,6 +1631,55 @@ describe("stage graph — removeStage cursor + cascade rules (Stage 3 P1)", () =
 });
 
 describe("extraction selection state (#112)", () => {
+  it("clones purity mix input at the action boundary", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    const id = store.getState().activeStageId;
+    const purityMix = { impure: "1", normal: "2", pure: "3" };
+
+    store.getState().setExtractionSelection(id, "stone", {
+      machineId: "miner_mk3",
+      clockPercentText: "150",
+      purityMix,
+    });
+    purityMix.normal = "changed outside the store";
+
+    const stored = store.getState().stages[id]!.extraction?.stone;
+    expect(stored?.purityMix).toEqual({
+      impure: "1",
+      normal: "2",
+      pure: "3",
+    });
+    expect(stored?.purityMix).not.toBe(purityMix);
+  });
+
+  it("stores and removes a purity mix under the __proto__ item key", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    const id = store.getState().activeStageId;
+
+    store.getState().setExtractionSelection(id, "__proto__", {
+      machineId: "miner_mk1",
+      clockPercentText: "100",
+      purityMix: { impure: "1", normal: "0", pure: "0" },
+    });
+
+    const extraction = store.getState().stages[id]!.extraction!;
+    expect(Object.getPrototypeOf(extraction)).toBeNull();
+    expect(Object.hasOwn(extraction, "__proto__")).toBe(true);
+    expect(extraction.__proto__?.purityMix).toEqual({
+      impure: "1",
+      normal: "0",
+      pure: "0",
+    });
+
+    store.getState().setExtractionSelection(id, "__proto__", {
+      machineId: "miner_mk1",
+      clockPercentText: "100",
+    });
+    expect(
+      store.getState().stages[id]!.extraction?.__proto__?.purityMix,
+    ).toBeUndefined();
+  });
+
   it("sets, clears, and isolates extraction intent by stage and raw item", () => {
     const store = createAppStore(makeStorageStub().storage);
     const first = store.getState().activeStageId;
@@ -1664,28 +1713,39 @@ describe("extraction selection state (#112)", () => {
     ).toBe(true);
   });
 
-  it("retains extraction intent across recipe swaps and round-trips plan v6", async () => {
+  it("retains a prototype-like purity mix across recipe swaps and plan v7", async () => {
     const store = createAppStore(makeStorageStub().storage);
     const id = store.getState().activeStageId;
-    store.getState().setExtractionSelection(id, "constructor", {
+    store.getState().setExtractionSelection(id, "__proto__", {
       machineId: "miner_mk1",
       clockPercentText: "bad edit",
+      purityMix: { impure: "01", normal: "bad", pure: "3" },
     });
     store.getState().applyRecipeSwap(id, "not-in-catalog", 2);
-    expect(store.getState().stages[id]!.extraction?.constructor).toEqual({
+    expect(store.getState().stages[id]!.extraction?.__proto__).toEqual({
       machineId: "miner_mk1",
       clockPercentText: "bad edit",
+      purityMix: { impure: "01", normal: "bad", pure: "3" },
     });
     await store.getState().savePlanAs("Extraction");
     const planId = store.getState().plans![0]!.id;
-    store.getState().setExtractionSelection(id, "constructor", null);
+    const db = await (await import("../data/db.ts")).openDb();
+    const written = (await db.get<PlanFileV7>("plans", planId))!;
+    expect(written.format_version).toBe(7);
+    expect(written.stages[0]!.extraction?.__proto__?.purityMix).toEqual({
+      impure: "01",
+      normal: "bad",
+      pure: "3",
+    });
+    store.getState().setExtractionSelection(id, "__proto__", null);
     await store.getState().loadPlan(planId);
     const loadedId = store.getState().activeStageId;
     const extraction = store.getState().stages[loadedId]!.extraction!;
-    expect(Object.hasOwn(extraction, "constructor")).toBe(true);
-    expect(extraction.constructor).toEqual({
+    expect(Object.hasOwn(extraction, "__proto__")).toBe(true);
+    expect(extraction.__proto__).toEqual({
       machineId: "miner_mk1",
       clockPercentText: "bad edit",
+      purityMix: { impure: "01", normal: "bad", pure: "3" },
     });
     expect(Object.getPrototypeOf(extraction)).toBeNull();
   });
@@ -2706,7 +2766,7 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     expect(store.getState().links).toHaveLength(linksBefore);
   });
 
-  it("renaming a v1 row persists it as v6 (save-over model)", async () => {
+  it("renaming a v1 row persists it as v7 (save-over model)", async () => {
     const store = await chainStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2730,9 +2790,9 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     await db.put("plans", v1, "v1-id");
 
     await store.getState().renamePlan("v1-id", "NewName");
-    // The stored row is now v6, renamed, single "Stage 1" stage.
-    const raw = (await db.get<PlanFileV6>("plans", "v1-id"))!;
-    expect(raw.format_version).toBe(6);
+    // The stored row is now v7, renamed, single "Stage 1" stage.
+    const raw = (await db.get<PlanFileV7>("plans", "v1-id"))!;
+    expect(raw.format_version).toBe(7);
     expect(raw.name).toBe("NewName");
     expect(raw.stages[0]!.name).toBe("Stage 1");
     // createdAt carried verbatim through the migration + rename.
@@ -2751,22 +2811,34 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     return store;
   }
 
-  it("exportPlan returns the stored v6 JSON verbatim (re-parses to the saved file)", async () => {
+  it("exportPlan returns the stored v7 JSON verbatim (re-parses to the saved file)", async () => {
     const store = await readyStore();
     store.getState().selectRecipe("ingot_iron");
     store.getState().setClockPercentText("37.5");
+    store
+      .getState()
+      .setExtractionSelection(store.getState().activeStageId, "stone", {
+        machineId: "miner_mk3",
+        clockPercentText: "bad edit",
+        purityMix: { impure: "01", normal: "2.5", pure: "3e0" },
+      });
     await store.getState().savePlanAs("Exported");
     const id = store.getState().plans![0]!.id;
 
     const json = await store.getState().exportPlan(id);
     expect(json).not.toBeNull();
-    const parsed = JSON.parse(json!) as PlanFileV6;
-    expect(parsed.format_version).toBe(6);
+    const parsed = JSON.parse(json!) as PlanFileV7;
+    expect(parsed.format_version).toBe(7);
     expect(parsed.name).toBe("Exported");
     expect(parsed.stages[0]!.selection.recipeId).toBe("ingot_iron");
     expect(parsed.stages[0]!.selection.clockPercentText).toBe("37.5");
+    expect(parsed.stages[0]!.extraction?.stone?.purityMix).toEqual({
+      impure: "01",
+      normal: "2.5",
+      pure: "3e0",
+    });
     // Pretty-printed (2-space indent), matching JSON.stringify(plan, null, 2).
-    expect(json).toContain('\n  "format_version": 6');
+    expect(json).toContain('\n  "format_version": 7');
   });
 
   it("exportPlan on a missing id returns null (no throw)", async () => {
@@ -2774,7 +2846,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     expect(await store.getState().exportPlan("does-not-exist")).toBeNull();
   });
 
-  it("exportPlan emits the migrated v6 form for a stored v1 row", async () => {
+  it("exportPlan emits the migrated v7 form for a stored v1 row", async () => {
     const store = await readyStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2798,9 +2870,9 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     await db.put("plans", v1, "legacy-id");
 
     const json = await store.getState().exportPlan("legacy-id");
-    const parsed = JSON.parse(json!) as PlanFileV6;
-    // The export is what a load sees: v6, one "Stage 1" stage, createdAt kept.
-    expect(parsed.format_version).toBe(6);
+    const parsed = JSON.parse(json!) as PlanFileV7;
+    // The export is what a load sees: v7, one "Stage 1" stage, createdAt kept.
+    expect(parsed.format_version).toBe(7);
     expect(parsed.name).toBe("LegacyPlan");
     expect(parsed.stages[0]!.name).toBe("Stage 1");
     expect(parsed.createdAt).toBe("2026-01-01T00:00:00.000Z");
@@ -2810,12 +2882,19 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     const store = await readyStore();
     store.getState().selectRecipe("ingot_iron");
     store.getState().setClockPercentText("42");
+    store
+      .getState()
+      .setExtractionSelection(store.getState().activeStageId, "stone", {
+        machineId: "miner_mk3",
+        clockPercentText: "125",
+        purityMix: { impure: "001", normal: "2", pure: "0003" },
+      });
     await store.getState().savePlanAs("Original");
     const srcId = store.getState().plans![0]!.id;
     const json = (await store.getState().exportPlan(srcId))!;
 
     // Rename the payload so it lands as a new row (not an overwrite).
-    const payload = JSON.parse(json) as PlanFileV2;
+    const payload = JSON.parse(json) as PlanFileV7;
     payload.name = "Imported";
     payload.createdAt = "1999-12-31T00:00:00.000Z"; // untrusted foreign stamp
     const before = new Date().toISOString();
@@ -2827,10 +2906,15 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     expect(imported.id).not.toBe(srcId); // fresh id
     // createdAt is NOW (not the foreign 1999 stamp).
     const db = await (await import("../data/db.ts")).openDb();
-    const stored = (await db.get<PlanFileV2>("plans", imported.id))!;
+    const stored = (await db.get<PlanFileV7>("plans", imported.id))!;
     expect(stored.createdAt >= before).toBe(true);
     expect(stored.stages[0]!.selection.clockPercentText).toBe("42");
     expect(stored.stages[0]!.selection.recipeId).toBe("ingot_iron");
+    expect(stored.stages[0]!.extraction?.stone?.purityMix).toEqual({
+      impure: "001",
+      normal: "2",
+      pure: "0003",
+    });
   });
 
   it("import OVER an existing name overwrites in place, preserving the row's createdAt", async () => {
@@ -3010,10 +3094,10 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     return store;
   }
 
-  /** A minimal valid v6 plan file with a chosen name + recipe (content marker). */
-  function planFile(name: string, recipeId: string | null): PlanFileV6 {
+  /** A minimal valid v7 plan file with a chosen name + recipe (content marker). */
+  function planFile(name: string, recipeId: string | null): PlanFileV7 {
     return {
-      format_version: 6,
+      format_version: 7,
       name,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -3036,7 +3120,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
   }
 
   /** Wrap per-plan file objects in the bundle envelope (the export shape). */
-  function bundle(plans: PlanFileV6[]): PlanBundle {
+  function bundle(plans: PlanFileV7[]): PlanBundle {
     return {
       kind: "foundry-plan-bundle",
       format_version: 1,
@@ -3075,8 +3159,8 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     expect(names).toEqual(["Alpha", "Beta"]);
     const alpha = store.getState().plans!.find((p) => p.name === "Alpha")!;
     const beta = store.getState().plans!.find((p) => p.name === "Beta")!;
-    const storedAlpha = (await db.get<PlanFileV6>("plans", alpha.id))!;
-    const storedBeta = (await db.get<PlanFileV6>("plans", beta.id))!;
+    const storedAlpha = (await db.get<PlanFileV7>("plans", alpha.id))!;
+    const storedBeta = (await db.get<PlanFileV7>("plans", beta.id))!;
     expect(storedAlpha.stages[0]!.selection.clockPercentText).toBe("42");
     expect(storedBeta.stages[0]!.selection.clockPercentText).toBe("75");
     // NO auto-load: the live graph is untouched by a bundle import.
@@ -3104,8 +3188,8 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     expect(typeof env.exportedAt).toBe("string");
     expect(env.exportedAt >= before).toBe(true); // stamped at the export moment
     expect(env.plans).toHaveLength(2);
-    // Each entry is a per-plan v6 file object (validatePlanFile-shaped).
-    expect(env.plans.every((p) => p.format_version === 6)).toBe(true);
+    // Each entry is a per-plan v7 file object (validatePlanFile-shaped).
+    expect(env.plans.every((p) => p.format_version === 7)).toBe(true);
     expect(env.plans.map((p) => p.name).sort()).toEqual(["One", "Two"]);
     // Pretty-printed, matching JSON.stringify(bundle, null, 2).
     expect(json).toContain('\n  "kind": "foundry-plan-bundle"');
@@ -3117,7 +3201,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     await store.getState().savePlanAs("Target");
     const targetId = store.getState().plans![0]!.id;
     const db = await (await import("../data/db.ts")).openDb();
-    const originalCreatedAt = (await db.get<PlanFileV6>("plans", targetId))!
+    const originalCreatedAt = (await db.get<PlanFileV7>("plans", targetId))!
       .createdAt;
 
     // A bundle entry named "Target" with a foreign stamp + different content.
@@ -3130,7 +3214,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     expect(
       store.getState().plans!.filter((p) => p.name === "Target"),
     ).toHaveLength(1);
-    const stored = (await db.get<PlanFileV6>("plans", targetId))!;
+    const stored = (await db.get<PlanFileV7>("plans", targetId))!;
     expect(stored.createdAt).toBe(originalCreatedAt); // NOT the foreign 1999 stamp
     expect(stored.stages[0]!.selection.machineCount).toBe(7);
   });
@@ -3157,7 +3241,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     // The surviving row carries the LAST entry's content (machineCount 99).
     const dupId = store.getState().plans![0]!.id;
     const db = await (await import("../data/db.ts")).openDb();
-    const stored = (await db.get<PlanFileV6>("plans", dupId))!;
+    const stored = (await db.get<PlanFileV7>("plans", dupId))!;
     expect(stored.name).toBe("Dup"); // trimmed form
     expect(stored.stages[0]!.selection.machineCount).toBe(99);
     expect(stored.stages[0]!.selection.recipeId).toBe("ingot_iron");

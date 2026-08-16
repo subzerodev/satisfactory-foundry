@@ -15,8 +15,9 @@
  * per-link config. Stage 10 / Phase 1 adds `PlanFileV5` — the same graph plus a
  * top-level `flowDirection` ("LR"|"TB") and an optional per-stage `userPlaced?:
  * true` flag. Extraction planning adds `PlanFileV6`, with required placement
- * origin and optional per-resource extractor intent. Save always writes v6;
- * read accepts v1-v6 and migrates older files in memory.
+ * origin and optional per-resource extractor intent. Purity mixes add
+ * `PlanFileV7`; save always writes v7, while reads accept v1-v7 and migrate
+ * older files in memory.
  *
  * WHY a v5 bump and not v4-in-place (both new fields are optional-shaped): a
  * pre-Stage-10 build's v4 validator IGNORES the top-level `flowDirection` and the
@@ -79,7 +80,7 @@ export interface PlanLinkV2 {
 /**
  * Stage 3 / Phase 3: the whole-graph file. Same header fields as v1; `stages`
  * now carry names + positions and `links` reference stages by index. Version 2
- * writers emitted this shape; current reads migrate it to v6.
+ * writers emitted this shape; current reads migrate it to v7.
  */
 export interface PlanFileV2 {
   format_version: 2;
@@ -103,7 +104,7 @@ export interface PlanLinkV3 extends PlanLinkV2 {
 /**
  * Stage 7 / Phase 2: the whole-graph file with per-link transport. Same header +
  * stages as v2; `links` are `PlanLinkV3`. Version 3 writers emitted this shape;
- * current reads migrate it to v6.
+ * current reads migrate it to v7.
  */
 export interface PlanFileV3 {
   format_version: 3;
@@ -127,7 +128,7 @@ export type PlanLinkV4 = PlanLinkV3;
 /**
  * Stage 8 / Phase 2: the whole-graph file with the extended transport union.
  * Same header + stages as v3; `links` are `PlanLinkV4`. Version 4 writers
- * emitted this shape; current reads migrate it to v6. State and file keep
+ * emitted this shape; current reads migrate it to v7. State and file keep
  * sharing the ONE `LinkTransport`
  * union (the S7P2 verbatim-boundary invariant) — nothing to map at the edge.
  */
@@ -159,7 +160,7 @@ export interface PlanStageV5 extends PlanStageV2 {
  * per-stage placement intent. Same header + links as v4; `stages` are
  * `PlanStageV5` and a top-level `flowDirection` ("LR"|"TB") records the chart's
  * orientation. Version 5 writers emitted this shape; current reads migrate it
- * to v6, with older files defaulting `flowDirection: "LR"`.
+ * to v7, with older files defaulting `flowDirection: "LR"`.
  * Orientation is a property of the drawing (like positions), so it persists
  * per-plan — a TB chart reloaded must come back TB, not render vertical with
  * left/right handles.
@@ -174,9 +175,14 @@ export interface PlanFileV5 {
   links: PlanLinkV4[];
 }
 
+interface ExtractionSelectionV6 {
+  machineId: string;
+  clockPercentText: string;
+}
+
 export interface PlanStageV6 extends PlanStageV2 {
   userPlaced: boolean;
-  extraction?: Record<string, ExtractionSelection>;
+  extraction?: Record<string, ExtractionSelectionV6>;
 }
 
 export interface PlanFileV6 {
@@ -186,6 +192,21 @@ export interface PlanFileV6 {
   updatedAt: string;
   flowDirection: FlowDirection;
   stages: PlanStageV6[];
+  links: PlanLinkV4[];
+}
+
+export interface PlanStageV7 extends PlanStageV2 {
+  userPlaced: boolean;
+  extraction?: Record<string, ExtractionSelection>;
+}
+
+export interface PlanFileV7 {
+  format_version: 7;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  flowDirection: FlowDirection;
+  stages: PlanStageV7[];
   links: PlanLinkV4[];
 }
 
@@ -217,8 +238,8 @@ export interface PlanListEntry {
   updatedAt: string;
 }
 
-/** Persist a plan file under `id` (create or overwrite). Always v6. */
-export async function savePlan(plan: PlanFileV6, id: string): Promise<void> {
+/** Persist a plan file under `id` (create or overwrite). Always v7. */
+export async function savePlan(plan: PlanFileV7, id: string): Promise<void> {
   const db = await openDb();
   await db.put(PLANS_STORE, plan, id);
 }
@@ -233,9 +254,10 @@ export async function listPlans(): Promise<PlanListEntry[]> {
   const rows = await db.getAllWithKeys<unknown>(PLANS_STORE);
   const entries: PlanListEntry[] = [];
   for (const { key, value } of rows) {
-    // Any loadable format renders a row: v1-v5 migrate, v6 is the current
-    // shape. Header fields co-locate across all six.
+    // Any loadable format renders a row. Header fields co-locate across all
+    // seven versions.
     if (
+      isPlanFileV7(value) ||
       isPlanFileV6(value) ||
       isPlanFileV5(value) ||
       isPlanFileV4(value) ||
@@ -252,30 +274,35 @@ export async function listPlans(): Promise<PlanListEntry[]> {
 
 /**
  * Validate an arbitrary value as a plan file THIS build can use, returning a
- * `PlanFileV6` (migrating a valid v5/v4/v3/v2/v1 in memory) or null on
+ * `PlanFileV7` (migrating a valid v6/v5/v4/v3/v2/v1 in memory) or null on
  * corrupt/foreign. The single acceptance rule shared by `loadPlan` (IDB rows)
- * and `importPlan` (uploaded exports): v6 first, then each older format through
- * its migration chain.
+ * and `importPlan` (uploaded exports): v7 first, then each older format through
+ * its migration chain through v6 and then v7.
  */
-export function validatePlanFile(value: unknown): PlanFileV6 | null {
-  if (isPlanFileV6(value)) return value;
-  if (isPlanFileV5(value)) return migrateV5(value);
-  if (isPlanFileV4(value)) return migrateLegacyV4(value);
-  if (isPlanFileV3(value)) return migrateLegacyV4(migrateV3(value));
-  if (isPlanFileV2(value)) return migrateLegacyV4(migrateV3(migrateV2(value)));
+export function validatePlanFile(value: unknown): PlanFileV7 | null {
+  if (isPlanFileV7(value)) return value;
+  if (isPlanFileV6(value)) return migrateV6(value);
+  if (isPlanFileV5(value)) return migrateV6(migrateV5(value));
+  if (isPlanFileV4(value)) return migrateV6(migrateLegacyV4(value));
+  if (isPlanFileV3(value)) {
+    return migrateV6(migrateLegacyV4(migrateV3(value)));
+  }
+  if (isPlanFileV2(value)) {
+    return migrateV6(migrateLegacyV4(migrateV3(migrateV2(value))));
+  }
   if (isPlanFileV1(value)) {
-    return migrateLegacyV4(migrateV3(migrateV2(migrateV1(value))));
+    return migrateV6(migrateLegacyV4(migrateV3(migrateV2(migrateV1(value)))));
   }
   return null;
 }
 
 /**
- * Load + validate one plan, returning a `PlanFileV6` (migrating v5 and older
- * files in memory). Returns null on missing OR corrupt-for-this-build. V6 is
+ * Load + validate one plan, returning a `PlanFileV7` (migrating v6 and older
+ * files in memory). Returns null on missing OR corrupt-for-this-build. V7 is
  * tried first; older files follow their migration chain. Migration is read-side
- * only — the stored row is untouched until the next save-over (v6).
+ * only — the stored row is untouched until the next save-over (v7).
  */
-export async function loadPlan(id: string): Promise<PlanFileV6 | null> {
+export async function loadPlan(id: string): Promise<PlanFileV7 | null> {
   const db = await openDb();
   const value = await db.get<unknown>(PLANS_STORE, id);
   return validatePlanFile(value);
@@ -375,6 +402,31 @@ export function migrateV5(plan: PlanFileV5): PlanFileV6 {
     })),
     links: plan.links,
   };
+}
+
+export function migrateV6(plan: PlanFileV6): PlanFileV7 {
+  return {
+    ...plan,
+    format_version: 7,
+    stages: plan.stages.map((stage) => ({
+      ...stage,
+      extraction: copyHistoricalExtraction(stage.extraction),
+    })),
+  };
+}
+
+function copyHistoricalExtraction(
+  extraction: Record<string, ExtractionSelectionV6> | undefined,
+): Record<string, ExtractionSelection> | undefined {
+  if (extraction === undefined) return undefined;
+  const copied: Record<string, ExtractionSelection> = Object.create(null);
+  for (const [itemId, selection] of Object.entries(extraction)) {
+    copied[itemId] = {
+      machineId: selection.machineId,
+      clockPercentText: selection.clockPercentText,
+    };
+  }
+  return copied;
 }
 
 function migrateLegacyV4(plan: PlanFileV4): PlanFileV6 {
@@ -545,13 +597,21 @@ function isPlanFileV6(value: unknown): value is PlanFileV6 {
   return isGraphFileBody(v, isTransportShapeV4, isStageV6Shape);
 }
 
+function isPlanFileV7(value: unknown): value is PlanFileV7 {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (v.format_version !== 7) return false;
+  if (v.flowDirection !== "LR" && v.flowDirection !== "TB") return false;
+  return isGraphFileBody(v, isTransportShapeV4, isStageV7Shape);
+}
+
 /**
- * The shared header/stages/link-index validation for whole-graph files v3-v6,
+ * The shared header/stages/link-index validation for whole-graph files v3-v7,
  * identical except for version-specific top-level fields checked by
  * the caller, the per-link transport checker, and the per-stage shape checker
  * passed in. Pins the frozen P1 refusals at the file boundary: self-link,
  * in-range indices, no duplicate `(to, itemId)` feed lane. `stageShape` defaults
- * to the v2/v3/v4 stage shape; v5 and v6 pass their stricter stage checkers.
+ * to the v2/v3/v4 stage shape; v5-v7 pass their stricter stage checkers.
  */
 function isGraphFileBody(
   v: Record<string, unknown>,
@@ -768,6 +828,35 @@ function isStageV6Shape(stage: unknown): boolean {
       return false;
     }
     if (typeof selection.clockPercentText !== "string") return false;
+  }
+  return true;
+}
+
+function isStageV7Shape(stage: unknown): boolean {
+  if (!isStageV6Shape(stage)) return false;
+  const extraction = (stage as Record<string, unknown>).extraction;
+  if (extraction === undefined) return true;
+  for (const rawSelection of Object.values(
+    extraction as Record<string, unknown>,
+  )) {
+    const selection = rawSelection as Record<string, unknown>;
+    if (selection.purityMix === undefined) continue;
+    const purityMix = selection.purityMix;
+    if (
+      purityMix === null ||
+      typeof purityMix !== "object" ||
+      Array.isArray(purityMix)
+    ) {
+      return false;
+    }
+    const mix = purityMix as Record<string, unknown>;
+    if (
+      typeof mix.impure !== "string" ||
+      typeof mix.normal !== "string" ||
+      typeof mix.pure !== "string"
+    ) {
+      return false;
+    }
   }
   return true;
 }

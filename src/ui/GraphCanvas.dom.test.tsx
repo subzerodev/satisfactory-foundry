@@ -153,6 +153,16 @@ const stage: StageNode = {
   solve: { status: "idle" },
 };
 
+async function setInputValue(input: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )!.set!.call(input, value);
+  await act(async () =>
+    input.dispatchEvent(new Event("input", { bubbles: true })),
+  );
+}
+
 describe("RawFeedNode", () => {
   let host: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
@@ -224,7 +234,7 @@ describe("RawFeedNode", () => {
     const dialog = host.querySelector<HTMLElement>('[role="dialog"]')!;
     expect(dialog.getAttribute("aria-modal")).toBe("false");
     expect(dialog.getAttribute("aria-labelledby")).toBeTruthy();
-    expect(dialog.textContent).toContain("Purity Normal");
+    expect(dialog.textContent).toContain("Normal baseline");
     expect(dialog.textContent).toContain("53 × Miner Mk.3");
     expect(dialog.textContent).toContain("2385 MW");
 
@@ -270,6 +280,232 @@ describe("RawFeedNode", () => {
     expect(close.title).toBe("close extraction planning");
     await act(async () => close.click());
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("enables, edits, preserves, and disables a solid node mix", async () => {
+    const onSelection = vi.fn();
+
+    function Harness() {
+      const [selection, setSelection] = useState<
+        ComponentProps<typeof ExtractionPanel>["selection"]
+      >({ machineId: "miner_mk3", clockPercentText: "100" });
+      return (
+        <ExtractionPanel
+          catalog={extractionCatalog()}
+          rawNode={rawNode("stone", "Limestone", 12720)}
+          stage={stage}
+          selection={selection}
+          onSetSelection={(next) => {
+            onSelection(next);
+            setSelection(next);
+          }}
+          onClose={vi.fn()}
+        />
+      );
+    }
+
+    await act(async () => root.render(<Harness />));
+    const checkbox = host.querySelector<HTMLInputElement>(
+      'input[aria-label="Use node mix"]',
+    )!;
+    expect(checkbox).not.toBeNull();
+    expect(host.querySelector('input[aria-label="Impure nodes"]')).toBeNull();
+
+    await act(async () => checkbox.click());
+    expect(onSelection).toHaveBeenLastCalledWith({
+      machineId: "miner_mk3",
+      clockPercentText: "100",
+      purityMix: { impure: "0", normal: "53", pure: "0" },
+    });
+    const impure = host.querySelector<HTMLInputElement>(
+      'input[aria-label="Impure nodes"]',
+    )!;
+    const normal = host.querySelector<HTMLInputElement>(
+      'input[aria-label="Normal nodes"]',
+    )!;
+    const pure = host.querySelector<HTMLInputElement>(
+      'input[aria-label="Pure nodes"]',
+    )!;
+    expect([impure.value, normal.value, pure.value]).toEqual(["0", "53", "0"]);
+    for (const input of [impure, normal, pure]) {
+      expect(input.type).toBe("number");
+      expect(input.min).toBe("0");
+      expect(input.step).toBe("1");
+    }
+
+    await setInputValue(impure, "1");
+    await setInputValue(normal, "2");
+    await setInputValue(pure, "3");
+    const purityMix = { impure: "1", normal: "2", pure: "3" };
+    expect(onSelection).toHaveBeenLastCalledWith({
+      machineId: "miner_mk3",
+      clockPercentText: "100",
+      purityMix,
+    });
+    expect(host.textContent).toContain("6 nodes");
+    expect(host.textContent).toContain("2040/min supplied");
+    expect(host.textContent).toContain("10680/min shortfall");
+    expect(host.textContent).toContain("Output: Mk4 belt or better");
+    expect(host.textContent).toContain("Power: 270 MW");
+
+    const select = host.querySelector("select")!;
+    select.value = "miner_mk1";
+    await act(async () =>
+      select.dispatchEvent(new Event("change", { bubbles: true })),
+    );
+    expect(onSelection).toHaveBeenLastCalledWith({
+      machineId: "miner_mk1",
+      clockPercentText: "100",
+      purityMix,
+    });
+
+    const clock = host.querySelector<HTMLInputElement>(
+      '.extraction-fields input[type="text"]',
+    )!;
+    await setInputValue(clock, "150");
+    expect(onSelection).toHaveBeenLastCalledWith({
+      machineId: "miner_mk1",
+      clockPercentText: "150",
+      purityMix,
+    });
+
+    await act(async () =>
+      host
+        .querySelector<HTMLInputElement>('input[aria-label="Use node mix"]')!
+        .click(),
+    );
+    expect(onSelection).toHaveBeenLastCalledWith({
+      machineId: "miner_mk1",
+      clockPercentText: "150",
+    });
+    expect(host.querySelector('input[aria-label="Impure nodes"]')).toBeNull();
+  });
+
+  it("associates purity errors with only the offending input or every aggregate input", async () => {
+    const onSelection = vi.fn();
+
+    function Harness() {
+      const [selection, setSelection] = useState<
+        ComponentProps<typeof ExtractionPanel>["selection"]
+      >({
+        machineId: "miner_mk3",
+        clockPercentText: "100",
+        purityMix: { impure: "0", normal: "0", pure: "0" },
+      });
+      return (
+        <ExtractionPanel
+          catalog={extractionCatalog()}
+          rawNode={rawNode("stone", "Limestone", 12720)}
+          stage={stage}
+          selection={selection}
+          onSetSelection={(next) => {
+            onSelection(next);
+            setSelection(next);
+          }}
+          onClose={vi.fn()}
+        />
+      );
+    }
+
+    await act(async () => root.render(<Harness />));
+    const inputs = ["Impure nodes", "Normal nodes", "Pure nodes"].map((label) =>
+      host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!,
+    );
+    expect(host.textContent).toContain("0 nodes");
+    expect(host.textContent).toContain("0/min supplied");
+    expect(host.textContent).toContain("12720/min shortfall");
+    expect(host.textContent).toContain("Output: no node output.");
+    expect(host.textContent).toContain("Power: 0 MW");
+    for (const input of inputs) {
+      expect(input.getAttribute("aria-invalid")).toBeNull();
+      expect(input.getAttribute("aria-describedby")).toBeNull();
+    }
+
+    await setInputValue(inputs[1]!, "");
+    expect(onSelection).toHaveBeenLastCalledWith({
+      machineId: "miner_mk3",
+      clockPercentText: "100",
+      purityMix: { impure: "0", normal: "", pure: "0" },
+    });
+    expect(
+      host.querySelector<HTMLInputElement>('input[aria-label="Normal nodes"]')!
+        .value,
+    ).toBe("");
+
+    const error = host.querySelector<HTMLElement>(
+      "#extraction-s-stone-purity-error",
+    )!;
+    expect(error).not.toBeNull();
+    expect(error.getAttribute("role")).toBe("alert");
+    expect(host.textContent).toContain(
+      "Normal node count must be a base-10 nonnegative integer.",
+    );
+    expect(inputs[0]!.getAttribute("aria-invalid")).toBeNull();
+    expect(inputs[0]!.getAttribute("aria-describedby")).toBeNull();
+    expect(inputs[1]!.getAttribute("aria-invalid")).toBe("true");
+    expect(inputs[1]!.getAttribute("aria-describedby")).toBe(error.id);
+    expect(inputs[2]!.getAttribute("aria-invalid")).toBeNull();
+    expect(inputs[2]!.getAttribute("aria-describedby")).toBeNull();
+    expect(host.querySelector(".extraction-purity-result")).toBeNull();
+    expect(host.textContent).not.toContain("0 nodes");
+    expect(host.textContent).not.toContain("Output: no node output.");
+
+    const max = String(Number.MAX_SAFE_INTEGER);
+    for (const label of ["Impure nodes", "Normal nodes", "Pure nodes"]) {
+      await setInputValue(
+        host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!,
+        max,
+      );
+    }
+    expect(onSelection).toHaveBeenLastCalledWith({
+      machineId: "miner_mk3",
+      clockPercentText: "100",
+      purityMix: { impure: max, normal: max, pure: max },
+    });
+    const aggregateError = host.querySelector<HTMLElement>(
+      "#extraction-s-stone-purity-error",
+    )!;
+    expect(aggregateError.textContent).toBe(
+      "Total node count must not exceed Number.MAX_SAFE_INTEGER.",
+    );
+    expect(aggregateError.getAttribute("role")).toBe("alert");
+    for (const label of ["Impure nodes", "Normal nodes", "Pure nodes"]) {
+      const input = host.querySelector<HTMLInputElement>(
+        `input[aria-label="${label}"]`,
+      )!;
+      expect(input.getAttribute("aria-invalid")).toBe("true");
+      expect(input.getAttribute("aria-describedby")).toBe(aggregateError.id);
+    }
+    expect(host.querySelector(".extraction-purity-result")).toBeNull();
+  });
+
+  it("offers node mixes for Oil but not Water", async () => {
+    const renderResource = async (
+      itemId: string,
+      itemName: string,
+      machineId: string,
+    ) => {
+      await act(async () => {
+        root.render(
+          <ExtractionPanel
+            catalog={extractionCatalog()}
+            rawNode={rawNode(itemId, itemName, 1200)}
+            stage={stage}
+            selection={{ machineId, clockPercentText: "100" }}
+            onSetSelection={vi.fn()}
+            onClose={vi.fn()}
+          />,
+        );
+      });
+    };
+
+    await renderResource("water", "Water", "water_pump");
+    expect(host.querySelector('input[aria-label="Use node mix"]')).toBeNull();
+
+    await renderResource("liquid_oil", "Crude Oil", "oil_pump");
+    expect(
+      host.querySelector('input[aria-label="Use node mix"]'),
+    ).not.toBeNull();
   });
 
   it("leaves a single-candidate solid unselected until the user chooses it", async () => {

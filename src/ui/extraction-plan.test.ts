@@ -103,6 +103,25 @@ function derive(
   });
 }
 
+function derivePurity(
+  purityMix: { impure: string; normal: string; pure: string },
+  demand = F(1000),
+  clockPercentText = "100",
+  itemId = "stone",
+) {
+  return deriveExtractionPlan({
+    catalog: catalog(),
+    itemId,
+    demand,
+    selection: {
+      machineId: itemId === "water" ? "water_pump" : "miner_mk3",
+      clockPercentText,
+      purityMix,
+    },
+    unlockedTiers: { belt: 6, pipe: 2 },
+  });
+}
+
 describe("deriveExtractionPlan", () => {
   it("derives the exact Limestone and Water worked examples", () => {
     const limestone = derive("stone", F(12720), "miner_mk3");
@@ -193,6 +212,189 @@ describe("deriveExtractionPlan", () => {
       status: "available",
       kind: "belt",
       capacity: F(250),
+    });
+  });
+
+  it("derives exact mixed-purity supply, balance, and machine power", () => {
+    const mixed = derivePurity({ impure: "1", normal: "1", pure: "1" });
+    expect(mixed).toMatchObject({
+      status: "planned",
+      purity: {
+        status: "planned",
+        nodeCount: 3,
+        powerText: "135 MW",
+        balance: { status: "shortfall" },
+      },
+    });
+    if (mixed.status !== "planned" || mixed.purity?.status !== "planned") {
+      return;
+    }
+    expect(mixed.purity.totalSupply.toString()).toBe("840");
+    expect(mixed.purity.balance.amount.toString()).toBe("160");
+
+    const spare = derivePurity({ impure: "0", normal: "0", pure: "3" });
+    expect(spare).toMatchObject({
+      status: "planned",
+      purity: {
+        status: "planned",
+        nodeCount: 3,
+        powerText: "135 MW",
+        balance: { status: "spare" },
+      },
+    });
+    if (spare.status !== "planned" || spare.purity?.status !== "planned") {
+      return;
+    }
+    expect(spare.purity.totalSupply.toString()).toBe("1440");
+    expect(spare.purity.balance.amount.toString()).toBe("440");
+
+    const exact = derivePurity({ impure: "1", normal: "1", pure: "1" }, F(840));
+    expect(exact).toMatchObject({
+      status: "planned",
+      purity: { status: "planned", balance: { status: "spare" } },
+    });
+    if (exact.status !== "planned" || exact.purity?.status !== "planned") {
+      return;
+    }
+    expect(exact.purity.balance.amount.toString()).toBe("0");
+  });
+
+  it.each([
+    [{ impure: "0", normal: "0", pure: "1" }, "480"],
+    [{ impure: "0", normal: "1", pure: "0" }, "270"],
+    [{ impure: "1", normal: "0", pure: "0" }, "120"],
+  ])(
+    "uses the highest nonzero purity output for transport: %o",
+    (purityMix, capacity) => {
+      const result = derivePurity(purityMix);
+      expect(result.status).toBe("planned");
+      if (result.status !== "planned")
+        throw new Error("expected planned result");
+      expect(result.purity?.status).toBe("planned");
+      if (result.purity?.status !== "planned") {
+        throw new Error("expected planned purity result");
+      }
+      expect(result.purity.transport).toMatchObject({ status: "available" });
+      if (result.purity.transport.status === "available") {
+        expect(result.purity.transport.capacity.toString()).toBe(capacity);
+      }
+    },
+  );
+
+  it("reports no purity transport for an all-zero mix", () => {
+    const result = derivePurity({ impure: "0", normal: "0", pure: "0" });
+    expect(result).toMatchObject({
+      status: "planned",
+      purity: {
+        status: "planned",
+        nodeCount: 0,
+        transport: { status: "none" },
+      },
+    });
+  });
+
+  it("uses clock-scaled per-extractor output for every mix calculation", () => {
+    const result = derivePurity(
+      { impure: "1", normal: "1", pure: "1" },
+      F(1000),
+      "250",
+    );
+    expect(result).toMatchObject({
+      status: "planned",
+      purity: {
+        status: "planned",
+        nodeCount: 3,
+        balance: { status: "spare" },
+        transport: { status: "available" },
+      },
+    });
+    if (result.status !== "planned" || result.purity?.status !== "planned") {
+      return;
+    }
+    expect(result.transport).toMatchObject({
+      status: "available",
+      capacity: F(780),
+    });
+    expect(result.purity.totalSupply.toString()).toBe("2100");
+    expect(result.purity.balance.amount.toString()).toBe("1100");
+    if (result.purity.transport.status === "available") {
+      expect(result.purity.transport.capacity.toString()).toBe("1200");
+    }
+  });
+
+  it("returns no purity result when the mix is absent or the item is water", () => {
+    const withoutMix = derive("stone", F(1000), "miner_mk3");
+    expect(withoutMix).toMatchObject({ status: "planned", purity: null });
+
+    const water = derivePurity(
+      { impure: "1", normal: "1", pure: "1" },
+      F(1000),
+      "100",
+      "water",
+    );
+    expect(water).toMatchObject({ status: "planned", purity: null });
+  });
+
+  it.each(["", "1.5", "-1", "1e2"])(
+    "rejects malformed Impure node count %j with exact detail",
+    (impure) => {
+      const result = derivePurity({ impure, normal: "0", pure: "0" });
+      expect(result).toMatchObject({
+        status: "planned",
+        purity: {
+          status: "invalid",
+          detail: "Impure node count must be a base-10 nonnegative integer.",
+        },
+      });
+    },
+  );
+
+  it.each([
+    [
+      { impure: "0", normal: "", pure: "0" },
+      "Normal node count must be a base-10 nonnegative integer.",
+      "normal",
+    ],
+    [
+      { impure: "0", normal: "0", pure: "-1" },
+      "Pure node count must be a base-10 nonnegative integer.",
+      "pure",
+    ],
+  ])(
+    "identifies the malformed purity field in %o",
+    (purityMix, detail, field) => {
+      const result = derivePurity(purityMix);
+      expect(result).toMatchObject({
+        status: "planned",
+        purity: { status: "invalid", detail, field },
+      });
+    },
+  );
+
+  it("rejects individual and aggregate safe-integer overflow exactly", () => {
+    const individual = derivePurity({
+      impure: "0",
+      normal: "0",
+      pure: (BigInt(Number.MAX_SAFE_INTEGER) + 1n).toString(),
+    });
+    expect(individual).toMatchObject({
+      status: "planned",
+      purity: {
+        status: "invalid",
+        detail: "Pure node count must not exceed Number.MAX_SAFE_INTEGER.",
+        field: "pure",
+      },
+    });
+
+    const max = String(Number.MAX_SAFE_INTEGER);
+    const aggregate = derivePurity({ impure: max, normal: max, pure: max });
+    expect(aggregate).toMatchObject({
+      status: "planned",
+      purity: {
+        status: "invalid",
+        detail: "Total node count must not exceed Number.MAX_SAFE_INTEGER.",
+        field: null,
+      },
     });
   });
 

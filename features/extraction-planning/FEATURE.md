@@ -1,10 +1,11 @@
 # Extraction planning (Stage 22 arc)
 
 **Started:** 2026-08-16
-**Status:** IN PROGRESS - Phase 1 merged; Phase 2 ready for design
-**Current phase:** Phase 2 purity-mix design
+**Status:** IN PROGRESS - Phase 2 implementation complete; review pending
+**Current phase:** Phase 2 cumulative implementation review pending
 **Epic:** #114 (board #21, Stage 22 milestone 93)
 **Feature ticket:** #112
+**Phase 2 child:** #124
 
 ## Settled Product Direction
 
@@ -41,12 +42,22 @@ reconsideration:
 
 ### Phase 2 - purity mix
 
-- **Status:** ready for design after Phase 1 observation
-- **Scope lock only:** use the shipped Impure/Normal/Pure multipliers
-  0.5/1.0/2.0 to adjust the normal-purity requirement into a user-edited purity
-  mix
-- **No implementation plan exists.** This is deliberate under the deferred-plans
-  rule.
+- **Status:** implementation complete; cumulative review pending
+- **Scope:** exact Impure/Normal/Pure 0.5/1.0/2.0 node inventories,
+  coverage/shortfall, power and transport results, plan v7 persistence, and
+  production-control browser coverage
+- **Spec:** `phase-2/brainstorm-spec.md` frozen after r2 correctness convergence
+  and one-shot simplify approval with no findings
+- **Implementation plan:** `phase-2/implementation-plan.md` frozen at r6 after
+  both reviewers approved the r5 folds; its one-shot parsimony review had
+  already run and was not rerun
+- **Branch:** `feature/s22-124-extraction-p2-purity`
+- **Implementation commits:** `5098796`, `f8f7f89`, `03b9d97`, `8094126`,
+  `e076398`, `b15d550`, `73379cd`
+- **Current branch verification:** 40 files / 1067 tests; TypeScript, ESLint,
+  Prettier, and build pass; the checked-in Chromium/CDP gate passes nine
+  geometry rows and three interaction rows at 360px, 720px, and 1280px
+- **Completion report:** `phase-2/completion-report.md`
 
 ## Dependency Shape
 
@@ -160,11 +171,11 @@ provenance.
 
 On resume:
 
-1. Read #112 and #114 before this file; the board wins on disagreement.
-2. Resume Phase 1 at cumulative implementation review using
-   `phase-1/completion-report.md` and `phase-1/r2-verification.log`.
-3. Do not write a Phase 2 plan until Phase 1 has merged and its phase report has
-   been accepted.
+1. Read #124, #112, and #114 before this file; the board wins on disagreement.
+2. Resume Phase 2 at cumulative implementation review using
+   `phase-2/completion-report.md` and the full `develop...HEAD` diff.
+3. Create the cumulative review prompt only when that review begins; Task 4
+   deliberately does not create it.
 4. Keep Resource Wells explicit. A later decision to build a full well planner
    is new scoped work and must be ticketed rather than hidden in Phase 2.
 
@@ -210,6 +221,23 @@ do not satisfy that contract. Task 6 therefore remains unchanged.
   shared validator comment's unmatched parenthesis. Runtime code remained the
   correctness-approved r6 artifact.
 
+## Phase 2 Diff Review Disposition
+
+- **r1:** code-reviewer returned `APPROVED_WITH_NITS`; adversarial-reviewer
+  returned `NEEDS_REWORK`. Both grounded findings were accepted. Purity
+  validation now carries the offending field for field-local parse/overflow
+  errors and `null` for aggregate overflow, so the panel associates its stable
+  live error only with the offending input or with all three inputs for an
+  aggregate failure. The controlled DOM regression enters blank Normal text
+  through the rendered input and callback/rerender path, and separately proves
+  aggregate all-field association with no stale totals. The four historical
+  v2-v5 writer comments now describe current reads as migrating to plan v7.
+  Correctness recheck continues with a delta-scoped r2 prompt; the one-shot
+  Phase 2 diff simplify lens has not run.
+- **r2:** code-reviewer and adversarial-reviewer both returned `APPROVED` on the
+  r1 fold delta. Correctness converged before the separate one-shot cumulative
+  simplify lens ran.
+
 ## Phase 1 Diff Parsimony Disposition
 
 The one-shot diff simplifier returned five nits; all five were verified and
@@ -221,3 +249,15 @@ new catalog-tier regression failed against the prior global-table lookup before
 the fold. Full verification after the fold passes 39 files / 1028 tests, checks,
 build, nine geometry rows, and all three interaction suites. The simplify lens
 is complete and will not be rerun; only the correctness pair rechecks this fold.
+
+## Phase 2 Diff Parsimony Disposition
+
+The one-shot cumulative simplify lens returned `APPROVED_WITH_NITS` with two
+findings; both were verified and folded. `ExtractionPanel` now renders the
+Impure/Normal/Pure controls from one local typed tuple and one mapped markup
+block while preserving order, values, numeric constraints, accessibility
+state, and callbacks. Purity transport now computes the highest-present output
+once and makes one `transportForOutput` call, or returns the direct no-output
+status. Existing focused derivation/DOM tests remain green after both folds.
+The simplify lens is complete and must not rerun; only a delta-scoped
+post-simplify correctness recheck proceeds via `phase-2/diff-r3-prompt.md`.

@@ -304,6 +304,12 @@ export function ExtractionPanel({
   onSetSelection,
   onClose,
 }: ExtractionPanelProps) {
+  type PurityField = keyof NonNullable<StoredExtractionSelection["purityMix"]>;
+  const purityFields = [
+    ["impure", "Impure"],
+    ["normal", "Normal"],
+    ["pure", "Pure"],
+  ] as const satisfies readonly (readonly [PurityField, string])[];
   const candidates = useMemo(
     () => standaloneExtractors(catalog, rawNode.data.itemId),
     [catalog, rawNode.data.itemId],
@@ -339,6 +345,11 @@ export function ExtractionPanel({
     selection,
     unlockedTiers: stage.selection.unlockedTiers,
   });
+  const purityErrorId = `${headingId}-purity-error`;
+  const purityError =
+    result.status === "planned" && result.purity?.status === "invalid"
+      ? result.purity
+      : null;
   const selectedAvailable =
     selection !== null &&
     candidates.some((candidate) => candidate.machineId === selection.machineId);
@@ -354,8 +365,37 @@ export function ExtractionPanel({
       onSetSelection({
         machineId,
         clockPercentText: selection?.clockPercentText ?? "100",
+        ...(selection?.purityMix
+          ? { purityMix: { ...selection.purityMix } }
+          : {}),
       });
   };
+
+  const setPurityEnabled = (enabled: boolean) => {
+    if (selection === null || result.status !== "planned") return;
+    if (enabled) {
+      onSetSelection({
+        ...selection,
+        purityMix: { impure: "0", normal: String(result.count), pure: "0" },
+      });
+      return;
+    }
+    const next = { ...selection };
+    delete next.purityMix;
+    onSetSelection(next);
+  };
+
+  const setPurityCount = (field: PurityField, value: string) => {
+    if (selection?.purityMix === undefined) return;
+    onSetSelection({
+      ...selection,
+      purityMix: { ...selection.purityMix, [field]: value },
+    });
+  };
+
+  const purityFieldHasError = (field: PurityField) =>
+    purityError !== null &&
+    (purityError.field === null || purityError.field === field);
 
   return (
     <section
@@ -437,7 +477,7 @@ export function ExtractionPanel({
       {result.status === "planned" && (
         <div className="extraction-result">
           <p>
-            Purity <strong>Normal</strong>
+            <strong>Normal baseline</strong>
           </p>
           <p>
             <strong>
@@ -461,6 +501,81 @@ export function ExtractionPanel({
             {transportText(result.transport, catalog)}
           </p>
           <p>Power: {result.powerText}</p>
+          {rawNode.data.itemId !== "water" && (
+            <>
+              <label className="extraction-purity-toggle">
+                <input
+                  type="checkbox"
+                  aria-label="Use node mix"
+                  checked={selection!.purityMix !== undefined}
+                  onChange={(event) => setPurityEnabled(event.target.checked)}
+                />
+                <span>Use node mix</span>
+              </label>
+              {selection!.purityMix !== undefined && (
+                <>
+                  <div className="extraction-purity-fields">
+                    {purityFields.map(([field, label]) => {
+                      const hasError = purityFieldHasError(field);
+                      return (
+                        <label key={field}>
+                          <span>{label}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            aria-label={`${label} nodes`}
+                            aria-invalid={hasError ? true : undefined}
+                            aria-describedby={
+                              hasError ? purityErrorId : undefined
+                            }
+                            value={selection!.purityMix![field]}
+                            onChange={(event) =>
+                              setPurityCount(field, event.target.value)
+                            }
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {purityError !== null && (
+                    <p
+                      id={purityErrorId}
+                      className="extraction-error"
+                      role="alert"
+                    >
+                      {purityError.detail}
+                    </p>
+                  )}
+                  {result.purity?.status === "planned" && (
+                    <div className="extraction-purity-result">
+                      <p>
+                        <strong>{result.purity.nodeCount} nodes</strong>
+                      </p>
+                      <p>
+                        {formatRate(result.purity.totalSupply)}/min supplied ·{" "}
+                        {formatRate(result.purity.balance.amount)}/min{" "}
+                        {result.purity.balance.status}
+                      </p>
+                      <p
+                        className={
+                          result.purity.transport.status !== "none" &&
+                          result.purity.transport.status !== "available"
+                            ? "extraction-warning"
+                            : undefined
+                        }
+                      >
+                        {result.purity.transport.status === "none"
+                          ? "Output: no node output."
+                          : transportText(result.purity.transport, catalog)}
+                      </p>
+                      <p>Power: {result.purity.powerText}</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
         </div>
       )}
       {hasResourceWell && rawNode.data.itemId !== "nitrogen_gas" && (
