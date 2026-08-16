@@ -203,31 +203,23 @@ function derivePurityResult(
     ? { status: "spare" as const, amount: difference }
     : { status: "shortfall" as const, amount: demand.sub(totalSupply) };
 
-  let transport: ExtractionTransportStatus | { status: "none" };
-  if (parsed.pure > 0n) {
-    transport = transportForOutput(
-      catalog,
-      itemId,
-      perExtractor.mul(Fraction.from(2)),
-      unlockedTiers,
-    );
-  } else if (parsed.normal > 0n) {
-    transport = transportForOutput(
-      catalog,
-      itemId,
-      perExtractor,
-      unlockedTiers,
-    );
-  } else if (parsed.impure > 0n) {
-    transport = transportForOutput(
-      catalog,
-      itemId,
-      perExtractor.mul(Fraction.of(1, 2)),
-      unlockedTiers,
-    );
-  } else {
-    transport = { status: "none" };
-  }
+  const highestPresentOutput =
+    parsed.pure > 0n
+      ? perExtractor.mul(Fraction.from(2))
+      : parsed.normal > 0n
+        ? perExtractor
+        : parsed.impure > 0n
+          ? perExtractor.mul(Fraction.of(1, 2))
+          : null;
+  const transport: ExtractionTransportStatus | { status: "none" } =
+    highestPresentOutput === null
+      ? { status: "none" }
+      : transportForOutput(
+          catalog,
+          itemId,
+          highestPresentOutput,
+          unlockedTiers,
+        );
 
   return {
     status: "planned",

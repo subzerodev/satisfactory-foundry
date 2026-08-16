@@ -304,6 +304,12 @@ export function ExtractionPanel({
   onSetSelection,
   onClose,
 }: ExtractionPanelProps) {
+  type PurityField = keyof NonNullable<StoredExtractionSelection["purityMix"]>;
+  const purityFields = [
+    ["impure", "Impure"],
+    ["normal", "Normal"],
+    ["pure", "Pure"],
+  ] as const satisfies readonly (readonly [PurityField, string])[];
   const candidates = useMemo(
     () => standaloneExtractors(catalog, rawNode.data.itemId),
     [catalog, rawNode.data.itemId],
@@ -379,10 +385,7 @@ export function ExtractionPanel({
     onSetSelection(next);
   };
 
-  const setPurityCount = (
-    field: keyof NonNullable<StoredExtractionSelection["purityMix"]>,
-    value: string,
-  ) => {
+  const setPurityCount = (field: PurityField, value: string) => {
     if (selection?.purityMix === undefined) return;
     onSetSelection({
       ...selection,
@@ -390,9 +393,7 @@ export function ExtractionPanel({
     });
   };
 
-  const purityFieldHasError = (
-    field: keyof NonNullable<StoredExtractionSelection["purityMix"]>,
-  ) =>
+  const purityFieldHasError = (field: PurityField) =>
     purityError !== null &&
     (purityError.field === null || purityError.field === field);
 
@@ -514,69 +515,28 @@ export function ExtractionPanel({
               {selection!.purityMix !== undefined && (
                 <>
                   <div className="extraction-purity-fields">
-                    <label>
-                      <span>Impure</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        aria-label="Impure nodes"
-                        aria-invalid={
-                          purityFieldHasError("impure") ? true : undefined
-                        }
-                        aria-describedby={
-                          purityFieldHasError("impure")
-                            ? purityErrorId
-                            : undefined
-                        }
-                        value={selection!.purityMix.impure}
-                        onChange={(event) =>
-                          setPurityCount("impure", event.target.value)
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>Normal</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        aria-label="Normal nodes"
-                        aria-invalid={
-                          purityFieldHasError("normal") ? true : undefined
-                        }
-                        aria-describedby={
-                          purityFieldHasError("normal")
-                            ? purityErrorId
-                            : undefined
-                        }
-                        value={selection!.purityMix.normal}
-                        onChange={(event) =>
-                          setPurityCount("normal", event.target.value)
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>Pure</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        aria-label="Pure nodes"
-                        aria-invalid={
-                          purityFieldHasError("pure") ? true : undefined
-                        }
-                        aria-describedby={
-                          purityFieldHasError("pure")
-                            ? purityErrorId
-                            : undefined
-                        }
-                        value={selection!.purityMix.pure}
-                        onChange={(event) =>
-                          setPurityCount("pure", event.target.value)
-                        }
-                      />
-                    </label>
+                    {purityFields.map(([field, label]) => {
+                      const hasError = purityFieldHasError(field);
+                      return (
+                        <label key={field}>
+                          <span>{label}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            aria-label={`${label} nodes`}
+                            aria-invalid={hasError ? true : undefined}
+                            aria-describedby={
+                              hasError ? purityErrorId : undefined
+                            }
+                            value={selection!.purityMix![field]}
+                            onChange={(event) =>
+                              setPurityCount(field, event.target.value)
+                            }
+                          />
+                        </label>
+                      );
+                    })}
                   </div>
                   {purityError !== null && (
                     <p

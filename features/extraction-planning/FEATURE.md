@@ -234,6 +234,9 @@ do not satisfy that contract. Task 6 therefore remains unchanged.
   v2-v5 writer comments now describe current reads as migrating to plan v7.
   Correctness recheck continues with a delta-scoped r2 prompt; the one-shot
   Phase 2 diff simplify lens has not run.
+- **r2:** code-reviewer and adversarial-reviewer both returned `APPROVED` on the
+  r1 fold delta. Correctness converged before the separate one-shot cumulative
+  simplify lens ran.
 
 ## Phase 1 Diff Parsimony Disposition
 
@@ -246,3 +249,15 @@ new catalog-tier regression failed against the prior global-table lookup before
 the fold. Full verification after the fold passes 39 files / 1028 tests, checks,
 build, nine geometry rows, and all three interaction suites. The simplify lens
 is complete and will not be rerun; only the correctness pair rechecks this fold.
+
+## Phase 2 Diff Parsimony Disposition
+
+The one-shot cumulative simplify lens returned `APPROVED_WITH_NITS` with two
+findings; both were verified and folded. `ExtractionPanel` now renders the
+Impure/Normal/Pure controls from one local typed tuple and one mapped markup
+block while preserving order, values, numeric constraints, accessibility
+state, and callbacks. Purity transport now computes the highest-present output
+once and makes one `transportForOutput` call, or returns the direct no-output
+status. Existing focused derivation/DOM tests remain green after both folds.
+The simplify lens is complete and must not rerun; only a delta-scoped
+post-simplify correctness recheck proceeds via `phase-2/diff-r3-prompt.md`.
