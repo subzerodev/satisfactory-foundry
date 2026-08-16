@@ -1,9 +1,13 @@
 import { Fragment, useMemo } from "react";
-import type { StageSolveResult, LaneKind } from "../core/manifold.ts";
+import type { StageSolveResult, LaneKind, FeedBelt } from "../core/manifold.ts";
 import { layoutStage } from "../layout/layout.ts";
 import type { LaneLayout, BeltMark } from "../layout/layout.ts";
 import { FOOTPRINTS } from "../layout/footprints.ts";
-import { formatRate } from "./format.ts";
+import {
+  feedCountToken,
+  groupCoincidentMarks,
+} from "./coincident-feed-marks.ts";
+import { feedGroupLabel, formatRate } from "./format.ts";
 import { ZoomToggle, useReadableScale } from "./blueprint-zoom.tsx";
 
 /**
@@ -216,7 +220,12 @@ export function Blueprint({
             in front of the machines, with their rate labels. The lane-NAME text
             left the SVG for the HTML gutter (P3 Axis C1); marks stay. */}
             {layout.feedLanes.map((lane, i) => (
-              <Marks key={`fm-${lane.itemId}-${i}`} lane={lane} side="feed" />
+              <Marks
+                key={`fm-${lane.itemId}-${i}`}
+                lane={lane}
+                side="feed"
+                feedBelts={solve.feeds[i]!.belts}
+              />
             ))}
             {layout.outputLanes.map((lane, j) => (
               <Marks key={`om-${lane.itemId}-${j}`} lane={lane} side="output" />
@@ -292,7 +301,72 @@ export const MARK_LABEL_DY = { feed: -24, output: 32 } as const;
 
 /** Belt marks + rate labels (z5 — in front of the machines). The lane NAME now
  *  lives in the HTML gutter (P3 Axis C1), not in the SVG. */
-function Marks({ lane, side }: { lane: LaneLayout; side: "feed" | "output" }) {
+type MarksProps =
+  | { lane: LaneLayout; side: "feed"; feedBelts: readonly FeedBelt[] }
+  | { lane: LaneLayout; side: "output"; feedBelts?: never };
+
+function Marks(props: MarksProps) {
+  const { lane, side } = props;
+  if (side === "feed") {
+    const groups = groupCoincidentMarks(lane.marks, (mark) => mark.at.x);
+    return (
+      <g className="bp-marks">
+        {groups.map((group) => {
+          if (group.members.length === 1) {
+            const mark = group.members[0]!;
+            return (
+              <Fragment key={`mk-${mark.index}`}>
+                <circle
+                  className="bp-mark-glyph"
+                  cx={mark.at.x}
+                  cy={mark.at.y}
+                  r={8}
+                />
+                <text
+                  className="bp-mark-label"
+                  x={mark.at.x + 12}
+                  y={mark.at.y + MARK_LABEL_DY.feed}
+                >
+                  {formatRate(mark.capacity)}/min
+                </text>
+              </Fragment>
+            );
+          }
+
+          const belts = group.members.map(
+            (mark) => props.feedBelts[mark.index]!,
+          );
+          const label = feedGroupLabel(belts);
+          const first = group.members[0]!;
+          return (
+            <g
+              key={`feed-group-${first.index}`}
+              className="bp-feed-mark-group"
+              data-feed-indices={belts.map((belt) => belt.index).join(",")}
+              role="img"
+              tabIndex={0}
+              aria-label={label}
+            >
+              <circle
+                className="bp-mark-glyph"
+                cx={first.at.x}
+                cy={first.at.y}
+                r={8}
+              />
+              <text
+                className="bp-mark-label bp-feed-group-count"
+                x={first.at.x + 12}
+                y={first.at.y + MARK_LABEL_DY.feed}
+              >
+                {feedCountToken(belts.length)}
+              </text>
+            </g>
+          );
+        })}
+      </g>
+    );
+  }
+
   return (
     <g className="bp-marks">
       {lane.marks.map((mk: BeltMark) => (
@@ -303,7 +377,7 @@ function Marks({ lane, side }: { lane: LaneLayout; side: "feed" | "output" }) {
             x={mk.at.x + 12}
             y={mk.at.y + MARK_LABEL_DY[side]}
           >
-            {side === "output" && mk.load !== undefined
+            {mk.load !== undefined
               ? `${formatRate(mk.capacity)}/min (${formatRate(mk.load)}/min load)`
               : `${formatRate(mk.capacity)}/min`}
           </text>

@@ -107,6 +107,21 @@ export function beltLabel(
   return `Out ${index + 1} — ${tier} · ${formatRate(out.load)}/min load · ${from}`;
 }
 
+/** Bounded semantic summary for feed slots sharing one entry boundary. */
+export function feedGroupLabel(belts: readonly FeedBelt[]): string {
+  const first = belts[0]!;
+  const last = belts[belts.length - 1]!;
+  const total = belts.reduce(
+    (sum, belt) => sum.add(belt.capacity),
+    Fraction.from(0),
+  );
+  const at =
+    first.entersAfterMachine === 0
+      ? "at head"
+      : `after machine ${first.entersAfterMachine}`;
+  return `Feeds ${first.index + 1}-${last.index + 1} - ${belts.length} slots - ${formatRate(total)}/min total capacity - enter ${at}`;
+}
+
 /**
  * A bus segment's hover-tooltip text. The exact string is owned here (Stage 5
  * item 1) so any styled tooltip and the unit test share one source of truth,
