@@ -117,6 +117,7 @@ const catalog: Catalog = {
   recipes,
   tiers: { belt: [], pipe: [] },
   recipeUnlocks: {},
+  extractors: {},
 };
 
 /** A solved SolveState carrying the given output/feed totals for one item. The

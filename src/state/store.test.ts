@@ -3255,6 +3255,7 @@ describe("applyChainProposal (Stage 8 / Phase 3)", () => {
       },
       tiers: { belt: [Fraction.from(60)], pipe: [Fraction.from(300)] },
       recipeUnlocks: {},
+      extractors: {},
     };
   }
 

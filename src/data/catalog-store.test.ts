@@ -54,6 +54,14 @@ function sampleCatalog(): Catalog {
         primaryOutputId: "iron_ingot",
       },
     },
+    extractors: {
+      miner_mk1: {
+        machineId: "miner_mk1",
+        topology: "standalone",
+        normalRate: Fraction.from(60),
+        itemIds: ["ore_iron"],
+      },
+    },
     tiers: TIER_TABLE,
     // A non-empty unlock map so the cache round-trip has something to lose
     // (S20 P3): an empty map would revive identically whether or not the
@@ -107,6 +115,10 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     // case revives absent, and ore_iron's true proves the set case survives.
     expect(result.catalog.items["ore_iron"]!.isRawResource).toBe(true);
     expect(result.catalog.items["iron_ingot"]!.isRawResource).toBeUndefined();
+    const extractor = result.catalog.extractors["miner_mk1"]!;
+    expect(extractor.topology).toBe("standalone");
+    expect(extractor.itemIds).toEqual(["ore_iron"]);
+    expect(extractor.normalRate.eq(Fraction.from(60))).toBe(true);
 
     // The source hash is recorded (SHA-256 hex = 64 chars).
     const db = await openDb();
@@ -129,7 +141,7 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     const db = await openDb();
     const stored = await db.get<Record<string, unknown>>("catalog", "current");
     await db.put("catalog", { ...stored, parser_version: 2 }, "current");
-    expect(CATALOG_PARSER_VERSION).toBe(5);
+    expect(CATALOG_PARSER_VERSION).toBe(6);
     expect((await loadCatalog()).status).toBe("stale");
   });
 
@@ -143,6 +155,15 @@ describe("catalog cache — round-trip (spec row 7)", () => {
       { ...stored, parser_version: CATALOG_PARSER_VERSION + 1 },
       "current",
     );
+    expect((await loadCatalog()).status).toBe("stale");
+  });
+
+  it("treats a parser-version-5 cache as stale under version 6", async () => {
+    await saveCatalog("raw", sampleCatalog());
+    const db = await openDb();
+    const stored = await db.get<Record<string, unknown>>("catalog", "current");
+    await db.put("catalog", { ...stored, parser_version: 5 }, "current");
+    expect(CATALOG_PARSER_VERSION).toBe(6);
     expect((await loadCatalog()).status).toBe("stale");
   });
 
@@ -278,12 +299,14 @@ describe("catalog cache — null-prototype maps survive revive (#28)", () => {
     expect(result.status).toBe("hit");
     if (result.status !== "hit") return;
     expect(Object.getPrototypeOf(result.catalog.items)).toBeNull();
+    expect(Object.getPrototypeOf(result.catalog.extractors)).toBeNull();
     expect(Object.getPrototypeOf(result.catalog.machines)).toBeNull();
     expect(Object.getPrototypeOf(result.catalog.recipes)).toBeNull();
     // A prototype-member id misses cleanly on the revived maps (belt-and-braces).
     expect(result.catalog.recipes["constructor"]).toBeUndefined();
     expect(result.catalog.machines["constructor"]).toBeUndefined();
     expect(result.catalog.items["constructor"]).toBeUndefined();
+    expect(result.catalog.extractors["constructor"]).toBeUndefined();
   });
 
   it("save → load carries recipeUnlocks NON-EMPTY, with a null prototype (S20 P3)", async () => {
@@ -337,6 +360,14 @@ function serializedSample() {
         inputs: [{ itemId: "ore_iron", perMinute: "75/2" }],
         outputs: [{ itemId: "iron_ingot", perMinute: "30" }],
         primaryOutputId: "iron_ingot",
+      },
+    },
+    extractors: {
+      miner_mk1: {
+        machineId: "miner_mk1",
+        topology: "standalone",
+        normalRate: "60",
+        itemIds: ["ore_iron"],
       },
     },
     // Untyped factory, so tsc does NOT force this (S20 P3): without it the

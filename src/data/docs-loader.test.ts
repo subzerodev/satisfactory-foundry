@@ -197,6 +197,278 @@ describe("parseDocsJson — items + machines + shape (spec row 1)", () => {
   });
 });
 
+const RAW_RESOURCE_GROUP = {
+  NativeClass:
+    "/Script/CoreUObject.Class'/Script/FactoryGame.FGResourceDescriptor'",
+  Classes: [
+    { ClassName: "Desc_Stone_C", mDisplayName: "Limestone", mForm: "RF_SOLID" },
+    { ClassName: "Desc_Water_C", mDisplayName: "Water", mForm: "RF_LIQUID" },
+    {
+      ClassName: "Desc_LiquidOil_C",
+      mDisplayName: "Crude Oil",
+      mForm: "RF_LIQUID",
+    },
+    {
+      ClassName: "Desc_NitrogenGas_C",
+      mDisplayName: "Nitrogen Gas",
+      mForm: "RF_GAS",
+    },
+  ],
+};
+
+const MANUFACTURED_GROUP = {
+  NativeClass:
+    "/Script/CoreUObject.Class'/Script/FactoryGame.FGItemDescriptor'",
+  Classes: [
+    {
+      ClassName: "Desc_IronPlate_C",
+      mDisplayName: "Iron Plate",
+      mForm: "RF_SOLID",
+    },
+  ],
+};
+
+const allowedResources = (...ids: string[]) =>
+  `(${ids.map((id) => `"/Game/FactoryGame/Desc_${id}.Desc_${id}_C'"`).join(",")})`;
+
+const extractorGroup = (
+  native:
+    | "FGBuildableResourceExtractor"
+    | "FGBuildableWaterPump"
+    | "FGBuildableFrackingExtractor",
+  classes: Record<string, unknown>[],
+) => ({
+  NativeClass: `/Script/CoreUObject.Class'/Script/FactoryGame.${native}'`,
+  Classes: classes,
+});
+
+const extractor = (
+  className: string,
+  displayName: string,
+  items: string,
+  cycle: string,
+  forms: string,
+  restricted: "True" | "False",
+  allowed = "",
+) => ({
+  ClassName: className,
+  mDisplayName: displayName,
+  mItemsPerCycle: items,
+  mExtractCycleTime: cycle,
+  mAllowedResourceForms: forms,
+  mOnlyAllowCertainResources: restricted,
+  mAllowedResources: allowed,
+});
+
+describe("parseDocsJson — extractor capabilities (#112)", () => {
+  const miners = extractorGroup("FGBuildableResourceExtractor", [
+    extractor(
+      "Build_MinerMk1_C",
+      "Miner Mk.1",
+      "1",
+      "1",
+      "(RF_SOLID)",
+      "False",
+    ),
+    extractor(
+      "Build_MinerMk2_C",
+      "Miner Mk.2",
+      "1",
+      "0.5",
+      "(RF_SOLID)",
+      "False",
+    ),
+    extractor(
+      "Build_MinerMk3_C",
+      "Miner Mk.3",
+      "1",
+      "0.25",
+      "(RF_SOLID)",
+      "False",
+    ),
+    extractor(
+      "Build_OilPump_C",
+      "Oil Extractor",
+      "2000",
+      "1",
+      "(RF_LIQUID)",
+      "True",
+      allowedResources("LiquidOil"),
+    ),
+  ]);
+  const water = extractorGroup("FGBuildableWaterPump", [
+    extractor(
+      "Build_WaterPump_C",
+      "Water Extractor",
+      "2000",
+      "1",
+      "(RF_LIQUID)",
+      "True",
+      allowedResources("Water"),
+    ),
+  ]);
+  const well = extractorGroup("FGBuildableFrackingExtractor", [
+    extractor(
+      "Build_FrackingExtractor_C",
+      "Resource Well Extractor",
+      "1000",
+      "1",
+      "(RF_LIQUID,RF_GAS)",
+      "True",
+      allowedResources("LiquidOil", "Water", "NitrogenGas"),
+    ),
+  ]);
+
+  it("parses extractor capabilities independent of group order", () => {
+    const cat = parseDocsJson([miners, water, well, RAW_RESOURCE_GROUP]);
+    expect(cat.extractors["miner_mk1"]!.normalRate.toString()).toBe("60");
+    expect(cat.extractors["miner_mk2"]!.normalRate.toString()).toBe("120");
+    expect(cat.extractors["miner_mk3"]!.normalRate.toString()).toBe("240");
+    expect(cat.extractors["oil_pump"]!.normalRate.toString()).toBe("120");
+    expect(cat.extractors["water_pump"]!.normalRate.toString()).toBe("120");
+    expect(cat.extractors["fracking_extractor"]!.normalRate.toString()).toBe(
+      "60",
+    );
+    expect(cat.extractors["miner_mk3"]!.itemIds).toEqual(["stone"]);
+    expect(cat.extractors["oil_pump"]!.itemIds).toEqual(["liquid_oil"]);
+    expect(cat.extractors["water_pump"]!.itemIds).toEqual(["water"]);
+    expect(cat.extractors["fracking_extractor"]!.itemIds).toEqual([
+      "liquid_oil",
+      "water",
+      "nitrogen_gas",
+    ]);
+    expect(cat.extractors["fracking_extractor"]!.topology).toBe(
+      "resource-well",
+    );
+    expect(cat.extractors["water_pump"]!.topology).toBe("standalone");
+    expect(Object.getPrototypeOf(cat.extractors)).toBeNull();
+    expect(cat.extractors["constructor"]).toBeUndefined();
+  });
+
+  it("parses a reversed restricted extractor before its resources", () => {
+    const cat = parseDocsJson([water, RAW_RESOURCE_GROUP]);
+    expect(cat.extractors["water_pump"]!.itemIds).toEqual(["water"]);
+  });
+
+  it.each([undefined, "nope", "0", "-1"])(
+    "rejects invalid mExtractCycleTime %s",
+    (cycle) => {
+      const row = extractor(
+        "Build_MinerMk1_C",
+        "Miner",
+        "1",
+        "1",
+        "(RF_SOLID)",
+        "False",
+      ) as Record<string, unknown>;
+      row.mExtractCycleTime = cycle;
+      expect(() =>
+        parseDocsJson([
+          RAW_RESOURCE_GROUP,
+          extractorGroup("FGBuildableResourceExtractor", [row]),
+        ]),
+      ).toThrow(DocsParseError);
+    },
+  );
+
+  it.each([undefined, "nope", "0", "-1"])(
+    "rejects invalid mItemsPerCycle %s",
+    (items) => {
+      const row = extractor(
+        "Build_MinerMk1_C",
+        "Miner",
+        "1",
+        "1",
+        "(RF_SOLID)",
+        "False",
+      ) as Record<string, unknown>;
+      row.mItemsPerCycle = items;
+      expect(() =>
+        parseDocsJson([
+          RAW_RESOURCE_GROUP,
+          extractorGroup("FGBuildableResourceExtractor", [row]),
+        ]),
+      ).toThrow(DocsParseError);
+    },
+  );
+
+  it.each([undefined, "true", "FALSE", "yes"])(
+    "rejects invalid textual restriction flag %s",
+    (flag) => {
+      const row = extractor(
+        "Build_MinerMk1_C",
+        "Miner",
+        "1",
+        "1",
+        "(RF_SOLID)",
+        "False",
+      ) as Record<string, unknown>;
+      row.mOnlyAllowCertainResources = flag;
+      expect(() =>
+        parseDocsJson([
+          RAW_RESOURCE_GROUP,
+          extractorGroup("FGBuildableResourceExtractor", [row]),
+        ]),
+      ).toThrow(DocsParseError);
+    },
+  );
+
+  it.each(["", "garbage", allowedResources("Missing")])(
+    "rejects invalid restricted resources %s",
+    (allowed) => {
+      const row = extractor(
+        "Build_WaterPump_C",
+        "Water",
+        "2000",
+        "1",
+        "(RF_LIQUID)",
+        "True",
+        allowed,
+      );
+      expect(() =>
+        parseDocsJson([
+          RAW_RESOURCE_GROUP,
+          extractorGroup("FGBuildableWaterPump", [row]),
+        ]),
+      ).toThrow(DocsParseError);
+    },
+  );
+
+  it("rejects unknown forms and manufactured restricted descriptors", () => {
+    const unknown = extractor(
+      "Build_MinerMk1_C",
+      "Miner",
+      "1",
+      "1",
+      "(RF_PLASMA)",
+      "False",
+    );
+    expect(() =>
+      parseDocsJson([
+        RAW_RESOURCE_GROUP,
+        extractorGroup("FGBuildableResourceExtractor", [unknown]),
+      ]),
+    ).toThrow(DocsParseError);
+
+    const manufactured = extractor(
+      "Build_WaterPump_C",
+      "Water",
+      "2000",
+      "1",
+      "(RF_LIQUID)",
+      "True",
+      allowedResources("IronPlate"),
+    );
+    expect(() =>
+      parseDocsJson([
+        RAW_RESOURCE_GROUP,
+        MANUFACTURED_GROUP,
+        extractorGroup("FGBuildableWaterPump", [manufactured]),
+      ]),
+    ).toThrow(DocsParseError);
+  });
+});
+
 describe("parseDocsJson — fractional exactness (spec row 2)", () => {
   it('duration "4" + Amount "2.5" → perMinute EXACTLY 75/2 (no float)', () => {
     const frag = [
@@ -407,6 +679,11 @@ const POWER_FRAGMENT = [
       {
         ClassName: "Build_MinerMk1_C",
         mDisplayName: "Miner Mk.1",
+        mItemsPerCycle: "1",
+        mExtractCycleTime: "1.000000",
+        mAllowedResourceForms: "(RF_SOLID)",
+        mOnlyAllowCertainResources: "False",
+        mAllowedResources: "",
         mPowerConsumption: "5.000000",
         mPowerConsumptionExponent: "1.321929",
       },

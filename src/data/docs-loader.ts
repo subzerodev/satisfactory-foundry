@@ -1,6 +1,7 @@
 import { Fraction } from "../core/fraction.ts";
 import type {
   Catalog,
+  CatalogExtractor,
   CatalogItem,
   CatalogMachine,
   CatalogRecipe,
@@ -28,7 +29,7 @@ export class DocsParseError extends Error {
 // recipes are FGRecipe. Anything outside these (cosmetic/vehicle descriptors,
 // building-placeholder descriptors) never enters the catalog.
 const NATIVE_BUILDING_REGEX =
-  /FGBuildable(Manufacturer|Generator|Extractor|ResourceExtractor)/;
+  /FGBuildable(Manufacturer|Generator|Extractor|ResourceExtractor|WaterPump|FrackingExtractor)/;
 const NATIVE_ITEM_REGEX =
   /FG(ItemDescriptor|ResourceDescriptor|ConsumableDescriptor|EquipmentDescriptor|PowerShardDescriptor|ChainsawFuelDescriptor|AmmoType)/;
 const NATIVE_RECIPE = "FGRecipe";
@@ -58,6 +59,14 @@ interface RawSchematic {
   recipeClassNames: string[];
 }
 
+interface RawExtractor {
+  machineId: string;
+  topology: CatalogExtractor["topology"];
+  normalRate: Fraction;
+  forms: string[];
+  restrictedItemIds: string[] | null;
+}
+
 export function parseDocsJson(raw: unknown): Catalog {
   if (!Array.isArray(raw)) {
     throw new DocsParseError("Docs.json root must be an array.");
@@ -68,9 +77,11 @@ export function parseDocsJson(raw: unknown): Catalog {
   // (e.g. a "constructor" descriptor) misses cleanly at every lookup site. The
   // Record<string, T> typing is unchanged.
   const items: Record<string, CatalogItem> = Object.create(null);
+  const itemForms: Record<string, string> = Object.create(null);
   const machines: Record<string, CatalogMachine> = Object.create(null);
   const recipesRaw: RawRecipe[] = [];
   const schematicsRaw: RawSchematic[] = [];
+  const extractorsRaw: RawExtractor[] = [];
 
   for (const group of raw) {
     if (typeof group !== "object" || group === null) continue;
@@ -101,6 +112,7 @@ export function parseDocsJson(raw: unknown): Catalog {
           // consumer's `=== true` read treats absent as non-raw.
           ...(isRawGroup ? { isRawResource: true } : {}),
         };
+        if (isRawGroup && typeof c.mForm === "string") itemForms[id] = c.mForm;
       }
     } else if (NATIVE_BUILDING_REGEX.test(nativeClass)) {
       for (const cls of classes) {
@@ -112,6 +124,9 @@ export function parseDocsJson(raw: unknown): Catalog {
           displayName: (c.mDisplayName as string | undefined) ?? id,
           power: parseMachinePower(c),
         };
+        if (isExtractorNativeClass(nativeClass)) {
+          extractorsRaw.push(parseRawExtractor(c, id, nativeClass));
+        }
       }
     } else if (nativeClass.includes(NATIVE_RECIPE)) {
       for (const cls of classes) {
@@ -216,7 +231,154 @@ export function parseDocsJson(raw: unknown): Catalog {
     }
   }
 
-  return { items, machines, recipes, tiers: TIER_TABLE, recipeUnlocks };
+  const extractors: Record<string, CatalogExtractor> = Object.create(null);
+  for (const rawExtractor of extractorsRaw) {
+    const itemIds =
+      rawExtractor.restrictedItemIds ??
+      Object.keys(itemForms).filter((itemId) =>
+        rawExtractor.forms.includes(itemForms[itemId]!),
+      );
+    if (rawExtractor.restrictedItemIds !== null) {
+      for (const itemId of itemIds) {
+        if (items[itemId]?.isRawResource !== true) {
+          throw new DocsParseError(
+            `Extractor ${rawExtractor.machineId}: mAllowedResources references unknown or non-raw item ${itemId}.`,
+          );
+        }
+        if (!rawExtractor.forms.includes(itemForms[itemId]!)) {
+          throw new DocsParseError(
+            `Extractor ${rawExtractor.machineId}: item ${itemId} does not match mAllowedResourceForms.`,
+          );
+        }
+      }
+    }
+    extractors[rawExtractor.machineId] = {
+      machineId: rawExtractor.machineId,
+      topology: rawExtractor.topology,
+      normalRate: rawExtractor.normalRate,
+      itemIds,
+    };
+  }
+
+  return {
+    items,
+    machines,
+    recipes,
+    tiers: TIER_TABLE,
+    recipeUnlocks,
+    extractors,
+  };
+}
+
+function isExtractorNativeClass(nativeClass: string): boolean {
+  return /FGBuildable(ResourceExtractor|WaterPump|FrackingExtractor)'$/.test(
+    nativeClass,
+  );
+}
+
+const EXTRACTOR_FORMS = new Set(["RF_SOLID", "RF_LIQUID", "RF_GAS"]);
+const ALLOWED_RESOURCE_REF = /\.Desc_([A-Za-z0-9_]+)_C'/g;
+
+function parseRawExtractor(
+  c: Record<string, unknown>,
+  machineId: string,
+  nativeClass: string,
+): RawExtractor {
+  const itemsPerCycle = parsePositiveExtractorField(
+    c.mItemsPerCycle,
+    machineId,
+    "mItemsPerCycle",
+  );
+  const cycleTime = parsePositiveExtractorField(
+    c.mExtractCycleTime,
+    machineId,
+    "mExtractCycleTime",
+  );
+  if (typeof c.mAllowedResourceForms !== "string") {
+    throw new DocsParseError(
+      `Extractor ${machineId}: missing mAllowedResourceForms.`,
+    );
+  }
+  const formsMatch = /^\((RF_[A-Z]+(?:,RF_[A-Z]+)*)\)$/.exec(
+    c.mAllowedResourceForms,
+  );
+  if (formsMatch?.[1] === undefined) {
+    throw new DocsParseError(
+      `Extractor ${machineId}: malformed mAllowedResourceForms.`,
+    );
+  }
+  const forms = formsMatch[1].split(",");
+  if (forms.some((form) => !EXTRACTOR_FORMS.has(form))) {
+    throw new DocsParseError(
+      `Extractor ${machineId}: unknown mAllowedResourceForms value.`,
+    );
+  }
+
+  if (
+    c.mOnlyAllowCertainResources !== "True" &&
+    c.mOnlyAllowCertainResources !== "False"
+  ) {
+    throw new DocsParseError(
+      `Extractor ${machineId}: mOnlyAllowCertainResources must be "True" or "False".`,
+    );
+  }
+  let restrictedItemIds: string[] | null = null;
+  if (c.mOnlyAllowCertainResources === "True") {
+    if (typeof c.mAllowedResources !== "string" || c.mAllowedResources === "") {
+      throw new DocsParseError(
+        `Extractor ${machineId}: restricted mAllowedResources must be non-empty.`,
+      );
+    }
+    restrictedItemIds = [];
+    ALLOWED_RESOURCE_REF.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = ALLOWED_RESOURCE_REF.exec(c.mAllowedResources)) !== null) {
+      if (match[1] !== undefined) {
+        restrictedItemIds.push(
+          normalizeClassName(`Desc_${match[1]}_C`, "Desc_"),
+        );
+      }
+    }
+    if (restrictedItemIds.length === 0) {
+      throw new DocsParseError(
+        `Extractor ${machineId}: malformed mAllowedResources.`,
+      );
+    }
+  }
+
+  let normalRate = itemsPerCycle.mul(Fraction.from(60)).div(cycleTime);
+  if (!forms.includes("RF_SOLID")) {
+    normalRate = normalRate.div(Fraction.from(1000));
+  }
+  return {
+    machineId,
+    topology: nativeClass.includes("FrackingExtractor")
+      ? "resource-well"
+      : "standalone",
+    normalRate,
+    forms,
+    restrictedItemIds,
+  };
+}
+
+function parsePositiveExtractorField(
+  raw: unknown,
+  machineId: string,
+  field: string,
+): Fraction {
+  if (typeof raw !== "string") {
+    throw new DocsParseError(`Extractor ${machineId}: missing ${field}.`);
+  }
+  let value: Fraction;
+  try {
+    value = Fraction.parse(raw);
+  } catch {
+    throw new DocsParseError(`Extractor ${machineId}: malformed ${field}.`);
+  }
+  if (!value.gt(Fraction.from(0))) {
+    throw new DocsParseError(`Extractor ${machineId}: ${field} must be > 0.`);
+  }
+  return value;
 }
 
 /** The `mUnlocks` entry class that carries recipe unlocks. Every other unlock

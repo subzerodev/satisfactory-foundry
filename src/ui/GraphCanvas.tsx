@@ -356,6 +356,7 @@ export function GraphCanvas({ colorMode }: GraphCanvasProps) {
       recipes: {},
       tiers: { belt: [], pipe: [] },
       recipeUnlocks: {},
+      extractors: {},
     };
     return graphToFlow(
       cat,

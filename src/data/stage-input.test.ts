@@ -19,6 +19,7 @@ function catalogWith(items: Record<string, { isFluid: boolean }>): Catalog {
     recipes: {},
     tiers: TIER_TABLE,
     recipeUnlocks: {},
+    extractors: {},
   };
 }
 

@@ -138,6 +138,7 @@ function catalogOf(
     recipes: Object.fromEntries(recipes.map((r) => [r.id, r])),
     tiers: { belt: [F(60)], pipe: [F(300)] },
     recipeUnlocks,
+    extractors: {},
   };
 }
 
