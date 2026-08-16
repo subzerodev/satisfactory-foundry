@@ -437,6 +437,7 @@ async function main() {
     `document.querySelector('.link-inspector-error')?.textContent.includes('packaging pair is unavailable') === true`,
     "stale intent error",
   );
+  await evaluate(cdp, `window.scrollTo(0, 0)`);
   await screenshot(cdp, "stale-1280");
   await pressKey(cdp, "Tab", "Tab", "", 9);
   await pressKey(cdp, "Tab", "Tab", "", 9);
@@ -451,6 +452,11 @@ async function main() {
     cdp,
     `(() => { const s=JSON.parse(document.querySelector('[data-browser-state]').textContent); return s.interstep === null && s.transport?.mode === 'pipe' && document.querySelector('.link-inspector-package-toggle input') === null; })()`,
     "keyboard stale recovery",
+  );
+  await delay(100);
+  await evaluate(
+    cdp,
+    `(() => { window.scrollTo(0, 0); document.scrollingElement.scrollTop = 0; return document.scrollingElement.scrollTop; })()`,
   );
   await screenshot(cdp, "recovered-1280");
   process.stdout.write(
