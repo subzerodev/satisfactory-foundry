@@ -52,7 +52,8 @@ reconsideration:
   both reviewers approved the r5 folds; its one-shot parsimony review had
   already run and was not rerun
 - **Branch:** `feature/s22-124-extraction-p2-purity`
-- **Implementation commits:** `5098796`, `f8f7f89`, `03b9d97`, `8094126`
+- **Implementation commits:** `5098796`, `f8f7f89`, `03b9d97`, `8094126`,
+  `e076398`, `b15d550`, `73379cd`
 - **Current branch verification:** 40 files / 1067 tests; TypeScript, ESLint,
   Prettier, and build pass; the checked-in Chromium/CDP gate passes nine
   geometry rows and three interaction rows at 360px, 720px, and 1280px
