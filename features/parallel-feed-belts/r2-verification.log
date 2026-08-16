@@ -1,0 +1,49 @@
+Forgejo #120 implementation verification
+Date: 2026-08-16
+
+RED
+Command:
+  npm test -- --run src/core/manifold.test.ts src/layout/layout.test.ts src/ui/parallel-feed-belts.test.tsx
+Result: exit 1; 14 failed, 71 passed.
+The failures were the missing parallelCount, layout maximum, summary/blueprint
+disclosures, two-rail rendering, tier color, and focus tooltip behavior.
+
+GREEN (focused acceptance surface)
+Command:
+  npm test -- --run src/core/manifold.test.ts src/layout/layout.test.ts src/ui/layout.test.ts src/ui/format.test.ts src/ui/smoke.test.tsx src/ui/parallel-feed-belts.test.tsx
+Result: exit 0; 198 passed across 6 files.
+
+BIDIRECTIONAL MUTATION: under-count
+Mutation:
+  const parallelCount = 1;
+Command:
+  npm test -- --run src/core/manifold.test.ts src/ui/parallel-feed-belts.test.tsx
+Result: exit 1; 11 failed, 48 passed.
+Caught by Michael's eight-span regression, B+epsilon, pipe, starvation,
+summary, schematic, tier-color, focus, and blueprint assertions.
+
+BIDIRECTIONAL MUTATION: over-count
+Mutation:
+  Number(peakFlow.add(Fraction.from(1)).ceilDiv(B))
+Command:
+  npm test -- --run src/core/manifold.test.ts src/ui/parallel-feed-belts.test.tsx
+Result: exit 1; 3 failed, 56 passed.
+Caught by the exact peak=B boundary and Michael's exact eight-span core/UI
+assertions (the mutation incorrectly changed 8 bundled spans to 16).
+
+RESTORED
+Command:
+  npm test -- --run src/core/manifold.test.ts src/ui/parallel-feed-belts.test.tsx
+Result: exit 0; 59 passed across 2 files.
+
+Both mutations were removed before final verification.
+
+FINAL
+  npm test -- --run
+    exit 0; 976 passed across 37 files.
+  npm run check
+    exit 0; TypeScript, ESLint, and Prettier clean.
+  npm run build
+    exit 0; 223 modules transformed; PWA generated.
+  git diff --check
+    exit 0.

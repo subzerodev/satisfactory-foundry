@@ -3,6 +3,18 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-16 — Big manifolds can use parallel belts
+
+> Hey Michael — you were right about the Wet Concrete plan. Its 106 Refineries
+> need 17 incoming Limestone belts, and eight stretches of the shared bus carry
+> 840/min. The planner treated each stretch as if it had to be one Mk5 belt and
+> incorrectly called the whole plan over capacity. Those stretches now show as
+> two parallel Mk5 lines in the schematic, summary and blueprint. The 17 feed
+> points have not changed, and Mk6 is shown only as an optional way to collapse
+> the paired stretches back to one line. Pipes follow the same rule. A manually
+> overridden feed that exceeds one unlocked belt or pipe is still flagged,
+> because that field continues to describe one incoming line.
+
 ## 2026-08-15 — Alternate recipe lists: one ordering rule, not two
 
 > Hey Michael — housekeeping you'll barely notice, but here's what changed in

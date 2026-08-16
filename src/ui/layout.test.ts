@@ -190,67 +190,40 @@ describe("computeLayout — band significant set (N=161)", () => {
     expect(layout.labeledSignificant.every((m) => sig.has(m))).toBe(true);
   });
 
-  // The finding-referenced (priority) tier for THIS fixture: the starve names
-  // 148 (partial) + 149 (starvedFrom), and every over-capacity feed segment
-  // names its from/to bound as a finding too — so the priority tier is the full
-  // set below, ALL force-labeled. (This is larger than the {148,149} pair the
-  // frozen contract sketched; see the r2 log — the design is unchanged, only the
-  // expected literal moved to the real solve's finding set.)
-  const PRIORITY = new Set([
-    2, 17, 18, 33, 34, 49, 50, 65, 66, 81, 82, 97, 98, 113, 114, 129, 130, 145,
-    148, 149, 161,
-  ]);
+  // Valid parallel spans no longer emit capacity findings (#120), so this
+  // fixture's only finding-priority labels are the starvation boundary pair.
+  const PRIORITY = new Set([148, 149]);
 
-  it("saturated fixture: greedy adds nothing; the residual is exactly the nine adjacent priority pairs", () => {
+  it("greedy-fills around the one adjacent starvation-priority pair", () => {
     const layout = computeLayout(solveStage(starving), 161);
-    // On this starving fixture every greedy candidate sits within 2 indices of
-    // a priority label, so the labeled subset IS the priority tier — the
-    // generic ≥3-index greedy-spacing guarantee is exercised by the no-finding
-    // fixture below (here the spacing loop would be vacuous: every consecutive
-    // kept pair is priority-priority).
-    expect(layout.labeledSignificant).toEqual(
-      [...PRIORITY].sort((x, y) => x - y),
-    );
-    // The by-design findability residual, characterized HONESTLY: force-kept
-    // priority labels closer than 3 indices. On this fixture that is exactly
-    // NINE adjacent pairs (each segment-over-capacity from/to bound pair, plus
-    // the starve pair) — not only {148,149}.
+    expect(layout.labeledSignificant).toEqual([
+      1, 16, 32, 48, 64, 80, 96, 112, 128, 144, 148, 149, 161,
+    ]);
+    for (const priority of PRIORITY) {
+      expect(layout.labeledSignificant).toContain(priority);
+    }
+    // The only sub-three-index residual is the force-kept starvation pair.
     const kept = layout.labeledSignificant;
     const closePairs: Array<[number, number]> = [];
     for (let i = 1; i < kept.length; i++) {
       if (kept[i]! - kept[i - 1]! < 3)
         closePairs.push([kept[i - 1]!, kept[i]!]);
     }
-    expect(closePairs).toEqual([
-      [17, 18],
-      [33, 34],
-      [49, 50],
-      [65, 66],
-      [81, 82],
-      [97, 98],
-      [113, 114],
-      [129, 130],
-      [148, 149],
-    ]);
+    expect(closePairs).toEqual([[148, 149]]);
   });
 
-  it("pins the labeled subset for N=161 (21 labels vs 33 significant ticks)", () => {
+  it("pins the labeled subset for N=161 (13 labels vs 33 significant ticks)", () => {
     const layout = computeLayout(solveStage(starving), 161);
-    // The priority tier saturates this dense fixture, so greedy fill adds
-    // nothing new: the labeled subset IS the finding-referenced set. Thinning is
-    // still real (21 labels < 33 ticks) — the elided 12 are the non-finding
-    // significant boundaries (1, 16, 32, … the segment/entry ticks) that crowd
-    // against a neighbouring priority label.
+    // The two priority labels seed the pass; non-finding boundaries are then
+    // greedily retained at the existing spacing floor.
     expect(layout.labeledSignificant).toEqual([
-      2, 17, 18, 33, 34, 49, 50, 65, 66, 81, 82, 97, 98, 113, 114, 129, 130,
-      145, 148, 149, 161,
+      1, 16, 32, 48, 64, 80, 96, 112, 128, 144, 148, 149, 161,
     ]);
     // Strictly fewer labels than ticks — the thinning is real.
     expect(layout.labeledSignificant.length).toBeLessThan(
       layout.significant.length,
     );
-    // {148,149} is one of the NINE by-design adjacent priority pairs (the full
-    // residual set is pinned in the saturated-fixture test above).
+    // {148,149} is the one by-design adjacent priority pair.
     expect(layout.labeledSignificant).toContain(148);
     expect(layout.labeledSignificant).toContain(149);
     // A non-finding boundary that crowds a priority label IS thinned out: 146 is
