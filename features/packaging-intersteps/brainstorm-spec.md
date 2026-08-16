@@ -124,6 +124,15 @@ explicitly named views: `materialSupply/materialDemand` for reconciliation and
 `cargoSupply/cargoDemand` for transport. Nitrogen tests pin the fluid finding
 beside the independently quarter-scaled cargo transport rate.
 
+Reconciliation may carry two orthogonal findings for one link: its existing
+material `under-supply`/`over-supply`/`dangling-link` finding first, followed by
+one `interstep-problem` when derivation is unavailable. A combined edge
+projection partitions by finding type rather than taking the first match.
+Problem styling has visual precedence, while the original fluid-unit material
+wording remains in the label/findings surface. `applyBlockFor` searches
+specifically for the material `under-supply` variant and remains available even
+when an interstep problem coexists; it never consumes the interstep finding.
+
 The derived-link plan is discriminated. `ready` carries effective cargo, optional
 independently resolved supply/demand, machine math when demand is solved, and
 both transport results. A missing solved endpoint remains a normal unsolved or
@@ -198,6 +207,9 @@ count is guessed.
 - Nitrogen under/over-supply keeps fluid reconciliation/apply amounts while
   mapping producer supply and consumer demand separately for cargo transport;
   stale intent renders a problem edge/finding/error and no transport results.
+- Unavailable interstep crossed with material under-supply, over-supply, and
+  dangling: both diagnostics render, problem styling wins, and only the
+  original-unit under-supply case exposes the machine-count apply action.
 - Inspector enable/pair/clock/disable and legal-mode switching, including
   non-default pre-enable and pre-disable modes.
 - Stale pair IDs still expose disable/recovery; forward and return solid modes
