@@ -373,10 +373,10 @@ export function migrateV2(plan: PlanFileV2): PlanFileV3 {
 }
 
 /**
- * Migrate a validated v3 file to v4 in memory (Stage 8 / Phase 2): IDENTITY on
- * the graph — the v4 transport extensions are additive and OPTIONAL, so a v3
- * link (which never carried them) maps to itself with the new fields absent.
- * Only the version header flips. Timestamps carry VERBATIM (the save-over path
+ * Migrate a validated v3 file to v4 in memory (Stage 8 / Phase 2). The v3
+ * validator ignored the later v4 transport extensions, so each admitted v3
+ * transport is rebuilt with `deratePercentText` and `sharedEnds` absent before
+ * crossing the version boundary. Timestamps carry VERBATIM (the save-over path
  * reads the prior file's createdAt, so a migrated row must not reset it).
  */
 export function migrateV3(plan: PlanFileV3): PlanFileV4 {
@@ -386,7 +386,14 @@ export function migrateV3(plan: PlanFileV3): PlanFileV4 {
     createdAt: plan.createdAt,
     updatedAt: plan.updatedAt,
     stages: plan.stages,
-    links: plan.links,
+    links: plan.links.map((link) => ({
+      from: link.from,
+      to: link.to,
+      itemId: link.itemId,
+      ...(link.transport !== undefined
+        ? { transport: canonicalLegacyTransport(link.transport, 3) }
+        : {}),
+    })),
   };
 }
 
@@ -459,25 +466,51 @@ export function migrateV7(plan: PlanFileV7): PlanFileV8 {
   };
 }
 
-function canonicalLegacyTransport(transport: LinkTransport): LinkTransport {
+function canonicalLegacyTransport(
+  transport: LinkTransport,
+  sourceVersion: 3 | 4 = 4,
+): LinkTransport {
   const legacy = transport as unknown as Record<string, unknown>;
-  const normalized: Record<string, unknown> = {
-    ...legacy,
-    ...(legacy.trip !== null && typeof legacy.trip === "object"
-      ? { trip: { ...(legacy.trip as Record<string, unknown>) } }
-      : {}),
-  };
-  if (transport.mode === "train" && transport.sharedEnds !== undefined) {
-    normalized.sharedEnds = {
-      ...(transport.sharedEnds.from === true ? { from: true as const } : {}),
-      ...(transport.sharedEnds.to === true ? { to: true as const } : {}),
-    };
+  const overrides: [string, unknown][] = [];
+  if (legacy.trip !== null && typeof legacy.trip === "object") {
+    overrides.push([
+      "trip",
+      createNormalizationView(legacy.trip as Record<string, unknown>),
+    ]);
   }
+  if (sourceVersion === 3) {
+    overrides.push(["deratePercentText", undefined], ["sharedEnds", undefined]);
+  } else if (transport.mode === "train" && transport.sharedEnds !== undefined) {
+    overrides.push([
+      "sharedEnds",
+      {
+        ...(transport.sharedEnds.from === true ? { from: true as const } : {}),
+        ...(transport.sharedEnds.to === true ? { to: true as const } : {}),
+      },
+    ]);
+  }
+  const normalized = createNormalizationView(legacy, overrides);
   const canonical = canonicalizeLinkTransport(normalized);
   if (canonical === null) {
     throw new Error("validated v7 transport could not be canonicalized");
   }
   return canonical;
+}
+
+function createNormalizationView(
+  source: Record<string, unknown>,
+  overrides: readonly (readonly [string, unknown])[] = [],
+): Record<string, unknown> {
+  const view = Object.create(source) as Record<string, unknown>;
+  for (const [key, value] of overrides) {
+    Object.defineProperty(view, key, {
+      value,
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+  }
+  return view;
 }
 
 function copyHistoricalExtraction(

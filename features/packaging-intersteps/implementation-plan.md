@@ -270,6 +270,15 @@ git diff --check develop...HEAD
 - [x] Add focused outer-belt plus vehicle/drone trip array migration coverage,
       record its genuine red/green evidence and seventh production
       break/fail/restore cycle, and correct the completion report's stale
-      four-vs-six mutation summary to the final seven.
+      four-vs-six mutation summary to seven at that review point.
+- [x] Fold post-simplify correctness r4's accepted findings with TDD: preserve
+      inherited and non-enumerable v7 transport/trip lookup semantics through a
+      non-array `Object.create` normalization view with safely defined own
+      overrides, and strip v4-only transport extensions at the v3 source boundary
+      without weakening v4-v8 validation.
+- [x] Add focused v7 exotic-property and JSON v3 source-version regressions,
+      record independent eighth and ninth break/fail/restore cycles, and finish at
+      exactly 9 mutation cycles, 82 focused plan-store tests, and 1,138 total
+      tests.
 - [ ] Re-run the correctness pair on the post-simplify cumulative diff, then merge
       only after both approve. This remains a separate parent-workflow action.

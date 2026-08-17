@@ -2,7 +2,7 @@
 
 **Ticket:** #113
 **Epic:** #114
-**Date:** 2026-08-16
+**Date:** 2026-08-17
 **Branch:** `feature/s22-113-intersteps`
 
 ## Delivered
@@ -17,7 +17,11 @@
   transport into packaged units; material and interstep diagnostics coexist.
 - Persists raw editable intent in plan v8, canonicalizes v7 transport data, and
   keeps stale intent recoverable after catalog replacement. Historically valid
-  v7 array-shaped transports and trips migrate to exact plain v8 objects.
+  v7 array-shaped, inherited, and non-enumerable transports and trips migrate to
+  exact plain v8 objects.
+- Preserves source-version migration semantics: v3-ignored v4 transport
+  extensions are stripped before the v3-to-v4 boundary, while v4-v7 retain
+  legitimately admitted pipe derates and train shared ends.
 - Canonicalizes public transport/interstep setter input field-by-field, stripping
   wider runtime properties and refusing malformed required structure before it
   can enter strict-v8 state.
@@ -58,7 +62,7 @@ interaction rows at 360, 720, and 1280px, including document width 360/360,
 
 ## Bidirectional Evidence
 
-`r2-verification.log` records seven temporary `apply_patch` mutations and their
+`r2-verification.log` records nine temporary `apply_patch` mutations and their
 named failing tests, exact restore patches, and green reruns:
 
 - pair/derive machine math;
@@ -67,7 +71,9 @@ named failing tests, exact restore patches, and green reruns:
 - inspector default intent and exact rendering;
 - non-positive packaging-rate rejection;
 - public setter canonicalization;
-- historical v7 array transport/trip canonicalization.
+- historical v7 array transport/trip canonicalization;
+- historical v7 inherited/non-enumerable property lookup canonicalization;
+- historical v3 source-version extension stripping.
 
 No mutation remains in the worktree.
 
@@ -76,11 +82,11 @@ No mutation remains in the worktree.
 ```text
 npm test
 Test Files  44 passed (44)
-Tests  1136 passed (1136)
+Tests  1138 passed (1138)
 
 npm test -- src/data/plan-store.test.ts
 Test Files  1 passed (1)
-Tests  80 passed (80)
+Tests  82 passed (82)
 
 npm run check
 TypeScript, ESLint, and Prettier passed.
@@ -126,6 +132,9 @@ No output (passed).
 - Post-simplify correctness r3 found that the refactor rejected historically
   v7-valid arrays carrying own named transport/trip fields and that this report
   still described four mutations after six existed. Both findings were folded
-  with a focused migration regression and a seventh break/fail/restore cycle;
-  v8 validation remains unchanged.
+  with a focused migration regression and a seventh break/fail/restore cycle.
+- Post-simplify correctness r4 found that spread normalization still lost
+  inherited/non-enumerable v7 fields and that v3-ignored v4 extensions crossed
+  into later strict semantics. Both findings were folded with two focused tests
+  and independent eighth/ninth mutation cycles. V8 validation remains unchanged.
 - The next post-fold correctness rerun and merge remain parent-workflow actions.

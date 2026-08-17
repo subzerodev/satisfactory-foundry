@@ -418,3 +418,117 @@ Green rerun output:
 Test Files  1 passed (1)
 Tests  1 passed | 79 skipped (80)
 ```
+
+## 8. Historical v7 property lookup canonicalization
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/data/plan-store.test.ts -t "migrates inherited and non-enumerable v7 transport fields" --reporter=verbose 2>&1 | rg "migrates inherited|FAIL|Test Files|Tests  "
+```
+
+Green output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates inherited and non-enumerable v7 transport fields 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 81 skipped (82)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-  const view = Object.create(source) as Record<string, unknown>;
++  const view = { ...source };
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates inherited and non-enumerable v7 transport fields 6ms
+  → validated v7 transport could not be canonicalized
+FAIL  src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates inherited and non-enumerable v7 transport fields
+Error: validated v7 transport could not be canonicalized
+Test Files  1 failed (1)
+Tests  1 failed | 81 skipped (82)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-  const view = { ...source };
++  const view = Object.create(source) as Record<string, unknown>;
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates inherited and non-enumerable v7 transport fields 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 81 skipped (82)
+```
+
+## 9. Historical v3 source-version extension stripping
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/data/plan-store.test.ts -t "strips JSON v4 extensions ignored by v3 and preserves admitted versions" --reporter=verbose 2>&1 | rg "strips JSON|FAIL|Test Files|Tests  "
+```
+
+Green output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 81 skipped (82)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-        ? { transport: canonicalLegacyTransport(link.transport, 3) }
++        ? { transport: canonicalLegacyTransport(link.transport, 4) }
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions 5ms
+  → validated v7 transport could not be canonicalized
+FAIL  src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions
+Error: validated v7 transport could not be canonicalized
+Test Files  1 failed (1)
+Tests  1 failed | 81 skipped (82)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-        ? { transport: canonicalLegacyTransport(link.transport, 4) }
++        ? { transport: canonicalLegacyTransport(link.transport, 3) }
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 81 skipped (82)
+```

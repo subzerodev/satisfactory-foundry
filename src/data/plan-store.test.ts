@@ -600,6 +600,83 @@ describe("plan-store — v8 packaging interstep persistence (#113)", () => {
     ]);
   });
 
+  it("migrates inherited and non-enumerable v7 transport fields", () => {
+    const inheritedBelt = Object.create(
+      Object.defineProperty({}, "mode", {
+        value: "belt",
+        writable: false,
+      }),
+    );
+    const nonEnumerablePipe = Object.defineProperties(
+      {},
+      {
+        mode: { value: "pipe" },
+        deratePercentText: { value: "80" },
+      },
+    );
+    const inheritedTrip = Object.create(
+      Object.defineProperty({}, "kind", {
+        value: "estimated",
+        writable: false,
+      }),
+    );
+    Object.defineProperty(inheritedTrip, "distanceText", {
+      value: "900",
+    });
+    const inheritedSharedEnds = Object.create(
+      Object.defineProperty({}, "from", {
+        value: true,
+        writable: false,
+      }),
+    );
+    Object.defineProperty(inheritedSharedEnds, "to", { value: true });
+    const inheritedTrain = Object.create(
+      Object.defineProperties(
+        {},
+        {
+          mode: { value: "train", writable: false },
+          trip: { value: inheritedTrip, writable: false },
+          sharedEnds: { value: inheritedSharedEnds, writable: false },
+        },
+      ),
+    );
+    const legacy = samplePlanV7({
+      stages,
+      links: [
+        {
+          from: 0,
+          to: 1,
+          itemId: "iron",
+          transport: inheritedBelt,
+        } as never,
+        {
+          from: 0,
+          to: 1,
+          itemId: "water",
+          transport: nonEnumerablePipe,
+        } as never,
+        {
+          from: 0,
+          to: 1,
+          itemId: "coal",
+          transport: inheritedTrain,
+        } as never,
+      ],
+    });
+
+    expect(
+      validatePlanFile(legacy)?.links.map((link) => link.transport),
+    ).toStrictEqual([
+      { mode: "belt" },
+      { mode: "pipe", deratePercentText: "80" },
+      {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "900" },
+        sharedEnds: { from: true, to: true },
+      },
+    ]);
+  });
+
   it("rejects future v9 while migrating v7 to canonical v8", () => {
     expect(
       validatePlanFile({ ...samplePlanV8(), format_version: 9 }),
@@ -1028,8 +1105,8 @@ describe("plan-store — migrateV2 (v2 → v3)", () => {
   });
 });
 
-describe("plan-store — migrateV3 (v3 → v4, identity on links)", () => {
-  it("flips only the header; stages + links + timestamps carry verbatim", () => {
+describe("plan-store — migrateV3 (v3 → v4, canonical links)", () => {
+  it("flips the header; stages + admitted link intent + timestamps carry over", () => {
     const v3 = samplePlanV3({
       createdAt: "2020-01-01T00:00:00.000Z",
       updatedAt: "2021-02-03T04:05:06.000Z",
@@ -1054,7 +1131,7 @@ describe("plan-store — migrateV3 (v3 → v4, identity on links)", () => {
     expect(v4.createdAt).toBe("2020-01-01T00:00:00.000Z");
     expect(v4.updatedAt).toBe("2021-02-03T04:05:06.000Z");
     expect(v4.stages).toBe(v3.stages);
-    // The new S8P2 fields are absent by construction (a v3 link never had them).
+    // The new S8P2 fields are absent after source-version normalization.
     expect(v4.links).toEqual(v3.links);
     expect(v4.links[0]!.transport).toEqual({
       mode: "train",
@@ -1069,6 +1146,98 @@ describe("plan-store — migrateV3 (v3 → v4, identity on links)", () => {
     expect(loaded).not.toBeNull();
     expect(loaded!.format_version).toBe(8);
     expect(loaded!.name).toBe("legacy-v3");
+  });
+
+  it("strips JSON v4 extensions ignored by v3 and preserves admitted versions", () => {
+    const links = [
+      {
+        from: 0,
+        to: 1,
+        itemId: "water",
+        transport: { mode: "pipe", deratePercentText: 0 },
+      },
+      {
+        from: 0,
+        to: 1,
+        itemId: "iron_ingot",
+        transport: {
+          mode: "train",
+          trip: { kind: "estimated", distanceText: "1200" },
+          sharedEnds: { from: false },
+        },
+      },
+    ];
+    const stages = [
+      { name: "A", selection: sampleSelection() },
+      { name: "B", selection: sampleSelection() },
+    ];
+    const jsonV3 = JSON.parse(
+      JSON.stringify(samplePlanV3({ stages, links: links as never })),
+    ) as unknown;
+
+    expect(
+      validatePlanFile(jsonV3)?.links.map((link) => link.transport),
+    ).toStrictEqual([
+      { mode: "pipe" },
+      {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "1200" },
+      },
+    ]);
+
+    const admittedLinks = [
+      {
+        from: 0,
+        to: 1,
+        itemId: "water",
+        transport: { mode: "pipe", deratePercentText: "80" },
+      },
+      {
+        from: 0,
+        to: 1,
+        itemId: "iron_ingot",
+        transport: {
+          mode: "train",
+          trip: { kind: "estimated", distanceText: "1200" },
+          sharedEnds: { from: true },
+        },
+      },
+    ] as PlanFileV4["links"];
+    const expected = [
+      { mode: "pipe", deratePercentText: "80" },
+      {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "1200" },
+        sharedEnds: { from: true },
+      },
+    ];
+    expect(
+      validatePlanFile(
+        samplePlanV4({ stages, links: admittedLinks }),
+      )?.links.map((link) => link.transport),
+    ).toStrictEqual(expected);
+    expect(
+      validatePlanFile(
+        samplePlanV5({ stages, links: admittedLinks }),
+      )?.links.map((link) => link.transport),
+    ).toStrictEqual(expected);
+    const placedStages = stages.map((stage) => ({
+      ...stage,
+      userPlaced: false,
+    }));
+    expect(
+      validatePlanFile(
+        samplePlanV6({ stages: placedStages, links: admittedLinks }),
+      )?.links.map((link) => link.transport),
+    ).toStrictEqual(expected);
+    expect(
+      validatePlanFile(
+        samplePlanV7({
+          stages: placedStages,
+          links: admittedLinks,
+        }),
+      )?.links.map((link) => link.transport),
+    ).toStrictEqual(expected);
   });
 });
 
