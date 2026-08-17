@@ -3,10 +3,16 @@
 Date: 2026-08-16
 Worktree: feature/s22-113-intersteps
 
-Every break below was applied with `apply_patch`, produced a genuine focused
-Vitest failure naming the protected test, and was restored with `apply_patch`
-before the next section. The final `git diff --check` and full verification
-confirm that no break remains.
+Every break below produced a genuine Vitest failure naming the protected test.
+**Sections 1-9** used `-t`-scoped runs and were applied and restored with
+`apply_patch` before the next section; **section 10** (added later under #127) uses
+plain unified diffs and unscoped whole-file runs, restores from a pre-mutation file
+copy, and shares one restore-and-green capture across its two cycles — see its own
+accuracy notes. For sections 1-9, the pre-merge `git diff --check` and full
+verification in `completion-report.md`'s Final Branch Verification block confirm no
+break remained; §10
+postdates that capture, and its own restore block plus the live green tree cover
+it.
 
 ## 1. Pair/derive math
 
@@ -532,3 +538,130 @@ Green rerun output:
 Test Files  1 passed (1)
 Tests  1 passed | 81 skipped (82)
 ```
+
+## 10. V3 stripping decorrelation (#127 retroactive-r5 fold)
+
+Added under #127 after the retroactive r5 review. The r5 code-reviewer noted that
+section 9's fixture carried, at that time, only v4-INVALID extension values (`deratePercentText: 0`,
+`sharedEnds: { from: false }`), which a hypothetical lenient
+drop-if-uncanonicalizable rule would discard too — so section 9 could not
+distinguish "strip because the source version is 3" from that rule. Two v3 rows
+carrying v4-VALID values were added (`nitrogen` pipe with
+`deratePercentText: "80"`, `copper_ingot` train with `sharedEnds: { from: true }`)
+and both are now pinned independently.
+
+Note on the mutation used by section 9 (`, 3)` → `, 4)`): it throws on the
+FIRST invalid row and short-circuits before the new assertions are reached, so it
+does NOT pin these two rows. Taking the fixture's four rows in order under that
+mutation: `water` (pipe, numeric `0`) fails the string guard at
+`link-transport.ts:110-115` and throws; `iron_ingot` (train, `{from:false}`) is
+rewritten to `{}` by the `sourceVersion === 4` branch at `plan-store.ts:483-490`
+and canonicalizes; `nitrogen` (pipe, valid `"80"`) canonicalizes; `copper_ingot`
+(train, valid `{from:true}`) canonicalizes through that same branch. So `water`
+alone throws, and because it is index 0 the short-circuit happens before either
+new row is asserted. Both cycles below therefore mutate the masking itself to
+simulate the lenient rule, producing an AssertionError rather than a throw. Each
+mutation is content-addressed and type-checks (`npx tsc -b` exit 0), so each RED
+is a real behavioural difference and not a compile error.
+
+Invocation for both cycles below. Every section 1-9 command is a `NO_COLOR`
+`--reporter=verbose` run scoped by test name with `-t` (§3's pattern matches three
+tests; the other eight match one each, and five of the nine additionally pipe
+through `rg`); §10 used the unscoped whole-file run shown here. The `-t` scoping —
+not the piping — is what makes §9 read `81 skipped` where §10 reads `81 passed`:
+
+```text
+npx tsc -b                                   # must exit 0: the mutant must compile
+npx vitest run src/data/plan-store.test.ts   # RED
+# restore src/data/plan-store.ts from a pre-mutation copy
+npx vitest run src/data/plan-store.test.ts   # GREEN
+```
+
+Both RED captures below are **grep-filtered excerpts** of that command's output,
+which is why 10a's excerpt omits the `+ Received` header that 10b's retains — the
+two runs were filtered with different patterns. Neither is elided output from a
+different command.
+
+### Cycle 10a — valid `deratePercentText` must still be stripped at a v3 source
+
+Mutation (keep a VALID derate instead of masking unconditionally):
+
+```diff
+-    overrides.push(["deratePercentText", undefined], ["sharedEnds", undefined]);
++    overrides.push(
++      [
++        "deratePercentText",
++        typeof legacy.deratePercentText === "string"
++          ? legacy.deratePercentText
++          : undefined,
++      ],
++      ["sharedEnds", undefined],
++    );
+```
+
+RED output:
+
+```text
+FAIL  src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions
+AssertionError: expected [ { mode: 'pipe' }, …(3) ] to strictly equal [ { mode: 'pipe' }, …(3) ]
++     "deratePercentText": "80",
+Tests  1 failed | 81 passed (82)
+```
+
+### Cycle 10b — valid `sharedEnds` must still be stripped at a v3 source
+
+Mutation:
+
+```diff
+-    overrides.push(["deratePercentText", undefined], ["sharedEnds", undefined]);
++    overrides.push(
++      ["deratePercentText", undefined],
++      [
++        "sharedEnds",
++        transport.mode === "train" && transport.sharedEnds?.from === true
++          ? { from: true as const }
++          : undefined,
++      ],
++    );
+```
+
+RED output:
+
+```text
+FAIL  src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions
+AssertionError: expected [ { mode: 'pipe' }, …(3) ] to strictly equal [ { mode: 'pipe' }, …(3) ]
++ Received
++     "sharedEnds": {
++       "from": true,
++     },
+Tests  1 failed | 81 passed (82)
+```
+
+Restore (both cycles): `src/data/plan-store.ts` restored from a pre-mutation copy;
+verified `tr -cd '\0' | wc -c` = 0 and the focused suite back to green.
+
+```text
+Tests  82 passed (82)
+```
+
+## Notes on this log's own accuracy (#127 fold)
+
+1. **Captured error label is pre-rename.** The RED captures in sections 7, 8 and
+   9 each show `validated v7 transport could not be canonicalized` — twice per
+   section, once in the `→` summary line and once in the `Error:` line. (Cited by
+   section deliberately: earlier versions of this note gave line numbers, and each
+   time the preamble above was edited the numbers silently went stale. The
+   magnitude is not restated here on purpose — it would go stale the same way.) Live source at
+   `src/data/plan-store.ts:495` now reads `validated
+   legacy transport could not be canonicalized` — the label was generalized in a
+   later commit of the same delta (`92a87d8`), after these captures were taken.
+   Nothing pins the string, so the rename is wording-only. Recorded so a future
+   auditor comparing log to source does not read the mismatch as fabrication.
+
+2. **Numbered headings are not 1:1 with mutation cycles.** Section 4 ("Inspector
+   interaction behavior") records a green run only; its break/fail/restore cycle
+   sits unlabelled at the end of section 6 (the `LinkInspector.dom.test.tsx`
+   cycle). The nine-cycle total is correct in aggregate (1, 2, 3, 5, 6a, 6b, 7, 8,
+   9) **through section 9**; §10 adds cycles 10a and 10b, for eleven in total.
+   The heading numbers are section indices, not cycle indices. This mismatch is
+   the likely origin of the four-vs-six miscount r3 caught.

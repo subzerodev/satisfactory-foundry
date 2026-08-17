@@ -62,8 +62,10 @@ interaction rows at 360, 720, and 1280px, including document width 360/360,
 
 ## Bidirectional Evidence
 
-`r2-verification.log` records nine temporary `apply_patch` mutations and their
-named failing tests, exact restore patches, and green reruns:
+`r2-verification.log` records eleven temporary mutations and their named failing
+tests. Sections 1-9 additionally record an exact `apply_patch` restore and a green
+rerun per cycle; §10's two cycles share a single restore-and-green capture. Nine landed
+in sections 1-9 during the original arc:
 
 - pair/derive machine math;
 - the v8-saveable store route guard;
@@ -74,6 +76,11 @@ named failing tests, exact restore patches, and green reruns:
 - historical v7 array transport/trip canonicalization;
 - historical v7 inherited/non-enumerable property lookup canonicalization;
 - historical v3 source-version extension stripping.
+
+Section 10 adds two more under #127, decorrelating the v3 stripping fixture:
+
+- valid `deratePercentText` still stripped at a v3 source (cycle 10a);
+- valid `sharedEnds` still stripped at a v3 source (cycle 10b).
 
 No mutation remains in the worktree.
 
@@ -137,4 +144,36 @@ No output (passed).
   inherited/non-enumerable v7 fields and that v3-ignored v4 extensions crossed
   into later strict semantics. Both findings were folded with two focused tests
   and independent eighth/ninth mutation cycles. V8 validation remains unchanged.
-- The next post-fold correctness rerun and merge remain parent-workflow actions.
+- **The r5 post-fold correctness round did NOT run before the merge.** Its prompt
+  was committed at `1b74dff` (2026-08-17 01:28:04) and `3c4324b` merged the
+  feature to `develop` 4m34s later, with no commits between and no verdict
+  recorded on #113 or here. Per Michael, the implementing session ran out of
+  credits; the timestamp evidence above stands on its own regardless. An
+  earlier version of this line claimed convergence; that claim had no evidence
+  behind it and is retracted. Tracked as #127.
+- **r5 ran retroactively under #127, post-merge**, on the same committed prompt
+  (`diff-r5-prompt.md`) against the merged source: adversarial-reviewer
+  `APPROVED_WITH_NITS`; code-reviewer `NEEDS_REWORK` whose sole IMPORTANT finding
+  was the false convergence line above — not the code. Both reviewers
+  independently re-derived and confirmed each of the five repair claims in
+  `diff-r5-prompt.md` §B: (1) the `Object.create` view keeps
+  inherited/non-enumerable and array-own fields visible while the canonicalizer
+  sees a non-array record, nested trips included, with `defineProperty` overrides
+  load-bearing against inherited non-writable properties; (2) `migrateV3` masks the
+  two v4-only extensions at source version 3 while v4-v7 retain valid ones; (3) the
+  focused tests fail on the prior code and pass now; (4) mutation cycles 8 and 9
+  break the two behaviours independently with genuine named FAIL lines; (5) the
+  cumulative feature is unaffected and the generalized throw label is wording-only.
+  The reviewers also re-verified §A's standing anchor that strict closed-world v8
+  validation is unchanged (`diff-r5-prompt.md:16-17`) — confirming it byte-identical
+  — and, prompted by #127's dispatch rather than by `diff-r5-prompt.md`, that
+  nothing in the delta touches `src/core/` or introduces float arithmetic (the
+  repo-wide exact-arithmetic rule in `CLAUDE.md`, which that prompt does not
+  mention). The mutation evidence cleared a guilty-until-proven check on four
+  independent liveness signals.
+- Nits folded under #127: the v3 stripping fixture is decorrelated with two
+  v4-VALID rows plus two new mutation cycles (§10 of `r2-verification.log`), the
+  log's pre-rename error captures and non-1:1 section numbering are annotated, and
+  a misleading comment in the `migrateV3` header test is corrected. A raw NUL byte
+  in `src/data/plan-store.ts` — which silently defeated `grep` on this arc's
+  riskiest file — was found by the r5 adversarial lens and split to #129.

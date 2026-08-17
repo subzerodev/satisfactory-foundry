@@ -1131,7 +1131,9 @@ describe("plan-store — migrateV3 (v3 → v4, canonical links)", () => {
     expect(v4.createdAt).toBe("2020-01-01T00:00:00.000Z");
     expect(v4.updatedAt).toBe("2021-02-03T04:05:06.000Z");
     expect(v4.stages).toBe(v3.stages);
-    // The new S8P2 fields are absent after source-version normalization.
+    // This fixture carries no v4-only extensions, so it pins only that admitted
+    // link intent survives the header flip untouched. The stripping behaviour is
+    // pinned separately below.
     expect(v4.links).toEqual(v3.links);
     expect(v4.links[0]!.transport).toEqual({
       mode: "train",
@@ -1166,6 +1168,26 @@ describe("plan-store — migrateV3 (v3 → v4, canonical links)", () => {
           sharedEnds: { from: false },
         },
       },
+      // Decorrelation rows: these carry v4-VALID extension values, so they are
+      // stripped only because the source version is 3. The two rows above use
+      // v4-invalid values, which a lenient drop-if-uncanonicalizable rule would
+      // also discard — only a valid value distinguishes stripping from that.
+      {
+        from: 0,
+        to: 1,
+        itemId: "nitrogen",
+        transport: { mode: "pipe", deratePercentText: "80" },
+      },
+      {
+        from: 0,
+        to: 1,
+        itemId: "copper_ingot",
+        transport: {
+          mode: "train",
+          trip: { kind: "estimated", distanceText: "1200" },
+          sharedEnds: { from: true },
+        },
+      },
     ];
     const stages = [
       { name: "A", selection: sampleSelection() },
@@ -1178,6 +1200,11 @@ describe("plan-store — migrateV3 (v3 → v4, canonical links)", () => {
     expect(
       validatePlanFile(jsonV3)?.links.map((link) => link.transport),
     ).toStrictEqual([
+      { mode: "pipe" },
+      {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "1200" },
+      },
       { mode: "pipe" },
       {
         mode: "train",

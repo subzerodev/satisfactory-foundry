@@ -2,7 +2,15 @@
 
 **Ticket:** #113
 **Epic:** #114
-**Status:** implementation complete; cumulative review pending
+**Status:** merged to `develop` as `3c4324b`. Its r5 correctness round was skipped
+at merge time and run retroactively under #127, which found **no correctness
+defects**: both reviewers confirmed all five r4-repair claims. Its verdicts were
+`NEEDS_REWORK` (code-reviewer, on the false convergence record) and
+`APPROVED_WITH_NITS` (adversarial-reviewer). Four hygiene/evidence nits were
+folded — the v3 fixture decorrelation plus cycles 10a/10b, the log's
+pre-rename-capture annotation, its section-numbering annotation, and a corrected
+`migrateV3` header-test comment — and a raw NUL byte was split to #129. See the
+Review Disposition in `completion-report.md`.
 
 ## Frozen Direction From The Board
 

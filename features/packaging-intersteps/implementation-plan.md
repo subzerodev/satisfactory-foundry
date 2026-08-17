@@ -278,7 +278,20 @@ git diff --check develop...HEAD
       without weakening v4-v8 validation.
 - [x] Add focused v7 exotic-property and JSON v3 source-version regressions,
       record independent eighth and ninth break/fail/restore cycles, and finish at
-      exactly 9 mutation cycles, 82 focused plan-store tests, and 1,138 total
-      tests.
-- [ ] Re-run the correctness pair on the post-simplify cumulative diff, then merge
+      exactly 9 mutation cycles at that review point, 82 focused plan-store tests,
+      and 1,138 total tests. (§10 of `r2-verification.log` later adds cycles 10a and
+      10b under #127, for eleven; the test counts are unchanged because those rows
+      were added to an existing case.)
+- [x] Re-run the correctness pair on the post-simplify cumulative diff, then merge
       only after both approve. This remains a separate parent-workflow action.
+      **Executed out of order, and not a clean pass:** the merge (`3c4324b`)
+      landed first and this round ran retroactively under #127 — the violation
+      that ticket records. r5 itself returned `NEEDS_REWORK` (code-reviewer) and
+      `APPROVED_WITH_NITS` (adversarial-reviewer); its findings were folded, and
+      the follow-on rounds ran under #125's gate, from r6 onward: r6 and r7 each
+      returned `NEEDS_REWORK` from both reviewers, and r8 returned
+      `APPROVED_WITH_NITS` (code-reviewer) with `NEEDS_REWORK` (adversarial-
+      reviewer). Each was folded in turn. **Convergence is not claimed here** and
+      this list is not the ledger: #125 carries the round-by-round verdicts, and it
+      rather than this file is where later rounds are recorded. Ticked because the
+      round has now run, not because the ordering held or any verdict was clean.
