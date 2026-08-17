@@ -3,7 +3,7 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
-## 2026-08-16 — Package fluid links for solid transport
+## 2026-08-17 — Package fluid links for solid transport
 
 > Hey Michael — a fluid or gas link can now be packaged before transport and
 > unpackaged at the other end without adding a Packager cycle to the factory
