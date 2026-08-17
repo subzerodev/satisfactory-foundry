@@ -1,0 +1,534 @@
+# Packaging intersteps r2 bidirectional verification
+
+Date: 2026-08-16
+Worktree: feature/s22-113-intersteps
+
+Every break below was applied with `apply_patch`, produced a genuine focused
+Vitest failure naming the protected test, and was restored with `apply_patch`
+before the next section. The final `git diff --check` and full verification
+confirm that no break remains.
+
+## 1. Pair/derive math
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/core/link-plan.test.ts -t "derives the exact Water 10,600/min worked example" --reporter=verbose
+```
+
+Green output:
+
+```text
+✓ src/core/link-plan.test.ts > deriveLinkPlan > derives the exact Water 10,600/min worked example 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 11 skipped (12)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/core/link-plan.ts
+@@
+     const packageCount = materialDemand.ceilDiv(
+-      pair.packageFluidRate.mul(clockScale),
++      pair.unpackageFluidRate.mul(clockScale),
+     );
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/core/link-plan.test.ts > deriveLinkPlan > derives the exact Water 10,600/min worked example 4ms
+  → expected 89 to be 177 // Object.is equality
+FAIL  src/core/link-plan.test.ts > deriveLinkPlan > derives the exact Water 10,600/min worked example
+Test Files  1 failed (1)
+Tests  1 failed | 11 skipped (12)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/core/link-plan.ts
+@@
+     const packageCount = materialDemand.ceilDiv(
+-      pair.unpackageFluidRate.mul(clockScale),
++      pair.packageFluidRate.mul(clockScale),
+     );
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/core/link-plan.test.ts > deriveLinkPlan > derives the exact Water 10,600/min worked example 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 11 skipped (12)
+```
+
+## 2. V8/saveable store guard
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/state/store.test.ts -t "refuses illegal packaged routes without changing state" --reporter=verbose 2>&1 | rg "^ (✓|×|Test Files|     Tests)|refuses illegal"
+```
+
+Green output:
+
+```text
+✓ src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > refuses illegal packaged routes without changing state 29ms
+Test Files  1 passed (1)
+Tests  1 passed | 176 skipped (177)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/state/store.ts
+@@
+               if (
+-                link.interstep !== undefined &&
++                false &&
+                 isIllegalPackagedTransport(transport)
+               ) {
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > refuses illegal packaged routes without changing state 36ms
+  → expected { …(6) } to be { …(6) } // Object.is equality
+FAIL  src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > refuses illegal packaged routes without changing state
+Test Files  1 failed (1)
+Tests  1 failed | 176 skipped (177)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/state/store.ts
+@@
+               if (
+-                false &&
++                link.interstep !== undefined &&
+                 isIllegalPackagedTransport(transport)
+               ) {
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > refuses illegal packaged routes without changing state 29ms
+Test Files  1 passed (1)
+Tests  1 passed | 176 skipped (177)
+```
+
+## 3. Combined graph diagnostic
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/ui/graph-flow.test.ts -t "problem precedence" --reporter=verbose 2>&1 | rg "^ (✓|×|Test Files|     Tests)|problem precedence"
+```
+
+Green output:
+
+```text
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'under-supply' text beside an interstep problem with problem precedence 2ms
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'over-supply' text beside an interstep problem with problem precedence 0ms
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'dangling-link' text beside an interstep problem with problem precedence 0ms
+Test Files  1 passed (1)
+Tests  3 passed | 52 skipped (55)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/ui/graph-flow.ts
+@@
+-    const state: EdgeState = problem === undefined ? material.state : "problem";
++    const state: EdgeState = material.state;
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'under-supply' text beside an interstep problem with problem precedence 5ms
+× src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'over-supply' text beside an interstep problem with problem precedence 1ms
+× src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'dangling-link' text beside an interstep problem with problem precedence 0ms
+FAIL  src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'under-supply' text beside an interstep problem with problem precedence
+Test Files  1 failed (1)
+Tests  3 failed | 52 skipped (55)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/ui/graph-flow.ts
+@@
+-    const state: EdgeState = material.state;
++    const state: EdgeState = problem === undefined ? material.state : "problem";
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'under-supply' text beside an interstep problem with problem precedence 2ms
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'over-supply' text beside an interstep problem with problem precedence 0ms
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'dangling-link' text beside an interstep problem with problem precedence 0ms
+Test Files  1 passed (1)
+Tests  3 passed | 52 skipped (55)
+```
+
+## 4. Inspector interaction behavior
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/ui/LinkInspector.dom.test.tsx -t "enables the sole pair with belt defaults and renders exact plan math" --reporter=verbose 2>&1 | rg "^ (✓|×|Test Files|     Tests)|enables the sole pair"
+```
+
+Green output:
+
+```text
+✓ src/ui/LinkInspector.dom.test.tsx > LinkInspector packaging intersteps > enables the sole pair with belt defaults and renders exact plan math 25ms
+Test Files  1 passed (1)
+Tests  1 passed | 4 skipped (5)
+```
+
+## 5. Non-positive packaging rates
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/data/packaging.test.ts -t "rejects non-positive package output rates without throwing" --reporter=verbose
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/core/packaging-pair.ts
+@@
+ function isPositiveRate(entry: PackagingRecipeIO): boolean {
+-  return entry.perMinute.num > 0n;
++  return entry.perMinute.num >= 0n;
+ }
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/data/packaging.test.ts > packaging pair discovery > rejects non-positive package output rates without throwing 4ms
+FAIL  src/data/packaging.test.ts > packaging pair discovery > rejects non-positive package output rates without throwing
+AssertionError: expected [Function] to not throw an error but 'RangeError: Fraction division by zero.' was thrown
+Test Files  1 failed (1)
+Tests  1 failed | 12 skipped (13)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/core/packaging-pair.ts
+@@
+ function isPositiveRate(entry: PackagingRecipeIO): boolean {
+-  return entry.perMinute.num >= 0n;
++  return entry.perMinute.num > 0n;
+ }
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/data/packaging.test.ts > packaging pair discovery > rejects non-positive package output rates without throwing 2ms
+Test Files  1 passed (1)
+Tests  1 passed | 12 skipped (13)
+```
+
+## 6. Public setter canonicalization
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/state/store.test.ts -t "canonicalizes wider forward and return transports for v8 save/reload" --reporter=verbose
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/state/store.ts
+@@
+                 ...s,
+                 links: s.links.map((l) =>
+-                  l.id === linkId ? { ...l, transport: canonical } : l,
++                  l.id === linkId ? { ...l, transport } : l,
+                 ),
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > canonicalizes wider forward and return transports for v8 save/reload
+FAIL  src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > canonicalizes wider forward and return transports for v8 save/reload
+AssertionError: expected { mode: 'train', trip: { …(3) }, …(2) } to not have property "ignoredTopLevel"
+Test Files  1 failed (1)
+Tests  1 failed | 178 skipped (179)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/state/store.ts
+@@
+                 ...s,
+                 links: s.links.map((l) =>
+-                  l.id === linkId ? { ...l, transport } : l,
++                  l.id === linkId ? { ...l, transport: canonical } : l,
+                 ),
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > canonicalizes wider forward and return transports for v8 save/reload 36ms
+Test Files  1 passed (1)
+Tests  1 passed | 178 skipped (179)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/ui/LinkInspector.tsx
+@@
+                 setLinkInterstep(link.id, {
+                   packageRecipeId: pair.packageRecipe.id,
+-                  clockPercentText: "100",
++                  clockPercentText: "50",
+                   returnTransport: { mode: "belt" },
+                 });
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/ui/LinkInspector.dom.test.tsx > LinkInspector packaging intersteps > enables the sole pair with belt defaults and renders exact plan math 30ms
+FAIL  src/ui/LinkInspector.dom.test.tsx > LinkInspector packaging intersteps > enables the sole pair with belt defaults and renders exact plan math
+-     "clockPercentText": "100",
++     "clockPercentText": "50",
+Test Files  1 failed (1)
+Tests  1 failed | 4 skipped (5)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/ui/LinkInspector.tsx
+@@
+                 setLinkInterstep(link.id, {
+                   packageRecipeId: pair.packageRecipe.id,
+-                  clockPercentText: "50",
++                  clockPercentText: "100",
+                   returnTransport: { mode: "belt" },
+                 });
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/ui/LinkInspector.dom.test.tsx > LinkInspector packaging intersteps > enables the sole pair with belt defaults and renders exact plan math 25ms
+Test Files  1 passed (1)
+Tests  1 passed | 4 skipped (5)
+```
+
+## 7. Historical v7 array canonicalization
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/data/plan-store.test.ts -t "migrates v7-valid array transports and trips to exact v8 objects" --reporter=verbose
+```
+
+Green output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates v7-valid array transports and trips to exact v8 objects 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 79 skipped (80)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-  const canonical = canonicalizeLinkTransport(normalized);
++  const canonical = canonicalizeLinkTransport(transport);
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates v7-valid array transports and trips to exact v8 objects 5ms
+  → validated v7 transport could not be canonicalized
+FAIL  src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates v7-valid array transports and trips to exact v8 objects
+Error: validated v7 transport could not be canonicalized
+Test Files  1 failed (1)
+Tests  1 failed | 79 skipped (80)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-  const canonical = canonicalizeLinkTransport(transport);
++  const canonical = canonicalizeLinkTransport(normalized);
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates v7-valid array transports and trips to exact v8 objects 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 79 skipped (80)
+```
+
+## 8. Historical v7 property lookup canonicalization
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/data/plan-store.test.ts -t "migrates inherited and non-enumerable v7 transport fields" --reporter=verbose 2>&1 | rg "migrates inherited|FAIL|Test Files|Tests  "
+```
+
+Green output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates inherited and non-enumerable v7 transport fields 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 81 skipped (82)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-  const view = Object.create(source) as Record<string, unknown>;
++  const view = { ...source };
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates inherited and non-enumerable v7 transport fields 6ms
+  → validated v7 transport could not be canonicalized
+FAIL  src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates inherited and non-enumerable v7 transport fields
+Error: validated v7 transport could not be canonicalized
+Test Files  1 failed (1)
+Tests  1 failed | 81 skipped (82)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-  const view = { ...source };
++  const view = Object.create(source) as Record<string, unknown>;
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates inherited and non-enumerable v7 transport fields 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 81 skipped (82)
+```
+
+## 9. Historical v3 source-version extension stripping
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/data/plan-store.test.ts -t "strips JSON v4 extensions ignored by v3 and preserves admitted versions" --reporter=verbose 2>&1 | rg "strips JSON|FAIL|Test Files|Tests  "
+```
+
+Green output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 81 skipped (82)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-        ? { transport: canonicalLegacyTransport(link.transport, 3) }
++        ? { transport: canonicalLegacyTransport(link.transport, 4) }
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions 5ms
+  → validated v7 transport could not be canonicalized
+FAIL  src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions
+Error: validated v7 transport could not be canonicalized
+Test Files  1 failed (1)
+Tests  1 failed | 81 skipped (82)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-        ? { transport: canonicalLegacyTransport(link.transport, 4) }
++        ? { transport: canonicalLegacyTransport(link.transport, 3) }
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 81 skipped (82)
+```

@@ -3,6 +3,21 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-16 — Package fluid links for solid transport
+
+> Hey Michael — a fluid or gas link can now be packaged before transport and
+> unpackaged at the other end without adding a Packager cycle to the factory
+> graph. Open the link's Transport panel and switch on "Package for transport"
+> to see the exact Packagers, Unpackagers, power, packaged cargo rate, and empty
+> container return rate. The cargo route and empty return route are configured
+> independently, so each can use its own belts, vehicles, train, or drone plan.
+>
+> The planner keeps supply warnings in the original fluid or gas units, saves
+> the packaging choice with the factory plan, and keeps a recovery control if a
+> later catalog no longer contains the selected packaging recipe. It does not
+> guess how many containers must be seeded into the loop: route inventory and
+> timing still determine that, so the inspector calls it out explicitly.
+
 ## 2026-08-16 — Extraction plans now match your node purities
 
 > Hey Michael — the rough Normal-node answer is still the first thing you see,

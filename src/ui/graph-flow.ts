@@ -14,10 +14,13 @@
 
 import { formatRate } from "./format.ts";
 import { suggestSupply, stagePowerTextFor } from "./advice.ts";
-import { computeLinkTransport } from "./transport-plan.ts";
-import type { TransportPlan } from "./transport-plan.ts";
+import { computeLinkTransport } from "../core/transport-plan.ts";
+import type { TransportPlan } from "../core/transport-plan.ts";
+import { deriveLinkPlan } from "../core/link-plan.ts";
+import type { ReadyLinkPlan } from "../core/link-plan.ts";
 import {
   edgeChip,
+  routeEdgeChip,
   unsustainableTrainRow,
   unsustainableTrainText,
 } from "./transport-text.ts";
@@ -112,7 +115,8 @@ export interface FlowNode {
 }
 
 /** The reconciliation flavor an edge carries — drives the edge's styling. */
-export type EdgeState = "ok" | "under-supply" | "over-supply" | "dangling";
+export type EdgeState =
+  "ok" | "under-supply" | "over-supply" | "dangling" | "problem";
 
 /** A React-Flow edge, structurally typed (no RF import). */
 export interface FlowEdge {
@@ -337,7 +341,7 @@ export interface SupplySuggestion {
  */
 function edgeLabelFor(
   itemName: string,
-  finding: LinkFinding | undefined,
+  finding: Exclude<LinkFinding, { type: "interstep-problem" }> | undefined,
   suggestion: SupplySuggestion | null,
 ): { label: string; state: EdgeState } {
   if (finding === undefined) {
@@ -460,8 +464,9 @@ export function globalUnlockedTiers(
  * the flowing item, and the plan-global tiers, then defers to the five-arg
  * computeLinkTransport.
  *
- * Returns null EXACTLY when the item is missing from the catalog — nothing
- * else. An unsolved rate flows THROUGH as computeLinkTransport's
+ * Ordinary links return null only when the item is missing from the catalog.
+ * Interstep links return null when their canonical derivation is unavailable.
+ * An unsolved rate flows THROUGH as computeLinkTransport's
  * `{ kind: "unsolved" }` plan (null-on-unsolved would erase the inspector's
  * "solve both stages to size the fleet" line), and a belt / absent-transport
  * link resolves via computeLinkTransport's belt default (null-on-belt would
@@ -475,6 +480,10 @@ export function planForLink(
   catalog: Catalog,
   stages: Record<string, StageNode>,
 ): TransportPlan | null {
+  if (link.interstep !== undefined) {
+    const plan = deriveLinkPlan(catalog, link, stages);
+    return plan.status === "ready" ? plan.forwardTransport : null;
+  }
   const item = catalog.items[link.itemId];
   if (item === undefined) return null;
   return computeLinkTransport(
@@ -497,6 +506,17 @@ function transportChipFor(
   catalog: Catalog,
   stages: Record<string, StageNode>,
 ): string {
+  if (link.interstep !== undefined) {
+    const plan = readyInterstepPlan(link, catalog, stages);
+    if (plan === null) return "";
+    return [
+      routeEdgeChip("forward", plan.forwardTransport),
+      routeEdgeChip("empty return", plan.returnTransport),
+    ]
+      .filter((chip): chip is string => chip !== null)
+      .map((chip) => ` ${chip}`)
+      .join("");
+  }
   // Belt default (absent transport) never chips — the today-unchanged path.
   if (link.transport === undefined || link.transport.mode === "belt") {
     return "";
@@ -505,6 +525,15 @@ function transportChipFor(
   if (plan === null) return ""; // item missing from the catalog
   const chip = edgeChip(plan);
   return chip === null ? "" : ` ${chip}`;
+}
+
+function readyInterstepPlan(
+  link: StageLink,
+  catalog: Catalog,
+  stages: Record<string, StageNode>,
+): ReadyLinkPlan | null {
+  const plan = deriveLinkPlan(catalog, link, stages);
+  return plan.status === "ready" ? plan : null;
 }
 
 /**
@@ -684,21 +713,40 @@ export function graphToFlow(
       };
     });
 
-  const findingByLink = new Map<string, LinkFinding>();
+  const findingsByLink = new Map<string, LinkFinding[]>();
   for (const f of reconciliation) {
-    findingByLink.set(f.linkId, f);
+    const current = findingsByLink.get(f.linkId) ?? [];
+    current.push(f);
+    findingsByLink.set(f.linkId, current);
   }
 
   const edges: FlowEdge[] = links.map((link) => {
     const itemName = catalog.items[link.itemId]?.displayName ?? link.itemId;
-    const finding = findingByLink.get(link.id);
+    const linkFindings = findingsByLink.get(link.id) ?? [];
+    const finding = linkFindings.find(
+      (
+        candidate,
+      ): candidate is Exclude<LinkFinding, { type: "interstep-problem" }> =>
+        candidate.type !== "interstep-problem",
+    );
+    const problem = linkFindings.find(
+      (
+        candidate,
+      ): candidate is Extract<LinkFinding, { type: "interstep-problem" }> =>
+        candidate.type === "interstep-problem",
+    );
     // The fan-out suggestion is only meaningful for an under-supplied edge;
     // compute it lazily so a solved-clean or dangling edge costs nothing.
     const suggestion =
       finding?.type === "under-supply"
         ? supplySuggestionFor(link.fromStageId, link.itemId, stages, links)
         : null;
-    const { label, state } = edgeLabelFor(itemName, finding, suggestion);
+    const material = edgeLabelFor(itemName, finding, suggestion);
+    const label =
+      problem === undefined
+        ? material.label
+        : `${material.label} · packaging problem: ${problem.error}`;
+    const state: EdgeState = problem === undefined ? material.state : "problem";
     // Append the transport chip for a configured non-belt link (Stage 7 P2);
     // belt links append nothing, so they render exactly as today.
     const chip = transportChipFor(link, catalog, stages);
@@ -741,6 +789,27 @@ export function computeTransportFindings(
 ): string[] {
   const findings: string[] = [];
   for (const link of links) {
+    if (link.interstep !== undefined) {
+      const derived = readyInterstepPlan(link, catalog, stages);
+      if (derived === null) continue;
+      addTrainFinding(
+        findings,
+        "Forward ",
+        catalog.items[derived.packagedItemId]?.displayName ??
+          derived.packagedItemId,
+        derived.cargoDemand,
+        derived.forwardTransport,
+      );
+      addTrainFinding(
+        findings,
+        "Empty return ",
+        catalog.items[derived.containerItemId]?.displayName ??
+          derived.containerItemId,
+        derived.containerReturnRate,
+        derived.returnTransport,
+      );
+      continue;
+    }
     // Pre-filters stay per-surface: the cheap train-only skip before the call
     // (a non-train link is never a finding), and the rate-null skip below
     // (solved-only fleet math). rate is also a downstream input to the
@@ -762,4 +831,18 @@ export function computeTransportFindings(
     findings.push(unsustainableTrainText(item.displayName, rate, row));
   }
   return findings;
+}
+
+function addTrainFinding(
+  findings: string[],
+  route: string,
+  itemName: string,
+  rate: Fraction | null,
+  plan: TransportPlan,
+): void {
+  if (rate === null || plan.kind !== "train") return;
+  const row = unsustainableTrainRow(rate, plan.options);
+  if (row !== null) {
+    findings.push(unsustainableTrainText(route + itemName, rate, row));
+  }
 }

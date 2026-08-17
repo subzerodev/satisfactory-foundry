@@ -17,6 +17,7 @@ import {
   drawnMeters,
   isEstimatedLink,
   applyDrawnDistance,
+  applyDrawnDistanceToTransport,
   drawnDistanceDm,
 } from "./chain-view.ts";
 
@@ -97,6 +98,27 @@ describe("applyDrawnDistance — the units trap per arm", () => {
       trip: { kind: "estimated", distanceText: "412" },
     });
   });
+
+  it.each([
+    ["from", { from: true }],
+    ["to", { to: true }],
+  ] as const)(
+    "targets a train route and preserves its physical %s shared end",
+    (_side, sharedEnds) => {
+      const transport = {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "" },
+        sharedEnds,
+      } as const;
+
+      expect(applyDrawnDistanceToTransport(transport, 4120)).toEqual({
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "412" },
+        sharedEnds,
+      });
+      expect(transport.sharedEnds).toEqual(sharedEnds);
+    },
+  );
 
   it("writes drone ROUND-TRIP meters (2×) into flightMetersText, keeping fuel", () => {
     const l = link("l", "p", "c", "iron_ingot", {

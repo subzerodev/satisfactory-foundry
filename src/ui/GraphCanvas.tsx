@@ -686,6 +686,7 @@ const EDGE_CLASS: Record<EdgeState, string> = {
   "under-supply": "edge-under",
   "over-supply": "edge-over",
   dangling: "edge-dangling",
+  problem: "edge-problem",
 };
 
 // ---------------------------------------------------------------------------

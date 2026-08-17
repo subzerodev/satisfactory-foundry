@@ -1621,6 +1621,12 @@ body {
   stroke-dasharray: 4 3;
 }
 
+.edge-problem .react-flow__edge-path {
+  stroke: var(--error);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
+
 /* Raw-feed edge (Stage 11 P1, ticket #57) — the dashed hairline from a supply
    card to its stage. Lighter than the reconciliation lanes: the pipe-dash
    vocabulary at reduced weight + opacity, muted ink so it reads as auxiliary
@@ -1685,6 +1691,16 @@ body {
   fill: var(--fg);
 }
 
+.edge-problem .react-flow__edge-textbg {
+  stroke: var(--error);
+  stroke-width: 2;
+  fill: var(--bg);
+}
+
+.edge-problem .react-flow__edge-text {
+  fill: var(--error);
+}
+
 /* -------------------------------------------------------------------------
    LinkInspector (Stage 7 / Phase 2). The selected-edge transport side panel.
    Follows the findings/summary visual idiom (bordered card, muted labels).
@@ -1737,10 +1753,81 @@ body {
   gap: 6px;
 }
 
+.link-inspector-interstep,
+.link-inspector-route {
+  min-width: 0;
+}
+
+.link-inspector-interstep {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.link-inspector-route {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.link-inspector-route h3 {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.link-inspector-interstep-summary,
+.link-inspector-advisories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.link-inspector-interstep-summary p,
+.link-inspector-advisories p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.link-inspector-advisories {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.link-inspector-route select,
+.link-inspector-route input,
+.link-inspector-interstep > label select,
+.link-inspector-interstep > label input {
+  max-width: 100%;
+}
+
+.link-inspector-train {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .link-inspector-basis {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   font-size: 13px;
+}
+
+@media (max-width: 480px) {
+  .link-inspector {
+    padding: 10px;
+  }
+
+  .link-inspector-mode,
+  .link-inspector-fuel,
+  .link-inspector-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
 }
 
 .link-inspector-result {

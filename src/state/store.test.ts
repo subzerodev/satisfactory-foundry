@@ -1,4 +1,5 @@
 import "fake-indexeddb/auto";
+import { readFileSync } from "node:fs";
 import { describe, it, expect, beforeEach } from "vitest";
 import { Fraction } from "../core/fraction.ts";
 import { resetDbCache } from "../data/db.ts";
@@ -6,9 +7,18 @@ import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
 import type { Catalog } from "../data/types.ts";
-import type { PlanFileV1, PlanFileV2, PlanFileV7 } from "../data/plan-store.ts";
+import type { PlanFileV1, PlanFileV2, PlanFileV8 } from "../data/plan-store.ts";
 import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
-import type { StageLink, PlanBundle, ProposedByproductRoute } from "./store.ts";
+import type {
+  StageLink,
+  NewStageLink,
+  PlanBundle,
+  ProposedByproductRoute,
+} from "./store.ts";
+import type {
+  LinkTransport,
+  PackagingInterstep,
+} from "../core/link-transport.ts";
 import { proposeChain } from "../core/chain-builder.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
 import { applyDrawnDistance } from "../ui/chain-view.ts";
@@ -120,6 +130,18 @@ const DOCS_TEXT_COPPER = JSON.stringify([
 // A second catalog fragment that KEEPS `ingot_iron` (same id) so re-upload
 // re-validation keeps the recipe but still clears overrides on replacement.
 const DOCS_TEXT_IRON_V2 = DOCS_TEXT;
+const BUNDLED_DOCS_TEXT = readFileSync(
+  "public/bundled-docs/en-US.json",
+  "utf8",
+);
+
+function compileTimeNewLinkConstraint(): void {
+  const wider = {} as StageLink;
+  // @ts-expect-error A wider StageLink may carry guarded interstep intent.
+  const refused: NewStageLink = wider;
+  void refused;
+}
+void compileTimeNewLinkConstraint;
 
 /** A fresh in-memory object-backed StateStorage stub (persist's storage API). */
 function makeStorageStub(seed?: Record<string, string>): {
@@ -1713,7 +1735,7 @@ describe("extraction selection state (#112)", () => {
     ).toBe(true);
   });
 
-  it("retains a prototype-like purity mix across recipe swaps and plan v7", async () => {
+  it("retains a prototype-like purity mix across recipe swaps and plan v8", async () => {
     const store = createAppStore(makeStorageStub().storage);
     const id = store.getState().activeStageId;
     store.getState().setExtractionSelection(id, "__proto__", {
@@ -1730,8 +1752,8 @@ describe("extraction selection state (#112)", () => {
     await store.getState().savePlanAs("Extraction");
     const planId = store.getState().plans![0]!.id;
     const db = await (await import("../data/db.ts")).openDb();
-    const written = (await db.get<PlanFileV7>("plans", planId))!;
-    expect(written.format_version).toBe(7);
+    const written = (await db.get<PlanFileV8>("plans", planId))!;
+    expect(written.format_version).toBe(8);
     expect(written.stages[0]!.extraction?.__proto__?.purityMix).toEqual({
       impure: "01",
       normal: "bad",
@@ -1911,6 +1933,367 @@ describe("stage graph — link transport + selection (Stage 7 P2)", () => {
       fuel: "battery",
       trip: { kind: "measured", roundTripSecondsText: "180" },
     });
+  });
+});
+
+describe("stage graph — packaging interstep persistence actions (#113)", () => {
+  async function packagedStore() {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(BUNDLED_DOCS_TEXT);
+    store.getState().selectRecipe("unpackage_water");
+    store.getState().addStage();
+    const from = store.getState().stageOrder[0]!;
+    const to = store.getState().stageOrder[1]!;
+    store.getState().setActiveStage(to);
+    store.getState().selectRecipe("packaged_water");
+    store
+      .getState()
+      .addLink({ fromStageId: from, toStageId: to, itemId: "water" });
+    return { store, linkId: store.getState().links[0]!.id, from, to };
+  }
+
+  function setInterstep(
+    store: ReturnType<typeof createAppStore>,
+    linkId: string,
+    interstep: PackagingInterstep | null,
+  ): void {
+    (
+      store.getState() as unknown as {
+        setLinkInterstep(id: string, value: PackagingInterstep | null): void;
+      }
+    ).setLinkInterstep(linkId, interstep);
+  }
+
+  const validIntent: PackagingInterstep = {
+    packageRecipeId: "packaged_water",
+    clockPercentText: "100",
+    returnTransport: { mode: "belt" },
+  };
+
+  it("enables both belt routes atomically and disables back to fluid pipe", async () => {
+    const { store, linkId } = await packagedStore();
+    store.getState().setLinkTransport(linkId, {
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "900" },
+    });
+    store.setState({ reconciliation: [] });
+    setInterstep(store, linkId, {
+      ...validIntent,
+      returnTransport: {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "900" },
+      },
+    });
+    expect(store.getState().links[0]).toMatchObject({
+      transport: { mode: "belt" },
+      interstep: validIntent,
+    });
+    expect(store.getState().reconciliation).not.toEqual([]);
+
+    store.setState({ reconciliation: [] });
+    setInterstep(store, linkId, null);
+    expect(store.getState().links[0]!.interstep).toBeUndefined();
+    expect(store.getState().links[0]!.transport).toEqual({ mode: "pipe" });
+    expect(store.getState().reconciliation).not.toEqual([]);
+  });
+
+  it("refuses illegal packaged routes without changing state", async () => {
+    const { store, linkId } = await packagedStore();
+    setInterstep(store, linkId, validIntent);
+    const before = store.getState().links[0];
+    store.getState().setLinkTransport(linkId, { mode: "pipe" });
+    expect(store.getState().links[0]).toBe(before);
+
+    setInterstep(store, linkId, {
+      ...validIntent,
+      returnTransport: {
+        mode: "fluid-truck",
+        trip: { kind: "estimated", distanceText: "1" },
+      },
+    });
+    expect(store.getState().links[0]).toBe(before);
+  });
+
+  it("preserves interstep intent on legal transport edits and clear", async () => {
+    const { store, linkId } = await packagedStore();
+    setInterstep(store, linkId, validIntent);
+    store.getState().setLinkTransport(linkId, {
+      mode: "truck",
+      trip: { kind: "estimated", distanceText: "bad edit" },
+    });
+    expect(store.getState().links[0]!.interstep).toEqual(validIntent);
+    store.setState({ reconciliation: [] });
+    store.getState().clearLinkTransport(linkId);
+    expect(store.getState().links[0]).toMatchObject({
+      transport: { mode: "belt" },
+      interstep: validIntent,
+    });
+    expect(store.getState().reconciliation).not.toEqual([]);
+  });
+
+  it("runtime-refuses addLink intent smuggled through a wider value", async () => {
+    const { store, from, to } = await packagedStore();
+    store.getState().removeLink(store.getState().links[0]!.id);
+    const bypass: StageLink = {
+      id: "ignored",
+      fromStageId: from,
+      toStageId: to,
+      itemId: "water",
+      interstep: validIntent,
+    };
+    store.getState().addLink(bypass as never);
+    expect(store.getState().links).toEqual([]);
+  });
+
+  it("writes v8 and save/reloads retained valid intent after refusals", async () => {
+    const { store, linkId } = await packagedStore();
+    setInterstep(store, linkId, validIntent);
+    setInterstep(store, linkId, {
+      ...validIntent,
+      clockPercentText: "bad edit",
+      returnTransport: {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "" },
+        sharedEnds: { to: true },
+      },
+    });
+    store.getState().setLinkTransport(linkId, { mode: "pipe" });
+    await store.getState().savePlanAs("Packaging");
+    const id = store.getState().plans![0]!.id;
+    const exported = JSON.parse((await store.getState().exportPlan(id))!);
+    expect(exported.format_version).toBe(8);
+    expect(exported.links[0].interstep.clockPercentText).toBe("bad edit");
+
+    setInterstep(store, linkId, null);
+    await store.getState().loadPlan(id);
+    expect(store.getState().links[0]!.interstep).toEqual({
+      ...validIntent,
+      clockPercentText: "bad edit",
+      returnTransport: {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "" },
+        sharedEnds: { to: true },
+      },
+    });
+    expect(store.getState().links[0]!.transport).toEqual({ mode: "belt" });
+
+    const copy = { ...exported, name: "Packaging copy" };
+    await store.getState().importPlan(JSON.stringify(copy));
+    const bundle = JSON.parse((await store.getState().exportAllPlans())!);
+    expect(bundle.plans).toHaveLength(2);
+    expect(
+      bundle.plans.every(
+        (plan: { links: StageLink[] }) =>
+          plan.links[0]?.interstep?.clockPercentText === "bad edit",
+      ),
+    ).toBe(true);
+  });
+
+  it("canonicalizes wider forward and return transports for v8 save/reload", async () => {
+    const { store, linkId } = await packagedStore();
+    setInterstep(store, linkId, validIntent);
+
+    const widerForward = {
+      mode: "train" as const,
+      trip: {
+        kind: "estimated" as const,
+        distanceText: "900",
+        ignoredNested: "strip",
+      },
+      sharedEnds: { from: true as const, ignoredNested: true },
+      ignoredTopLevel: "strip",
+    };
+    const typedForward: LinkTransport = widerForward;
+    store.getState().setLinkTransport(linkId, typedForward);
+
+    const widerReturn = {
+      packageRecipeId: "packaged_water",
+      clockPercentText: "125",
+      returnTransport: {
+        mode: "train" as const,
+        trip: {
+          kind: "measured" as const,
+          roundTripSecondsText: "180",
+          ignoredNested: "strip",
+        },
+        sharedEnds: { to: true as const, ignoredNested: true },
+        ignoredTopLevel: "strip",
+      },
+      ignoredInterstep: "strip",
+    };
+    const typedInterstep: PackagingInterstep = widerReturn;
+    setInterstep(store, linkId, typedInterstep);
+
+    expect(store.getState().links[0]).toMatchObject({
+      transport: {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "900" },
+        sharedEnds: { from: true },
+      },
+      interstep: {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "125",
+        returnTransport: {
+          mode: "train",
+          trip: { kind: "measured", roundTripSecondsText: "180" },
+          sharedEnds: { to: true },
+        },
+      },
+    });
+    expect(store.getState().links[0]!.transport).not.toHaveProperty(
+      "ignoredTopLevel",
+    );
+    expect(
+      store.getState().links[0]!.interstep!.returnTransport,
+    ).not.toHaveProperty("ignoredTopLevel");
+
+    await store.getState().savePlanAs("Canonical packaging");
+    const id = store.getState().plans![0]!.id;
+    const exported = JSON.parse((await store.getState().exportPlan(id))!);
+    expect(exported.links[0].transport).toEqual({
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "900" },
+      sharedEnds: { from: true },
+    });
+    expect(exported.links[0].interstep.returnTransport).toEqual({
+      mode: "train",
+      trip: { kind: "measured", roundTripSecondsText: "180" },
+      sharedEnds: { to: true },
+    });
+
+    setInterstep(store, linkId, null);
+    await store.getState().loadPlan(id);
+    expect(store.getState().links[0]!.transport).toEqual(
+      exported.links[0].transport,
+    );
+    expect(store.getState().links[0]!.interstep).toEqual(
+      exported.links[0].interstep,
+    );
+  });
+
+  it("runtime-refuses malformed setter structures without changing state", async () => {
+    const { store, linkId } = await packagedStore();
+    setInterstep(store, linkId, validIntent);
+    const before = store.getState().links[0];
+
+    store.getState().setLinkTransport(linkId, {
+      mode: "train",
+      trip: { kind: "estimated" },
+    } as unknown as LinkTransport);
+    expect(store.getState().links[0]).toBe(before);
+
+    setInterstep(store, linkId, {
+      packageRecipeId: "packaged_water",
+      clockPercentText: "100",
+      returnTransport: {
+        mode: "drone",
+        fuel: "not-a-fuel",
+        trip: { kind: "estimated", flightMetersText: "900" },
+      },
+    } as unknown as PackagingInterstep);
+    expect(store.getState().links[0]).toBe(before);
+  });
+
+  it("disables stale intent phase-safely for solid and missing items", async () => {
+    const { store } = await packagedStore();
+    const base = store.getState().links[0]!;
+    store.setState({
+      links: [{ ...base, itemId: "iron_plate", interstep: validIntent }],
+    });
+    setInterstep(store, base.id, null);
+    expect(store.getState().links[0]!.transport).toEqual({ mode: "belt" });
+
+    store.setState({
+      links: [{ ...base, itemId: "missing-item", interstep: validIntent }],
+    });
+    setInterstep(store, base.id, null);
+    expect("transport" in store.getState().links[0]!).toBe(false);
+  });
+
+  it("reconciles interstep validity atomically across every link mutation", async () => {
+    const { store, linkId } = await packagedStore();
+
+    setInterstep(store, linkId, validIntent);
+    expect(
+      store
+        .getState()
+        .reconciliation.some((finding) => finding.type === "interstep-problem"),
+    ).toBe(false);
+
+    setInterstep(store, linkId, {
+      ...validIntent,
+      clockPercentText: "bad clock",
+    });
+    expect(
+      store
+        .getState()
+        .reconciliation.filter(
+          (finding) => finding.type === "interstep-problem",
+        ),
+    ).toHaveLength(1);
+
+    setInterstep(store, linkId, validIntent);
+    expect(
+      store
+        .getState()
+        .reconciliation.some((finding) => finding.type === "interstep-problem"),
+    ).toBe(false);
+
+    store.getState().setLinkTransport(linkId, {
+      mode: "truck",
+      trip: { kind: "estimated", distanceText: "" },
+    });
+    expect(
+      store
+        .getState()
+        .reconciliation.some((finding) => finding.type === "interstep-problem"),
+    ).toBe(false);
+
+    store.getState().clearLinkTransport(linkId);
+    expect(
+      store
+        .getState()
+        .reconciliation.some((finding) => finding.type === "interstep-problem"),
+    ).toBe(false);
+
+    setInterstep(store, linkId, { ...validIntent, packageRecipeId: "stale" });
+    expect(
+      store
+        .getState()
+        .reconciliation.filter(
+          (finding) => finding.type === "interstep-problem",
+        ),
+    ).toHaveLength(1);
+
+    setInterstep(store, linkId, null);
+    expect(
+      store
+        .getState()
+        .reconciliation.some((finding) => finding.type === "interstep-problem"),
+    ).toBe(false);
+
+    setInterstep(store, linkId, validIntent);
+    store.getState().removeLink(linkId);
+    expect(store.getState().reconciliation).toEqual([]);
+  });
+
+  it("refreshes stale interstep findings when the catalog is replaced", async () => {
+    const { store, linkId } = await packagedStore();
+    setInterstep(store, linkId, validIntent);
+    expect(
+      store
+        .getState()
+        .reconciliation.some((finding) => finding.type === "interstep-problem"),
+    ).toBe(false);
+
+    await store.getState().uploadDocsText(DOCS_TEXT_CHAIN);
+    const problems = store
+      .getState()
+      .reconciliation.filter(
+        (finding) =>
+          finding.linkId === linkId && finding.type === "interstep-problem",
+      );
+    expect(problems).toHaveLength(1);
   });
 });
 
@@ -2766,7 +3149,7 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     expect(store.getState().links).toHaveLength(linksBefore);
   });
 
-  it("renaming a v1 row persists it as v7 (save-over model)", async () => {
+  it("renaming a v1 row persists it as v8 (save-over model)", async () => {
     const store = await chainStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2790,9 +3173,9 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     await db.put("plans", v1, "v1-id");
 
     await store.getState().renamePlan("v1-id", "NewName");
-    // The stored row is now v7, renamed, single "Stage 1" stage.
-    const raw = (await db.get<PlanFileV7>("plans", "v1-id"))!;
-    expect(raw.format_version).toBe(7);
+    // The stored row is now v8, renamed, single "Stage 1" stage.
+    const raw = (await db.get<PlanFileV8>("plans", "v1-id"))!;
+    expect(raw.format_version).toBe(8);
     expect(raw.name).toBe("NewName");
     expect(raw.stages[0]!.name).toBe("Stage 1");
     // createdAt carried verbatim through the migration + rename.
@@ -2811,7 +3194,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     return store;
   }
 
-  it("exportPlan returns the stored v7 JSON verbatim (re-parses to the saved file)", async () => {
+  it("exportPlan returns the stored v8 JSON verbatim (re-parses to the saved file)", async () => {
     const store = await readyStore();
     store.getState().selectRecipe("ingot_iron");
     store.getState().setClockPercentText("37.5");
@@ -2827,8 +3210,8 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
 
     const json = await store.getState().exportPlan(id);
     expect(json).not.toBeNull();
-    const parsed = JSON.parse(json!) as PlanFileV7;
-    expect(parsed.format_version).toBe(7);
+    const parsed = JSON.parse(json!) as PlanFileV8;
+    expect(parsed.format_version).toBe(8);
     expect(parsed.name).toBe("Exported");
     expect(parsed.stages[0]!.selection.recipeId).toBe("ingot_iron");
     expect(parsed.stages[0]!.selection.clockPercentText).toBe("37.5");
@@ -2838,7 +3221,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
       pure: "3e0",
     });
     // Pretty-printed (2-space indent), matching JSON.stringify(plan, null, 2).
-    expect(json).toContain('\n  "format_version": 7');
+    expect(json).toContain('\n  "format_version": 8');
   });
 
   it("exportPlan on a missing id returns null (no throw)", async () => {
@@ -2846,7 +3229,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     expect(await store.getState().exportPlan("does-not-exist")).toBeNull();
   });
 
-  it("exportPlan emits the migrated v7 form for a stored v1 row", async () => {
+  it("exportPlan emits the migrated v8 form for a stored v1 row", async () => {
     const store = await readyStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2870,9 +3253,9 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     await db.put("plans", v1, "legacy-id");
 
     const json = await store.getState().exportPlan("legacy-id");
-    const parsed = JSON.parse(json!) as PlanFileV7;
-    // The export is what a load sees: v7, one "Stage 1" stage, createdAt kept.
-    expect(parsed.format_version).toBe(7);
+    const parsed = JSON.parse(json!) as PlanFileV8;
+    // The export is what a load sees: v8, one "Stage 1" stage, createdAt kept.
+    expect(parsed.format_version).toBe(8);
     expect(parsed.name).toBe("LegacyPlan");
     expect(parsed.stages[0]!.name).toBe("Stage 1");
     expect(parsed.createdAt).toBe("2026-01-01T00:00:00.000Z");
@@ -2894,7 +3277,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     const json = (await store.getState().exportPlan(srcId))!;
 
     // Rename the payload so it lands as a new row (not an overwrite).
-    const payload = JSON.parse(json) as PlanFileV7;
+    const payload = JSON.parse(json) as PlanFileV8;
     payload.name = "Imported";
     payload.createdAt = "1999-12-31T00:00:00.000Z"; // untrusted foreign stamp
     const before = new Date().toISOString();
@@ -2906,7 +3289,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     expect(imported.id).not.toBe(srcId); // fresh id
     // createdAt is NOW (not the foreign 1999 stamp).
     const db = await (await import("../data/db.ts")).openDb();
-    const stored = (await db.get<PlanFileV7>("plans", imported.id))!;
+    const stored = (await db.get<PlanFileV8>("plans", imported.id))!;
     expect(stored.createdAt >= before).toBe(true);
     expect(stored.stages[0]!.selection.clockPercentText).toBe("42");
     expect(stored.stages[0]!.selection.recipeId).toBe("ingot_iron");
@@ -3094,10 +3477,10 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     return store;
   }
 
-  /** A minimal valid v7 plan file with a chosen name + recipe (content marker). */
-  function planFile(name: string, recipeId: string | null): PlanFileV7 {
+  /** A minimal valid v8 plan file with a chosen name + recipe (content marker). */
+  function planFile(name: string, recipeId: string | null): PlanFileV8 {
     return {
-      format_version: 7,
+      format_version: 8,
       name,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -3120,7 +3503,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
   }
 
   /** Wrap per-plan file objects in the bundle envelope (the export shape). */
-  function bundle(plans: PlanFileV7[]): PlanBundle {
+  function bundle(plans: PlanFileV8[]): PlanBundle {
     return {
       kind: "foundry-plan-bundle",
       format_version: 1,
@@ -3159,8 +3542,8 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     expect(names).toEqual(["Alpha", "Beta"]);
     const alpha = store.getState().plans!.find((p) => p.name === "Alpha")!;
     const beta = store.getState().plans!.find((p) => p.name === "Beta")!;
-    const storedAlpha = (await db.get<PlanFileV7>("plans", alpha.id))!;
-    const storedBeta = (await db.get<PlanFileV7>("plans", beta.id))!;
+    const storedAlpha = (await db.get<PlanFileV8>("plans", alpha.id))!;
+    const storedBeta = (await db.get<PlanFileV8>("plans", beta.id))!;
     expect(storedAlpha.stages[0]!.selection.clockPercentText).toBe("42");
     expect(storedBeta.stages[0]!.selection.clockPercentText).toBe("75");
     // NO auto-load: the live graph is untouched by a bundle import.
@@ -3188,8 +3571,8 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     expect(typeof env.exportedAt).toBe("string");
     expect(env.exportedAt >= before).toBe(true); // stamped at the export moment
     expect(env.plans).toHaveLength(2);
-    // Each entry is a per-plan v7 file object (validatePlanFile-shaped).
-    expect(env.plans.every((p) => p.format_version === 7)).toBe(true);
+    // Each entry is a per-plan v8 file object (validatePlanFile-shaped).
+    expect(env.plans.every((p) => p.format_version === 8)).toBe(true);
     expect(env.plans.map((p) => p.name).sort()).toEqual(["One", "Two"]);
     // Pretty-printed, matching JSON.stringify(bundle, null, 2).
     expect(json).toContain('\n  "kind": "foundry-plan-bundle"');
@@ -3201,7 +3584,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     await store.getState().savePlanAs("Target");
     const targetId = store.getState().plans![0]!.id;
     const db = await (await import("../data/db.ts")).openDb();
-    const originalCreatedAt = (await db.get<PlanFileV7>("plans", targetId))!
+    const originalCreatedAt = (await db.get<PlanFileV8>("plans", targetId))!
       .createdAt;
 
     // A bundle entry named "Target" with a foreign stamp + different content.
@@ -3214,7 +3597,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     expect(
       store.getState().plans!.filter((p) => p.name === "Target"),
     ).toHaveLength(1);
-    const stored = (await db.get<PlanFileV7>("plans", targetId))!;
+    const stored = (await db.get<PlanFileV8>("plans", targetId))!;
     expect(stored.createdAt).toBe(originalCreatedAt); // NOT the foreign 1999 stamp
     expect(stored.stages[0]!.selection.machineCount).toBe(7);
   });
@@ -3241,7 +3624,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     // The surviving row carries the LAST entry's content (machineCount 99).
     const dupId = store.getState().plans![0]!.id;
     const db = await (await import("../data/db.ts")).openDb();
-    const stored = (await db.get<PlanFileV7>("plans", dupId))!;
+    const stored = (await db.get<PlanFileV8>("plans", dupId))!;
     expect(stored.name).toBe("Dup"); // trimmed form
     expect(stored.stages[0]!.selection.machineCount).toBe(99);
     expect(stored.stages[0]!.selection.recipeId).toBe("ingot_iron");
