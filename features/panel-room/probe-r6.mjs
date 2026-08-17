@@ -1,8 +1,9 @@
 /**
- * #134 r6 grounding probe — measures "variant D", the shape both r4 reviewers
+ * #134 grounding probe — measures "variant D", the shape both r4 reviewers
  * proposed independently and both explicitly flagged as CSS-derived and
- * UNMEASURED. Nothing here ships; it exists so r5 adopts D on evidence or
- * rejects it on evidence.
+ * UNMEASURED. Nothing here ships; it exists so the design adopts D on evidence
+ * or rejects it on evidence. Written for r6 and still current through r8 — the
+ * CSS has not changed since r5.
  *
  * Variant D: cap the WRAPPER (.react-flow__panel.top.right) as a percentage of
  * .react-flow, leaving it height:auto so it still shrink-wraps to
@@ -86,8 +87,12 @@ const measure = `(() => {
    * r5's belowWrapper sampled at w.bottom + 20, which TRACKS the wrapper, so it
    * structurally could not sample the band the change newly covers.
    * newlyCovered samples a FIXED canvas-local y just under where the shipped
-   * wrapper ends, so both arms probe the same point: baseline shows what is
-   * there today, variant shows what now sits on top of it. Two points are
+   * wrapper ends: baseline shows what is there today, variant shows what now
+   * sits on top of it. Fixed in y ONLY — x is the wrapper's own centre, so it
+   * differs between arms wherever the wrapper's width does (1280 interaction:
+   * 1086.5 baseline vs 1094 variant). Both x values fall inside both boxes, so
+   * the readings still compare, but this is not literally the same point. Two
+   * y values are
    * needed because the shipped wrapper ends at a different y per width —
    * 219 narrow, 276 desktop — so y=239 probes the narrow band and y=296 the
    * desktop one. r6's reviewers caught that a single y=239 sample sits INSIDE
@@ -244,10 +249,16 @@ async function main({ cdp, vitePort }) {
     await runArms(cdp, `${width}px interaction`);
 
     /*
-     * Gate change 6's containment assertion, measured the way the gate must
-     * measure it: BEFORE any scrollIntoView. The shipped gate's `contained`
-     * (check.mjs:164-167) scrolls first, which forces the result true — the
-     * tautology both r5 reviewers caught. This is the non-tautological form.
+     * Grounding for GATE CHANGE 7 (r8 numbering; this block was written when it
+     * was change 6): containment asserted BEFORE any scrollIntoView, at the real
+     * 560px canvas where the content fits.
+     *
+     * Scope this narrowly. It says nothing about check.mjs:163-171, which runs
+     * only in the pinned-340px geometry matrix — a world where this design
+     * deliberately overflows and pre-scroll containment is therefore FALSE, not
+     * merely untested. r6 cited these rows as proof that :167 could be made
+     * non-tautological; r7's reviewers showed that inference crosses world
+     * states, and the spec retracts it. These rows support change 7 only.
      */
     const pure = await evaluate(
       cdp,
