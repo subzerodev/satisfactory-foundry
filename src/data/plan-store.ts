@@ -622,7 +622,11 @@ function isPlanFileV2(value: unknown): value is PlanFileV2 {
       return false;
     }
     if (from === to) return false; // self-link (frozen P1 refusal)
-    const key = `${to} ${l.itemId}`; // duplicate (to, itemId) feed lane
+    // `\0` is written as an escape, never a raw byte: a literal NUL makes grep
+    // treat this whole file as binary and silently report no matches. The
+    // sibling check in isGraphFileBody uses a space for the same `(to, itemId)`
+    // key; either separator is collision-free because `to` is always digits.
+    const key = `${to}\0${l.itemId}`; // duplicate (to, itemId) feed lane
     if (seen.has(key)) return false;
     seen.add(key);
   }
