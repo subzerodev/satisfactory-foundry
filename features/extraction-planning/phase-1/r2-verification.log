@@ -116,7 +116,7 @@ result: PASS - Vite/PWA build; existing 500 kB chunk-size advisory only
 command: git diff --check develop...HEAD
 result: PASS
 
-## Probes 11 and 12 — the c8828d2 simplify fold (#130 retroactive r11)
+## Probes 11-13 (#130) — the c8828d2 fold, plus this ticket's own change
 
 Added under #130. The retroactive r11 review found that this log carried no
 break/fail/restore probe for `c8828d2`, the post-convergence simplify fold — the
@@ -125,10 +125,16 @@ code. Its closing tally at the top of this log still read `39 files, 1030
 tests`, the PRE-fold
 count, which is itself proof the log was never re-run after the fold. Both probes
 below were run against the working tree during the #130 fix-forward, i.e. on
-`985ed1c` plus that uncommitted fold -- NOT on `985ed1c` alone. The per-probe
-counts reflect the tree at the moment each probe ran, which is why probe 11's
-focused file shows 29 cases and probe 12's restore shows 1141: both predate the
-deletion of the dead `migrateV4` test later in the same fold.
+`985ed1c` plus that uncommitted fold -- NOT on `985ed1c` alone.
+
+**Probes 11 and 12** cover the `c8828d2` simplify fold. **Probe 13 does not** --
+it covers #130's own deletion of the dead `migrateV4` export.
+
+The per-probe counts reflect the tree at the moment each probe ran, and the three
+differ. Probes 11 and 12 predate the `migrateV4` test deletion, which is why probe
+11's focused file shows 29 cases and probe 12's restore shows 1141. Probe 13
+postdates both that deletion and the addition of the timestamp test, so its `(82)`
+is the delivered-tree count for `plan-store.test.ts`.
 
 Method note: each mutation must COMPILE, or its RED is a type error rather than a
 behavioural difference. The first attempt at probe 11 did not — swapping to
@@ -202,9 +208,12 @@ Tests  1141 passed (1141)
 ### Probe 13 -- legacy timestamps must pass through verbatim
 
 Deleting the standalone `migrateV4` step function removed the only assertion that
-timestamps survive migration unaltered, which the module's own doc comments call
-load-bearing (the save-over path reads the prior file's `createdAt`). The live
-v1-v4 chain now pins it directly.
+timestamps survive the **v4 step**. Sibling step functions keep theirs
+(`plan-store.test.ts` covers `migrateV1`, `migrateV2` and `migrateV3` verbatim), so
+this was never the only timestamp pin in the file -- but nothing pinned the passthrough
+on the **live v1-v4 load chain**, which is why the probe below kills with exactly one
+test. The module's doc comments call this load-bearing: the save-over path reads the
+prior file's `createdAt`.
 
 Break:
 
@@ -251,5 +260,7 @@ further will change.
 ### Tally correction
 
 The `PASS - 39 files, 1030 tests` line at the top of this log is the pre-fold
-count, left in place as the historical record of that round. It moved because
-#124, #113 and the #130 fix-forward all landed after this log was written.
+count, left in place as the historical record of that round. The chain from there
+to the delivered count: `c8828d2` itself took it to **1028** (a deliberate two-test
+decrease, recorded in `../FEATURE.md`), then #124, #113 and this #130 fix-forward
+all landed after this log was written.

@@ -5,7 +5,9 @@
 **Status:** merged to `develop` at `d5649c2`. Its post-simplify round **r3 did not
 run before that merge**; #130 ran it retroactively and it found no production
 defect, though it did surface an unpinned purity-precedence guard pair, now closed.
-The verdicts are recorded on #130.
+The verdicts are recorded on #130, and the bidirectional evidence for that
+fix-forward is in `r2-verification.log` alongside this report -- created under #130,
+since phase 2 originally shipped without one.
 
 ## Delivered
 

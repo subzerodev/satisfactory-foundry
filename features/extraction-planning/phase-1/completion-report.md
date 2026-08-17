@@ -34,7 +34,9 @@ defect. The round-by-round verdicts are recorded on #130.
 - `npm run check`: passed.
 - `npm run build`: passed with only the existing 500 kB chunk-size advisory.
 - `git diff --check develop...HEAD`: passed.
-- Mutation evidence: `r2-verification.log` records ten genuine production break/restore probes.
+- Mutation evidence: `r2-verification.log` recorded ten genuine production
+  break/restore probes at phase close; #130 appended probes 11-13, so it now
+  records thirteen.
 - Browser screenshots were inspected under `/tmp/satisfactory-foundry-112-browser`.
 
 ## Commits

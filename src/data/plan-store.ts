@@ -505,6 +505,19 @@ function copyHistoricalExtraction(
   return copied;
 }
 
+/**
+ * Collapse a validated v1-v4 file straight to v6 (the v4->v5 and v5->v6 steps were
+ * folded together under #112; the standalone v4->v5 export was retired under #130
+ * once nothing called it). Three invariants live here and nowhere else:
+ *
+ * - `flowDirection` defaults to `"LR"` because a pre-v5 file never carried one, and
+ *   LR is exactly how it was laid out — the implicit pre-v5 orientation.
+ * - `userPlaced` is derived from ORIGINAL position presence, read here before any
+ *   later step can synthesize a position. A pre-v5 file has no flag to carry, so
+ *   position-presence is the conservative pinning fallback.
+ * - `createdAt`/`updatedAt` carry VERBATIM: the save-over path reads the prior
+ *   file's `createdAt`, so a migrated row must not reset its creation time.
+ */
 function migrateLegacyV4(plan: PlanFileV4): PlanFileV6 {
   return {
     format_version: 6,

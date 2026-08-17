@@ -40,7 +40,8 @@ reconsideration:
 - **Verification (at phase close, not current):** 39 files / 1028 tests,
   checked-in Chromium/CDP geometry and interaction gate, and ten canonical
   mutation break/restore probes; #130 later appended probes 11 and 12 for the
-  `c8828d2` fold, so the log now records twelve
+  `c8828d2` fold and probe 13 for its own `migrateV4` deletion, so the log now
+  records thirteen
 - **Completion report:** `phase-1/completion-report.md`
 
 ### Phase 2 - purity mix
@@ -58,7 +59,11 @@ reconsideration:
 - **Branch:** `feature/s22-124-extraction-p2-purity`
 - **Implementation commits:** `5098796`, `f8f7f89`, `03b9d97`, `8094126`,
   `e076398`, `b15d550`, `73379cd`, `e40efe5`, `43caf18`
-- **Phase verification:** 40 files / 1067 tests; TypeScript, ESLint,
+- **Bidirectional evidence:** `phase-2/r2-verification.log`, created under #130 --
+  phase 2 shipped without one, which is why its retroactive r3 review could not
+  confirm its guards were load-bearing
+- **Phase verification (at phase close, not current):** 40 files / 1067 tests;
+  TypeScript, ESLint,
   Prettier, and build pass; the checked-in Chromium/CDP gate passes nine
   geometry rows and three interaction rows at 360px, 720px, and 1280px
 - **Completion report:** `phase-2/completion-report.md`

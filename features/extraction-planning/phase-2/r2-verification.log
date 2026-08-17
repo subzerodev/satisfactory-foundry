@@ -37,7 +37,7 @@ kill matrix measured rather than assumed:
 |---|---|---|---|
 | pure ↔ normal | exit 0 | `{0,1,1}` **plus a pre-existing case** | 2 failed / 27 passed (29) |
 | normal ↔ impure | exit 0 | `{1,1,0}` **only** | 1 failed / 28 passed (29) |
-| pure ↔ impure (non-adjacent) | exit 0 | `{0,1,1}`, `{1,0,1}`, `{1,1,0}` | 4 failed / 25 passed (29) |
+| pure ↔ impure (non-adjacent) | exit 0 | `{0,1,1}`, `{1,0,1}`, `{1,1,0}`, **plus the same pre-existing case** | 4 failed / 25 passed (29) |
 
 Representative RED, the normal↔impure swap:
 
@@ -67,10 +67,11 @@ Tests  29 passed (29)
 
 Target: the `purityFields` tuple in `src/ui/GraphCanvas.tsx`, from which the three
 Impure/Normal/Pure inputs are rendered. Before the fix-forward, order had no
-automated pin at all: every assertion selected inputs by aria-label, and the two
-positional reads in the checked-in browser gate (`'0/5/0'` and `'1/1/1'`) are
-symmetric across positions 1 and 3, so an impure↔pure reversal passed the entire
-suite, `npm run check`, and every browser row.
+automated pin at all. This is a greppable fact rather than a measured run, and is
+stated as such: no assertion anywhere selected these inputs positionally except two
+reads in the checked-in browser gate (`'0/5/0'` and `'1/1/1'`), both symmetric across
+positions 1 and 3, and every other site selects by aria-label. An impure↔pure
+reversal was therefore undetectable before the assertion below existed.
 
 Break — reverse the tuple to `pure, normal, impure`:
 
