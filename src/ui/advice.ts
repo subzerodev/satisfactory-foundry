@@ -3,17 +3,13 @@
  * a supply suggestion for an under-supplied link, a tier-unlock hint for a bus
  * finding, and the power-draw display strings.
  *
- * THE SECOND FLOAT BOUNDARY (frozen brainstorm assumption 3, r1 fold): format.ts
- * is the exact-only renderer; THIS module is the second, approximation-labeled
- * boundary. `stagePowerText`/`chainPowerText` convert exact Fractions to JS
- * numbers — but ONLY inside those two functions, and every approximated value
- * carries the "≈" prefix so the label itself is the honesty. The clock^exponent
- * factor is irrational for most clocks, so overclocked power CANNOT be rendered
- * exactly; the approximation is deliberate and labeled. `suggestSupply` and
- * `tierFixHint` stay fully exact (Fraction in, Fraction out) — no float leak.
+ * Power math delegates to core's exact/estimated projection; this module owns
+ * only its display wording. Every estimated value carries the "≈" prefix.
+ * `suggestSupply` and `tierFixHint` stay fully exact.
  */
 
 import { Fraction } from "../core/fraction.ts";
+import { machinePowerProjection } from "../core/machine-power.ts";
 import type { LaneKind } from "../core/manifold.ts";
 import type { MachinePower, TierTable } from "../data/types.ts";
 import { formatRate } from "./format.ts";
@@ -89,26 +85,19 @@ export function stagePowerText(
   machineCount: number,
   clock: Fraction,
 ): string {
-  const count = Fraction.from(machineCount);
-
-  // 100% clock ⇒ no overclock factor, so the draw is exact — render it as such.
-  if (clock.eq(Fraction.from(100))) {
-    const total = count.mul(power.mw);
-    const suffix = power.variable ? variesSuffix(power, machineCount, 1) : "";
-    return `${formatRate(total)} MW${suffix}`;
+  const projection = machinePowerProjection(power, machineCount, clock);
+  if (projection.kind === "exact") {
+    const bounds = projection.variableBoundsMw;
+    const suffix = bounds
+      ? ` (varies ${formatRate(bounds.min)}–${formatRate(bounds.max)} MW)`
+      : "";
+    return `${formatRate(projection.mw)} MW${suffix}`;
   }
-
-  // Other clocks ⇒ the irrational (clock/100)^exponent factor forces floats.
-  // Number conversions are confined here, and the ≈ prefix carries the honesty.
-  const clockRatio = fractionToNumber(clock) / 100;
-  const factor = clockRatio ** fractionToNumber(power.exponent);
-  const total = machineCount * fractionToNumber(power.mw) * factor;
-  // The varies-range scales by the SAME overclock factor so the leading number
-  // always sits inside its stated envelope (boundary fold).
-  const suffix = power.variable
-    ? variesSuffix(power, machineCount, factor)
+  const bounds = projection.variableBoundsMw;
+  const suffix = bounds
+    ? ` (varies ≈ ${bounds.min.toFixed(1)}–${bounds.max.toFixed(1)} MW)`
     : "";
-  return `≈ ${total.toFixed(1)} MW${suffix}`;
+  return `≈ ${projection.mw.toFixed(1)} MW${suffix}`;
 }
 
 /**
@@ -130,12 +119,17 @@ export function chainPowerText(
   for (const stage of stages) {
     const power = stagePowerOf(stage, catalog);
     if (power === null) continue;
-    const { mw, exponent } = power;
     const clock = parseClock(stage.selection.clockPercentText);
     if (clock === null) continue; // an invalid clock can't reach solved anyway
-    const clockRatio = fractionToNumber(clock) / 100;
-    const factor = clockRatio ** fractionToNumber(exponent);
-    total += stage.selection.machineCount * fractionToNumber(mw) * factor;
+    const projection = machinePowerProjection(
+      power,
+      stage.selection.machineCount,
+      clock,
+    );
+    total +=
+      projection.kind === "exact"
+        ? fractionToNumber(projection.mw)
+        : projection.mw;
     anyContributor = true;
   }
   if (!anyContributor) return null;
@@ -212,23 +206,6 @@ export function stagePowerTextFor(
  *  the bounds exact; any other factor floats them with one decimal, matching
  *  the ≈ number they bracket — boundary fold). Falls back to no suffix if
  *  bounds are absent (defensive: the variable branch always parses both). */
-function variesSuffix(
-  power: MachinePower,
-  machineCount: number,
-  factor: number,
-): string {
-  if (power.minMw === undefined || power.maxMw === undefined) return "";
-  if (factor === 1) {
-    const count = Fraction.from(machineCount);
-    const lo = formatRate(count.mul(power.minMw));
-    const hi = formatRate(count.mul(power.maxMw));
-    return ` (varies ${lo}–${hi} MW)`;
-  }
-  const lo = (machineCount * fractionToNumber(power.minMw) * factor).toFixed(1);
-  const hi = (machineCount * fractionToNumber(power.maxMw) * factor).toFixed(1);
-  return ` (varies ≈ ${lo}–${hi} MW)`;
-}
-
 /** Parse a clock-percent string to a positive Fraction, or null if malformed /
  *  non-positive (mirrors the store's derive guard; a stage that fails this is
  *  never solved). */

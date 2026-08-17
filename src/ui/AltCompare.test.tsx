@@ -91,6 +91,7 @@ const CAT: Catalog = {
   // APPLIED graph, where a stage may legitimately run a recipe above the propose
   // tier. An empty map keeps these fixtures gate-free.
   recipeUnlocks: {},
+  extractors: {},
 };
 
 function selection(recipeId: string | null): Selection {

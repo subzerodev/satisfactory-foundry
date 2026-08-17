@@ -22,7 +22,7 @@ import type {
   TransportVehicle,
   TransportTrain,
   TransportDrone,
-} from "./transport-plan.ts";
+} from "../core/transport-plan.ts";
 
 /** The optimistic suffix appended to every estimated-basis result (the tripBasis
  *  echo / train trip.kind drives it — a label, never a recomputation). */
@@ -272,6 +272,15 @@ export function edgeChip(plan: TransportPlan): string | null {
       // unsolved | error — no count to summarize.
       return null;
   }
+}
+
+/** Label an interstep route while preserving edgeChip's count and estimate rules. */
+export function routeEdgeChip(
+  route: "forward" | "empty return",
+  plan: TransportPlan,
+): string | null {
+  const summary = edgeChip(plan);
+  return summary === null ? null : `· ${route} ${summary.slice(2)}`;
 }
 
 /** Prefix a chip body with "· " (and "≈" when estimated). */

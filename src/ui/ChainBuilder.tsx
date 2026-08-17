@@ -43,6 +43,9 @@ import type {
   ConstrainedLever,
 } from "./chain-builder-adapter.ts";
 import type { Catalog, CatalogRecipe } from "../data/types.ts";
+import { parseClockText } from "../core/clock.ts";
+
+export { parseClockText } from "../core/clock.ts";
 
 /**
  * Parse the raw rate text into a positive Fraction, or a labeled error (the
@@ -60,29 +63,6 @@ export function parseRateText(
   }
   if (value.lte(Fraction.from(0))) {
     return { ok: false, error: "rate must be greater than 0" };
-  }
-  return { ok: true, value };
-}
-
-/**
- * Parse the CLOCK % text into a Fraction in (0, 250] — the game's shard-boosted
- * max (S20 P2). Same raw-text-parsed-at-propose-time idiom as `parseRateText`;
- * pure + exported so the node-env suite can pin the wording without rendering.
- */
-export function parseClockText(
-  text: string,
-): { ok: true; value: Fraction } | { ok: false; error: string } {
-  let value: Fraction;
-  try {
-    value = Fraction.parse(text);
-  } catch {
-    return { ok: false, error: "clock % must be a number in (0, 250]" };
-  }
-  if (value.lte(Fraction.from(0))) {
-    return { ok: false, error: "clock % must be greater than 0" };
-  }
-  if (value.gt(Fraction.from(250))) {
-    return { ok: false, error: "clock % must be at most 250" };
   }
   return { ok: true, value };
 }

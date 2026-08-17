@@ -1,0 +1,113 @@
+# Extraction Planning Phase 2 — bidirectional verification
+
+Created under #130, not during the original arc. Phase 2 had **no** verification
+log: its completion report records TDD red/green transitions but no
+break/fail/restore probes, which is why the retroactive r3 review could not
+confirm that the purity refactor's guards were load-bearing. This log covers the
+#130 fix-forward for #124.
+
+Tree: `develop` at `985ed1c` plus the uncommitted #130 fix-forward.
+
+## Method notes
+
+- **Every mutation must compile.** A mutant that fails `tsc -b` produces a
+  `ReferenceError` cascade at runtime, which fails many more tests than the real
+  behavioural difference and looks stronger while proving nothing. This trap fired
+  once in this very fold — see probe 11 in `../phase-1/r2-verification.log`.
+- **`tsc -b` exit status is captured directly**, never through a pipe: `$?` after a
+  pipeline reports the last command in the pipe, not the compiler.
+- Probe A's counts are for `src/ui/extraction-plan.test.ts` (29 cases after the
+  fold adds 3 rows); probe B's are for `src/ui/GraphCanvas.dom.test.tsx` (10).
+
+## Probe A — the purity precedence chain
+
+Target: the `pure → normal → impure` guard chain in `src/ui/extraction-plan.ts`
+(`highestPresentOutput`). Fixtures give `perExtractor` 240, so the arms yield
+pure 480 → capacity `480`, normal 240 → `270`, impure 120 → `120`.
+
+The retroactive r3 review found the chain's ordering unpinned by the pre-existing
+`it.each` rows, each of which sets exactly one field -- with one field set, every
+guard permutation picks the same arm, so none of them can detect a swap. (Read the
+matrix below before generalising that: pure's precedence turned out to be pinned
+elsewhere. The genuinely unpinned pair was normal-vs-impure.) Three mixed rows were
+added, then each of the three pairwise swaps was applied separately and the full
+kill matrix measured rather than assumed:
+
+| Mutation (swap adjacent pair) | `tsc -b` | Failing rows | Focused count |
+|---|---|---|---|
+| pure ↔ normal | exit 0 | `{0,1,1}` **plus a pre-existing case** | 2 failed / 27 passed (29) |
+| normal ↔ impure | exit 0 | `{1,1,0}` **only** | 1 failed / 28 passed (29) |
+| pure ↔ impure (non-adjacent) | exit 0 | `{0,1,1}`, `{1,0,1}`, `{1,1,0}`, **plus the same pre-existing case** | 4 failed / 25 passed (29) |
+
+Representative RED, the normal↔impure swap:
+
+```text
+FAIL  src/ui/extraction-plan.test.ts > deriveExtractionPlan > uses the highest nonzero purity output for transport: { impure: '1', normal: '1', pure: '0' }
+AssertionError: expected '120' to be '270' // Object.is equality
+Tests  1 failed | 28 passed (29)
+```
+
+**What the matrix establishes, including against the fix-forward's own first
+framing.** The normal↔impure swap is killed by exactly ONE test — the new
+`{impure:1, normal:1, pure:0}` row. That was the only guard pair unpinned anywhere
+in the repo, and that row is its sole killer, so it must not be trimmed as
+redundant. The pure↔normal swap is killed by **two** tests, which is direct
+evidence that pure's precedence was already covered before these rows existed (by
+the clock-250 `{1,1,1}` case expecting 1200). The `{1,0,1}` row adds no unique
+kill. An earlier version of the test comment claimed no adjacent pair was pinned;
+that over-stated the gap and is corrected in the test file.
+
+Restore and green:
+
+```text
+Tests  29 passed (29)
+```
+
+## Probe B — purity input DOM order
+
+Target: the `purityFields` tuple in `src/ui/GraphCanvas.tsx`, from which the three
+Impure/Normal/Pure inputs are rendered. Before the fix-forward, order had no
+automated pin at all. This is a greppable fact rather than a measured run, and is
+stated as such: no assertion anywhere selected these inputs positionally except two
+reads in the checked-in browser gate (`'0/5/0'` and `'1/1/1'`), both symmetric across
+positions 1 and 3, and every other site selects by aria-label. An impure↔pure
+reversal was therefore undetectable before the assertion below existed.
+
+Break — reverse the tuple to `pure, normal, impure`:
+
+```text
+npx tsc -b   → tsc_exit=0
+```
+
+RED:
+
+```text
+FAIL  src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > enables, edits, preserves, and disables a solid node mix
+AssertionError: expected [ 'Pure nodes', 'Normal nodes', …(1) ] to deeply equal [ Array(3) ]
+Tests  1 failed | 9 passed (10)
+```
+
+Restore and green:
+
+```text
+Tests  39 passed (39)   (extraction-plan.test.ts + GraphCanvas.dom.test.tsx)
+```
+
+The assertion reads `.extraction-purity-fields input` in document order, and that
+container holds exactly the three mapped inputs — the enable toggle sits outside
+it — so a wrong order cannot pass.
+
+## Delivered-tree verification
+
+Measured after the LAST edit of the #130 fix-forward (1,141 = 1,138 + 3 precedence
+rows + 1 legacy-timestamp test - 1 deleted dead-export test):
+
+```text
+npm test        Test Files  44 passed (44) / Tests  1141 passed (1141)
+npm run check   PASS (tsc -b, ESLint, Prettier)
+npm run build   PASS (Vite/PWA, 18 precache entries)
+node scripts/extraction-panel-browser-check.mjs     exit 0, 12 PASS rows
+node scripts/packaging-intersteps-browser-check.mjs exit 0, 4 PASS rows
+```
+
+No mutation remains in the worktree.

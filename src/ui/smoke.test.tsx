@@ -150,6 +150,8 @@ describe("SummaryCards", () => {
         result={workedResult()}
         itemName={itemName}
         powerText={null}
+        tiers={TIER_TABLE}
+        unlocked={{ belt: 4, pipe: 2 }}
       />,
     );
     expect(html).toContain("600/min in");
@@ -165,6 +167,8 @@ describe("SummaryCards", () => {
         result={workedResult()}
         itemName={itemName}
         powerText="80 MW"
+        tiers={TIER_TABLE}
+        unlocked={{ belt: 4, pipe: 2 }}
       />,
     );
     expect(html).toContain("summary-card-power");
@@ -178,6 +182,8 @@ describe("SummaryCards", () => {
         result={workedResult()}
         itemName={itemName}
         powerText={null}
+        tiers={TIER_TABLE}
+        unlocked={{ belt: 4, pipe: 2 }}
       />,
     );
     expect(html).not.toContain("summary-card-power");
@@ -1326,6 +1332,7 @@ describe("GraphCanvas SSR (opportunistic bonus — Stage 3 P2)", () => {
       },
       tiers: { belt: [], pipe: [] },
       recipeUnlocks: {},
+      extractors: {},
     };
     const sel: Selection = {
       recipeId: "ingot",

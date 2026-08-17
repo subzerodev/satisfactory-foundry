@@ -43,6 +43,7 @@ export interface BusSegment {
   toMachine: number;
   peakFlow: Fraction; // span maximum (feed: at head; output: at tail)
   beltIndex: number; // attribution: the belt whose entry/break-out starts this span
+  parallelCount: number; // derived physical bus lines; feed 1|2, output always 1
 }
 
 export interface FeedLaneResult {
@@ -111,6 +112,7 @@ export type Finding =
         | "negative-rate"
         | "nonpositive-clock"
         | "bad-machine-count"
+        | "negative-override"
         | "overrides-exceed-belt-count";
       detail: string;
     };
@@ -236,14 +238,33 @@ function scaledRate(input: StageInput, lane: LaneInput): Fraction {
 }
 
 /**
- * A lane is degenerate — solves to empty arrays with no findings — when the
- * stage has no machines or the lane's clock-scaled rate is zero. The check
- * precedes every lane solve: a zero-machine stage warns about nothing, oversize
- * overrides included (the stale-overrides finding fires only when a lane
- * actually solves, i.e. N > 0).
+ * After negative overrides have been rejected, a lane is degenerate — solves
+ * to empty arrays with no findings — when the stage has no machines or the
+ * lane's clock-scaled rate is zero. Thus a zero-machine stage warns only about
+ * a negative override; oversize arrays remain silent until a lane actually
+ * solves (N > 0 and a nonzero rate).
  */
 function isDegenerate(input: StageInput, rate: Fraction): boolean {
   return input.machineCount === 0 || rate.isZero();
+}
+
+/** Return the first lane-local finding for a negative capacity override. */
+function negativeOverrideFinding(lane: LaneInput): Finding | null {
+  const overrides = lane.overrides;
+  if (overrides === undefined) {
+    return null;
+  }
+  for (let i = 0; i < overrides.length; i++) {
+    const override = overrides[i];
+    if (override !== null && override !== undefined && override.isNegative()) {
+      return {
+        type: "invalid-input",
+        reason: "negative-override",
+        detail: `lane ${lane.itemId} override ${i + 1} must be zero or positive; got ${override.toString()}.`,
+      };
+    }
+  }
+  return null;
 }
 
 /**
@@ -315,6 +336,11 @@ export function solveFeedLane(
     segments: [],
     findings: [],
   };
+  const negativeOverride = negativeOverrideFinding(lane);
+  if (negativeOverride !== null) {
+    base.findings.push(negativeOverride);
+    return base;
+  }
   if (isDegenerate(input, d)) {
     return base;
   }
@@ -356,8 +382,9 @@ export function solveFeedLane(
     // clamp to N so a belt that would enter past the last machine reports
     // entersAfterMachine = N (its span start = N+1 > end -> no segment, the
     // belt is simply unused). Keeps every emitted index ≤ N.
-    const rawEnter = j === 0 ? 0 : toIndex(cumulative.floorDiv(d));
-    const entersAfterMachine = Math.min(rawEnter, N);
+    const entryQuotient = j === 0 ? 0n : cumulative.floorDiv(d);
+    const entersAfterMachine =
+      entryQuotient >= BigInt(N) ? N : toIndex(entryQuotient);
     belts.push({
       index: j,
       capacity,
@@ -388,14 +415,23 @@ export function solveFeedLane(
     }
     const span = end - start + 1;
     const peakFlow = available; // feed side: peak at the head, just after entry
+    // A normal incoming slot fits one unlocked line. Head-first drain leaves
+    // survivedIn < d, while d <= B and belt.capacity <= B, so its peak is <2B:
+    // exact ceil division is therefore bounded to 1|2. An oversized explicit
+    // slot remains one invalid line and keeps the capacity finding below.
+    const bundleEligible = belt.capacity.lte(B);
+    const parallelCount = bundleEligible
+      ? Math.max(1, Number(peakFlow.ceilDiv(B)))
+      : 1;
     segments.push({
       fromMachine: start,
       toMachine: end,
       peakFlow,
       beltIndex: belt.index,
+      parallelCount,
     });
 
-    if (peakFlow.gt(B)) {
+    if (!bundleEligible && peakFlow.gt(B)) {
       base.findings.push({
         type: "segment-over-capacity",
         itemId: lane.itemId,
@@ -452,6 +488,11 @@ export function solveOutputLane(
     segments: [],
     findings: [],
   };
+  const negativeOverride = negativeOverrideFinding(lane);
+  if (negativeOverride !== null) {
+    base.findings.push(negativeOverride);
+    return base;
+  }
   if (isDegenerate(input, p)) {
     return base;
   }
@@ -520,6 +561,7 @@ export function solveOutputLane(
       toMachine: end,
       peakFlow: load,
       beltIndex: b,
+      parallelCount: 1,
     });
 
     // Over-capacity iff the (overridden) belt cannot carry its span load. On

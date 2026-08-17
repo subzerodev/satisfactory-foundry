@@ -1,0 +1,43 @@
+# Forgejo #123 bidirectional mutation evidence
+
+Date: 2026-08-16
+Command: npm test -- --run src/ui/coincident-feed-marks.test.tsx
+
+## Grouping mutation: discard later members at an existing coordinate
+
+Mutant replaced `group.members.push(mark)` with an empty branch.
+
+FAIL excerpt:
+
+  src/ui/coincident-feed-marks.test.tsx (14 tests | 7 failed)
+  FAIL ... > groups exact coordinates stably without mutating input
+  AssertionError: expected [ [ 'a' ], [ 'b' ], [ 'e' ] ] to deeply equal
+  [ [ 'a', 'c' ], [ 'b', 'd' ], [ 'e' ] ]
+  FAIL ... > groups a zero-followed-by-auto head in both views without changing raw marks
+  AssertionError: expected <line class="belt-arrow" ...> to have a length of 0 but got 1
+
+Restored `group.members.push(mark)` and reran the same command:
+
+  Test Files  1 passed (1)
+  Tests       14 passed (14)
+
+## Render mutation: remove the Schematic group class contract
+
+Mutant renamed `feed-mark-group` to `feed-mark-group-mutant`.
+
+FAIL excerpt:
+
+  src/ui/coincident-feed-marks.test.tsx (14 tests | 5 failed)
+  FAIL ... > groups a zero-followed-by-auto head in both views without changing raw marks
+  AssertionError: expected [] to have a length of 1 but got 0
+  FAIL ... > prevents inward-facing Schematic group tokens from overlapping
+  AssertionError: expected [] to have a length of 2 but got 0
+  FAIL ... > keeps a grouped pipe dashed and exposes the existing focus tooltip
+  TypeError: Object.defineProperty called on non-object
+
+Restored `feed-mark-group` and reran the same command:
+
+  Test Files  1 passed (1)
+  Tests       14 passed (14)
+
+Both temporary mutations were restored before final verification.

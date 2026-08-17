@@ -698,7 +698,7 @@ body {
   position: absolute;
   pointer-events: none;
   z-index: 5;
-  max-width: 280px;
+  box-sizing: border-box;
   padding: 4px 8px;
   font-family: var(--font-mono-num);
   font-size: 11px;
@@ -706,7 +706,8 @@ body {
   color: var(--bg-panel);
   background: var(--fg);
   border-radius: 0;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .machine rect {
@@ -762,20 +763,72 @@ body {
   stroke-width: 6;
 }
 
+.parallel-rail {
+  stroke-width: 4;
+}
+
+.parallel-segment:focus-visible .parallel-rail {
+  stroke-width: 6;
+}
+
+.parallel-run-label {
+  font-family: var(--font-mono-num);
+  font-size: 10px;
+  fill: var(--fg);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3;
+}
+
 .belt-arrow {
   stroke-width: 2;
+}
+
+.feed-group-stem {
+  stroke: var(--fg);
+  stroke-width: 2;
+}
+
+.feed-group-count {
+  font-family: var(--font-mono-num);
+  font-size: 10px;
+  fill: var(--fg);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.feed-mark-group:focus-visible {
+  outline: none;
+}
+
+.feed-mark-group:focus-visible .feed-group-stem {
+  stroke: var(--accent-strong);
+  stroke-width: 4;
+}
+
+.feed-mark-group:focus-visible .feed-group-count {
+  fill: var(--accent-strong);
 }
 
 /* Pipe lanes (Stage 5 item 4): a desaturated-blue dashed treatment so a fluid
    lane reads distinctly from a belt lane. The stroke colour stays tier-driven
    (set inline from colorForCapacity); the class adds the dashed dm rhythm +
    a slight fade so pipes recede visually from belts. */
-.lane-pipe.bus-seg {
+.lane-pipe.bus-seg,
+.lane-pipe.parallel-rail {
   stroke-dasharray: 10 5;
   opacity: 0.85;
 }
 
 .lane-pipe.belt-arrow {
+  stroke-dasharray: 4 3;
+  opacity: 0.85;
+}
+
+.lane-pipe.feed-group-stem {
   stroke-dasharray: 4 3;
   opacity: 0.85;
 }
@@ -952,6 +1005,17 @@ body {
   opacity: 0.7;
 }
 
+.bp-parallel-max {
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  fill: var(--fg);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3;
+}
+
 /* Pipe buses (Stage 5 item 4): a desaturated-blue tint + a dashed outline so a
    fluid lane reads distinctly from a belt bus in the floor plan. */
 .bp-bus-pipe {
@@ -984,6 +1048,19 @@ body {
   fill: var(--accent);
   stroke: var(--accent-strong);
   stroke-width: 1;
+}
+
+.bp-feed-mark-group:focus-visible {
+  outline: none;
+}
+
+.bp-feed-mark-group:focus-visible .bp-mark-glyph {
+  stroke: var(--fg);
+  stroke-width: 4;
+}
+
+.bp-feed-group-count {
+  font-family: var(--font-mono-num);
 }
 
 /* Label halo (Stage 12 P1 Axis 2): the rate labels sit at fixed dm offsets and,
@@ -1158,6 +1235,7 @@ body {
    ------------------------------------------------------------------------- */
 
 .graph-canvas {
+  box-sizing: border-box;
   width: 100%;
   /* Bigger + user-resizable (Stage 10 P1 Axis 1): a taller default, vertical
      drag-resize between a floor and 85vh. resize needs overflow ≠ visible (the
@@ -1195,6 +1273,133 @@ body {
   background: var(--bg-panel);
   border: 1px solid var(--error);
   border-radius: 0;
+}
+
+.graph-canvas .react-flow__panel.top.right {
+  max-width: min(360px, calc(100% - 32px));
+}
+
+.graph-top-right-stack {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.extraction-panel {
+  box-sizing: border-box;
+  width: 340px;
+  max-width: 100%;
+  padding: 8px 10px;
+  color: var(--fg);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.extraction-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.extraction-panel-head h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.extraction-panel-close {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.extraction-required,
+.extraction-result p,
+.extraction-error,
+.extraction-muted {
+  margin: 6px 0 0;
+}
+
+.extraction-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 0.45fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.extraction-fields label {
+  display: grid;
+  gap: 3px;
+}
+
+.extraction-fields select,
+.extraction-fields input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.extraction-purity-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.extraction-purity-toggle input {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.extraction-purity-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.extraction-purity-fields label {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.extraction-purity-fields input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.extraction-purity-result {
+  margin-top: 6px;
+  padding-top: 2px;
+  border-top: 1px dashed var(--border-soft);
+}
+
+.extraction-result {
+  margin-top: 8px;
+  padding-top: 2px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.extraction-warning,
+.extraction-error {
+  color: var(--error);
+}
+
+.extraction-muted {
+  color: var(--fg-muted);
 }
 
 /* Machine plate (Stage 9 P1 Axis 1). The stage card reads as a bordered ink
@@ -1330,12 +1535,51 @@ body {
   border-radius: 0;
 }
 
+.raw-feed-node-button {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  background: transparent;
+  border: 0;
+}
+
+.raw-feed-node-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .raw-feed-node-item {
   color: var(--fg);
 }
 
 .raw-feed-node-rate {
   color: var(--fg-muted);
+}
+
+@media (max-width: 720px) {
+  .graph-canvas .react-flow__panel.top.right {
+    top: 48px;
+    right: 8px;
+    left: 8px;
+    max-width: none;
+    margin: 0;
+  }
+
+  .graph-top-right-stack {
+    width: 100%;
+    max-height: 170px;
+  }
+
+  .extraction-panel {
+    width: 100%;
+  }
 }
 
 /* The chain-Σ power line (Stage 6 P2) — a small muted panel, bottom-right. */
@@ -1374,6 +1618,12 @@ body {
 
 .edge-dangling .react-flow__edge-path {
   stroke: var(--notice);
+  stroke-dasharray: 4 3;
+}
+
+.edge-problem .react-flow__edge-path {
+  stroke: var(--error);
+  stroke-width: 2;
   stroke-dasharray: 4 3;
 }
 
@@ -1441,6 +1691,16 @@ body {
   fill: var(--fg);
 }
 
+.edge-problem .react-flow__edge-textbg {
+  stroke: var(--error);
+  stroke-width: 2;
+  fill: var(--bg);
+}
+
+.edge-problem .react-flow__edge-text {
+  fill: var(--error);
+}
+
 /* -------------------------------------------------------------------------
    LinkInspector (Stage 7 / Phase 2). The selected-edge transport side panel.
    Follows the findings/summary visual idiom (bordered card, muted labels).
@@ -1493,10 +1753,81 @@ body {
   gap: 6px;
 }
 
+.link-inspector-interstep,
+.link-inspector-route {
+  min-width: 0;
+}
+
+.link-inspector-interstep {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.link-inspector-route {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.link-inspector-route h3 {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.link-inspector-interstep-summary,
+.link-inspector-advisories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.link-inspector-interstep-summary p,
+.link-inspector-advisories p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.link-inspector-advisories {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.link-inspector-route select,
+.link-inspector-route input,
+.link-inspector-interstep > label select,
+.link-inspector-interstep > label input {
+  max-width: 100%;
+}
+
+.link-inspector-train {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .link-inspector-basis {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   font-size: 13px;
+}
+
+@media (max-width: 480px) {
+  .link-inspector {
+    padding: 10px;
+  }
+
+  .link-inspector-mode,
+  .link-inspector-fuel,
+  .link-inspector-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
 }
 
 .link-inspector-result {

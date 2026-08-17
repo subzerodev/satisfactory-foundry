@@ -10,7 +10,9 @@ import {
   migrateV1,
   migrateV2,
   migrateV3,
-  migrateV4,
+  migrateV5,
+  migrateV7,
+  validatePlanFile,
 } from "./plan-store.ts";
 import type {
   PlanFileV1,
@@ -18,7 +20,191 @@ import type {
   PlanFileV3,
   PlanFileV4,
   PlanFileV5,
+  PlanFileV6,
+  PlanFileV7,
+  PlanFileV8,
 } from "./plan-store.ts";
+
+describe("plan-store — v6 extraction and explicit placement (#112)", () => {
+  it("migrates v5 userPlaced true/absent to required booleans", () => {
+    const v6 = migrateV5(
+      samplePlanV5({
+        stages: [
+          { name: "Pinned", selection: sampleSelection(), userPlaced: true },
+          { name: "Auto", selection: sampleSelection() },
+        ],
+      }),
+    );
+    expect(v6.format_version).toBe(6);
+    expect(v6.stages.map((stage) => stage.userPlaced)).toEqual([true, false]);
+  });
+
+  it("materializes legacy placement from original position presence", async () => {
+    const db = await (await import("./db.ts")).openDb();
+    await db.put(
+      "plans",
+      samplePlanV4({
+        stages: [
+          {
+            name: "Pinned",
+            selection: sampleSelection(),
+            position: { x: 1, y: 2 },
+          },
+          { name: "Auto", selection: sampleSelection() },
+        ],
+      }),
+      "legacy",
+    );
+    const loaded = await loadPlan("legacy");
+    expect(loaded?.stages.map((stage) => stage.userPlaced)).toEqual([
+      true,
+      false,
+    ]);
+  });
+
+  it("rejects malformed v6 placement and extraction shapes", async () => {
+    const db = await (await import("./db.ts")).openDb();
+    const good = samplePlanV6();
+    for (const stage of [
+      { ...good.stages[0], userPlaced: undefined },
+      {
+        ...good.stages[0],
+        extraction: { stone: { machineId: "", clockPercentText: "100" } },
+      },
+      {
+        ...good.stages[0],
+        extraction: { stone: { machineId: "miner", clockPercentText: 100 } },
+      },
+      {
+        ...good.stages[0],
+        extraction: [{ machineId: "miner_mk3", clockPercentText: "100" }],
+      },
+    ]) {
+      await db.put("plans", { ...good, stages: [stage] }, "bad");
+      expect(await loadPlan("bad")).toBeNull();
+    }
+  });
+
+  it("migrates extraction intent including raw clock text", async () => {
+    const plan: PlanFileV6 = {
+      ...migrateV5(samplePlanV5()),
+      stages: [
+        {
+          name: "Stage 1",
+          selection: sampleSelection(),
+          userPlaced: false,
+          extraction: {
+            stone: { machineId: "miner_mk3", clockPercentText: "bad edit" },
+          },
+        },
+      ],
+    };
+    const db = await (await import("./db.ts")).openDb();
+    await db.put("plans", plan, "v6");
+    const loaded = await loadPlan("v6");
+    expect(loaded?.format_version).toBe(8);
+    expect(loaded?.stages[0]!.extraction?.stone).toEqual({
+      machineId: "miner_mk3",
+      clockPercentText: "bad edit",
+    });
+  });
+});
+
+describe("plan-store — v7 purity mix persistence (#124)", () => {
+  it("validates and round-trips all raw purity strings", async () => {
+    const plan = samplePlanV7({
+      stages: [
+        {
+          name: "Stage 1",
+          selection: sampleSelection(),
+          userPlaced: false,
+          extraction: {
+            stone: {
+              machineId: "miner_mk3",
+              clockPercentText: "bad edit",
+              purityMix: {
+                impure: "0002",
+                normal: "1.5",
+                pure: "9007199254740992",
+              },
+            },
+          },
+        },
+      ],
+    });
+    const db = await (await import("./db.ts")).openDb();
+    await db.put("plans", plan, "v7");
+
+    const loaded = await loadPlan("v7");
+    expect(loaded?.format_version).toBe(8);
+    expect(loaded?.stages[0]!.extraction?.stone).toEqual(
+      plan.stages[0]!.extraction?.stone,
+    );
+    expect((await listPlans()).map((entry) => entry.id)).toContain("v7");
+  });
+
+  it.each([
+    null,
+    ["0", "1", "0"],
+    { impure: "0", normal: "1" },
+    { impure: "0", normal: 1, pure: "0" },
+  ])("rejects malformed optional purity mix %j", async (purityMix) => {
+    const db = await (await import("./db.ts")).openDb();
+    const good = samplePlanV7();
+    await db.put(
+      "plans",
+      {
+        ...good,
+        stages: [
+          {
+            ...good.stages[0],
+            extraction: {
+              stone: {
+                machineId: "miner_mk3",
+                clockPercentText: "100",
+                purityMix,
+              },
+            },
+          },
+        ],
+      },
+      "bad-v7",
+    );
+    expect(await loadPlan("bad-v7")).toBeNull();
+  });
+
+  it("migrates v6 by copying only historical fields into a null-prototype record", async () => {
+    const extraction = Object.create(null) as Record<string, unknown>;
+    extraction.__proto__ = {
+      machineId: "miner_mk1",
+      clockPercentText: "bad edit",
+      purityMix: { impure: "9", normal: "8", pure: "7" },
+    };
+    const v6 = samplePlanV6({
+      stages: [
+        {
+          name: "Stage 1",
+          selection: sampleSelection(),
+          userPlaced: false,
+          extraction,
+        } as never,
+      ],
+    });
+    const db = await (await import("./db.ts")).openDb();
+    await db.put("plans", v6, "v6-extra");
+
+    const loaded = await loadPlan("v6-extra");
+    expect(loaded?.format_version).toBe(8);
+    const migrated = loaded!.stages[0]!.extraction!;
+    expect(Object.getPrototypeOf(migrated)).toBeNull();
+    expect(Object.hasOwn(migrated, "__proto__")).toBe(true);
+    expect(migrated.__proto__).toEqual({
+      machineId: "miner_mk1",
+      clockPercentText: "bad edit",
+    });
+    expect(migrated.__proto__?.purityMix).toBeUndefined();
+  });
+});
 
 // A canonical selection with a fractional clock text + override strings, to
 // prove the exact user-input text round-trips (no float coercion anywhere).
@@ -35,7 +221,7 @@ function sampleSelection(): Selection {
   };
 }
 
-/** A well-formed v2 file (the current save shape): named stages + index links. */
+/** A well-formed historical v2 writer shape: named stages + index links. */
 function samplePlan(overrides?: Partial<PlanFileV2>): PlanFileV2 {
   return {
     format_version: 2,
@@ -54,7 +240,7 @@ function samplePlan(overrides?: Partial<PlanFileV2>): PlanFileV2 {
   };
 }
 
-/** A well-formed v3 file (the current save shape): v2 + optional link transport. */
+/** A well-formed historical v3 writer shape: v2 + optional link transport. */
 function samplePlanV3(overrides?: Partial<PlanFileV3>): PlanFileV3 {
   return {
     format_version: 3,
@@ -73,7 +259,7 @@ function samplePlanV3(overrides?: Partial<PlanFileV3>): PlanFileV3 {
   };
 }
 
-/** A well-formed v4 file (the CURRENT save shape): v3 + the S8P2 transport
+/** A well-formed historical v4 file: v3 + the S8P2 transport
  *  extensions (pipe deratePercentText, train sharedEnds) legal in the config. */
 function samplePlanV4(overrides?: Partial<PlanFileV4>): PlanFileV4 {
   return {
@@ -93,7 +279,7 @@ function samplePlanV4(overrides?: Partial<PlanFileV4>): PlanFileV4 {
   };
 }
 
-/** A well-formed v5 file (the CURRENT save shape): v4 + a top-level
+/** A well-formed historical v5 file: v4 + a top-level
  *  flowDirection and optional per-stage userPlaced. */
 function samplePlanV5(overrides?: Partial<PlanFileV5>): PlanFileV5 {
   return {
@@ -110,6 +296,43 @@ function samplePlanV5(overrides?: Partial<PlanFileV5>): PlanFileV5 {
       },
     ],
     links: [],
+    ...overrides,
+  };
+}
+
+function samplePlanV6(overrides?: Partial<PlanFileV6>): PlanFileV6 {
+  return {
+    ...migrateV5(samplePlanV5()),
+    ...overrides,
+  };
+}
+
+function samplePlanV7(overrides?: Partial<PlanFileV7>): PlanFileV7 {
+  const v6 = samplePlanV6();
+  return {
+    ...v6,
+    format_version: 7,
+    stages: v6.stages.map((stage, index) =>
+      index === 0
+        ? {
+            ...stage,
+            extraction: {
+              stone: {
+                machineId: "miner_mk3",
+                clockPercentText: "125",
+                purityMix: { impure: "01", normal: "2", pure: "003" },
+              },
+            },
+          }
+        : stage,
+    ),
+    ...overrides,
+  };
+}
+
+function samplePlanV8(overrides?: Partial<PlanFileV8>): PlanFileV8 {
+  return {
+    ...migrateV7(samplePlanV7()),
     ...overrides,
   };
 }
@@ -135,6 +358,332 @@ beforeEach(async () => {
   ).IDBFactory();
 });
 
+describe("plan-store — v8 packaging interstep persistence (#113)", () => {
+  const stages = [
+    { name: "A", selection: sampleSelection(), userPlaced: false },
+    { name: "B", selection: sampleSelection(), userPlaced: false },
+    { name: "C", selection: sampleSelection(), userPlaced: false },
+  ];
+
+  function packagedLink(
+    overrides: Record<string, unknown> = {},
+  ): PlanFileV8["links"][number] {
+    return {
+      from: 0,
+      to: 1,
+      itemId: "water",
+      transport: { mode: "belt" },
+      interstep: {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "100",
+        returnTransport: { mode: "belt" },
+      },
+      ...overrides,
+    } as PlanFileV8["links"][number];
+  }
+
+  it("saves and loads current v8 intent including stale package IDs", async () => {
+    const plan = samplePlanV8({
+      stages,
+      links: [
+        packagedLink({
+          interstep: {
+            packageRecipeId: "stale-package-id",
+            clockPercentText: "bad edit",
+            returnTransport: {
+              mode: "train",
+              trip: { kind: "estimated", distanceText: "" },
+              sharedEnds: { from: true },
+            },
+          },
+        }),
+      ],
+    });
+    await savePlan(plan, "v8");
+    expect(await loadPlan("v8")).toEqual(plan);
+  });
+
+  it("preserves raw invalid numeric text for derive-time errors", () => {
+    for (const deratePercentText of ["", "bad", "0", "101"]) {
+      const plan = samplePlanV8({
+        stages,
+        links: [
+          {
+            from: 0,
+            to: 1,
+            itemId: "water",
+            transport: { mode: "pipe", deratePercentText },
+          },
+          packagedLink({
+            to: 2,
+            interstep: {
+              packageRecipeId: "packaged_water",
+              clockPercentText: "-1",
+              returnTransport: {
+                mode: "truck",
+                trip: { kind: "measured", roundTripSecondsText: "bad" },
+              },
+            },
+          }),
+        ],
+      });
+      expect(validatePlanFile(plan)).toEqual(plan);
+    }
+  });
+
+  it.each([
+    ["unknown transport field", { mode: "belt", fuel: "battery" }],
+    [
+      "misplaced trip field",
+      {
+        mode: "truck",
+        trip: { kind: "estimated", distanceText: "1", flightMetersText: "2" },
+      },
+    ],
+    [
+      "unknown shared end",
+      {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "1" },
+        sharedEnds: { from: true, middle: true },
+      },
+    ],
+  ])("rejects closed-world %s", (_name, transport) => {
+    const plan = samplePlanV8({
+      stages,
+      links: [{ from: 0, to: 1, itemId: "iron", transport } as never],
+    });
+    expect(validatePlanFile(plan)).toBeNull();
+  });
+
+  it("rejects malformed interstep fields and illegal packaged routes", () => {
+    for (const interstep of [
+      {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "100",
+        returnTransport: { mode: "belt" },
+        extra: true,
+      },
+      {
+        packageRecipeId: 1,
+        clockPercentText: "100",
+        returnTransport: { mode: "belt" },
+      },
+      {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "100",
+        returnTransport: { mode: "pipe" },
+      },
+    ]) {
+      expect(
+        validatePlanFile(
+          samplePlanV8({
+            stages,
+            links: [packagedLink({ interstep }) as never],
+          }),
+        ),
+      ).toBeNull();
+    }
+    expect(
+      validatePlanFile(
+        samplePlanV8({
+          stages,
+          links: [
+            packagedLink({
+              transport: {
+                mode: "fluid-truck",
+                trip: { kind: "estimated", distanceText: "1" },
+              },
+            }) as never,
+          ],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("canonicalizes fields historically tolerated by v7", async () => {
+    const legacy = samplePlanV7({
+      stages,
+      links: [
+        {
+          from: 0,
+          to: 1,
+          itemId: "iron",
+          transport: {
+            mode: "train",
+            trip: {
+              kind: "estimated",
+              distanceText: "1200",
+              roundTripSecondsText: "ignored",
+            },
+            sharedEnds: { from: true, ignored: true },
+            fuel: "battery",
+          },
+        } as never,
+      ],
+    });
+    const db = await (await import("./db.ts")).openDb();
+    await db.put("plans", legacy, "legacy-v7");
+    const migrated = await loadPlan("legacy-v7");
+    expect(migrated?.format_version).toBe(8);
+    expect(migrated?.links[0]?.transport).toEqual({
+      mode: "train",
+      trip: { kind: "estimated", distanceText: "1200" },
+      sharedEnds: { from: true },
+    });
+    await savePlan(migrated!, "canonical-v8");
+    expect(await loadPlan("canonical-v8")).toEqual(migrated);
+  });
+
+  it("migrates v7-valid array transports and trips to exact v8 objects", () => {
+    const outerBelt = Object.assign([], {
+      mode: "belt",
+      ignored: true,
+    });
+    const vehicleTrip = Object.assign([], {
+      kind: "estimated",
+      distanceText: "500",
+      ignored: true,
+    });
+    const droneTrip = Object.assign([], {
+      kind: "measured",
+      roundTripSecondsText: "300",
+      flightMetersText: "1200",
+      ignored: true,
+    });
+    const legacy = samplePlanV7({
+      stages,
+      links: [
+        {
+          from: 0,
+          to: 1,
+          itemId: "iron",
+          transport: outerBelt,
+        } as never,
+        {
+          from: 0,
+          to: 1,
+          itemId: "coal",
+          transport: { mode: "truck", trip: vehicleTrip },
+        } as never,
+        {
+          from: 0,
+          to: 1,
+          itemId: "nitrogen",
+          transport: {
+            mode: "drone",
+            fuel: "battery",
+            trip: droneTrip,
+          },
+        } as never,
+      ],
+    });
+
+    expect(
+      validatePlanFile(legacy)?.links.map((link) => link.transport),
+    ).toStrictEqual([
+      { mode: "belt" },
+      {
+        mode: "truck",
+        trip: { kind: "estimated", distanceText: "500" },
+      },
+      {
+        mode: "drone",
+        fuel: "battery",
+        trip: {
+          kind: "measured",
+          roundTripSecondsText: "300",
+          flightMetersText: "1200",
+        },
+      },
+    ]);
+  });
+
+  it("migrates inherited and non-enumerable v7 transport fields", () => {
+    const inheritedBelt = Object.create(
+      Object.defineProperty({}, "mode", {
+        value: "belt",
+        writable: false,
+      }),
+    );
+    const nonEnumerablePipe = Object.defineProperties(
+      {},
+      {
+        mode: { value: "pipe" },
+        deratePercentText: { value: "80" },
+      },
+    );
+    const inheritedTrip = Object.create(
+      Object.defineProperty({}, "kind", {
+        value: "estimated",
+        writable: false,
+      }),
+    );
+    Object.defineProperty(inheritedTrip, "distanceText", {
+      value: "900",
+    });
+    const inheritedSharedEnds = Object.create(
+      Object.defineProperty({}, "from", {
+        value: true,
+        writable: false,
+      }),
+    );
+    Object.defineProperty(inheritedSharedEnds, "to", { value: true });
+    const inheritedTrain = Object.create(
+      Object.defineProperties(
+        {},
+        {
+          mode: { value: "train", writable: false },
+          trip: { value: inheritedTrip, writable: false },
+          sharedEnds: { value: inheritedSharedEnds, writable: false },
+        },
+      ),
+    );
+    const legacy = samplePlanV7({
+      stages,
+      links: [
+        {
+          from: 0,
+          to: 1,
+          itemId: "iron",
+          transport: inheritedBelt,
+        } as never,
+        {
+          from: 0,
+          to: 1,
+          itemId: "water",
+          transport: nonEnumerablePipe,
+        } as never,
+        {
+          from: 0,
+          to: 1,
+          itemId: "coal",
+          transport: inheritedTrain,
+        } as never,
+      ],
+    });
+
+    expect(
+      validatePlanFile(legacy)?.links.map((link) => link.transport),
+    ).toStrictEqual([
+      { mode: "belt" },
+      { mode: "pipe", deratePercentText: "80" },
+      {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "900" },
+        sharedEnds: { from: true, to: true },
+      },
+    ]);
+  });
+
+  it("rejects future v9 while migrating v7 to canonical v8", () => {
+    expect(
+      validatePlanFile({ ...samplePlanV8(), format_version: 9 }),
+    ).toBeNull();
+    expect(validatePlanFile(samplePlanV7())?.format_version).toBe(8);
+  });
+});
+
 // The first test to run: pins crypto.randomUUID availability in the node test
 // env (a DIFFERENT crypto surface than catalog-store's crypto.subtle precedent).
 describe("plan-store — environment", () => {
@@ -146,13 +695,13 @@ describe("plan-store — environment", () => {
   });
 });
 
-describe("plan-store — save/load/delete round-trip (v5)", () => {
+describe("plan-store — save/load/delete round-trip (v8)", () => {
   it("save → load returns the exact plan, fractional clock + override strings intact", async () => {
     const id = crypto.randomUUID();
-    await savePlan(samplePlanV5(), id);
+    await savePlan(samplePlanV8(), id);
     const loaded = await loadPlan(id);
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(5);
+    expect(loaded!.format_version).toBe(8);
     expect(loaded!.stages[0]!.selection.clockPercentText).toBe("37.5");
     expect(loaded!.stages[0]!.selection.overrides.feeds.ore_iron).toEqual([
       "480",
@@ -164,15 +713,30 @@ describe("plan-store — save/load/delete round-trip (v5)", () => {
     });
     expect(loaded!.stages[0]!.name).toBe("Stage 1");
     expect(loaded!.stages[0]!.position).toEqual({ x: 40, y: 40 });
+    expect(loaded!.stages[0]!.extraction?.stone?.purityMix).toEqual({
+      impure: "01",
+      normal: "2",
+      pure: "003",
+    });
   });
 
   it("round-trips a multi-stage graph with index-encoded links", async () => {
     const id = crypto.randomUUID();
-    const plan = samplePlanV5({
+    const plan = samplePlanV8({
       stages: [
-        { name: "A", selection: sampleSelection(), position: { x: 0, y: 0 } },
-        { name: "B", selection: sampleSelection(), position: { x: 260, y: 0 } },
-        { name: "C", selection: sampleSelection() },
+        {
+          name: "A",
+          selection: sampleSelection(),
+          position: { x: 0, y: 0 },
+          userPlaced: false,
+        },
+        {
+          name: "B",
+          selection: sampleSelection(),
+          position: { x: 260, y: 0 },
+          userPlaced: false,
+        },
+        { name: "C", selection: sampleSelection(), userPlaced: false },
       ],
       links: [
         { from: 0, to: 1, itemId: "iron_ingot" },
@@ -191,12 +755,12 @@ describe("plan-store — save/load/delete round-trip (v5)", () => {
 
   it("round-trips per-link transport verbatim (raw user text intact)", async () => {
     const id = crypto.randomUUID();
-    const plan = samplePlanV5({
+    const plan = samplePlanV8({
       stages: [
-        { name: "A", selection: sampleSelection() },
-        { name: "B", selection: sampleSelection() },
-        { name: "C", selection: sampleSelection() },
-        { name: "D", selection: sampleSelection() },
+        { name: "A", selection: sampleSelection(), userPlaced: false },
+        { name: "B", selection: sampleSelection(), userPlaced: false },
+        { name: "C", selection: sampleSelection(), userPlaced: false },
+        { name: "D", selection: sampleSelection(), userPlaced: false },
       ],
       links: [
         {
@@ -250,7 +814,7 @@ describe("plan-store — save/load/delete round-trip (v5)", () => {
 
   it("deletePlan removes the row; a later load → null", async () => {
     const id = crypto.randomUUID();
-    await savePlan(samplePlanV5(), id);
+    await savePlan(samplePlanV8(), id);
     await deletePlan(id);
     expect(await loadPlan(id)).toBeNull();
   });
@@ -259,15 +823,15 @@ describe("plan-store — save/load/delete round-trip (v5)", () => {
 describe("plan-store — listPlans", () => {
   it("sorts by updatedAt descending", async () => {
     await savePlan(
-      samplePlanV5({ name: "old", updatedAt: "2026-01-01T00:00:00.000Z" }),
+      samplePlanV8({ name: "old", updatedAt: "2026-01-01T00:00:00.000Z" }),
       "id-old",
     );
     await savePlan(
-      samplePlanV5({ name: "new", updatedAt: "2026-12-31T00:00:00.000Z" }),
+      samplePlanV8({ name: "new", updatedAt: "2026-12-31T00:00:00.000Z" }),
       "id-new",
     );
     await savePlan(
-      samplePlanV5({ name: "mid", updatedAt: "2026-06-15T00:00:00.000Z" }),
+      samplePlanV8({ name: "mid", updatedAt: "2026-06-15T00:00:00.000Z" }),
       "id-mid",
     );
     const list = await listPlans();
@@ -275,10 +839,10 @@ describe("plan-store — listPlans", () => {
     expect(list[0]).toMatchObject({ id: "id-new", name: "new" });
   });
 
-  it("lists a legacy v1 row alongside v5 rows (both loadable)", async () => {
+  it("lists a legacy v1 row alongside v8 rows (both loadable)", async () => {
     await savePlan(
-      samplePlanV5({ name: "v5", updatedAt: "2026-06-15T00:00:00.000Z" }),
-      "id-v5",
+      samplePlanV8({ name: "v8", updatedAt: "2026-06-15T00:00:00.000Z" }),
+      "id-v8",
     );
     const db = await (await import("./db.ts")).openDb();
     await db.put(
@@ -287,11 +851,11 @@ describe("plan-store — listPlans", () => {
       "id-v1",
     );
     const list = await listPlans();
-    expect(list.map((e) => e.name)).toEqual(["v1", "v5"]);
+    expect(list.map((e) => e.name)).toEqual(["v1", "v8"]);
   });
 
   it("skips a corrupt row (never crashes) but keeps valid ones", async () => {
-    await savePlan(samplePlanV5({ name: "good" }), "id-good");
+    await savePlan(samplePlanV8({ name: "good" }), "id-good");
     // A foreign / corrupt row written directly under the plans store.
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", { garbage: true }, "id-bad");
@@ -331,8 +895,8 @@ describe("plan-store — isPlanFileV2 accept/reject", () => {
     expect(loaded!.stages[0]!.selection.machineCount).toBeNull();
   });
 
-  it("rejects an unknown format_version (neither 1/2/3/4/5 → corrupt)", async () => {
-    await putRaw({ ...samplePlanV3(), format_version: 6 });
+  it("rejects future format_version 9 on an otherwise valid v8 payload", async () => {
+    await putRaw({ ...samplePlanV8(), format_version: 9 });
     expect(await loadPlan("id")).toBeNull();
   });
 
@@ -481,12 +1045,12 @@ describe("plan-store — migrateV1", () => {
     expect(v2.name).toBe("Legacy Plan");
   });
 
-  it("loadPlan migrates a stored v1 row transparently (returns v5)", async () => {
+  it("loadPlan migrates a stored v1 row transparently (returns v8)", async () => {
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", samplePlanV1(), "id");
     const loaded = await loadPlan("id");
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(5);
+    expect(loaded!.format_version).toBe(8);
     expect(loaded!.flowDirection).toBe("LR");
     expect(loaded!.stages[0]!.name).toBe("Stage 1");
     expect(loaded!.stages[0]!.selection.clockPercentText).toBe("37.5");
@@ -540,8 +1104,8 @@ describe("plan-store — migrateV2 (v2 → v3)", () => {
   });
 });
 
-describe("plan-store — migrateV3 (v3 → v4, identity on links)", () => {
-  it("flips only the header; stages + links + timestamps carry verbatim", () => {
+describe("plan-store — migrateV3 (v3 → v4, canonical links)", () => {
+  it("flips the header; stages + admitted link intent + timestamps carry over", () => {
     const v3 = samplePlanV3({
       createdAt: "2020-01-01T00:00:00.000Z",
       updatedAt: "2021-02-03T04:05:06.000Z",
@@ -566,7 +1130,9 @@ describe("plan-store — migrateV3 (v3 → v4, identity on links)", () => {
     expect(v4.createdAt).toBe("2020-01-01T00:00:00.000Z");
     expect(v4.updatedAt).toBe("2021-02-03T04:05:06.000Z");
     expect(v4.stages).toBe(v3.stages);
-    // The new S8P2 fields are absent by construction (a v3 link never had them).
+    // This fixture carries no v4-only extensions, so it pins only that admitted
+    // link intent survives the header flip untouched. The stripping behaviour is
+    // pinned separately below.
     expect(v4.links).toEqual(v3.links);
     expect(v4.links[0]!.transport).toEqual({
       mode: "train",
@@ -574,48 +1140,167 @@ describe("plan-store — migrateV3 (v3 → v4, identity on links)", () => {
     });
   });
 
-  it("a stored v3 row still loads (migrated to v5) through loadPlan", async () => {
+  it("a stored v3 row still loads (migrated to v8) through loadPlan", async () => {
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", samplePlanV3({ name: "legacy-v3" }), "id");
     const loaded = await loadPlan("id");
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(5);
+    expect(loaded!.format_version).toBe(8);
     expect(loaded!.name).toBe("legacy-v3");
+  });
+
+  it("strips JSON v4 extensions ignored by v3 and preserves admitted versions", () => {
+    const links = [
+      {
+        from: 0,
+        to: 1,
+        itemId: "water",
+        transport: { mode: "pipe", deratePercentText: 0 },
+      },
+      {
+        from: 0,
+        to: 1,
+        itemId: "iron_ingot",
+        transport: {
+          mode: "train",
+          trip: { kind: "estimated", distanceText: "1200" },
+          sharedEnds: { from: false },
+        },
+      },
+      // Decorrelation rows: these carry v4-VALID extension values, so they are
+      // stripped only because the source version is 3. The two rows above use
+      // v4-invalid values, which a lenient drop-if-uncanonicalizable rule would
+      // also discard — only a valid value distinguishes stripping from that.
+      {
+        from: 0,
+        to: 1,
+        itemId: "nitrogen",
+        transport: { mode: "pipe", deratePercentText: "80" },
+      },
+      {
+        from: 0,
+        to: 1,
+        itemId: "copper_ingot",
+        transport: {
+          mode: "train",
+          trip: { kind: "estimated", distanceText: "1200" },
+          sharedEnds: { from: true },
+        },
+      },
+    ];
+    const stages = [
+      { name: "A", selection: sampleSelection() },
+      { name: "B", selection: sampleSelection() },
+    ];
+    const jsonV3 = JSON.parse(
+      JSON.stringify(samplePlanV3({ stages, links: links as never })),
+    ) as unknown;
+
+    expect(
+      validatePlanFile(jsonV3)?.links.map((link) => link.transport),
+    ).toStrictEqual([
+      { mode: "pipe" },
+      {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "1200" },
+      },
+      { mode: "pipe" },
+      {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "1200" },
+      },
+    ]);
+
+    const admittedLinks = [
+      {
+        from: 0,
+        to: 1,
+        itemId: "water",
+        transport: { mode: "pipe", deratePercentText: "80" },
+      },
+      {
+        from: 0,
+        to: 1,
+        itemId: "iron_ingot",
+        transport: {
+          mode: "train",
+          trip: { kind: "estimated", distanceText: "1200" },
+          sharedEnds: { from: true },
+        },
+      },
+    ] as PlanFileV4["links"];
+    const expected = [
+      { mode: "pipe", deratePercentText: "80" },
+      {
+        mode: "train",
+        trip: { kind: "estimated", distanceText: "1200" },
+        sharedEnds: { from: true },
+      },
+    ];
+    expect(
+      validatePlanFile(
+        samplePlanV4({ stages, links: admittedLinks }),
+      )?.links.map((link) => link.transport),
+    ).toStrictEqual(expected);
+    expect(
+      validatePlanFile(
+        samplePlanV5({ stages, links: admittedLinks }),
+      )?.links.map((link) => link.transport),
+    ).toStrictEqual(expected);
+    const placedStages = stages.map((stage) => ({
+      ...stage,
+      userPlaced: false,
+    }));
+    expect(
+      validatePlanFile(
+        samplePlanV6({ stages: placedStages, links: admittedLinks }),
+      )?.links.map((link) => link.transport),
+    ).toStrictEqual(expected);
+    expect(
+      validatePlanFile(
+        samplePlanV7({
+          stages: placedStages,
+          links: admittedLinks,
+        }),
+      )?.links.map((link) => link.transport),
+    ).toStrictEqual(expected);
   });
 });
 
-describe("plan-store — migrateV4 (v4 → v5, direction defaults LR)", () => {
-  it("flips the header, defaults flowDirection 'LR'; stages/links/timestamps verbatim", () => {
-    const v4 = samplePlanV4({
-      createdAt: "2020-01-01T00:00:00.000Z",
-      updatedAt: "2021-02-03T04:05:06.000Z",
-      stages: [
-        { name: "A", selection: sampleSelection(), position: { x: 5, y: 6 } },
-        { name: "B", selection: sampleSelection() },
-      ],
-      links: [{ from: 0, to: 1, itemId: "iron_ingot" }],
-    });
-    const v5 = migrateV4(v4);
-    expect(v5.format_version).toBe(5);
-    // A v4 file never carried a direction → "LR" (its implicit orientation).
-    expect(v5.flowDirection).toBe("LR");
-    expect(v5.createdAt).toBe("2020-01-01T00:00:00.000Z");
-    expect(v5.updatedAt).toBe("2021-02-03T04:05:06.000Z");
-    expect(v5.stages).toBe(v4.stages);
-    expect(v5.links).toEqual(v4.links);
-    // No userPlaced flag is synthesized — pre-v5 seeding falls back to
-    // position-presence at load, not to a written flag.
-    expect(v5.stages[0]!.userPlaced).toBeUndefined();
-  });
-
-  it("a stored v4 row still loads (migrated to v5) through loadPlan", async () => {
+// The v4 -> v5 step function was retired under #130: `migrateLegacyV4` maps v1-v4
+// straight to v6, so a standalone v4 -> v5 export had no production caller. Its
+// test also asserted `userPlaced === undefined`, a state no live load path
+// produces (`migrateLegacyV4` always writes the boolean). The legacy load path
+// itself is covered below and by "materializes legacy placement from original
+// position presence".
+describe("plan-store — legacy v4 load path (direction defaults LR)", () => {
+  it("a stored v4 row still loads (migrated to v8) through loadPlan", async () => {
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", samplePlanV4({ name: "legacy-v4" }), "id");
     const loaded = await loadPlan("id");
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(5);
+    expect(loaded!.format_version).toBe(8);
     expect(loaded!.flowDirection).toBe("LR");
     expect(loaded!.name).toBe("legacy-v4");
+  });
+
+  it("carries legacy timestamps through the chain verbatim", async () => {
+    // The save-over path reads the prior file's createdAt, so a migrated row must
+    // not reset it. store.test.ts already pins this for v1 rows via exportPlan and
+    // renamePlan; this is the only pin for a v4-origin row, and the only one at the
+    // plan-store layer rather than through those store actions.
+    const db = await (await import("./db.ts")).openDb();
+    await db.put(
+      "plans",
+      samplePlanV4({
+        createdAt: "2020-01-01T00:00:00.000Z",
+        updatedAt: "2021-02-03T04:05:06.000Z",
+      }),
+      "legacy-ts",
+    );
+    const loaded = await loadPlan("legacy-ts");
+    expect(loaded!.createdAt).toBe("2020-01-01T00:00:00.000Z");
+    expect(loaded!.updatedAt).toBe("2021-02-03T04:05:06.000Z");
   });
 });
 
@@ -639,12 +1324,13 @@ describe("plan-store — v5 round-trip (flowDirection + userPlaced)", () => {
         },
       ],
     });
-    await savePlan(plan, id);
+    const db = await (await import("./db.ts")).openDb();
+    await db.put("plans", plan, id);
     const loaded = await loadPlan(id);
-    expect(loaded!.format_version).toBe(5);
+    expect(loaded!.format_version).toBe(8);
     expect(loaded!.flowDirection).toBe("TB");
     expect(loaded!.stages[0]!.userPlaced).toBe(true);
-    expect(loaded!.stages[1]!.userPlaced).toBeUndefined();
+    expect(loaded!.stages[1]!.userPlaced).toBe(false);
   });
 });
 

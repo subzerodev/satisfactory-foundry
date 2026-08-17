@@ -1,0 +1,94 @@
+Forgejo #109 shared ChainBuilder harness verification
+Recorded: 2026-08-16T12:23:16+01:00
+
+BASELINE (before implementation)
+Command: npm test -- --reporter=verbose src/ui/ChainBuilder.gating.test.tsx src/ui/ChainBuilder.rawtarget.test.tsx src/ui/ChainBuilder.output.test.tsx src/ui/ChainBuilder.byproduct-routing.test.tsx
+Result: PASS - 4 files, 35 tests
+
+ChainBuilder.gating.test.tsx (24)
+- RecipePicker prop: a tier-gated recipe is ABSENT from the rendered picker options
+- RecipePicker prop: the same recipes ARE offered at tier 'all'
+- recipeLabel via the picker prop: the GATED default carries the (default) tag
+- constrained recovery: at a tier where every producer is gated, the TIER hint renders and there is NO recovery select
+- constrained recovery: option labels resolve defaults in the solved gated world after live exclusions drift
+- constrained recovery: at tier null the wording is P1's exact string (regression)
+- clear rule: choosing the GATED default sets no override — observable only after raising the tier back
+- staleness: a TIER change re-proposes in the NEW tier's world on that same propose
+- a tier change that CANNOT re-propose leaves the SOLVED world untouched
+- repropose initial Propose: starts from the store catalog, not a stale gated preview
+- repropose chooseRecipe: clearing the stale gated default restores the all-tier default
+- repropose toggleRaw: removing a raw override restores the all-tier default
+- repropose toggleExclusion: machine changes re-solve from the store catalog
+- keeps a machine's checkbox reachable when the tier gates its every recipe
+- takes its accessible name from the WRAPPING label, with nothing overriding it
+- derives its options from recipeUnlocks (all + 0..max), never hardcoded
+- renders 'all' when the persisted tier has no matching option
+- renders 'all' when the catalog carries no unlock data at all
+- mirrors a tier change back to the persisted prefs
+- mirrors a RECIPE CHOICE back to the persisted prefs
+- mirrors a MACHINE EXCLUSION toggle back to the persisted prefs
+- SEEDS the overrides map from the persisted prefs
+- seeds its controls from the persisted prefs
+- reads 'machine excluded', NOT '1 recipes', for a force-included lone producer
+
+ChainBuilder.rawtarget.test.tsx (3)
+- renders 'Nothing to build' instead of a constrained raw line
+- drops the rate line with it (the accepted cost of the change)
+- renders Iron Ore on the plain RAW line for an ordinary chain (the improvement, + control)
+
+ChainBuilder.output.test.tsx (1)
+- shows actual target output and keeps the requested-rate snapshot after Rate drifts
+
+ChainBuilder.byproduct-routing.test.tsx (7)
+- checks ROUTE and applies the selected byproduct StageLink
+- applies a tier-gated preview against its unchanged base catalog
+- drops a checked route when re-propose makes it non-routeable
+- drops a selected full route key when the same display row changes source
+- keeps route labels in preview.gated after a tier re-propose fails
+- keeps routeability in preview.gated after a tier re-propose fails
+- refuses Apply after the base catalog replaces the preview snapshot
+
+TEST-FIRST HARNESS CONTRACT
+Initial command: npm test -- src/ui/ChainBuilder.harness.contract.test.tsx
+RED result: FAIL - ChainBuilder.harness.tsx could not be resolved (expected missing implementation)
+GREEN result after implementation: PASS - 1 file, 2 tests
+- rolls back a failed initial render and rethrows its original error
+- disconnects its container and permits repeated cleanup
+
+FOCUSED MIGRATION RUNS
+- gating: PASS - 1 file, 24 tests
+- rawtarget: PASS - 1 file, 3 tests
+- output: PASS - 1 file, 1 test
+- byproduct-routing: PASS - 1 file, 7 tests
+- combined migrated suites plus contract: PASS - 5 files, 37 tests
+
+MUTATION EVIDENCE
+Mutation: temporarily removed the exact-text Propose button click from
+ChainBuilder.harness.tsx while retaining target selection and native-setter rate input.
+Command: npm test -- --reporter=verbose src/ui/ChainBuilder.gating.test.tsx src/ui/ChainBuilder.rawtarget.test.tsx src/ui/ChainBuilder.output.test.tsx src/ui/ChainBuilder.byproduct-routing.test.tsx
+Mutated result: FAIL - 4 files failed; 26 tests failed, 9 passed (35 total)
+- gating: 16 failures; preview rows/pickers were absent (for example, stageRow("Ingot") was undefined)
+- rawtarget: 2 failures; empty-state text was undefined and metrics length was 0
+- output: 1 failure; OUTPUT was "" instead of "80/min (asked 61/min)"
+- byproduct-routing: 7 failures; route controls were absent (undefined click targets or length 0)
+Restoration: restored the exact click block with apply_patch.
+Restored command: same four-file verbose command
+Restored result: PASS - 4 files, all 35 original tests
+
+FULL VERIFICATION
+- npm test: PASS - 36 files, 957 tests
+  Node emitted the repository's experimental localStorage availability warnings; no test failed.
+- npm run check: PASS - tsc -b, eslint ., and prettier --check src
+- npm run build: PASS - Vite transformed 223 modules and generated the PWA service worker
+- git diff --check (before this evidence file): PASS
+
+LINE MEASUREMENT (wc -l, relative to HEAD ad225c6)
+- original four suites: 1,588 lines
+- migrated four suites: 1,455 lines (-133)
+- shared harness: 105 lines
+- harness contract suite: 49 lines
+- implementation reduction (migrated suites + harness): 28 lines net removed
+- complete src/ui write scope including required contract tests: 21 lines net added
+
+No production ChainBuilder behavior, Vite config, global setup, or hoisted suite
+localStorage stub was changed. The temporary mutation was fully restored.

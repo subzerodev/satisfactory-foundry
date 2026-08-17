@@ -3,6 +3,64 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-17 — Package fluid links for solid transport
+
+> Hey Michael — a fluid or gas link can now be packaged before transport and
+> unpackaged at the other end without adding a Packager cycle to the factory
+> graph. Open the link's Transport panel and switch on "Package for transport"
+> to see the exact Packagers, Unpackagers, power, packaged cargo rate, and empty
+> container return rate. The cargo route and empty return route are configured
+> independently, so each can use its own belts, vehicles, train, or drone plan.
+>
+> The planner keeps supply warnings in the original fluid or gas units, saves
+> the packaging choice with the factory plan, and keeps a recovery control if a
+> later catalog no longer contains the selected packaging recipe. It does not
+> guess how many containers must be seeded into the loop: route inventory and
+> timing still determine that, so the inspector calls it out explicitly.
+
+## 2026-08-16 — Extraction plans now match your node purities
+
+> Hey Michael — the rough Normal-node answer is still the first thing you see,
+> but you can now switch on a node mix and enter the Impure, Normal and Pure
+> nodes you actually plan to use. The panel shows their exact combined supply,
+> spare capacity or shortfall, extractor power, and the belt or pipe needed by
+> the fastest individual extractor in that mix. Your counts are saved with the
+> factory plan and survive extractor or clock changes.
+>
+> Water stays simple because Water Extractors do not use node purity. Crude Oil
+> gets the mix controls; Nitrogen and other Resource Well routes still refuse to
+> invent a standalone count. On narrow screens the controls scroll inside the
+> panel without widening the page.
+
+## 2026-08-16 — Raw inputs now show the extractors they need
+
+> Hey Michael — click a raw input on the factory canvas and the planner now
+> turns its live demand into an exact extraction plan. Pick the Miner, Water
+> Extractor or Oil Extractor, set its clock up to 250%, and it shows the count,
+> total supplied, spare rate, estimated power, and the belt or pipe each
+> extractor needs. The choice is saved with the plan. Water and Crude Oil start
+> with their one standalone extractor selected; solids wait for your Miner
+> choice. Nitrogen and other Resource Well routes are named honestly instead of
+> being shown as fake Miner counts.
+>
+> This check is per extractor, not the old aggregate-bus warning from the Wet
+> Concrete screenshot. That separate warning was fixed by allowing parallel
+> belts and pipes: 840/min can use two Mk5 belts. Here, a Mk3 Miner at 250% makes
+> 600/min, so one Mk5 belt is enough; only a single extractor output above the
+> unlocked line capacity is warned.
+
+## 2026-08-16 — Big manifolds can use parallel belts
+
+> Hey Michael — you were right about the Wet Concrete plan. Its 106 Refineries
+> need 17 incoming Limestone belts, and eight stretches of the shared bus carry
+> 840/min. The planner treated each stretch as if it had to be one Mk5 belt and
+> incorrectly called the whole plan over capacity. Those stretches now show as
+> two parallel Mk5 lines in the schematic, summary and blueprint. The 17 feed
+> points have not changed, and Mk6 is shown only as an optional way to collapse
+> the paired stretches back to one line. Pipes follow the same rule. A manually
+> overridden feed that exceeds one unlocked belt or pipe is still flagged,
+> because that field continues to describe one incoming line.
+
 ## 2026-08-15 — Alternate recipe lists: one ordering rule, not two
 
 > Hey Michael — housekeeping you'll barely notice, but here's what changed in

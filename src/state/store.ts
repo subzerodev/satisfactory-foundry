@@ -19,8 +19,14 @@ import { solveStage } from "../core/manifold.ts";
 import type { StageSolveResult } from "../core/manifold.ts";
 import { reconcileLinks } from "../core/reconcile.ts";
 import type { LinkInput, LinkFinding } from "../core/reconcile.ts";
+import { deriveLinkPlan } from "../core/link-plan.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
-import type { DroneFuel } from "../core/transport-facts.ts";
+import {
+  canonicalizeLinkTransport,
+  canonicalizePackagingInterstep,
+  type LinkTransport,
+  type PackagingInterstep,
+} from "../core/link-transport.ts";
 import type { Catalog } from "../data/types.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
@@ -32,13 +38,12 @@ import {
   savePlan as savePlanFile,
   listPlans as listPlanFiles,
   loadPlan as loadPlanFile,
-  loadPlanWithOrigin,
   deletePlan as deletePlanFile,
   validatePlanFile,
 } from "../data/plan-store.ts";
 import type {
-  PlanFileV5,
-  PlanStageV5,
+  PlanFileV8,
+  PlanStageV7,
   PlanListEntry,
 } from "../data/plan-store.ts";
 
@@ -90,67 +95,29 @@ export interface StageNode {
   name: string;
   selection: Selection;
   solve: SolveState;
+  extraction?: Record<string, ExtractionSelection>;
 }
 
-/**
- * Per-link transport configuration (Stage 7 / Phase 2, frozen Axis 1). RAW USER
- * TEXT, parsed at derive time — the established Selection idiom (clock / capacity
- * overrides are stored as strings and Fraction.parse'd in the derive, errors
- * surfaced). MODE-DISCRIMINATED (the P1 Cargo/DroneTripInput discipline: illegal
- * states are unrepresentable, not runtime-guarded):
- *
- * - belt: trip-less continuous;
- * - pipe: trip-less continuous + an optional `deratePercentText` (S8P2 — a
- *   user-supplied sloshing derate, raw text, (0,100] at derive time; belt has
- *   none — sloshing is a pipeline phenomenon);
- * - the four road modes: `trip` is one-way meters (estimated) or a measured
- *   round-trip in seconds, handed to vehicleFleet (which doubles + docks);
- * - train: the same `trip` shape as the road four (routed to trainOptions with a
- *   derive-built roundTripSeconds, Assumption #6) + an optional `sharedEnds`
- *   (S8P2 — a per-end station-power override; a flagged end is billed elsewhere,
- *   so its `50 + 50c` is excluded from THIS link's station MW). The absent-or-
- *   true idiom: a key present is literally `true`, absent means "not shared";
- * - drone: `fuel` + a trip whose distance is ROUND-TRIP flight meters (the P1
- *   DroneTripInput arm names). The measured arm's optional flightMetersText is
- *   the battery-cost add-on; the estimated arm's flightMetersText IS the input.
- *
- * The units trap (one-way vs round-trip) is enforced by field NAMES per arm, not
- * a prose warning; `fuel` cannot exist on a road link, `sharedEnds` only on
- * train, `deratePercentText` only on pipe — illegal pairings are unrepresentable.
- */
-export type LinkTransport =
-  | { mode: "belt" }
-  | { mode: "pipe"; deratePercentText?: string }
-  | {
-      mode: "truck" | "tractor" | "explorer" | "fluid-truck";
-      trip:
-        | { kind: "measured"; roundTripSecondsText: string }
-        | { kind: "estimated"; distanceText: string };
-    }
-  | {
-      mode: "train";
-      trip:
-        | { kind: "measured"; roundTripSecondsText: string }
-        | { kind: "estimated"; distanceText: string };
-      /** Ends whose station set is billed elsewhere (excluded from station MW).
-       *  Absent-or-true: a present key is literally `true`; `from` is the
-       *  producer end, `to` the consumer end (the StageLink's own direction). */
-      sharedEnds?: { from?: true; to?: true };
-    }
-  | {
-      mode: "drone";
-      fuel: DroneFuel;
-      trip:
-        | {
-            kind: "measured";
-            roundTripSecondsText: string;
-            flightMetersText?: string;
-          }
-        | { kind: "estimated"; flightMetersText: string };
-    };
+export interface ExtractionSelection {
+  machineId: string;
+  clockPercentText: string;
+  purityMix?: PurityMixText;
+}
 
-/** The transport mode discriminant across the whole `LinkTransport` union. */
-export type TransportMode = LinkTransport["mode"];
+export interface PurityMixText {
+  impure: string;
+  normal: string;
+  pure: string;
+}
+
+function copyExtractionSelection(
+  selection: ExtractionSelection,
+): ExtractionSelection {
+  return {
+    ...selection,
+    ...(selection.purityMix ? { purityMix: { ...selection.purityMix } } : {}),
+  };
+}
 
 /**
  * The flow-chart orientation (Stage 10 / Phase 1): "LR" lays the chain
@@ -172,7 +139,12 @@ export interface StageLink {
   itemId: string;
   toStageId: string;
   transport?: LinkTransport;
+  interstep?: PackagingInterstep;
 }
+
+export type NewStageLink = Omit<StageLink, "id" | "interstep"> & {
+  interstep?: never;
+};
 
 export interface ProposedByproductRoute {
   fromItemId: string;
@@ -222,7 +194,7 @@ export interface AppState {
   placementSeq: number;
   /**
    * The flow-chart orientation (Stage 10 / Phase 1), default "LR". Persists
-   * per-plan in the v5 file (orientation is a property of the drawing, like
+   * per-plan in the current file (orientation is a property of the drawing, like
    * positions); a switch re-slots every NON-userPlaced stage + flips the handle
    * sides. The store stays window-free — the plan file is its only persistence.
    */
@@ -230,11 +202,10 @@ export interface AppState {
   /**
    * The set of stage ids the user hand-dragged (Stage 10 / Phase 1). `true`-valued
    * membership only; set by `setStagePosition` (the drag-END commit), pruned with
-   * the stage on remove, seeded at load (v5: from the per-stage flag; pre-v5:
-   * from position-presence). A direction switch re-slots only NON-members —
-   * user-placed nodes keep their exact positions. Persists via the v5
-   * `userPlaced?: true` flag because save writes positions unconditionally, so
-   * position-presence alone can't survive a round-trip as the auto-vs-user signal.
+   * the stage on remove, and seeded from the required per-stage boolean. Legacy
+   * migration materializes the original position-based intent before rebuild. A
+   * direction switch re-slots only NON-members; save writes the required boolean
+   * because position presence alone cannot distinguish auto from user placement.
    */
   userPlaced: Record<string, true>;
   /**
@@ -333,13 +304,18 @@ export interface Actions {
     capacityText: string | null,
   ): void;
   clearOverrides(): void;
+  setExtractionSelection(
+    stageId: string,
+    itemId: string,
+    selection: ExtractionSelection | null,
+  ): void;
   // Graph actions (Stage 3 / Phase 1) — all synchronous (no IDB this phase):
   // mutate-then-recompute, no plan-op chain.
   addStage(): void;
   removeStage(id: string): void;
   renameStage(id: string, name: string): void;
   setActiveStage(id: string): void;
-  addLink(link: Omit<StageLink, "id">): void;
+  addLink(link: NewStageLink): void;
   removeLink(id: string): void;
   /** Set a link's transport config (mode + trip). Absent-`transport` ⇒ belt
    *  default, so passing `{ mode: "belt" }` and clearLinkTransport are
@@ -347,6 +323,7 @@ export interface Actions {
   setLinkTransport(linkId: string, transport: LinkTransport): void;
   /** Clear a link's transport config back to the belt default (drops the key). */
   clearLinkTransport(linkId: string): void;
+  setLinkInterstep(linkId: string, interstep: PackagingInterstep | null): void;
   /** Open the LinkInspector for a link (null closes it). */
   selectLink(linkId: string | null): void;
   setStagePosition(id: string, pos: { x: number; y: number }): void;
@@ -379,7 +356,7 @@ export interface Actions {
   loadPlan(id: string): Promise<void>;
   renamePlan(id: string, name: string): Promise<void>;
   deletePlan(id: string): Promise<void>;
-  /** Serialize a stored plan (migrated to v2) as pretty JSON, or null if the
+  /** Serialize a stored plan (migrated to v8) as pretty JSON, or null if the
    *  row is missing/corrupt. Headless — App owns the Blob/anchor download. */
   exportPlan(id: string): Promise<string | null>;
   /** Validate + save an exported plan file's text under the save-over model.
@@ -399,7 +376,7 @@ export type Store = AppState & Actions;
  * Stage 19 (#92): the export-all bundle envelope. A distinct `kind` string makes
  * single-file-vs-bundle sniffing exact (a per-plan file has no `kind`), and
  * `format_version` reserves bundle evolution independently of the per-plan file
- * versions. Each `plans[]` entry is EXACTLY a per-plan file object (latest v5 as
+ * versions. Each `plans[]` entry is EXACTLY a per-plan file object (latest v8 as
  * written by exportPlan's source), revived on import through the SAME
  * `validatePlanFile` path — one migration surface, no second format to version.
  */
@@ -407,7 +384,7 @@ export interface PlanBundle {
   kind: "foundry-plan-bundle";
   format_version: 1;
   exportedAt: string; // ISO
-  plans: PlanFileV5[];
+  plans: PlanFileV8[];
 }
 
 /** The sniff constant (Axis 3): import branches to the bundle arm iff a parsed
@@ -486,7 +463,17 @@ function parseOverrideSide(
       const cell = arr[i] ?? null;
       // A malformed string throws here — Fraction.parse rejects it — and the
       // derive() catch routes it to 'bad-override'.
-      parsed[i] = cell === null ? null : Fraction.parse(cell);
+      if (cell === null) {
+        parsed[i] = null;
+        continue;
+      }
+      const value = Fraction.parse(cell);
+      if (value.isNegative()) {
+        throw new RangeError(
+          `lane ${itemId} override ${i + 1} must be zero or positive; got ${value.toString()}.`,
+        );
+      }
+      parsed[i] = value;
     }
     out[itemId] = parsed;
   }
@@ -635,7 +622,16 @@ function mapLinkInputs(slice: GraphSlice): LinkInput[] {
         ? (to.solve.result.feeds.find((f) => f.itemId === link.itemId)
             ?.totalDemand ?? null)
         : null;
-    return { linkId: link.id, supply, demand };
+    let interstepProblem: string | null = null;
+    if (link.interstep !== undefined) {
+      if (slice.catalog.status !== "ready") {
+        interstepProblem = "packaging catalog is unavailable";
+      } else {
+        const plan = deriveLinkPlan(slice.catalog.catalog, link, slice.stages);
+        interstepProblem = plan.status === "unavailable" ? plan.error : null;
+      }
+    }
+    return { linkId: link.id, supply, demand, interstepProblem };
   });
 }
 
@@ -699,7 +695,7 @@ function deriveAllStages(
 }
 
 /**
- * Whole-graph replacement from a loaded `PlanFileV5` (Stage 3 / Phase 3, frozen
+ * Whole-graph replacement from a loaded `PlanFileV8` (Stage 3 / Phase 3, frozen
  * Axis 4; Stage 10 / Phase 1 adds direction + userPlaced). Builds a fresh graph —
  * new stage/link uuids — and applies the frozen load treatments per stage:
  *
@@ -714,13 +710,10 @@ function deriveAllStages(
  * - positions from the file entry, else the auto-slot for the entry's index (in
  *   the FILE's direction — a v1-migrated positionless stage must slot per the
  *   orientation the file was saved in);
- * - flowDirection restored from the file (pre-v5 migrated as "LR"); userPlaced
- *   seeded from the per-stage `userPlaced` flag when the stored row was v5-native
- *   (`v5Native`), else from position-presence (v1–v4 — the distinction is
- *   unrecoverable after this fills the positions map, so pre-v5 layouts load
- *   conservatively pinned, the stated cost). The origin matters because an
- *   all-auto v5 plan and a positioned pre-v5 plan are otherwise identical after
- *   migration (both carry positions, no flags) yet must seed differently;
+ * - flowDirection restored from the file (v1-v4 migration defaults to "LR"); userPlaced
+ *   read directly from v8's required boolean. Legacy migration materializes the
+ *   conservative original-position rule before this rebuild, so no transient
+ *   source-version flag is needed;
  * - stageOrder = array order; links rebuilt from indices; placementSeq =
  *   stages.length; activeStageId = first (matches removeStage's cursor-to-first).
  *
@@ -731,8 +724,7 @@ function deriveAllStages(
  */
 function rebuildFromPlan(
   slice: GraphSlice,
-  plan: PlanFileV5,
-  v5Native: boolean,
+  plan: PlanFileV8,
 ): GraphSlice & { placementSeq: number } {
   const { catalog } = slice;
   // Current global tiers (the active mirror holds the canonical global value).
@@ -759,18 +751,26 @@ function rebuildFromPlan(
       unlockedTiers: { ...globalTiers },
       overrides: saved.overrides,
     };
-    stages[id] = { id, name: entry.name, selection, solve: { status: "idle" } };
+    const extraction: Record<string, ExtractionSelection> = Object.create(null);
+    for (const [itemId, savedSelection] of Object.entries(
+      entry.extraction ?? {},
+    )) {
+      extraction[itemId] = { ...savedSelection };
+    }
+    stages[id] = {
+      id,
+      name: entry.name,
+      selection,
+      solve: { status: "idle" },
+      ...(Object.keys(extraction).length > 0 ? { extraction } : {}),
+    };
     stageOrder.push(id);
     // Positionless entries (v1-migrated) auto-slot in the FILE's direction; a
     // saved position restores exactly. The fallback direction is plan-level.
     positions[id] = entry.position ?? placementSlot(i, plan.flowDirection);
-    // Seed userPlaced: a v5-native row carries the explicit flag (auto stages
-    // omit it → stay auto); a migrated v1–v4 row has no flag, so fall back to
-    // position-presence (positioned ⇒ conservatively pinned, the stated cost).
-    const pinned = v5Native
-      ? entry.userPlaced === true
-      : entry.position !== undefined;
-    if (pinned) userPlaced[id] = true;
+    // Validation always returns v8; legacy migration has already materialized
+    // placement origin into this required boolean.
+    if (entry.userPlaced) userPlaced[id] = true;
   });
   const links: StageLink[] = plan.links.map((l) => ({
     id: crypto.randomUUID(),
@@ -781,6 +781,14 @@ function rebuildFromPlan(
     // Selection precedent); absent ⇒ belt default. Fresh link ids, so the prior
     // inspector selection is stale — reset below.
     ...(l.transport !== undefined ? { transport: l.transport } : {}),
+    ...(l.interstep !== undefined
+      ? {
+          interstep: {
+            ...l.interstep,
+            returnTransport: l.interstep.returnTransport,
+          },
+        }
+      : {}),
   }));
   const rebuilt: GraphSlice = {
     ...slice,
@@ -1015,6 +1023,36 @@ export function canLink(
   return "ok";
 }
 
+function isIllegalPackagedTransport(
+  transport: LinkTransport | undefined,
+): boolean {
+  return transport?.mode === "pipe" || transport?.mode === "fluid-truck";
+}
+
+function currentLinkItem(
+  catalog: CatalogState,
+  link: StageLink,
+): { isFluid: boolean } | undefined {
+  return catalog.status === "ready"
+    ? catalog.catalog.items[link.itemId]
+    : undefined;
+}
+
+function linkWithoutInterstep(
+  link: StageLink,
+  item: { isFluid: boolean } | undefined,
+): StageLink {
+  return {
+    id: link.id,
+    fromStageId: link.fromStageId,
+    itemId: link.itemId,
+    toStageId: link.toStageId,
+    ...(item !== undefined
+      ? { transport: { mode: item.isFluid ? "pipe" : "belt" } as LinkTransport }
+      : {}),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Persistence (frozen brainstorm Axis 5)
 // ---------------------------------------------------------------------------
@@ -1219,7 +1257,7 @@ export function createAppStore(storage?: StateStorage) {
         // savePlanAs). Returns "empty-name" for a whitespace name (caller shapes
         // the message) or "saved" once the row is committed.
         const savePlanFromFile = async (
-          file: PlanFileV5,
+          file: PlanFileV8,
         ): Promise<"saved" | "empty-name"> => {
           const trimmed = file.name.trim();
           if (trimmed === "") return "empty-name";
@@ -1228,7 +1266,7 @@ export function createAppStore(storage?: StateStorage) {
           const now = new Date().toISOString();
           if (match) {
             const prior = await loadPlanFile(match.id);
-            const plan: PlanFileV5 = {
+            const plan: PlanFileV8 = {
               ...file,
               name: trimmed,
               createdAt: prior?.createdAt ?? now,
@@ -1236,7 +1274,7 @@ export function createAppStore(storage?: StateStorage) {
             };
             await savePlanFile(plan, match.id);
           } else {
-            const plan: PlanFileV5 = {
+            const plan: PlanFileV8 = {
               ...file,
               name: trimmed,
               createdAt: now,
@@ -1567,6 +1605,33 @@ export function createAppStore(storage?: StateStorage) {
             );
           },
 
+          setExtractionSelection(
+            stageId: string,
+            itemId: string,
+            selection: ExtractionSelection | null,
+          ) {
+            set((s) => {
+              const stage = s.stages[stageId];
+              if (stage === undefined || itemId === "") return {};
+              const extraction: Record<string, ExtractionSelection> =
+                Object.create(null);
+              for (const [key, value] of Object.entries(
+                stage.extraction ?? {},
+              )) {
+                extraction[key] = value;
+              }
+              if (selection === null) delete extraction[itemId];
+              else extraction[itemId] = copyExtractionSelection(selection);
+              const nextStage: StageNode = {
+                ...stage,
+                ...(Object.keys(extraction).length > 0
+                  ? { extraction }
+                  : { extraction: undefined }),
+              };
+              return { stages: { ...s.stages, [stageId]: nextStage } };
+            });
+          },
+
           // --- Graph actions (Stage 3 / Phase 1) -----------------------------
           // Synchronous, mutate-then-recompute (no IDB this phase). Reconcile
           // recompute follows the cadence table: rename/cursor/addStage don't
@@ -1667,8 +1732,9 @@ export function createAppStore(storage?: StateStorage) {
             });
           },
 
-          addLink(link: Omit<StageLink, "id">) {
+          addLink(link: NewStageLink) {
             set((s) => {
+              if (Object.hasOwn(link, "interstep")) return {};
               // Hard refusals: self-link, and duplicate (toStageId,itemId) — a
               // feed lane has exactly one upstream source in v1 chaining.
               if (link.fromStageId === link.toStageId) return {};
@@ -1677,7 +1743,16 @@ export function createAppStore(storage?: StateStorage) {
                   l.toStageId === link.toStageId && l.itemId === link.itemId,
               );
               if (duplicate) return {};
-              const links = [...s.links, { ...link, id: crypto.randomUUID() }];
+              const next: StageLink = {
+                id: crypto.randomUUID(),
+                fromStageId: link.fromStageId,
+                itemId: link.itemId,
+                toStageId: link.toStageId,
+                ...(link.transport !== undefined
+                  ? { transport: link.transport }
+                  : {}),
+              };
+              const links = [...s.links, next];
               // Dangling ends (a stage not producing/consuming itemId) are KEPT
               // and surface as findings, not refused.
               return recomputeReconciliation({ ...s, links });
@@ -1698,18 +1773,26 @@ export function createAppStore(storage?: StateStorage) {
           },
 
           setLinkTransport(linkId: string, transport: LinkTransport) {
-            // Pure link write: transport config never affects a stage solve or
-            // reconciliation (supply/demand are unchanged), so no re-derive is
-            // needed — Zustand re-renders the transport surfaces on `links`
-            // change. Parsing of the raw trip text happens at render time, where
-            // errors surface on the inspector (the clock-error precedent).
+            // Numeric text remains raw until derive, but the public action
+            // rebuilds the structural shape so wider/type-erased callers cannot
+            // create a plan that strict v8 persistence later refuses.
             set((s) => {
-              if (!s.links.some((l) => l.id === linkId)) return {};
-              return {
+              const canonical = canonicalizeLinkTransport(transport);
+              if (canonical === null) return {};
+              const link = s.links.find((l) => l.id === linkId);
+              if (link === undefined) return {};
+              if (
+                link.interstep !== undefined &&
+                isIllegalPackagedTransport(canonical)
+              ) {
+                return {};
+              }
+              return recomputeReconciliation({
+                ...s,
                 links: s.links.map((l) =>
-                  l.id === linkId ? { ...l, transport } : l,
+                  l.id === linkId ? { ...l, transport: canonical } : l,
                 ),
-              };
+              });
             });
           },
 
@@ -1717,10 +1800,15 @@ export function createAppStore(storage?: StateStorage) {
             // Drop the transport key entirely → the belt default (absent means
             // belt), restoring today's rendering with zero new UI noise.
             set((s) => {
-              if (!s.links.some((l) => l.id === linkId)) return {};
-              return {
+              const link = s.links.find((l) => l.id === linkId);
+              if (link === undefined) return {};
+              return recomputeReconciliation({
+                ...s,
                 links: s.links.map((l) => {
                   if (l.id !== linkId) return l;
+                  if (l.interstep !== undefined) {
+                    return { ...l, transport: { mode: "belt" } };
+                  }
                   // Rebuild without the transport key (absent ⇒ belt default).
                   return {
                     id: l.id,
@@ -1729,7 +1817,53 @@ export function createAppStore(storage?: StateStorage) {
                     toStageId: l.toStageId,
                   };
                 }),
-              };
+              });
+            });
+          },
+
+          setLinkInterstep(
+            linkId: string,
+            interstep: PackagingInterstep | null,
+          ) {
+            set((s) => {
+              const link = s.links.find((candidate) => candidate.id === linkId);
+              if (link === undefined) return {};
+              const canonical =
+                interstep === null
+                  ? null
+                  : canonicalizePackagingInterstep(interstep);
+              if (interstep !== null && canonical === null) return {};
+              if (
+                canonical !== null &&
+                link.interstep !== undefined &&
+                isIllegalPackagedTransport(link.transport)
+              ) {
+                return {};
+              }
+
+              const next =
+                canonical === null
+                  ? linkWithoutInterstep(link, currentLinkItem(s.catalog, link))
+                  : {
+                      ...link,
+                      transport:
+                        link.interstep === undefined
+                          ? ({ mode: "belt" } as const)
+                          : link.transport,
+                      interstep:
+                        link.interstep === undefined
+                          ? {
+                              ...canonical,
+                              returnTransport: { mode: "belt" } as const,
+                            }
+                          : canonical,
+                    };
+              return recomputeReconciliation({
+                ...s,
+                links: s.links.map((candidate) =>
+                  candidate.id === linkId ? next : candidate,
+                ),
+              });
             });
           },
 
@@ -1827,20 +1961,20 @@ export function createAppStore(storage?: StateStorage) {
                 // Capture the WHOLE graph (Stage 3 / Phase 3): stages in
                 // stageOrder (array order IS stageOrder), each carrying name +
                 // selection + position; links index-encoded (stage id → index).
-                // Stage 10 / Phase 1: position is written UNCONDITIONALLY (exact
-                // restore stands); the `userPlaced: true` flag is written ONLY for
-                // a user-placed stage, so a v5 load can seed the auto-vs-user
-                // distinction that position-presence alone can't carry.
+                // Position is written unconditionally for exact restoration;
+                // v8 also writes the required placement boolean because position
+                // presence alone cannot distinguish auto from user placement.
                 const s = get();
                 const indexOf = new Map(s.stageOrder.map((id, i) => [id, i]));
-                const stages: PlanStageV5[] = s.stageOrder.map((id) => {
+                const stages: PlanStageV7[] = s.stageOrder.map((id) => {
                   const node = s.stages[id]!;
                   return {
                     name: node.name,
                     selection: node.selection,
                     position: s.positions[id],
-                    ...(s.userPlaced[id] === true
-                      ? { userPlaced: true as const }
+                    userPlaced: s.userPlaced[id] === true,
+                    ...(node.extraction !== undefined
+                      ? { extraction: node.extraction }
                       : {}),
                   };
                 });
@@ -1854,11 +1988,14 @@ export function createAppStore(storage?: StateStorage) {
                   ...(l.transport !== undefined
                     ? { transport: l.transport }
                     : {}),
+                  ...(l.interstep !== undefined
+                    ? { interstep: l.interstep }
+                    : {}),
                 }));
                 if (match) {
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV5 = {
-                    format_version: 5,
+                  const plan: PlanFileV8 = {
+                    format_version: 8,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
@@ -1868,8 +2005,8 @@ export function createAppStore(storage?: StateStorage) {
                   };
                   await savePlanFile(plan, match.id);
                 } else {
-                  const plan: PlanFileV5 = {
-                    format_version: 5,
+                  const plan: PlanFileV8 = {
+                    format_version: 8,
                     name: trimmed,
                     createdAt: now,
                     updatedAt: now,
@@ -1890,17 +2027,16 @@ export function createAppStore(storage?: StateStorage) {
             return enqueue(async () => {
               set({ planError: null });
               try {
-                // Load with origin: rebuild seeds userPlaced from the explicit
-                // flag for a v5-native row, else from position-presence (Stage 10
-                // / Phase 1 — the origin is unrecoverable after migration).
-                const { file, wasV5 } = await loadPlanWithOrigin(id);
+                // Load with origin: validation returns v8, whose required
+                // userPlaced flag already materializes native or migrated origin.
+                const file = await loadPlanFile(id);
                 if (file === null) {
                   // Corrupt/missing → planError, state untouched.
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
                 // Whole-graph replacement (Stage 3 / Phase 3, frozen Axis 4).
-                set((s) => rebuildFromPlan(s, file, wasV5));
+                set((s) => rebuildFromPlan(s, file));
                 // Loading a plan never touches the catalog or catalogSource.
               } catch (err) {
                 set({ planError: planErrorMessage(err) });
@@ -1935,10 +2071,9 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                // loadPlanFile returns v5 (migrating older rows), so this spread
-                // widens to v5 — renaming an older row rewrites it as v5,
-                // consistent with the save-over model (any write persists v5).
-                const renamed: PlanFileV5 = {
+                // loadPlanFile returns v8 (migrating older rows), so renaming an
+                // older row rewrites it as v8 under the save-over model.
+                const renamed: PlanFileV8 = {
                   ...plan,
                   name: trimmed,
                   updatedAt: new Date().toISOString(),
@@ -1989,7 +2124,7 @@ export function createAppStore(storage?: StateStorage) {
             await enqueue(async () => {
               const metas = await listPlanFiles();
               if (metas.length === 0) return; // result stays null
-              const plans: PlanFileV5[] = [];
+              const plans: PlanFileV8[] = [];
               for (const meta of metas) {
                 const file = await loadPlanFile(meta.id);
                 // A row that fails to load (corrupt/foreign) is skipped rather

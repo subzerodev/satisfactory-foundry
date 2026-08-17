@@ -396,3 +396,72 @@ process (all-Claude roster, opus implementers, per-phase gates).
   from real FGSchematic unlock data. Follow-ups: #103 (adapter
   consolidation + compare tier-awareness), #104 (ore constrained-vs-
   natural UX), #105 (byproduct routing), #106 (branded GatedCatalog).
+
+## Stage 21 — Propose follow-ups: consolidation, type-safety, routing
+
+- **Goal:** finish the Stage 20 follow-ups as one arc: classify natural raw
+  leaves honestly, consolidate the recipe adapter, measure whether a branded
+  gated catalog closes real gaps, and turn display-only byproduct suggestions
+  into explicit user-directed routes.
+- **Epic:** #108 (milestone 92). Core phases: #104 natural-vs-constrained raw
+  UX, #103 adapter consolidation, #106 measured branded-catalog decision, and
+  #105 explicit byproduct routing. Milestone follow-ups #115-#118 pin visible
+  alternate/tier labels and the reachable gated-world re-propose seams; #116's
+  explicit alternate marker made the adapter consolidation safe.
+- **Decisions:** #106 closed won't-do after its mutation harness measured that
+  the proposed brand would catch none of the remaining untested swaps. #105
+  routes only unambiguous solved byproduct lanes and refuses self-routes,
+  primary-lane collisions, source fan-out, multi-source aggregates, and stale
+  catalog snapshots.
+- **Status:** SHIPPED 2026-08-16. All nine milestone issues are closed. Release
+  PR #119 merged `develop` to `main` at `e180774`; its release gate passed 35
+  files / 938 tests. Detailed record: `features/propose-followups/FEATURE.md`.
+
+## Stage 22 — Feeding the factory
+
+- **Goal:** show what a proposed factory produces, what extractors and resource
+  nodes its raw inputs require, whether those feeds fit the unlocked transport,
+  and what it costs to package a fluid or gas for cargo transport instead of a
+  pipe.
+- **Epic:** #114 (milestone 93). Product work: #111 total output, #112 normal-
+  purity extraction planning, #124 editable Impure/Normal/Pure mixes, and #113
+  package/unpackage intersteps. Field fixes and support work in the same
+  milestone: #109 shared ChainBuilder harness, #120 parallel manifold belts and
+  pipes, #121 negative override refusal, #122 safe huge-quotient clamping, and
+  #123 coincident feed-mark grouping. #125 reconciles this plan and marker.
+- **Decisions:** extraction is requirement-first and uses the selected extractor
+  plus clock before an optional exact 0.5/1/2 purity mix. Resource Wells remain
+  explicit rather than approximated. Packaging is a user-directed link
+  interstep outside Propose's cycle guard, with separate forward cargo and empty-
+  container routes. Aggregate manifold segments may use parallel unlocked
+  belts/pipes; one incoming override still means one physical line.
+- **Status:** COMPLETE ON `develop` 2026-08-17, ops follow-ups included. #113
+  merged at `3c4324b`. With no linked worktree mounted, trunk passes 44 files /
+  1,141 tests, both checked-in Chromium/CDP browser matrices,
+  TypeScript/ESLint/Prettier, and the Vite/PWA build. (The count moved from 1,138
+  at #113's merge: #130 added three purity-precedence rows and a legacy-timestamp
+  test, and deleted one dead-export test.)
+- **Release gate — at least three of the four product merges skipped their final
+  correctness round.** The three proven are #112, #124 and #113 — each has a **committed
+  post-simplify recheck prompt** proving a round was owed, and no verdict recorded
+  for it at merge time.
+  #111 is not in that set for a different reason: `features/total-output/` contains
+  no post-simplify prompt, no completion doc and no recorded simplify verdict, so
+  whether it owed a further round is simply **unknown in-tree** (its pre-simplify
+  pair is recorded at `diff-simplify-prompt.md:7-8`, both `APPROVED`). Its record is
+  incomplete, not clean. #113 merged without its r5, which #127 ran retroactively:
+  **no correctness defects** under both reviewers, though it did surface #129 and a
+  fixture gap, and the false convergence claim it exposed is corrected. #112's r11
+  and #124's r3 are the same violation; **#130 ran both retroactively and both
+  cleared** — the merged code was correct in every case, and what the gates
+  actually caught was two unpinned guards (the purity precedence chain's
+  normal-vs-impure pair, and purity input DOM order) plus missing mutation
+  evidence, all now closed. #128 corrected the changelog date for the #113 merge
+  and #129 removed a raw NUL byte in `src/data/plan-store.ts` that silently
+  defeated `grep` on the arc's riskiest file. **The gate is clear; the release PR
+  may open.** Records: the product arcs in
+  `features/extraction-planning/FEATURE.md` and
+  `features/packaging-intersteps/FEATURE.md`; each of the remaining product and
+  field-fix tickets keeps its own under `features/` — #109 `chainbuilder-harness/`, #111 `total-output/`, #120
+  `parallel-feed-belts/`, #121 `negative-overrides/`, #122 `bigint-entry-clamp/`,
+  #123 `coincident-feed-marks/`.

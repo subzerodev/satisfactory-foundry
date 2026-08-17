@@ -62,6 +62,22 @@ export function tierLabel(
   return kind === "belt" ? `Mk${i + 1}` : `Pipe Mk${i + 1}`;
 }
 
+/** First still-locked tier that reduces an exact bus peak to one line. */
+export function firstLockedTierForOneLine(
+  kind: LaneKind,
+  peakFlow: Fraction,
+  tiers: TierTable,
+  unlockedCount: number,
+): string | null {
+  for (let i = unlockedCount; i < tiers[kind].length; i++) {
+    const capacity = tiers[kind][i]!;
+    if (capacity.gte(peakFlow)) {
+      return tierLabel(kind, capacity, tiers);
+    }
+  }
+  return null;
+}
+
 /**
  * A belt's human label. Feed prints its capacity + entry point; output prints
  * its carried load + break-out point (the two rates differ, so each template
@@ -91,6 +107,21 @@ export function beltLabel(
   return `Out ${index + 1} — ${tier} · ${formatRate(out.load)}/min load · ${from}`;
 }
 
+/** Bounded semantic summary for feed slots sharing one entry boundary. */
+export function feedGroupLabel(belts: readonly FeedBelt[]): string {
+  const first = belts[0]!;
+  const last = belts[belts.length - 1]!;
+  const total = belts.reduce(
+    (sum, belt) => sum.add(belt.capacity),
+    Fraction.from(0),
+  );
+  const at =
+    first.entersAfterMachine === 0
+      ? "at head"
+      : `after machine ${first.entersAfterMachine}`;
+  return `Feeds ${first.index + 1}-${last.index + 1} - ${belts.length} slots - ${formatRate(total)}/min total capacity - enter ${at}`;
+}
+
 /**
  * A bus segment's hover-tooltip text. The exact string is owned here (Stage 5
  * item 1) so any styled tooltip and the unit test share one source of truth,
@@ -101,10 +132,17 @@ export function beltLabel(
 export function segTooltip(
   seg: { fromMachine: number; toMachine: number; peakFlow: Fraction },
   busCapString: string,
+  parallelCount = 1,
+  oneLineTier: string | null = null,
 ): string {
-  return `machines ${seg.fromMachine}–${seg.toMachine} · peak ${formatRate(
+  const base = `machines ${seg.fromMachine}–${seg.toMachine} · peak ${formatRate(
     seg.peakFlow,
-  )}/min of ${busCapString}/min`;
+  )}/min`;
+  if (parallelCount === 1) {
+    return `${base} of ${busCapString}/min`;
+  }
+  const bundle = `${base} · ${parallelCount} parallel lines × ${busCapString}/min`;
+  return oneLineTier === null ? bundle : `${bundle} · ${oneLineTier}: 1 line`;
 }
 
 /** One human sentence per finding variant. */

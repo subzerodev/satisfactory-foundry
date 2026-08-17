@@ -140,3 +140,60 @@ describe("reconcileLinks — batch behavior", () => {
     ]);
   });
 });
+
+describe("reconcileLinks — packaging interstep problems", () => {
+  it.each([
+    {
+      name: "under-supply",
+      supply: Fraction.from(40),
+      demand: Fraction.from(100),
+      materialType: "under-supply",
+    },
+    {
+      name: "over-supply",
+      supply: Fraction.from(140),
+      demand: Fraction.from(100),
+      materialType: "over-supply",
+    },
+    {
+      name: "dangling",
+      supply: null,
+      demand: Fraction.from(100),
+      materialType: "dangling-link",
+    },
+  ])("appends one problem after the $name finding", (row) => {
+    const findings = reconcileLinks([
+      {
+        linkId: "L",
+        supply: row.supply,
+        demand: row.demand,
+        interstepProblem: "packaging clock must be in (0, 250]",
+      },
+    ]);
+
+    expect(findings.map((finding) => finding.type)).toEqual([
+      row.materialType,
+      "interstep-problem",
+    ]);
+    expect(findings[1]).toEqual({
+      type: "interstep-problem",
+      linkId: "L",
+      error: "packaging clock must be in (0, 250]",
+    });
+  });
+
+  it("emits only the interstep problem when material is exact", () => {
+    expect(
+      reconcileLinks([
+        {
+          linkId: "L",
+          supply: Fraction.from(100),
+          demand: Fraction.from(100),
+          interstepProblem: "stale pair",
+        },
+      ]),
+    ).toEqual([
+      { type: "interstep-problem", linkId: "L", error: "stale pair" },
+    ]);
+  });
+});

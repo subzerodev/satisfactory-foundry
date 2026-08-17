@@ -1,0 +1,667 @@
+# Packaging intersteps r2 bidirectional verification
+
+Date: 2026-08-16
+Worktree: feature/s22-113-intersteps
+
+Every break below produced a genuine Vitest failure naming the protected test.
+**Sections 1-9** used `-t`-scoped runs and were applied and restored with
+`apply_patch` before the next section; **section 10** (added later under #127) uses
+plain unified diffs and unscoped whole-file runs, restores from a pre-mutation file
+copy, and shares one restore-and-green capture across its two cycles — see its own
+accuracy notes. For sections 1-9, the pre-merge `git diff --check` and full
+verification in `completion-report.md`'s Final Branch Verification block confirm no
+break remained; §10
+postdates that capture, and its own restore block plus the live green tree cover
+it.
+
+## 1. Pair/derive math
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/core/link-plan.test.ts -t "derives the exact Water 10,600/min worked example" --reporter=verbose
+```
+
+Green output:
+
+```text
+✓ src/core/link-plan.test.ts > deriveLinkPlan > derives the exact Water 10,600/min worked example 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 11 skipped (12)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/core/link-plan.ts
+@@
+     const packageCount = materialDemand.ceilDiv(
+-      pair.packageFluidRate.mul(clockScale),
++      pair.unpackageFluidRate.mul(clockScale),
+     );
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/core/link-plan.test.ts > deriveLinkPlan > derives the exact Water 10,600/min worked example 4ms
+  → expected 89 to be 177 // Object.is equality
+FAIL  src/core/link-plan.test.ts > deriveLinkPlan > derives the exact Water 10,600/min worked example
+Test Files  1 failed (1)
+Tests  1 failed | 11 skipped (12)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/core/link-plan.ts
+@@
+     const packageCount = materialDemand.ceilDiv(
+-      pair.unpackageFluidRate.mul(clockScale),
++      pair.packageFluidRate.mul(clockScale),
+     );
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/core/link-plan.test.ts > deriveLinkPlan > derives the exact Water 10,600/min worked example 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 11 skipped (12)
+```
+
+## 2. V8/saveable store guard
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/state/store.test.ts -t "refuses illegal packaged routes without changing state" --reporter=verbose 2>&1 | rg "^ (✓|×|Test Files|     Tests)|refuses illegal"
+```
+
+Green output:
+
+```text
+✓ src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > refuses illegal packaged routes without changing state 29ms
+Test Files  1 passed (1)
+Tests  1 passed | 176 skipped (177)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/state/store.ts
+@@
+               if (
+-                link.interstep !== undefined &&
++                false &&
+                 isIllegalPackagedTransport(transport)
+               ) {
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > refuses illegal packaged routes without changing state 36ms
+  → expected { …(6) } to be { …(6) } // Object.is equality
+FAIL  src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > refuses illegal packaged routes without changing state
+Test Files  1 failed (1)
+Tests  1 failed | 176 skipped (177)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/state/store.ts
+@@
+               if (
+-                false &&
++                link.interstep !== undefined &&
+                 isIllegalPackagedTransport(transport)
+               ) {
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > refuses illegal packaged routes without changing state 29ms
+Test Files  1 passed (1)
+Tests  1 passed | 176 skipped (177)
+```
+
+## 3. Combined graph diagnostic
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/ui/graph-flow.test.ts -t "problem precedence" --reporter=verbose 2>&1 | rg "^ (✓|×|Test Files|     Tests)|problem precedence"
+```
+
+Green output:
+
+```text
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'under-supply' text beside an interstep problem with problem precedence 2ms
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'over-supply' text beside an interstep problem with problem precedence 0ms
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'dangling-link' text beside an interstep problem with problem precedence 0ms
+Test Files  1 passed (1)
+Tests  3 passed | 52 skipped (55)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/ui/graph-flow.ts
+@@
+-    const state: EdgeState = problem === undefined ? material.state : "problem";
++    const state: EdgeState = material.state;
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'under-supply' text beside an interstep problem with problem precedence 5ms
+× src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'over-supply' text beside an interstep problem with problem precedence 1ms
+× src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'dangling-link' text beside an interstep problem with problem precedence 0ms
+FAIL  src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'under-supply' text beside an interstep problem with problem precedence
+Test Files  1 failed (1)
+Tests  3 failed | 52 skipped (55)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/ui/graph-flow.ts
+@@
+-    const state: EdgeState = material.state;
++    const state: EdgeState = problem === undefined ? material.state : "problem";
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'under-supply' text beside an interstep problem with problem precedence 2ms
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'over-supply' text beside an interstep problem with problem precedence 0ms
+✓ src/ui/graph-flow.test.ts > graphToFlow — packaged transport projection > keeps 'dangling-link' text beside an interstep problem with problem precedence 0ms
+Test Files  1 passed (1)
+Tests  3 passed | 52 skipped (55)
+```
+
+## 4. Inspector interaction behavior
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/ui/LinkInspector.dom.test.tsx -t "enables the sole pair with belt defaults and renders exact plan math" --reporter=verbose 2>&1 | rg "^ (✓|×|Test Files|     Tests)|enables the sole pair"
+```
+
+Green output:
+
+```text
+✓ src/ui/LinkInspector.dom.test.tsx > LinkInspector packaging intersteps > enables the sole pair with belt defaults and renders exact plan math 25ms
+Test Files  1 passed (1)
+Tests  1 passed | 4 skipped (5)
+```
+
+## 5. Non-positive packaging rates
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/data/packaging.test.ts -t "rejects non-positive package output rates without throwing" --reporter=verbose
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/core/packaging-pair.ts
+@@
+ function isPositiveRate(entry: PackagingRecipeIO): boolean {
+-  return entry.perMinute.num > 0n;
++  return entry.perMinute.num >= 0n;
+ }
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/data/packaging.test.ts > packaging pair discovery > rejects non-positive package output rates without throwing 4ms
+FAIL  src/data/packaging.test.ts > packaging pair discovery > rejects non-positive package output rates without throwing
+AssertionError: expected [Function] to not throw an error but 'RangeError: Fraction division by zero.' was thrown
+Test Files  1 failed (1)
+Tests  1 failed | 12 skipped (13)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/core/packaging-pair.ts
+@@
+ function isPositiveRate(entry: PackagingRecipeIO): boolean {
+-  return entry.perMinute.num >= 0n;
++  return entry.perMinute.num > 0n;
+ }
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/data/packaging.test.ts > packaging pair discovery > rejects non-positive package output rates without throwing 2ms
+Test Files  1 passed (1)
+Tests  1 passed | 12 skipped (13)
+```
+
+## 6. Public setter canonicalization
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/state/store.test.ts -t "canonicalizes wider forward and return transports for v8 save/reload" --reporter=verbose
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/state/store.ts
+@@
+                 ...s,
+                 links: s.links.map((l) =>
+-                  l.id === linkId ? { ...l, transport: canonical } : l,
++                  l.id === linkId ? { ...l, transport } : l,
+                 ),
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > canonicalizes wider forward and return transports for v8 save/reload
+FAIL  src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > canonicalizes wider forward and return transports for v8 save/reload
+AssertionError: expected { mode: 'train', trip: { …(3) }, …(2) } to not have property "ignoredTopLevel"
+Test Files  1 failed (1)
+Tests  1 failed | 178 skipped (179)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/state/store.ts
+@@
+                 ...s,
+                 links: s.links.map((l) =>
+-                  l.id === linkId ? { ...l, transport } : l,
++                  l.id === linkId ? { ...l, transport: canonical } : l,
+                 ),
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/state/store.test.ts > stage graph — packaging interstep persistence actions (#113) > canonicalizes wider forward and return transports for v8 save/reload 36ms
+Test Files  1 passed (1)
+Tests  1 passed | 178 skipped (179)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/ui/LinkInspector.tsx
+@@
+                 setLinkInterstep(link.id, {
+                   packageRecipeId: pair.packageRecipe.id,
+-                  clockPercentText: "100",
++                  clockPercentText: "50",
+                   returnTransport: { mode: "belt" },
+                 });
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/ui/LinkInspector.dom.test.tsx > LinkInspector packaging intersteps > enables the sole pair with belt defaults and renders exact plan math 30ms
+FAIL  src/ui/LinkInspector.dom.test.tsx > LinkInspector packaging intersteps > enables the sole pair with belt defaults and renders exact plan math
+-     "clockPercentText": "100",
++     "clockPercentText": "50",
+Test Files  1 failed (1)
+Tests  1 failed | 4 skipped (5)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/ui/LinkInspector.tsx
+@@
+                 setLinkInterstep(link.id, {
+                   packageRecipeId: pair.packageRecipe.id,
+-                  clockPercentText: "50",
++                  clockPercentText: "100",
+                   returnTransport: { mode: "belt" },
+                 });
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/ui/LinkInspector.dom.test.tsx > LinkInspector packaging intersteps > enables the sole pair with belt defaults and renders exact plan math 25ms
+Test Files  1 passed (1)
+Tests  1 passed | 4 skipped (5)
+```
+
+## 7. Historical v7 array canonicalization
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/data/plan-store.test.ts -t "migrates v7-valid array transports and trips to exact v8 objects" --reporter=verbose
+```
+
+Green output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates v7-valid array transports and trips to exact v8 objects 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 79 skipped (80)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-  const canonical = canonicalizeLinkTransport(normalized);
++  const canonical = canonicalizeLinkTransport(transport);
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates v7-valid array transports and trips to exact v8 objects 5ms
+  → validated v7 transport could not be canonicalized
+FAIL  src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates v7-valid array transports and trips to exact v8 objects
+Error: validated v7 transport could not be canonicalized
+Test Files  1 failed (1)
+Tests  1 failed | 79 skipped (80)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-  const canonical = canonicalizeLinkTransport(transport);
++  const canonical = canonicalizeLinkTransport(normalized);
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates v7-valid array transports and trips to exact v8 objects 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 79 skipped (80)
+```
+
+## 8. Historical v7 property lookup canonicalization
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/data/plan-store.test.ts -t "migrates inherited and non-enumerable v7 transport fields" --reporter=verbose 2>&1 | rg "migrates inherited|FAIL|Test Files|Tests  "
+```
+
+Green output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates inherited and non-enumerable v7 transport fields 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 81 skipped (82)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-  const view = Object.create(source) as Record<string, unknown>;
++  const view = { ...source };
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates inherited and non-enumerable v7 transport fields 6ms
+  → validated v7 transport could not be canonicalized
+FAIL  src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates inherited and non-enumerable v7 transport fields
+Error: validated v7 transport could not be canonicalized
+Test Files  1 failed (1)
+Tests  1 failed | 81 skipped (82)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-  const view = { ...source };
++  const view = Object.create(source) as Record<string, unknown>;
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates inherited and non-enumerable v7 transport fields 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 81 skipped (82)
+```
+
+## 9. Historical v3 source-version extension stripping
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/data/plan-store.test.ts -t "strips JSON v4 extensions ignored by v3 and preserves admitted versions" --reporter=verbose 2>&1 | rg "strips JSON|FAIL|Test Files|Tests  "
+```
+
+Green output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 81 skipped (82)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-        ? { transport: canonicalLegacyTransport(link.transport, 3) }
++        ? { transport: canonicalLegacyTransport(link.transport, 4) }
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions 5ms
+  → validated v7 transport could not be canonicalized
+FAIL  src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions
+Error: validated v7 transport could not be canonicalized
+Test Files  1 failed (1)
+Tests  1 failed | 81 skipped (82)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-        ? { transport: canonicalLegacyTransport(link.transport, 4) }
++        ? { transport: canonicalLegacyTransport(link.transport, 3) }
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 81 skipped (82)
+```
+
+## 10. V3 stripping decorrelation (#127 retroactive-r5 fold)
+
+Added under #127 after the retroactive r5 review. The r5 code-reviewer noted that
+section 9's fixture carried, at that time, only v4-INVALID extension values (`deratePercentText: 0`,
+`sharedEnds: { from: false }`), which a hypothetical lenient
+drop-if-uncanonicalizable rule would discard too — so section 9 could not
+distinguish "strip because the source version is 3" from that rule. Two v3 rows
+carrying v4-VALID values were added (`nitrogen` pipe with
+`deratePercentText: "80"`, `copper_ingot` train with `sharedEnds: { from: true }`)
+and both are now pinned independently.
+
+Note on the mutation used by section 9 (`, 3)` → `, 4)`): it throws on the
+FIRST invalid row and short-circuits before the new assertions are reached, so it
+does NOT pin these two rows. Taking the fixture's four rows in order under that
+mutation: `water` (pipe, numeric `0`) fails the string guard at
+`link-transport.ts:110-115` and throws; `iron_ingot` (train, `{from:false}`) is
+rewritten to `{}` by the `sourceVersion === 4` branch at `plan-store.ts:483-490`
+and canonicalizes; `nitrogen` (pipe, valid `"80"`) canonicalizes; `copper_ingot`
+(train, valid `{from:true}`) canonicalizes through that same branch. So `water`
+alone throws, and because it is index 0 the short-circuit happens before either
+new row is asserted. Both cycles below therefore mutate the masking itself to
+simulate the lenient rule, producing an AssertionError rather than a throw. Each
+mutation is content-addressed and type-checks (`npx tsc -b` exit 0), so each RED
+is a real behavioural difference and not a compile error.
+
+Invocation for both cycles below. Every section 1-9 command is a `NO_COLOR`
+`--reporter=verbose` run scoped by test name with `-t` (§3's pattern matches three
+tests; the other eight match one each, and five of the nine additionally pipe
+through `rg`); §10 used the unscoped whole-file run shown here. The `-t` scoping —
+not the piping — is what makes §9 read `81 skipped` where §10 reads `81 passed`:
+
+```text
+npx tsc -b                                   # must exit 0: the mutant must compile
+npx vitest run src/data/plan-store.test.ts   # RED
+# restore src/data/plan-store.ts from a pre-mutation copy
+npx vitest run src/data/plan-store.test.ts   # GREEN
+```
+
+Both RED captures below are **grep-filtered excerpts** of that command's output,
+which is why 10a's excerpt omits the `+ Received` header that 10b's retains — the
+two runs were filtered with different patterns. Neither is elided output from a
+different command.
+
+### Cycle 10a — valid `deratePercentText` must still be stripped at a v3 source
+
+Mutation (keep a VALID derate instead of masking unconditionally):
+
+```diff
+-    overrides.push(["deratePercentText", undefined], ["sharedEnds", undefined]);
++    overrides.push(
++      [
++        "deratePercentText",
++        typeof legacy.deratePercentText === "string"
++          ? legacy.deratePercentText
++          : undefined,
++      ],
++      ["sharedEnds", undefined],
++    );
+```
+
+RED output:
+
+```text
+FAIL  src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions
+AssertionError: expected [ { mode: 'pipe' }, …(3) ] to strictly equal [ { mode: 'pipe' }, …(3) ]
++     "deratePercentText": "80",
+Tests  1 failed | 81 passed (82)
+```
+
+### Cycle 10b — valid `sharedEnds` must still be stripped at a v3 source
+
+Mutation:
+
+```diff
+-    overrides.push(["deratePercentText", undefined], ["sharedEnds", undefined]);
++    overrides.push(
++      ["deratePercentText", undefined],
++      [
++        "sharedEnds",
++        transport.mode === "train" && transport.sharedEnds?.from === true
++          ? { from: true as const }
++          : undefined,
++      ],
++    );
+```
+
+RED output:
+
+```text
+FAIL  src/data/plan-store.test.ts > plan-store — migrateV3 (v3 → v4, canonical links) > strips JSON v4 extensions ignored by v3 and preserves admitted versions
+AssertionError: expected [ { mode: 'pipe' }, …(3) ] to strictly equal [ { mode: 'pipe' }, …(3) ]
++ Received
++     "sharedEnds": {
++       "from": true,
++     },
+Tests  1 failed | 81 passed (82)
+```
+
+Restore (both cycles): `src/data/plan-store.ts` restored from a pre-mutation copy;
+verified `tr -cd '\0' | wc -c` = 0 and the focused suite back to green.
+
+```text
+Tests  82 passed (82)
+```
+
+## Notes on this log's own accuracy (#127 fold)
+
+1. **Captured error label is pre-rename.** The RED captures in sections 7, 8 and
+   9 each show `validated v7 transport could not be canonicalized` — twice per
+   section, once in the `→` summary line and once in the `Error:` line. (Cited by
+   section deliberately: earlier versions of this note gave line numbers, and each
+   time the preamble above was edited the numbers silently went stale. The
+   magnitude is not restated here on purpose — it would go stale the same way.) Live source at
+   `src/data/plan-store.ts:495` now reads `validated
+   legacy transport could not be canonicalized` — the label was generalized in a
+   later commit of the same delta (`92a87d8`), after these captures were taken.
+   Nothing pins the string, so the rename is wording-only. Recorded so a future
+   auditor comparing log to source does not read the mismatch as fabrication.
+
+2. **Numbered headings are not 1:1 with mutation cycles.** Section 4 ("Inspector
+   interaction behavior") records a green run only; its break/fail/restore cycle
+   sits unlabelled at the end of section 6 (the `LinkInspector.dom.test.tsx`
+   cycle). The nine-cycle total is correct in aggregate (1, 2, 3, 5, 6a, 6b, 7, 8,
+   9) **through section 9**; §10 adds cycles 10a and 10b, for eleven in total.
+   The heading numbers are section indices, not cycle indices. This mismatch is
+   the likely origin of the four-vs-six miscount r3 caught.

@@ -7,6 +7,7 @@ import type {
   FeedLaneResult,
   OutputLaneResult,
 } from "../core/manifold.ts";
+import { solveStage } from "../core/manifold.ts";
 import { layoutStage } from "./layout.ts";
 import {
   FOOTPRINTS,
@@ -21,6 +22,7 @@ const F = (n: number): Fraction => Fraction.from(n);
 function feedLane(
   itemId: string,
   belts: { index: number; entersAfterMachine: number; capacity: number }[],
+  parallelCounts: number[] = [],
 ): FeedLaneResult {
   return {
     itemId,
@@ -33,7 +35,13 @@ function feedLane(
       overridden: false,
       entersAfterMachine: b.entersAfterMachine,
     })),
-    segments: [],
+    segments: parallelCounts.map((parallelCount, i) => ({
+      fromMachine: i + 1,
+      toMachine: i + 1,
+      peakFlow: F(0),
+      beltIndex: i,
+      parallelCount,
+    })),
     findings: [],
   };
 }
@@ -108,6 +116,43 @@ describe("layoutStage — machine row: pitch + grid origins", () => {
 // ── Lane geometry ─────────────────────────────────────────────────────────
 
 describe("layoutStage — lane geometry", () => {
+  it("derives a feed lane's maximum parallel count and defaults empty/output lanes to one", () => {
+    const feed = feedLane(
+      "a",
+      [
+        { index: 0, entersAfterMachine: 0, capacity: 480 },
+        { index: 1, entersAfterMachine: 1, capacity: 480 },
+      ],
+      [1, 2],
+    );
+    const output = outputLane("b", []);
+    const layout = layoutStage(
+      solve([feed, feedLane("empty", [])], [output]),
+      "smelter_mk1",
+      2,
+    );
+
+    expect(layout.feedLanes[0]!.maxParallelCount).toBe(2);
+    expect(layout.feedLanes[1]!.maxParallelCount).toBe(1);
+    expect(layout.outputLanes[0]!.maxParallelCount).toBe(1);
+  });
+
+  it.each([
+    ["zero machines", 0, 30],
+    ["zero demand", 2, 0],
+    ["infeasible machine", 2, 481],
+  ])("defaults a real %s feed lane to one", (_case, machineCount, demand) => {
+    const solved = solveStage({
+      machineCount,
+      clockPercent: F(100),
+      capacities: { belt: [F(60), F(480)], pipe: [F(300)] },
+      feeds: [{ itemId: "a", kind: "belt", perMachineRate: F(demand) }],
+      outputs: [],
+    });
+    const layout = layoutStage(solved, "smelter_mk1", machineCount);
+    expect(layout.feedLanes[0]!.maxParallelCount).toBe(1);
+  });
+
   it("places 1..3 feed lanes at y = −(20 + f×60)", () => {
     const feeds = [feedLane("a", []), feedLane("b", []), feedLane("c", [])];
     const layout = layoutStage(solve(feeds, []), "smelter_mk1", 2);

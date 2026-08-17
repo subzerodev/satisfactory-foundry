@@ -1,0 +1,285 @@
+# Forgejo #112 Phase 1 verification evidence
+# Branch: feature/s22-112-extraction-p1-design
+# Date: 2026-08-16
+
+PRE-IMPLEMENTATION DRIFT GATE
+command: npm test -- --run src/data/docs-loader.test.ts src/data/catalog-store.test.ts src/ui/advice.test.ts src/data/plan-store.test.ts src/state/store.test.ts src/ui/graph-flow.test.ts src/ui/GraphCanvas.test.ts
+result: PASS - 7 files, 348 tests
+
+INITIAL RED/GREEN GATES
+parser red: FAIL - 18 new extractor parser tests; green: 58/58
+cache red: FAIL - extractor round-trip, null-prototype revival, parser v5 stale; green parser+cache: 71/71
+derivation red: FAIL - module absent; green derivation+advice: 30/30
+state red: FAIL - setExtractionSelection absent
+persistence red: FAIL - migrateV5 absent; green plan-store+state: 232/232
+raw data red: FAIL - stageId/itemId/demand absent; green graph-flow: 48/48
+interaction red: FAIL - projectRawFeedNode absent and no native button; green graph/canvas: 54/54
+panel red: FAIL - input edit callback row; green panel+smoke: 70/70
+responsive red: FAIL - 360/extraction top-right stack overlaps bottom-left controls
+responsive green: PASS - all 360/720 notice/extraction/combined rows
+
+CANONICAL POST-CODE BREAK/RESTORE PROBES
+
+1. Extractor parser and cache
+break: use 6 instead of 60 in extractor rate calculation; serialize extractor normalRate as "0"
+command: npm test -- --run src/data/docs-loader.test.ts src/data/catalog-store.test.ts
+FAIL src/data/docs-loader.test.ts > parseDocsJson - extractor capabilities (#112) > parses extractor capabilities independent of group order
+FAIL src/data/catalog-store.test.ts > catalog cache - round-trip (spec row 7) > save -> load returns a hit with Fraction-equal catalog + records a hash
+restore result: PASS - 2 files, 71 tests
+
+2. Exact derivation
+break: divide extractor clock scaling by 1000 instead of 100
+command: npm test -- --run src/ui/extraction-plan.test.ts
+FAIL src/ui/extraction-plan.test.ts > deriveExtractionPlan > derives the exact Limestone and Water worked examples
+FAIL src/ui/extraction-plan.test.ts > deriveExtractionPlan > keeps exact counts and per-output transport at 250 percent
+restore result: PASS - 1 file, 11 tests
+
+3. Plan v6 migration and persistence
+break: map every v5 stage to userPlaced=true
+command: npm test -- --run src/data/plan-store.test.ts src/state/store.test.ts
+FAIL src/data/plan-store.test.ts > plan-store - v6 extraction and explicit placement (#112) > migrates v5 userPlaced true/absent to required booleans
+FAIL src/data/plan-store.test.ts > plan-store - v5 round-trip (flowDirection + userPlaced) > round-trips a TB direction and a per-stage userPlaced flag
+restore result: PASS - 2 files, 232 tests
+
+4. Live exact raw demand
+break: replace feed.totalDemand with Fraction.from(0) in the raw-node projection
+command: npm test -- --run src/ui/graph-flow.test.ts
+FAIL src/ui/graph-flow.test.ts > graphToFlow - rawFeeds > emits a supply card + edge for an unlinked extraction-level input with the exact totalDemand
+restore result: PASS - 1 file, 48 tests
+
+5. Panel rendering contract
+break: render Purity Unknown instead of Purity Normal
+command: npm test -- --run src/ui/GraphCanvas.dom.test.tsx
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > renders the exact Normal-purity plan and persists control edits
+restore result: PASS - 1 file, 4 tests
+
+6. Correctness r1 parser and cache folds
+break: skip malformed restricted-resource members; serialize extractors into a plain object
+command: npm test -- src/data/docs-loader.test.ts src/data/catalog-store.test.ts
+FAIL src/data/docs-loader.test.ts > parseDocsJson - extractor capabilities (#112) > rejects a restricted resource list with a malformed member
+FAIL src/data/catalog-store.test.ts > catalog cache - null-prototype maps survive revive (#28) > round-trips an extractor whose id is __proto__
+restore result: PASS - 2 files, 73 tests
+
+7. Correctness r2 complete cache and responsive geometry folds
+break A: serialize the extractor's matching machine into a plain object
+command: npm test -- src/data/catalog-store.test.ts
+FAIL src/data/catalog-store.test.ts > catalog cache - null-prototype maps survive revive (#28) > round-trips an extractor and machine whose shared id is __proto__
+restore result: PASS - 1 file, 14 tests
+break B: raise the measured mobile stack cap from 170px to the previously specified 220px
+command: node scripts/extraction-panel-browser-check.mjs
+FAIL 360/extraction: top-right stack overlaps bottom-left controls; stack y=49..269, controls y=220..324
+restore result: PASS - 9 geometry rows and 3 interaction rows
+
+8. Correctness r3 explicit solid selection fold
+break: restore the one-candidate auto-seed condition for every resource
+command: npm test -- src/ui/GraphCanvas.dom.test.tsx
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > leaves a single-candidate solid unselected until the user chooses it
+restore result: PASS - 1 file, 5 tests; browser gate also PASS - 9 geometry rows and 3 interaction rows
+
+9. Correctness r4 clear lifecycle and shared clock parser folds
+break: remove the once-per-open auto-seed guard and corrupt the shared malformed-clock message
+command: npm test -- src/ui/GraphCanvas.dom.test.tsx src/ui/extraction-plan.test.ts
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > allows clearing the auto-seeded water extractor
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > allows clearing the auto-seeded liquid_oil extractor
+FAIL src/ui/extraction-plan.test.ts > deriveExtractionPlan > uses the shared clock error for nope
+restore result: PASS - 2 files, 21 tests; ChainBuilder shared-parser suite and browser gate also pass
+
+10. Correctness r5 v6 shape and pipe-copy folds
+break: accept arrays as extraction maps and restore the duplicate pipe noun
+command: npm test -- src/data/plan-store.test.ts src/ui/GraphCanvas.dom.test.tsx
+FAIL src/data/plan-store.test.ts > plan-store - v6 extraction and explicit placement (#112) > rejects malformed v6 placement and extraction shapes
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > allows clearing the auto-seeded water extractor
+FAIL src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > allows clearing the auto-seeded liquid_oil extractor
+restore result: PASS - 2 files, 72 tests
+
+BROWSER GATE
+command: node scripts/extraction-panel-browser-check.mjs
+PASS geometry 360px notice top=49 bottom=91 height=42
+PASS geometry 360px extraction top=49 bottom=219 height=170
+PASS geometry 360px combined top=49 bottom=219 height=170
+PASS geometry 720px notice top=49 bottom=91 height=42
+PASS geometry 720px extraction top=49 bottom=219 height=170
+PASS geometry 720px combined top=49 bottom=219 height=170
+PASS geometry 1280px notice top=16 bottom=58 height=42
+PASS geometry 1280px extraction top=16 bottom=241 height=225
+PASS geometry 1280px combined top=16 bottom=276 height=260
+PASS interaction 360/720/1280 pointer/Enter/Space, Limestone/Water/Oil/Nitrogen, replacement, live update, disappearance, focus
+screenshots: /tmp/satisfactory-foundry-112-browser/{360,720,1280}-{notice,extraction,combined}.png and interaction-{360,720,1280}.png
+
+POST-CODE COMPLETE SUITE
+command: npm test
+result: PASS - 39 files, 1030 tests
+command: npm run check
+result: PASS - TypeScript, ESLint, and Prettier
+command: npm run build
+result: PASS - Vite/PWA build; existing 500 kB chunk-size advisory only
+command: git diff --check develop...HEAD
+result: PASS
+
+## Probes 11-13 (#130) — the c8828d2 fold, plus this ticket's own change
+
+Added under #130. The retroactive r11 review found that this log carried no
+break/fail/restore probe for `c8828d2`, the post-convergence simplify fold — the
+only round after correctness convergence that changed migration and derivation
+code. Its closing tally at the top of this log still read `39 files, 1030
+tests`, the PRE-fold count, which is itself proof the log was never re-run after
+the fold. All three probes below were run against the working tree during the #130
+fix-forward -- `985ed1c` plus that uncommitted #130 fold, NOT `985ed1c` alone.
+("the fold" alone is ambiguous in this section: the sentence above uses it for
+`c8828d2`, the simplify fold under review. Two independent reviewers resolved the
+bare demonstrative in opposite directions, so it is spelled out here.)
+
+**Probes 11 and 12** cover the `c8828d2` simplify fold. **Probe 13 does not** --
+it covers #130's own deletion of the dead `migrateV4` export.
+
+The counts below are not comparable to each other -- each probe states the scope it
+ran at, and they differ: probe 11 is one focused file (29 cases), probe 12 is two
+files, probe 13 is the whole suite. Read each against its own command, not against
+the others. An earlier version of this paragraph offered a causal story for the
+differences (that probes 11-12 predated the `migrateV4` test deletion); that story
+was wrong -- the deleted test lived in `plan-store.test.ts` and cannot affect probe
+11's focused file at all -- and it is dropped rather than replaced.
+
+Method note: each mutation must COMPILE, or its RED is a type error rather than a
+behavioural difference. The first attempt at probe 11 did not — swapping to
+`TIER_TABLE` without adding the import produced `TS2304: Cannot find name
+'TIER_TABLE'` and failed 21 tests, which looks stronger than the real probe and
+means nothing. `tsc -b` exit status is captured directly below, not through a
+pipe, because `$?` after a pipeline reports the last command in the pipe.
+
+### Probe 11 — extraction transport must read `catalog.tiers`, not the global table
+
+Break (note the added import, so the mutant type-checks):
+
+```diff
+ import { Fraction } from "../core/fraction.ts";
++import { TIER_TABLE } from "../data/tiers.ts";
+@@ function transportForOutput
+-  const tiers = catalog.tiers[kind];
++  const tiers = TIER_TABLE[kind];
+```
+
+```text
+npx tsc -b   → tsc_exit=0
+```
+
+RED (`npx vitest run src/ui/extraction-plan.test.ts`, vitest_exit=1):
+
+```text
+FAIL  src/ui/extraction-plan.test.ts > deriveExtractionPlan > uses the catalog tier table for extractor transport
+AssertionError: expected { status: 'requires-unlock', …(2) } to match object { status: 'available', …(2) }
+Tests  1 failed | 28 passed (29)
+```
+
+Exactly one test fails, and it is the regression the fold added. Restore, then:
+
+```text
+Tests  29 passed (29)   (vitest_exit=0)
+```
+
+### Probe 12 — `migrateLegacyV4` must derive `userPlaced` from original position presence
+
+Break:
+
+```diff
+@@ function migrateLegacyV4
+-      userPlaced: stage.position !== undefined,
++      userPlaced: false,
+```
+
+```text
+npx tsc -b   → tsc_exit=0
+```
+
+RED (`npx vitest run src/data/plan-store.test.ts src/state/store.test.ts`):
+
+```text
+FAIL  src/data/plan-store.test.ts > plan-store — v6 extraction and explicit placement (#112) > materializes legacy placement from original position presence
+AssertionError: expected [ false, false ] to deeply equal [ true, false ]
+
+FAIL  src/state/store.test.ts > plans carry the graph (Stage 3 P3) > a pre-v5 positioned stage loads pinned — a subsequent switch does NOT re-slot it (Stage 10 P1)
+AssertionError: expected undefined to be true
+```
+
+Two independent suites catch it, including the store-level pinning behaviour.
+Restore, then the full suite:
+
+```text
+Test Files  44 passed (44)
+Tests  1141 passed (1141)
+```
+
+### Probe 13 -- legacy timestamps must pass through verbatim
+
+Deleting the standalone `migrateV4` step function removed the only assertion
+targeting the **v4 step in isolation**. Coverage of the step's behaviour is a
+different question, and two claims made here earlier got it wrong. Both OVER-claimed
+the gap, on different axes -- one over the set of assertions, one over the surface
+they cover. Both are recorded rather than quietly replaced:
+
+1. "the only assertion that timestamps survive migration" -- false: sibling step
+   functions keep theirs (`plan-store.test.ts` covers `migrateV1`, `migrateV2`,
+   `migrateV3`).
+2. "nothing pinned the passthrough on the live v1-v4 load chain" -- also false.
+   `src/state/store.test.ts` pins it twice via v1 rows: `exportPlan` emitting the
+   migrated v8 form, and `renamePlan` persisting as v8. Both go RED under the
+   mutation below. The "exactly one test" figure previously cited here was a SCOPE
+   ARTIFACT -- the probe had been run against `plan-store.test.ts` alone.
+
+What the new test genuinely adds, having measured it: it is the only test pinning a
+**v4-origin** row's timestamps through the chain (both store-level tests use v1
+rows), and it pins it directly at the `plan-store` layer rather than through
+`exportPlan`/`renamePlan`. The module's doc comments call the invariant
+load-bearing: the save-over path reads the prior file's `createdAt`.
+
+Break:
+
+```diff
+@@ function migrateLegacyV4
+-    createdAt: plan.createdAt,
++    createdAt: new Date(0).toISOString(),
+```
+
+```text
+npx tsc -b   -> tsc_exit=0
+```
+
+RED, run at FULL suite scope (`npm test`, test_exit=1) -- deliberately, after an
+earlier narrow run mis-read as unique coverage:
+
+```text
+FAIL  src/data/plan-store.test.ts > plan-store - legacy v4 load path (direction defaults LR) > carries legacy timestamps through the chain verbatim
+FAIL  src/state/store.test.ts > plans carry the graph (Stage 3 P3) > renaming a v1 row persists it as v8 (save-over model)
+FAIL  src/state/store.test.ts > plan export/import (Stage 6 / Phase 1) > exportPlan emits the migrated v8 form for a stored v1 row
+Tests  3 failed | 1138 passed (1141)
+```
+
+Three kills across two suites, not one. Restored to green (1141 passed).
+
+### Delivered-tree verification
+
+Run after the LAST edit of the #130 fix-forward, so this — not any probe's restore
+line — is the count for the state being committed:
+
+```text
+npm test        Test Files  44 passed (44) / Tests  1141 passed (1141)
+npm run check   PASS (tsc -b, ESLint, Prettier)
+npm run build   PASS (Vite/PWA, 18 precache entries)
+node scripts/extraction-panel-browser-check.mjs     exit 0, 12 PASS rows
+node scripts/packaging-intersteps-browser-check.mjs exit 0, 4 PASS rows
+```
+
+1,141 = 1,138 before the fold, plus 3 new purity-precedence rows, plus 1 new
+legacy-timestamp test (probe 13), minus the 1 deleted dead-export test. Measured
+after the LAST edit -- an earlier draft of this block recorded 1,140, which was the
+count before the timestamp test was added. That is the third time in this fold a
+count captured mid-edit was written as final; the rule is to measure once nothing
+further will change.
+
+### Tally correction
+
+The `PASS - 39 files, 1030 tests` line at the top of this log is the pre-fold
+count, left in place as the historical record of that round. The chain from there
+to the delivered count: `c8828d2` itself took it to **1028** (a deliberate two-test
+decrease, recorded in `../FEATURE.md`), then #124, #113 and this #130 fix-forward
+all landed after this log was written.

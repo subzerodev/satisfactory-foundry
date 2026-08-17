@@ -307,6 +307,88 @@ describe("solveFeedLane — exact-multiple boundary (spec row 3)", () => {
   });
 });
 
+describe("solveFeedLane — bounded parallel feed buses (#120)", () => {
+  it("models Michael's 106-refinery Mk5 plan as 17 feeds and exactly eight x2 spans", () => {
+    const r = solveFeed({
+      n: 106,
+      rate: F(120),
+      belts: [F(60), F(120), F(270), F(480), F(780)],
+    });
+
+    expect(r.belts).toHaveLength(17);
+    expect(r.belts.map((b) => b.entersAfterMachine)).toEqual([
+      0, 6, 13, 19, 26, 32, 39, 45, 52, 58, 65, 71, 78, 84, 91, 97, 104,
+    ]);
+    const bundled = r.segments.filter((s) => s.parallelCount === 2);
+    expect(bundled).toHaveLength(8);
+    expect(bundled.every((s) => s.peakFlow.eq(F(840)))).toBe(true);
+    expect(
+      r.segments
+        .filter((s) => !s.peakFlow.eq(F(840)))
+        .every((s) => s.parallelCount === 1),
+    ).toBe(true);
+    expect(r.findings.some((f) => f.type === "segment-over-capacity")).toBe(
+      false,
+    );
+  });
+
+  it("uses one line at B, two just above B, and never exceeds two for eligible slots", () => {
+    const atBoundary = solveFeed({
+      n: 20,
+      rate: F(30),
+      overrides: [F(475), F(455)],
+    });
+    expect(atBoundary.segments[1]!.peakFlow.eq(F(480))).toBe(true);
+    expect(atBoundary.segments[1]!.parallelCount).toBe(1);
+
+    const aboveBoundary = solveFeed({
+      n: 20,
+      rate: F(30),
+      overrides: [F(475), F(456)],
+    });
+    expect(aboveBoundary.segments[1]!.peakFlow.eq(F(481))).toBe(true);
+    expect(aboveBoundary.segments[1]!.parallelCount).toBe(2);
+    expect(
+      aboveBoundary.segments.every(
+        (s) => s.parallelCount === 1 || s.parallelCount === 2,
+      ),
+    ).toBe(true);
+    expect(aboveBoundary.segments.every((s) => s.peakFlow.lt(F(960)))).toBe(
+      true,
+    );
+  });
+
+  it("applies the same exact bundle rule to a non-divisible pipe lane", () => {
+    const r = solveFeed({
+      n: 3,
+      rate: F(350),
+      kind: "pipe",
+      belts: BELTS,
+    });
+    expect(r.belts.map((b) => b.capacity.toString())).toEqual(["600", "600"]);
+    expect(r.segments[1]!.peakFlow.eq(F(850))).toBe(true);
+    expect(r.segments[1]!.parallelCount).toBe(2);
+    expect(r.findings.some((f) => f.type === "segment-over-capacity")).toBe(
+      false,
+    );
+  });
+
+  it("keeps starvation authoritative on an otherwise valid x2 segment", () => {
+    const r = solveFeed({
+      n: 20,
+      rate: F(30),
+      overrides: [F(25), F(480)],
+    });
+    expect(r.segments).toHaveLength(1);
+    expect(r.segments[0]!.peakFlow.eq(F(505))).toBe(true);
+    expect(r.segments[0]!.parallelCount).toBe(2);
+    expect(r.findings.some((f) => f.type === "segment-over-capacity")).toBe(
+      false,
+    );
+    expect(r.findings.some((f) => f.type === "starved-machines")).toBe(true);
+  });
+});
+
 describe("solveFeedLane — clock scaling (spec row 4)", () => {
   it("150% scales d exactly to 45", () => {
     const r = solveFeed({ n: 10, rate: F(30), clock: F(150) });
@@ -374,6 +456,7 @@ describe("solveFeedLane — override exceeds bus cap (spec row 6)", () => {
       overrides: [F(480)],
     });
     expect(r.belts[0]!.capacity.eq(F(480))).toBe(true);
+    expect(r.segments[0]!.parallelCount).toBe(1);
     const over = r.findings.filter((f) => f.type === "segment-over-capacity");
     expect(over).toHaveLength(1);
     const o = over[0]!;
@@ -438,6 +521,59 @@ describe("solveFeedLane — over-B override clamps entry/span to N (regression)"
   });
 });
 
+describe("solveFeedLane — exact feed-entry clamp before narrowing (#122)", () => {
+  it.each([
+    ["MAX_SAFE_INTEGER", Fraction.from(Number.MAX_SAFE_INTEGER)],
+    [
+      "larger than MAX_SAFE_INTEGER",
+      Fraction.from(BigInt(Number.MAX_SAFE_INTEGER) + 1n),
+    ],
+  ])(
+    "clamps a %s override quotient to N without losing exactness",
+    (_, override) => {
+      const r = solveFeed({
+        n: 3,
+        rate: R(1, 2),
+        belts: [F(1)],
+        overrides: [override],
+      });
+
+      expect(r.belts).toHaveLength(2);
+      expect(r.belts[0]!.capacity.eq(override)).toBe(true);
+      expect(r.belts[1]!.entersAfterMachine).toBe(3);
+      expect(r.belts.every((b) => b.entersAfterMachine <= 3)).toBe(true);
+      expect(r.segments).toHaveLength(1);
+      expect(r.segments[0]!).toMatchObject({
+        fromMachine: 1,
+        toMachine: 3,
+        beltIndex: 0,
+      });
+
+      const over = r.findings.filter((f) => f.type === "segment-over-capacity");
+      expect(over).toHaveLength(1);
+      expect(over[0]!.peakFlow.eq(override)).toBe(true);
+      expect(over[0]!).toMatchObject({ fromMachine: 1, toMachine: 3 });
+    },
+  );
+
+  it("clamps the exact equality boundary to N", () => {
+    const r = solveFeed({
+      n: 3,
+      rate: R(1, 2),
+      belts: [F(1)],
+      overrides: [R(3, 2)],
+    });
+
+    expect(r.belts[1]!.entersAfterMachine).toBe(3);
+    expect(r.segments).toHaveLength(1);
+    expect(r.segments[0]!).toMatchObject({
+      fromMachine: 1,
+      toMachine: 3,
+      beltIndex: 0,
+    });
+  });
+});
+
 describe("solveFeedLane — oversize overrides array (spec row 7)", () => {
   it("overrides longer than k -> lane-local invalid-input, lane empty", () => {
     // k=1 (D=300 <= 480), overrides length 2 > 1.
@@ -469,6 +605,84 @@ describe("solveFeedLane — oversize overrides array (spec row 7)", () => {
     // sibling unaffected: D=300 -> k=1 belt 480
     expect(good.belts).toHaveLength(1);
     expect(good.findings.some((f) => f.type === "invalid-input")).toBe(false);
+  });
+});
+
+describe("solveFeedLane — negative and zero overrides", () => {
+  it("rejects the first negative override before belt math", () => {
+    const r = solveFeed({
+      n: 20,
+      rate: F(30),
+      overrides: [null, F(-5), F(-10)],
+    });
+
+    expect(r.belts).toEqual([]);
+    expect(r.segments).toEqual([]);
+    expect(r.findings).toEqual([
+      {
+        type: "invalid-input",
+        reason: "negative-override",
+        detail: "lane iron-ore override 2 must be zero or positive; got -5.",
+      },
+    ]);
+  });
+
+  it.each([
+    ["N=0", { n: 0, rate: F(30), overrides: [null, F(-5)] }],
+    ["zero-rate", { n: 10, rate: F(0), overrides: [null, F(-5)] }],
+    ["d > B", { n: 5, rate: F(812), overrides: [null, F(-5)] }],
+    ["oversize array", { n: 10, rate: F(30), overrides: [null, F(-5)] }],
+  ])("negative override wins over %s", (_case, opts) => {
+    const r = solveFeed(opts);
+
+    expect(r.belts).toEqual([]);
+    expect(r.segments).toEqual([]);
+    expect(r.findings).toEqual([
+      {
+        type: "invalid-input",
+        reason: "negative-override",
+        detail: "lane iron-ore override 2 must be zero or positive; got -5.",
+      },
+    ]);
+  });
+
+  it("zero supply reports complete starvation", () => {
+    const r = solveFeed({ n: 10, rate: F(30), overrides: [F(0)] });
+
+    expect(r.belts[0]!.capacity.isZero()).toBe(true);
+    expect(r.segments[0]!.peakFlow.isZero()).toBe(true);
+    expect(r.segments[0]!.parallelCount).toBe(1);
+    expect(r.findings).toEqual([
+      {
+        type: "starved-machines",
+        itemId: "iron-ore",
+        starvedFrom: 1,
+        starvedTo: 10,
+      },
+    ]);
+  });
+
+  it("a zero second feed serves its span from residual carry only", () => {
+    const r = solveFeed({
+      n: 13,
+      rate: R(75, 2),
+      overrides: [null, F(0)],
+    });
+
+    expect(r.belts[1]!.capacity.isZero()).toBe(true);
+    expect(r.segments[1]!.peakFlow.eq(F(30))).toBe(true);
+    expect(r.segments[1]!.parallelCount).toBe(1);
+    expect(r.findings).toEqual([
+      {
+        type: "starved-machines",
+        itemId: "iron-ore",
+        partial: {
+          machine: 13,
+          received: F(30),
+          shortfall: R(15, 2),
+        },
+      },
+    ]);
   });
 });
 
@@ -556,6 +770,73 @@ describe("solveOutputLane — override undersize (segment-over-capacity)", () =>
     expect(o.busCapacity.eq(F(270))).toBe(true); // the binding overridden cap
     // no starvation on the output side, ever
     expect(r.findings.some((f) => f.type === "starved-machines")).toBe(false);
+  });
+});
+
+describe("solveOutputLane — parallel cardinality compatibility (#120)", () => {
+  it("keeps every output segment single-line without changing findings", () => {
+    const r = solveOut({ n: 37, rate: F(30), overrides: [F(270)] });
+    expect(r.segments.length).toBeGreaterThan(1);
+    expect(r.segments.every((segment) => segment.parallelCount === 1)).toBe(
+      true,
+    );
+    expect(r.findings).toHaveLength(1);
+    expect(r.findings[0]!.type).toBe("segment-over-capacity");
+  });
+});
+
+describe("solveOutputLane — negative and zero overrides", () => {
+  it("rejects the first negative override before break-out math", () => {
+    const r = solveOut({
+      n: 20,
+      rate: F(30),
+      overrides: [null, F(-5), F(-10)],
+    });
+
+    expect(r.breakouts).toEqual([]);
+    expect(r.segments).toEqual([]);
+    expect(r.findings).toEqual([
+      {
+        type: "invalid-input",
+        reason: "negative-override",
+        detail: "lane iron-ingot override 2 must be zero or positive; got -5.",
+      },
+    ]);
+  });
+
+  it.each([
+    ["N=0", { n: 0, rate: F(30), overrides: [null, F(-5)] }],
+    ["zero-rate", { n: 10, rate: F(0), overrides: [null, F(-5)] }],
+    ["p > T", { n: 5, rate: F(812), overrides: [null, F(-5)] }],
+    ["oversize array", { n: 10, rate: F(30), overrides: [null, F(-5)] }],
+  ])("negative override wins over %s", (_case, opts) => {
+    const r = solveOut(opts);
+
+    expect(r.breakouts).toEqual([]);
+    expect(r.segments).toEqual([]);
+    expect(r.findings).toEqual([
+      {
+        type: "invalid-input",
+        reason: "negative-override",
+        detail: "lane iron-ingot override 2 must be zero or positive; got -5.",
+      },
+    ]);
+  });
+
+  it("zero output capacity reports the binding segment over capacity", () => {
+    const r = solveOut({ n: 20, rate: F(30), overrides: [F(0)] });
+
+    expect(r.breakouts[0]!.capacity.isZero()).toBe(true);
+    expect(r.findings).toEqual([
+      {
+        type: "segment-over-capacity",
+        itemId: "iron-ingot",
+        fromMachine: 1,
+        toMachine: 16,
+        peakFlow: F(480),
+        busCapacity: F(0),
+      },
+    ]);
   });
 });
 
@@ -650,5 +931,43 @@ describe("solveStage — full 20-smelter integration", () => {
       [17, 20],
     ]);
     expect(ou.findings).toEqual([]);
+  });
+
+  it("keeps negative overrides lane-local while valid siblings solve", () => {
+    const result = solveStage(
+      stage({
+        machineCount: 20,
+        feeds: [
+          feed({ itemId: "bad-feed", overrides: [null, F(-5)] }),
+          feed({ itemId: "good-feed" }),
+        ],
+        outputs: [
+          feed({ itemId: "bad-output", overrides: [null, F(-5)] }),
+          feed({ itemId: "good-output" }),
+        ],
+      }),
+    );
+
+    expect(result.findings).toEqual([]);
+    const badFeed = result.feeds.find((lane) => lane.itemId === "bad-feed")!;
+    const goodFeed = result.feeds.find((lane) => lane.itemId === "good-feed")!;
+    const badOutput = result.outputs.find(
+      (lane) => lane.itemId === "bad-output",
+    )!;
+    const goodOutput = result.outputs.find(
+      (lane) => lane.itemId === "good-output",
+    )!;
+
+    expect(badFeed.belts).toEqual([]);
+    expect(badFeed.segments).toEqual([]);
+    expect(invalidReasons(badFeed.findings)).toEqual(["negative-override"]);
+    expect(goodFeed.belts).not.toEqual([]);
+    expect(goodFeed.findings).toEqual([]);
+
+    expect(badOutput.breakouts).toEqual([]);
+    expect(badOutput.segments).toEqual([]);
+    expect(invalidReasons(badOutput.findings)).toEqual(["negative-override"]);
+    expect(goodOutput.breakouts).not.toEqual([]);
+    expect(goodOutput.findings).toEqual([]);
   });
 });
