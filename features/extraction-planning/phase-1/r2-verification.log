@@ -122,19 +122,20 @@ Added under #130. The retroactive r11 review found that this log carried no
 break/fail/restore probe for `c8828d2`, the post-convergence simplify fold — the
 only round after correctness convergence that changed migration and derivation
 code. Its closing tally at the top of this log still read `39 files, 1030
-tests`, the PRE-fold
-count, which is itself proof the log was never re-run after the fold. Both probes
-below were run against the working tree during the #130 fix-forward, i.e. on
-`985ed1c` plus that uncommitted fold -- NOT on `985ed1c` alone.
+tests`, the PRE-fold count, which is itself proof the log was never re-run after
+the fold. All three probes below were run against the working tree during the #130
+fix-forward -- `985ed1c` plus that uncommitted fold, NOT `985ed1c` alone.
 
 **Probes 11 and 12** cover the `c8828d2` simplify fold. **Probe 13 does not** --
 it covers #130's own deletion of the dead `migrateV4` export.
 
-The per-probe counts reflect the tree at the moment each probe ran, and the three
-differ. Probes 11 and 12 predate the `migrateV4` test deletion, which is why probe
-11's focused file shows 29 cases and probe 12's restore shows 1141. Probe 13
-postdates both that deletion and the addition of the timestamp test, so its `(82)`
-is the delivered-tree count for `plan-store.test.ts`.
+The counts below are not comparable to each other -- each probe states the scope it
+ran at, and they differ: probe 11 is one focused file (29 cases), probe 12 is two
+files, probe 13 is the whole suite. Read each against its own command, not against
+the others. An earlier version of this paragraph offered a causal story for the
+differences (that probes 11-12 predated the `migrateV4` test deletion); that story
+was wrong -- the deleted test lived in `plan-store.test.ts` and cannot affect probe
+11's focused file at all -- and it is dropped rather than replaced.
 
 Method note: each mutation must COMPILE, or its RED is a type error rather than a
 behavioural difference. The first attempt at probe 11 did not — swapping to
@@ -208,12 +209,23 @@ Tests  1141 passed (1141)
 ### Probe 13 -- legacy timestamps must pass through verbatim
 
 Deleting the standalone `migrateV4` step function removed the only assertion that
-timestamps survive the **v4 step**. Sibling step functions keep theirs
-(`plan-store.test.ts` covers `migrateV1`, `migrateV2` and `migrateV3` verbatim), so
-this was never the only timestamp pin in the file -- but nothing pinned the passthrough
-on the **live v1-v4 load chain**, which is why the probe below kills with exactly one
-test. The module's doc comments call this load-bearing: the save-over path reads the
-prior file's `createdAt`.
+timestamps survive the **v4 step** specifically. Two narrower claims were made here
+earlier and both were wrong, so both are recorded:
+
+1. "the only assertion that timestamps survive migration" -- false: sibling step
+   functions keep theirs (`plan-store.test.ts` covers `migrateV1`, `migrateV2`,
+   `migrateV3`).
+2. "nothing pinned the passthrough on the live v1-v4 load chain" -- also false.
+   `src/state/store.test.ts` pins it twice via v1 rows: `exportPlan` emitting the
+   migrated v8 form, and `renamePlan` persisting as v8. Both go RED under the
+   mutation below. The "exactly one test" figure previously cited here was a SCOPE
+   ARTIFACT -- the probe had been run against `plan-store.test.ts` alone.
+
+What the new test genuinely adds, having measured it: it is the only test pinning a
+**v4-origin** row's timestamps through the chain (both store-level tests use v1
+rows), and it pins it directly at the `plan-store` layer rather than through
+`exportPlan`/`renamePlan`. The module's doc comments call the invariant
+load-bearing: the save-over path reads the prior file's `createdAt`.
 
 Break:
 
@@ -227,15 +239,17 @@ Break:
 npx tsc -b   -> tsc_exit=0
 ```
 
-RED (`npx vitest run src/data/plan-store.test.ts`, vitest_exit=1):
+RED, run at FULL suite scope (`npm test`, test_exit=1) -- deliberately, after an
+earlier narrow run mis-read as unique coverage:
 
 ```text
 FAIL  src/data/plan-store.test.ts > plan-store - legacy v4 load path (direction defaults LR) > carries legacy timestamps through the chain verbatim
-AssertionError: expected '1970-01-01T00:00:00.000Z' to be '2020-01-01T00:00:00.000Z'
-Tests  1 failed | 81 passed (82)
+FAIL  src/state/store.test.ts > plans carry the graph (Stage 3 P3) > renaming a v1 row persists it as v8 (save-over model)
+FAIL  src/state/store.test.ts > plan export/import (Stage 6 / Phase 1) > exportPlan emits the migrated v8 form for a stored v1 row
+Tests  3 failed | 1138 passed (1141)
 ```
 
-Restored to green.
+Three kills across two suites, not one. Restored to green (1141 passed).
 
 ### Delivered-tree verification
 

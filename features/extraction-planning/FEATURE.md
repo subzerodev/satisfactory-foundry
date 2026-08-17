@@ -63,8 +63,7 @@ reconsideration:
   phase 2 shipped without one, which is why its retroactive r3 review could not
   confirm its guards were load-bearing
 - **Phase verification (at phase close, not current):** 40 files / 1067 tests;
-  TypeScript, ESLint,
-  Prettier, and build pass; the checked-in Chromium/CDP gate passes nine
+  TypeScript, ESLint, Prettier, and build pass; the checked-in Chromium/CDP gate passes nine
   geometry rows and three interaction rows at 360px, 720px, and 1280px
 - **Completion report:** `phase-2/completion-report.md`
 

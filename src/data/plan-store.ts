@@ -506,17 +506,26 @@ function copyHistoricalExtraction(
 }
 
 /**
- * Collapse a validated v1-v4 file straight to v6 (the v4->v5 and v5->v6 steps were
- * folded together under #112; the standalone v4->v5 export was retired under #130
- * once nothing called it). Three invariants live here and nowhere else:
+ * Collapse a validated pre-v5 file, as v4, straight to v6 (the v4->v5 and v5->v6
+ * steps were folded together under #112; the standalone v4->v5 export was retired
+ * under #130 once nothing called it). v1/v2/v3 files reach here already stepped up
+ * by `migrateV1`/`V2`/`V3`.
+ *
+ * Two invariants are implemented only here among the migration steps (the LR
+ * default also appears in `state/store.ts` as the boot orientation for fresh
+ * state, which is a different concern from how a pre-v5 FILE migrates):
  *
  * - `flowDirection` defaults to `"LR"` because a pre-v5 file never carried one, and
  *   LR is exactly how it was laid out — the implicit pre-v5 orientation.
  * - `userPlaced` is derived from ORIGINAL position presence, read here before any
  *   later step can synthesize a position. A pre-v5 file has no flag to carry, so
  *   position-presence is the conservative pinning fallback.
- * - `createdAt`/`updatedAt` carry VERBATIM: the save-over path reads the prior
- *   file's `createdAt`, so a migrated row must not reset its creation time.
+ *
+ * A third invariant holds here but is NOT unique to this step: `createdAt`/
+ * `updatedAt` carry VERBATIM, because the save-over path reads the prior file's
+ * `createdAt` and a migrated row must not reset its creation time. Every sibling
+ * step does the same, and `migrateV1`/`V2`/`V3` -- the steps that feed this one --
+ * each restate that rationale in their own comments.
  */
 function migrateLegacyV4(plan: PlanFileV4): PlanFileV6 {
   return {

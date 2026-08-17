@@ -1286,8 +1286,9 @@ describe("plan-store — legacy v4 load path (direction defaults LR)", () => {
 
   it("carries legacy timestamps through the chain verbatim", async () => {
     // The save-over path reads the prior file's createdAt, so a migrated row must
-    // not reset it. This was only pinned via the standalone v4 -> v5 step function
-    // deleted under #130; the live v1-v4 chain needs it asserted directly.
+    // not reset it. store.test.ts already pins this for v1 rows via exportPlan and
+    // renamePlan; this is the only pin for a v4-origin row, and the only one at the
+    // plan-store layer rather than through those store actions.
     const db = await (await import("./db.ts")).openDb();
     await db.put(
       "plans",
