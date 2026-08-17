@@ -1,8 +1,8 @@
 # Extraction planning (Stage 22 arc)
 
 **Started:** 2026-08-16
-**Status:** COMPLETE - both extraction phases merged
-**Current phase:** extraction feature complete; Stage 22 continues with #113
+**Status:** both extraction phases merged; **review gate incomplete** (#130)
+**Current phase:** implementation complete; release blocked on #130
 **Epic:** #114 (board #21, Stage 22 milestone 93)
 **Feature ticket:** #112
 **Phase 2 child:** #124
@@ -27,7 +27,8 @@ reconsideration:
 
 ### Phase 1 - normal-purity requirement
 
-- **Status:** merged to `develop` at `3ca5f71`
+- **Status:** merged to `develop` at `3ca5f71`; its post-simplify round **r11 was
+  never run** before that merge — retroactive gate tracked as #130
 - **Scope:** structured extractor data, clickable raw inputs, selected extractor,
   clock, exact count/surplus, estimated power, per-extractor belt/pipe saturation,
   and per-plan persistence of the user's extractor choice
@@ -42,7 +43,8 @@ reconsideration:
 
 ### Phase 2 - purity mix
 
-- **Status:** merged to `develop` at `d5649c2`
+- **Status:** merged to `develop` at `d5649c2`; its post-simplify round **r3 was
+  never run** before that merge — retroactive gate tracked as #130
 - **Scope:** exact Impure/Normal/Pure 0.5/1.0/2.0 node inventories,
   coverage/shortfall, power and transport results, plan v7 persistence, and
   production-control browser coverage
@@ -167,17 +169,18 @@ user config has no `Game.ini`; no local config or additional mod pak override
 was found. Phase 2 may therefore use exact `Fraction`s 1/2, 1, and 2 with this
 provenance.
 
-## Resumption Contract
+## Completion Contract
 
-On resume:
+Both extraction phases are merged on `develop` and no *resume* action remains —
+the implementation is done. **Two implementation-diff reviews do remain:** Phase
+1's r11 and Phase 2's r3 were never run before their merges, and #130 runs both
+retroactively (see the two **Diff** Parsimony Dispositions below for the evidence —
+not the Plan one). Until
+#130 closes, this arc is implementation-complete but not review-complete, and the
+Stage 22 release is blocked.
 
-1. Read #124, #112, and #114 before this file; the board wins on disagreement.
-2. Resume Phase 2 at cumulative implementation review using
-   `phase-2/completion-report.md` and the full `develop...HEAD` diff.
-3. Create the cumulative review prompt only when that review begins; Task 4
-   deliberately does not create it.
-4. Keep Resource Wells explicit. A later decision to build a full well planner
-   is new scoped work and must be ticketed rather than hidden in Phase 2.
+Keep Resource Wells explicit. A later decision to build a full well planner is new
+scoped work and must be ticketed rather than hidden in this arc.
 
 ## Plan Parsimony Disposition
 
@@ -232,8 +235,8 @@ do not satisfy that contract. Task 6 therefore remains unchanged.
   through the rendered input and callback/rerender path, and separately proves
   aggregate all-field association with no stale totals. The four historical
   v2-v5 writer comments now describe current reads as migrating to plan v7.
-  Correctness recheck continues with a delta-scoped r2 prompt; the one-shot
-  Phase 2 diff simplify lens has not run.
+  Correctness recheck continued with a delta-scoped r2 prompt; at that point the
+  one-shot Phase 2 diff simplify lens had not yet run.
 - **r2:** code-reviewer and adversarial-reviewer both returned `APPROVED` on the
   r1 fold delta. Correctness converged before the separate one-shot cumulative
   simplify lens ran.
@@ -248,7 +251,22 @@ one exact-error table, and the browser harness shares one CDP key helper. The
 new catalog-tier regression failed against the prior global-table lookup before
 the fold. Full verification after the fold passes 39 files / 1028 tests, checks,
 build, nine geometry rows, and all three interaction suites. The simplify lens
-is complete and will not be rerun; only the correctness pair rechecks this fold.
+was not rerun. **The post-simplify round r11 has no recorded verdict** —
+`phase-1/diff-r11-prompt.md` was committed in `c8828d2`, and `3ca5f71` merged that
+branch to `develop` 4m31s after `c8828d2`, with no commits between. (The Phase 1
+disposition list above also stops at r9, but that alone proves nothing — r10 is
+absent from it too and is nonetheless recorded as approved, per the convention
+below.) An
+earlier version of this line asserted that recheck converged before merge; that
+claim has no evidence and is retracted. Tracked as #130.
+
+Scope precisely: **r10 is not part of the gap.** It was a documentation-only fold
+of r9's two nits (`phase-1/diff-r10-prompt.md:12` — "Runtime code remains the
+correctness-approved r6 artifact"), and its approval *is* recorded, by this repo's
+convention that round N's verdict heads round N+1's prompt
+(`phase-1/diff-r11-prompt.md:6` — "Delta from correctness-approved r10"). The
+simplify lens first appears in r11. So exactly one Phase 1 round is unaccounted
+for, not two.
 
 ## Phase 2 Diff Parsimony Disposition
 
@@ -259,5 +277,10 @@ block while preserving order, values, numeric constraints, accessibility
 state, and callbacks. Purity transport now computes the highest-present output
 once and makes one `transportForOutput` call, or returns the direct no-output
 status. Existing focused derivation/DOM tests remain green after both folds.
-The simplify lens is complete and must not rerun; only a delta-scoped
-post-simplify correctness recheck proceeds via `phase-2/diff-r3-prompt.md`.
+The simplify lens was not rerun. **The delta-scoped post-simplify correctness
+round r3 has no recorded verdict** — `phase-2/diff-r3-prompt.md` was committed in
+`43caf18`, the Phase 2 disposition list above stops at r2 (whose entry says
+convergence happened *before* the simplify lens ran), and `d5649c2` merged that
+branch to `develop` 2m44s after `43caf18`, with no commits between. An earlier version of this line asserted that recheck
+converged before merge; that claim has no evidence and is retracted. Tracked
+as #130.

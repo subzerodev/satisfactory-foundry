@@ -41,3 +41,5 @@ extra = ["epic", "blocked"]    # stage:N labels are generated from [stages]
 "18" = "Stage 18 — Packaging: PWA + GitHub Pages"
 "19" = "Stage 19 — Plan durability: persist + export-all"
 "20" = "Stage 20 — Propose grows up: info + customization for the auto-chain builder"
+"21" = "Stage 21 — Propose follow-ups: consolidation, type-safety, routing"
+"22" = "Stage 22 — Feeding the factory"
