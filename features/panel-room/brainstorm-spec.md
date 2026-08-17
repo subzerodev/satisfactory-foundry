@@ -1,9 +1,10 @@
 # #134 — Extraction panel room (Stage 23)
 
 **Ticket:** #134 · **Epic:** #136 · **Milestone:** 94 · **Tier:** 2
-**Status:** design r6 — the shape is unchanged from r5, which both reviewers
-confirmed sound. r6 corrects r5's *justifications*, which both reviewers found
-contradicted by r5's own measurements, and re-splits the clearance budget.
+**Status:** design r7 — the CSS is unchanged since r5 and has now been confirmed
+sound by three consecutive reviewer pairs. r7 deletes a gate change that could
+not ship, and corrects three justifications that still did not match the evidence
+they cited.
 
 ## Purpose
 
@@ -117,20 +118,32 @@ is content-limited, it is larger. This is why the geometry matrix's pinned 340px
 canvas is the **strictest** collision test, and therefore why `:141-143` needs no
 560px counterpart. r5 asserted that conclusion without this support.
 
-**Why the clearance is asymmetric, 6px desktop and 2px narrow.** r5 spent 6px on
-both, justified by font drift — the desktop furniture is font-metric-derived
-(`.graph-chain-power`, `app.css:1586-1597`, sets no `line-height`, so its 42px
-includes a 14px line box at `font-size: 12px`). A reviewer pointed out that
-argument cuts the other way: `.extraction-panel` sets no `line-height` either,
-and the 380px of content is roughly a dozen stacked line boxes against the power
-panel's one. **Under the same font drift the content grows about 12× faster than
-the furniture it is being kept clear of.** So clearance is worth buying where
-content margin is abundant and not where it is tight:
+**Why the clearance is asymmetric, 6px desktop and 2px narrow.** The two widths
+are kept clear of *different furniture*, and the two behave differently under
+font drift. That, not a single ratio, is the derivation:
 
-- **desktop** has ~100px of content margin, so 6px of clearance is free — and it
-  reproduces today's shipped 6px exactly.
-- **narrow** has the tight margin, so it takes 2px of clearance and gives the
-  other 4px back to content. That still *improves* on today's shipped 1px.
+- **Desktop binds against the power panel, which is font-metric-derived.**
+  `.graph-chain-power` (`app.css:1586-1597`) sets `padding: 4px 10px`,
+  `border: 1px`, `margin: 0 18px 18px 0`, `font-size: 12px` and **no
+  `line-height`** — so its measured 42px is `14 + 8 + 2 + 18`, and a font change
+  moves its top edge. Clearance here buys something real, and desktop has ~100px
+  of content margin to spare, so 6px is free. It also reproduces today's shipped
+  6px exactly.
+- **Narrow binds against the controls, which are fixed-pixel chrome.**
+  `.react-flow__controls-button` is `height: 26px; width: 26px; padding: 4px`
+  with `svg { max-height: 12px }` (`style.css:415-421`, `:438-443`) — no
+  font-derived box anywhere, and the measured 104px column is exactly `4 × 26`.
+  **Under font drift this furniture does not move at all.** The only residual
+  risk is subpixel rounding, since `overlap` at `:141-143` is a strict
+  comparison and tangency is therefore not a collision. 2px covers that, and it
+  still improves on today's shipped 1px — so the remaining 4px goes to content
+  margin, where it is scarce.
+
+*r6's error, recorded:* it derived a ~12:1 font-sensitivity ratio from the
+**desktop** furniture and then used it to justify the **narrow** cut, where the
+furniture is font-insensitive. The conclusion (2px is safe at narrow) was right;
+the reason was imported from the wrong pair. Applied literally, a 12:1 split of
+narrow's 11px budget would give ~0.85px of clearance, not 2px.
 
 ## Measured results
 
@@ -152,33 +165,67 @@ interaction × 3 widths), baseline and variant per context — 24 measured rows.
    variant alike, so `:141-143` are green without modification.
 4. **The wrapper shrink-wraps** — 42px in `state=notice`, far below its cap.
 
-### The dead-zone measurement, which replaces r5's false justification
+### Transparent area: the comparative claim, which is the one that is true
 
-r5 claimed the four `elementFromPoint` samples were adequate "because the
-wrapper's box is unchanged from baseline in every state where it is not at its
-cap." **That is false, and r5's own log disproved it**: at the 560px canvas the
-wrapper goes `h170` → `h380`, because deleting the stack's cap is the entire
-fix. r5's probe also sampled at `w.bottom + 20`, which *tracks* the wrapper and
-so structurally could not sample the band the change newly covers.
+r5 claimed the `elementFromPoint` samples were adequate "because the wrapper's
+box is unchanged from baseline in every state where it is not at its cap."
+**False, and r5's own log disproved it**: at 560px the wrapper goes `h170` →
+`h380`, because deleting the stack's cap is the entire fix.
 
-The true justification is stronger and is now measured directly. r4's regression
-was **transparent** wrapper area that swallowed canvas clicks. So the quantity
-that matters is the dead zone — wrapper height minus the content filling it:
+r6 replaced that with `deadZone = 0` in all 24 rows. **That was also too strong,
+and its own log again carries the counter-example.** `deadZone` is
+`wrapper.height − min(stack.height, wrapper.height)` — purely *vertical*, so it
+is blind to bare wrapper area beside the content. Two such regions exist:
 
-> **`deadZone = 0` in all 24 rows**, baseline and variant, at every canvas
-> height and width.
+- **narrow `notice`:** the wrapper and the stack both span `x9..351` (342px),
+  while `.graph-canvas-notice` inside them caps at `max-width: 240px`
+  (`app.css:1269`) — leaving a ~100×42px band that is bare stack, and the stack
+  sets no background, so it is transparent down to the canvas;
+- **every at-cap row:** the stack measures 15px narrower than the wrapper
+  (`x9..336` vs `x9..351`; `x909..1249` vs `x909..1264` at desktop). The 15px
+  appears exactly where `overflowing=true` and vanishes in every
+  `overflowing=false` row, so it is the scrollbar gutter — but `deadZone` cannot
+  tell a gutter from a hole.
 
-The wrapper is always exactly filled by the stack: either both are the same
-height, or the wrapper is at its cap and clipping a taller stack. There is no
-transparent area for a click to fall into, which is precisely what r4 could not
-say.
+**The claim this design actually needs is comparative, and it holds:** *the
+change adds no transparent area the shipped build lacks.* Both regions are
+present identically today, measured in the baseline arm:
 
-**What the change does newly cover, stated plainly.** Sampling a *fixed*
-canvas-local point (y = 239, just under where the shipped wrapper ends) in both
-arms: at 560px the baseline returns a canvas node (`stage-node-recipe`,
-`stage-node-power`), and the variant returns panel content
-(`extraction-result`). So the taller panel does cover canvas that was previously
-clickable — **with opaque panel, which is the feature working, not a dead zone.**
+- the notice band is a property of the notice card's own `max-width`, and the
+  baseline stack spans the same `x9..351` (`probe-r6.log`, `BASELINE 360px notice`);
+- the scrollbar gutter lands in the same x-band either way. Today the **stack**
+  is the scroll container (`app.css:1288`) inside a wrapper of identical width
+  (baseline `wrapper x9..351`, `stack x9..351`), so its scrollbar is drawn at
+  `x336..351`; under this design the **wrapper** is the scroll container and its
+  scrollbar occupies that same strip, which is why the stack's box measures
+  `x9..336`. The gutter moves owner, not position.
+
+Vertically the wrapper genuinely has no slack: `.react-flow__panel` has margin
+only, no padding or border (`style.css:291-295`), which is what `deadZone = 0`
+does establish.
+
+r4's regression was a *new* transparent region ~528px tall. This design creates
+none, and that is a different and weaker statement than "there is no transparent
+area at all", which is what r6 wrongly claimed.
+
+**What the change does newly cover, read off the log rather than summarised.**
+Two *fixed* canvas-local sample points, because the shipped wrapper ends at a
+different y per width — 219 narrow, 276 desktop — so one point cannot witness
+both. At the 560px canvas:
+
+| Width | y=239 baseline → variant | y=296 baseline → variant |
+|---|---|---|
+| 360 | `stage-node-recipe` → `P` | `react-flow__pane` → `SPAN` |
+| 720 | `stage-node-power` → `P` | `react-flow__pane` → `SPAN` |
+| 1280 | `extraction-result` → `extraction-result` | `react-flow__pane` → `INPUT` |
+
+The taller panel does cover canvas that was previously clickable, **with opaque
+panel content — the feature working, not a dead zone.** Note the 1280/y=239 row:
+the baseline already returns panel content there, because y=239 is *inside* the
+shipped desktop wrapper. r6 quoted that row as evidence of newly-covered canvas;
+it witnesses nothing. The y=296 column is what covers the desktop case, and it
+was added after a reviewer showed the desktop band had never been sampled.
+
 The three furniture regions are never inside the wrapper: `ctlBtn`, `attr` and
 `grip` report `insideWrapper=false` in all 24 rows.
 
@@ -225,9 +272,11 @@ consequences:
    named explicitly, because r5 left `contentHeight` undefined; and the existing
    **0.5px tolerance retained**, because r5 silently proposed `===` on a
    fractional `getBoundingClientRect().height` against an integer `scrollHeight`.
-   *Fails when:* the percentage fails to resolve (wrapper grows to 380 where 260
-   is expected). Verified armed in `state=notice` too — an inflated fixed-height
-   wrapper gives `min(528, 260) = 260 ≠ 528`.
+   *Fails when:* the percentage fails to resolve — at the pinned 340px canvas the
+   wrapper would grow to its 380px content where 260 is expected, and
+   `min(380, 260) = 260 ≠ 380` fires. Armed in `state=notice` too: there content
+   is 42px, so the assertion pins `min(42, 260) = 42` against the measured 42 and
+   would fire on any wrapper that stopped shrink-wrapping.
 
 4. **`:151-155` and `:163-171` — the scroll/clip box moves from the stack to the
    wrapper.** `content` is bound to `.graph-top-right-stack`; under this design
@@ -236,18 +285,32 @@ consequences:
    on the stack would make containment trivially true, the stack now being
    unclipped at full content height.
 
-5. **`:164`'s `scrollIntoView` must stop preceding the containment
-   measurement.** This is the correction r5 missed. `:164` scrolls, `:165`
-   measures, `:167` computes `contained` — so `contained` is forced true and
-   **cannot fail in either binding**. r5 made exactly this argument about
-   `pointerFocusControl`'s `:55`→`:63` and did not apply it to the structurally
-   identical site, so its gate change 4 would have relocated a tautology rather
-   than curing it. Capture `contained` **before** the `scrollIntoView` call, and
-   keep the post-scroll pass for `avoidsChrome` (`:168`), which is unaffected.
-   *Fails when:* a control genuinely sits outside the visible box.
-   **Demonstrated achievable:** `probe-r6.log` `PURE-NOSCROLL` rows measure the
-   *Pure nodes* input against the wrapper with no scrolling at all —
-   `contained=true`, `overhang=-98`, `scrollTop=0` at all three widths.
+5. **`:163-171` stays post-scroll, and is documented as a chrome-avoidance test
+   rather than a reachability oracle.** The tautology is real — `:164` scrolls,
+   `:165` re-measures, `:167` computes `contained` against the just-scrolled
+   container, so `contained` is forced true in *either* binding. But r6's
+   proposed cure (capture it before the scroll) **cannot ship**, and both
+   reviewers showed why: `geometryCheck` runs only against the pinned 340px
+   canvas, where this design *deliberately* caps the wrapper at 169/260 against
+   380 of content. The lower controls genuinely are not contained without
+   scrolling there — the shipped gate's own readings show the toggle needing
+   `scrollTop 68` and *Pure* `112` (`phase-2/completion-report.md:45-46`). A
+   pre-scroll capture would turn a can't-fail assertion into a **can't-pass**
+   one, and would contradict gate change 4 on the same run, which asserts the
+   wrapper *is* internally scrollable in exactly those states.
+
+   **The structural conclusion, which is the useful part:** at a 340px canvas
+   with the wrapper binding, containment is tautological *with* the scroll and
+   false *without* it. No formulation of `:167` is both armed and green there.
+   So containment belongs only where content fits — gate change 7, at 560px —
+   and `:167` is left alone and labelled for what it is. `avoidsChrome` at
+   `:168` is unaffected and remains the half of this loop that can fail.
+
+   *r6's error, recorded:* it cited the `PURE-NOSCROLL` probe rows as proof this
+   was achievable. Those are emitted only in the 560px interaction loop, a state
+   `geometryCheck` never reaches. They support gate change 7 and say nothing
+   about `:163-171` — proof from the wrong world, which is the failure class
+   this ticket keeps repeating.
 
 6. **`pointerFocusControl` (`:53`, `:62`) — rebind `panel` to the wrapper**, for
    the same reason as change 4.
@@ -260,7 +323,11 @@ consequences:
    *Correcting r5:* the containment half is the one that **fails on the shipped
    build**; the overflow half **passes** today, because today's scroll container
    is the stack, so the wrapper shrink-wraps and never overflows (`probe-r6.log`
-   baseline: `content=170/170`, `260/260`, `overflowing=false`). The overflow half
+   baseline: `content=170/170`, `260/260`, `overflowing=false` — measured). The
+   containment half's shipped-build failure is **source-derived, not measured**:
+   the probe injects the variant CSS before its `PURE-NOSCROLL` block, so no
+   baseline `PURE` row exists. It rests on `phase-2/completion-report.md:45-47`
+   recording 112px/22px of required scroll inside a 170/260 box. The overflow half
    is still live *after* the change — a cap below the 380px content fires it — but
    it is not the shipped-build regression witness, and r5 said it was. Naming the
    wrong witness invites confirming "the gate is armed" with the half that cannot
@@ -275,9 +342,12 @@ consequences:
    (`phase-2/completion-report.md:45-47`).
 
 9. **Doc drift.** `phase-1/brainstorm-spec.md:338-342` states normatively that
-   *the stack* is bounded, scrolls internally, and caps at 170px. This design
-   moves both properties to the wrapper and changes 170 → 169. That passage is
-   this spec's own grounding citation and must be updated in the same commit.
+   *the stack* is bounded, scrolls internally, and caps at 170px, and at `:340`
+   that "Desktop top-right content is capped at 260px". Both sentences drift:
+   the properties move to the wrapper, 170 becomes 169, and **260 stops being a
+   constant at all** — it becomes `H − 80`, which is 260 only at the pinned
+   340px canvas and 480 at the default 560. That passage is this spec's own
+   grounding citation and must be rewritten in the same commit.
 
 ## Acceptance criteria
 
@@ -285,8 +355,10 @@ consequences:
   collision.
 - 340px canvas: still scrolls; wrapper height equals `min(content, derived cap)`;
   `:141-143` green **without modification**.
-- Canvas, controls, attribution and resize grip all still reachable; dead zone 0.
-- `phase-1/brainstorm-spec.md:338-342` updated.
+- Canvas, controls, attribution and resize grip all still reachable, and no
+  transparent wrapper region exists that the shipped build does not already have
+  (the comparative claim — `deadZone` alone cannot discharge this, see above).
+- `phase-1/brainstorm-spec.md:338-342` updated, including its 260px sentence.
 - `npm test`, `npm run check`, `npm run build`, both browser matrices green.
 
 ## Assumptions ledger
@@ -299,13 +371,53 @@ consequences:
 | The wrapper still shrink-wraps | **Measured** — 42px in `state=notice`, against a 169/260 cap |
 | Narrow spans the full width, so controls bind | **Measured** — wrapper `x9..351` at a 360px viewport vs the right-hand ~355px at 1280 |
 | 78 / 169 preserve today's caps and improve clearance | **Measured** — desktop 260 with 6px, identical to baseline; narrow 169 with 2px, against baseline's 1px |
-| No transparent dead zone | **Measured** — `deadZone = 0` in all 24 rows |
+| No *new* transparent area vs the shipped build | **Measured** for the vertical axis (`deadZone = 0`, all 24 rows) plus the two horizontal regions enumerated above, each present identically in both arms. `deadZone` is one-dimensional and does **not** by itself establish an area property |
 | The furniture regions stay outside the wrapper | **Measured** — `insideWrapper=false` for controls, attribution and grip in all 24 rows |
 | Content is 380px (mix expanded) | **Measured in `?mode=interaction`**, with a hard liveness gate on the three mix inputs rendering; independently corroborated in `?mode=geometry` with a different fixture (`1/1/1` at clock 250 vs `0/5/0` at clock 100) |
-| Containment is assertable without scrolling | **Measured** — `PURE-NOSCROLL contained=true overhang=-98` at all three widths |
+| Containment is assertable without scrolling **at 560px** | **Measured** — `PURE-NOSCROLL contained=true overhang=-98` at all three widths. It is **not** assertable at the pinned 340px canvas, where the design intends to overflow — which is why gate change 5 drops the idea and change 7 carries it |
 | `:141-143` stay green unmodified | **Measured** — false in all 24 rows |
 
 ## Revision history
+
+**r6 → r7.** Both reviewers returned `NEEDS_REWORK`, each with **one BLOCKER, the
+same one**, and both again stated the CSS shape is sound (code-reviewer: 1
+BLOCKER, 2 IMPORTANT, 5 NITs; adversarial-reviewer: 1 BLOCKER, 3 IMPORTANT, 4
+NITs). Verdict relay: #134 comment pending this revision.
+
+- **Gate change 5 could not ship** — *folded by deletion.* Capturing containment
+  before `:164`'s `scrollIntoView` would have failed the 340px geometry matrix on
+  this design's own intended overflow, and contradicted gate change 4 on the same
+  run. Both reviewers reached this independently. The replacement records the
+  structural fact instead: containment is tautological with the scroll and false
+  without it at 340px, so it can only be asserted at 560px.
+- **`PURE-NOSCROLL` was cited as proof for the wrong gate change** — *folded.* It
+  is emitted only in the 560px interaction loop and supports change 7, not
+  `:163-171`. Proof from the wrong world-state, the same failure class as r5's.
+- **`deadZone = 0` was escalated into an area claim it cannot support** —
+  *folded.* Replaced with the comparative claim, which is what the design needs
+  and which is true: two bare-wrapper regions exist (the narrow notice band and
+  the scrollbar gutter) and both are present identically in the shipped build.
+- **The `newlyCovered` account misread its own log** — *folded.* The variant
+  returns `P` at 360/720, not `extraction-result`; at 1280 the baseline already
+  returned panel content because y=239 sits inside the shipped desktop wrapper.
+  A second fixed sample at y=296 was added, and the desktop band is now measured:
+  `react-flow__pane` → `INPUT`.
+- **The 12:1 ratio was imported from the wrong furniture** — *folded.* The narrow
+  clearance is now derived from the controls being fixed-pixel chrome, so the 2px
+  covers subpixel rounding rather than font drift. Stronger and actually true.
+- **Gate change 9 understated the drift** — *folded*; `phase-1:340`'s "capped at
+  260px" also stops being true.
+- **Gate change 7's containment half is inference, not measurement** — *folded*;
+  now labelled source-derived, with its basis named.
+- **Probe header still said "r5" and documented `K = 173`** while injecting 169 —
+  *folded*; the header, the constants and the guard set are corrected, and the
+  log regenerated so it matches its generator.
+- **The stack's `overflow-y` override was never guarded**, despite a comment
+  claiming the guard set was complete — *folded*; guarded now.
+- **"records left/right for every box"** — *folded*; scoped to wrapper and stack.
+- **The `min(528, 260)` illustration mixed canvas heights** — *folded*; restated
+  at a single canvas, and the `notice` arming case restated correctly as
+  `min(42, 260)`.
 
 **r5 → r6.** Both reviewers returned `NEEDS_REWORK` (code-reviewer: 0 BLOCKER,
 2 IMPORTANT, 6 NITs; adversarial-reviewer: 2 BLOCKER, 5 IMPORTANT, 8 NITs), and
@@ -337,8 +449,10 @@ deletion being faithful; and every count, clearance figure and threshold.
   266/171 I quoted come from K=72/167. The conclusion held under either reading,
   but the attribution was wrong in a document whose thesis is that its constants
   are derived.
-- **The narrow full-width premise was never measured** — *folded*; the probe now
-  records left/right for every box.
+- **The narrow full-width premise was never measured** — *folded*; the probe
+  records left/right for the wrapper and the stack (not for the furniture, whose
+  columns are still inferred from the wrapper spanning `x9..351` of a 360px
+  canvas).
 - **`:155`'s 0.5px tolerance dropped; `contentHeight` undefined** — *folded* into
   gate change 3.
 - **Probe fields computed but never printed** (`flow`, `insideWrapper`, furniture

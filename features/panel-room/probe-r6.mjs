@@ -1,5 +1,5 @@
 /**
- * #134 r5 grounding probe — measures "variant D", the shape both r4 reviewers
+ * #134 r6 grounding probe — measures "variant D", the shape both r4 reviewers
  * proposed independently and both explicitly flagged as CSS-derived and
  * UNMEASURED. Nothing here ships; it exists so r5 adopts D on evidence or
  * rejects it on evidence.
@@ -11,9 +11,9 @@
  * change in a layout-only ticket) and the rebinding of check.mjs:122 — because
  * the wrapper stays the visible box and never covers canvas furniture.
  *
- * Constants carry a 6px clearance, which r4 spent to zero:
+ * Clearance is asymmetric, because the binding furniture differs by width:
  *   desktop  K = 78  -> cap = H - 80   (260 at H=340: exactly today's cap)
- *   narrow   K = 173 -> cap = H - 175  (165 at H=340)
+ *   narrow   K = 169 -> cap = H - 171  (169 at H=340)
  *
  * Runs the FULL geometry matrix including state=notice, which probe-r4 skipped.
  */
@@ -87,11 +87,16 @@ const measure = `(() => {
    * structurally could not sample the band the change newly covers.
    * newlyCovered samples a FIXED canvas-local y just under where the shipped
    * wrapper ends, so both arms probe the same point: baseline shows what is
-   * there today, variant shows what now sits on top of it.
+   * there today, variant shows what now sits on top of it. Two points are
+   * needed because the shipped wrapper ends at a different y per width —
+   * 219 narrow, 276 desktop — so y=239 probes the narrow band and y=296 the
+   * desktop one. r6's reviewers caught that a single y=239 sample sits INSIDE
+   * the shipped desktop wrapper and therefore witnesses nothing there.
    */
   const hits = {
     belowWrapper: w ? hitAt((w.left + w.right) / 2, Math.min(w.bottom + 20, c.height - 2)) : null,
     newlyCovered: w ? hitAt((w.left + w.right) / 2, 239) : null,
+    newlyCoveredDesktop: w ? hitAt((w.left + w.right) / 2, 296) : null,
     controlsBtn: ctl ? hitAt((ctl.left + ctl.right) / 2, ctl.top + 10) : null,
     attribution: attr ? hitAt((attr.left + attr.right) / 2, (attr.top + attr.bottom) / 2) : null,
     grip: hitAt(c.width - 6, c.height - 6),
@@ -148,7 +153,8 @@ function line(tag, m) {
     `clear[pwr=${cl.toPower} ctl=${cl.toControls} canvas=${cl.toCanvas}]`,
     `collide[tl/ctl/pwr=${c.wrapperVsTopLeft}/${c.wrapperVsControls}/${c.wrapperVsPower}]`,
     `hit[below=${m.hits.belowWrapper?.cls}/${m.hits.belowWrapper?.insideWrapper}` +
-      ` newly=${m.hits.newlyCovered?.cls}/${m.hits.newlyCovered?.insideWrapper}` +
+      ` newly239=${m.hits.newlyCovered?.cls}/${m.hits.newlyCovered?.insideWrapper}` +
+      ` newly296=${m.hits.newlyCoveredDesktop?.cls}/${m.hits.newlyCoveredDesktop?.insideWrapper}` +
       ` ctlBtn=${m.hits.controlsBtn?.insideWrapper} attr=${m.hits.attribution?.insideWrapper}` +
       ` grip=${m.hits.grip?.insideWrapper}]`,
   ].join(" ");
@@ -166,6 +172,12 @@ async function runArms(cdp, tag) {
   }
   if (after.stackStyle.maxHeight !== "none") {
     throw new Error(`${tag}: stack max-height override lost — ${after.stackStyle.maxHeight}`);
+  }
+  // Both stack declarations are guarded, not just max-height: r4's reviewers
+  // caught exactly this single-sibling gap, and r6's caught the comment above
+  // claiming a completeness the guard set did not have.
+  if (after.stackStyle.overflowY !== "visible") {
+    throw new Error(`${tag}: stack overflow-y override lost — ${after.stackStyle.overflowY}`);
   }
   if (after.wrapperStyle.overflowY !== "auto") {
     throw new Error(`${tag}: wrapper overflow-y did not apply — ${after.wrapperStyle.overflowY}`);
