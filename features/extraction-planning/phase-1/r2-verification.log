@@ -213,8 +213,9 @@ Tests  1141 passed (1141)
 
 Deleting the standalone `migrateV4` step function removed the only assertion
 targeting the **v4 step in isolation**. Coverage of the step's behaviour is a
-different question, and two claims made here earlier got it wrong -- one broader
-than this sentence, one narrower. Both are recorded rather than quietly replaced:
+different question, and two claims made here earlier got it wrong. Both OVER-claimed
+the gap, on different axes -- one over the set of assertions, one over the surface
+they cover. Both are recorded rather than quietly replaced:
 
 1. "the only assertion that timestamps survive migration" -- false: sibling step
    functions keep theirs (`plan-store.test.ts` covers `migrateV1`, `migrateV2`,

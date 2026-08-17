@@ -435,10 +435,12 @@ process (all-Claude roster, opus implementers, per-phase gates).
   interstep outside Propose's cycle guard, with separate forward cargo and empty-
   container routes. Aggregate manifold segments may use parallel unlocked
   belts/pipes; one incoming override still means one physical line.
-- **Status:** all product work COMPLETE ON `develop` 2026-08-17; release pending
-  the ops follow-ups below. #113 merged at `3c4324b`. With no linked worktree
-  mounted, trunk passes 44 files / 1,138 tests, both checked-in Chromium/CDP
-  browser matrices, TypeScript/ESLint/Prettier, and the Vite/PWA build.
+- **Status:** COMPLETE ON `develop` 2026-08-17, ops follow-ups included. #113
+  merged at `3c4324b`. With no linked worktree mounted, trunk passes 44 files /
+  1,141 tests, both checked-in Chromium/CDP browser matrices,
+  TypeScript/ESLint/Prettier, and the Vite/PWA build. (The count moved from 1,138
+  at #113's merge: #130 added three purity-precedence rows and a legacy-timestamp
+  test, and deleted one dead-export test.)
 - **Release gate — at least three of the four product merges skipped their final
   correctness round.** The three proven are #112, #124 and #113 — each has a **committed
   post-simplify recheck prompt** proving a round was owed, and no verdict recorded
@@ -450,11 +452,14 @@ process (all-Claude roster, opus implementers, per-phase gates).
   incomplete, not clean. #113 merged without its r5, which #127 ran retroactively:
   **no correctness defects** under both reviewers, though it did surface #129 and a
   fixture gap, and the false convergence claim it exposed is corrected. #112's r11
-  and #124's r3 are the same violation and #130 runs both retroactively — that
-  ticket, not this list, is the release blocker of record. #128 fixes the changelog
-  date for the #113 merge and #129 removes a raw NUL byte in
-  `src/data/plan-store.ts` that silently defeated `grep` on the arc's riskiest
-  file. **Do not open the release PR while #130 is open.** Records: the product arcs in
+  and #124's r3 are the same violation; **#130 ran both retroactively and both
+  cleared** — the merged code was correct in every case, and what the gates
+  actually caught was two unpinned guards (the purity precedence chain's
+  normal-vs-impure pair, and purity input DOM order) plus missing mutation
+  evidence, all now closed. #128 corrected the changelog date for the #113 merge
+  and #129 removed a raw NUL byte in `src/data/plan-store.ts` that silently
+  defeated `grep` on the arc's riskiest file. **The gate is clear; the release PR
+  may open.** Records: the product arcs in
   `features/extraction-planning/FEATURE.md` and
   `features/packaging-intersteps/FEATURE.md`; each of the remaining product and
   field-fix tickets keeps its own under `features/` — #109 `chainbuilder-harness/`, #111 `total-output/`, #120
