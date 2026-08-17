@@ -492,7 +492,7 @@ function canonicalLegacyTransport(
   const normalized = createNormalizationView(legacy, overrides);
   const canonical = canonicalizeLinkTransport(normalized);
   if (canonical === null) {
-    throw new Error("validated v7 transport could not be canonicalized");
+    throw new Error("validated legacy transport could not be canonicalized");
   }
   return canonical;
 }
