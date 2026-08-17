@@ -327,6 +327,14 @@ describe("RawFeedNode", () => {
       'input[aria-label="Pure nodes"]',
     )!;
     expect([impure.value, normal.value, pure.value]).toEqual(["0", "53", "0"]);
+    // Pin DOM ORDER, not just presence. The three inputs are rendered from one
+    // mapped tuple, so reordering that tuple is a trivial edit that every
+    // aria-label-selected assertion here would still pass.
+    expect(
+      [...host.querySelectorAll(".extraction-purity-fields input")].map((i) =>
+        i.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Impure nodes", "Normal nodes", "Pure nodes"]);
     for (const input of [impure, normal, pure]) {
       expect(input.type).toBe("number");
       expect(input.min).toBe("0");

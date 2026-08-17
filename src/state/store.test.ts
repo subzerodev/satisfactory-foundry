@@ -2903,8 +2903,9 @@ describe("plans carry the graph (Stage 3 P3)", () => {
 
   it("a v1-migrated positionless stage auto-slots in the file direction and stays re-griddable (Stage 10 P1)", async () => {
     // A v1 row has no position and no userPlaced flag → it loads auto-placed
-    // (re-griddable), and its load-time slot uses the FILE's direction. migrateV4
-    // defaults a v1-origin file to "LR", so the load slot is the LR index-0 slot.
+    // (re-griddable), and its load-time slot uses the FILE's direction.
+    // migrateLegacyV4 defaults a v1-origin file to "LR", so the load slot is the
+    // LR index-0 slot.
     const store = await chainStore();
     const db = await (await import("../data/db.ts")).openDb();
     const v1: PlanFileV1 = {
@@ -2929,7 +2930,7 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     await store.getState().loadPlan("legacy-auto");
     const s = store.getState();
     const only = s.stageOrder[0]!;
-    // Loaded LR (migrateV4 default) at index 0's LR slot; NOT userPlaced.
+    // Loaded LR (migrateLegacyV4 default) at index 0's LR slot; NOT userPlaced.
     expect(s.flowDirection).toBe("LR");
     expect(s.positions[only]).toEqual({ x: 40, y: 40 });
     expect(s.userPlaced[only]).toBeUndefined();

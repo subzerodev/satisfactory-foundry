@@ -115,3 +115,141 @@ command: npm run build
 result: PASS - Vite/PWA build; existing 500 kB chunk-size advisory only
 command: git diff --check develop...HEAD
 result: PASS
+
+## Probes 11 and 12 — the c8828d2 simplify fold (#130 retroactive r11)
+
+Added under #130. The retroactive r11 review found that this log carried no
+break/fail/restore probe for `c8828d2`, the post-convergence simplify fold — the
+only round after correctness convergence that changed migration and derivation
+code. Its closing tally at the top of this log still read `39 files, 1030
+tests`, the PRE-fold
+count, which is itself proof the log was never re-run after the fold. Both probes
+below were run against the working tree during the #130 fix-forward, i.e. on
+`985ed1c` plus that uncommitted fold -- NOT on `985ed1c` alone. The per-probe
+counts reflect the tree at the moment each probe ran, which is why probe 11's
+focused file shows 29 cases and probe 12's restore shows 1141: both predate the
+deletion of the dead `migrateV4` test later in the same fold.
+
+Method note: each mutation must COMPILE, or its RED is a type error rather than a
+behavioural difference. The first attempt at probe 11 did not — swapping to
+`TIER_TABLE` without adding the import produced `TS2304: Cannot find name
+'TIER_TABLE'` and failed 21 tests, which looks stronger than the real probe and
+means nothing. `tsc -b` exit status is captured directly below, not through a
+pipe, because `$?` after a pipeline reports the last command in the pipe.
+
+### Probe 11 — extraction transport must read `catalog.tiers`, not the global table
+
+Break (note the added import, so the mutant type-checks):
+
+```diff
+ import { Fraction } from "../core/fraction.ts";
++import { TIER_TABLE } from "../data/tiers.ts";
+@@ function transportForOutput
+-  const tiers = catalog.tiers[kind];
++  const tiers = TIER_TABLE[kind];
+```
+
+```text
+npx tsc -b   → tsc_exit=0
+```
+
+RED (`npx vitest run src/ui/extraction-plan.test.ts`, vitest_exit=1):
+
+```text
+FAIL  src/ui/extraction-plan.test.ts > deriveExtractionPlan > uses the catalog tier table for extractor transport
+AssertionError: expected { status: 'requires-unlock', …(2) } to match object { status: 'available', …(2) }
+Tests  1 failed | 28 passed (29)
+```
+
+Exactly one test fails, and it is the regression the fold added. Restore, then:
+
+```text
+Tests  29 passed (29)   (vitest_exit=0)
+```
+
+### Probe 12 — `migrateLegacyV4` must derive `userPlaced` from original position presence
+
+Break:
+
+```diff
+@@ function migrateLegacyV4
+-      userPlaced: stage.position !== undefined,
++      userPlaced: false,
+```
+
+```text
+npx tsc -b   → tsc_exit=0
+```
+
+RED (`npx vitest run src/data/plan-store.test.ts src/state/store.test.ts`):
+
+```text
+FAIL  src/data/plan-store.test.ts > plan-store — v6 extraction and explicit placement (#112) > materializes legacy placement from original position presence
+AssertionError: expected [ false, false ] to deeply equal [ true, false ]
+
+FAIL  src/state/store.test.ts > plans carry the graph (Stage 3 P3) > a pre-v5 positioned stage loads pinned — a subsequent switch does NOT re-slot it (Stage 10 P1)
+AssertionError: expected undefined to be true
+```
+
+Two independent suites catch it, including the store-level pinning behaviour.
+Restore, then the full suite:
+
+```text
+Test Files  44 passed (44)
+Tests  1141 passed (1141)
+```
+
+### Probe 13 -- legacy timestamps must pass through verbatim
+
+Deleting the standalone `migrateV4` step function removed the only assertion that
+timestamps survive migration unaltered, which the module's own doc comments call
+load-bearing (the save-over path reads the prior file's `createdAt`). The live
+v1-v4 chain now pins it directly.
+
+Break:
+
+```diff
+@@ function migrateLegacyV4
+-    createdAt: plan.createdAt,
++    createdAt: new Date(0).toISOString(),
+```
+
+```text
+npx tsc -b   -> tsc_exit=0
+```
+
+RED (`npx vitest run src/data/plan-store.test.ts`, vitest_exit=1):
+
+```text
+FAIL  src/data/plan-store.test.ts > plan-store - legacy v4 load path (direction defaults LR) > carries legacy timestamps through the chain verbatim
+AssertionError: expected '1970-01-01T00:00:00.000Z' to be '2020-01-01T00:00:00.000Z'
+Tests  1 failed | 81 passed (82)
+```
+
+Restored to green.
+
+### Delivered-tree verification
+
+Run after the LAST edit of the #130 fix-forward, so this — not either probe's
+restore line — is the count for the state being committed:
+
+```text
+npm test        Test Files  44 passed (44) / Tests  1141 passed (1141)
+npm run check   PASS (tsc -b, ESLint, Prettier)
+npm run build   PASS (Vite/PWA, 18 precache entries)
+node scripts/extraction-panel-browser-check.mjs     exit 0, 12 PASS rows
+node scripts/packaging-intersteps-browser-check.mjs exit 0, 4 PASS rows
+```
+
+1,141 = 1,138 before the fold, plus 3 new purity-precedence rows, plus 1 new
+legacy-timestamp test (probe 13), minus the 1 deleted dead-export test. Measured
+after the LAST edit -- an earlier draft of this block recorded 1,140, which was the
+count before the timestamp test was added. That is the third time in this fold a
+count captured mid-edit was written as final; the rule is to measure once nothing
+further will change.
+
+### Tally correction
+
+The `PASS - 39 files, 1030 tests` line at the top of this log is the pre-fold
+count, left in place as the historical record of that round. It moved because
+#124, #113 and the #130 fix-forward all landed after this log was written.

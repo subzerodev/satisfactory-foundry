@@ -2,7 +2,9 @@
 
 **Ticket:** Forgejo #112
 **Branch:** `feature/s22-112-extraction-p1-design`
-**Status:** accepted and merged to `develop` at `3ca5f71`
+**Status:** merged to `develop` at `3ca5f71`. Its post-simplify round **r11 did
+not run before that merge**; #130 ran it retroactively and it found no production
+defect. The round-by-round verdicts are recorded on #130.
 
 ## Delivered
 

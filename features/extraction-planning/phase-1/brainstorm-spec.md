@@ -186,9 +186,19 @@ Create `src/ui/extraction-plan.ts`, with no React or store imports. It owns:
 4. `suggestSupply(demand, perExtractor)` for exact integer count and surplus.
 5. Power text via `stagePowerText(machine.power, count, clock)`; exact at 100%,
    labeled `approximately` by the existing `≈` renderer at other clocks.
-6. Output transport status by scanning the relevant full `TIER_TABLE` in
+6. Output transport status by scanning the relevant full tier table in
    ascending order for the smallest capacity `>= perExtractor`, then comparing
    it with the target stage's unlocked prefix.
+
+   **Superseded during implementation (`c8828d2`, recorded in `../FEATURE.md`
+   "Phase 1 Diff Parsimony Disposition"):** the scan reads `catalog.tiers`, not
+   the global `TIER_TABLE`. Both catalog parse/revive constructors
+   (`src/data/docs-loader.ts`, `src/data/catalog-store.ts`) stamp the same
+   constant, so values are unchanged on every path that reaches this code, but the
+   capacity and its label now resolve from one table. (A third `Catalog` literal
+   with empty tiers exists in `GraphCanvas.tsx` for the no-catalog render; it only
+   feeds `graphToFlow`, and the extraction panel renders solely when a catalog is
+   loaded.) Pinned by probe 11 in `r2-verification.log`.
 
 The transport comparison is deliberately per extractor. Fifty-three miners at
 240/min require fifty-three machine outputs that may be merged downstream; they
@@ -198,6 +208,10 @@ versus-one-belt warning from this feature.
 Result arms are explicit:
 
 ```ts
+// Superseded during implementation (`c8828d2`): the `pick-extractor` arm no
+// longer carries `candidates` -- it had no production consumer, since
+// GraphCanvas derives `standaloneExtractors` itself. See `../FEATURE.md`
+// "Phase 1 Diff Parsimony Disposition".
 type ExtractionPlan =
   | { status: "pick-extractor"; candidates: CatalogExtractor[] }
   | { status: "invalid-clock"; detail: string }

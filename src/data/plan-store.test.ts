@@ -10,7 +10,6 @@ import {
   migrateV1,
   migrateV2,
   migrateV3,
-  migrateV4,
   migrateV5,
   migrateV7,
   validatePlanFile,
@@ -1268,30 +1267,13 @@ describe("plan-store — migrateV3 (v3 → v4, canonical links)", () => {
   });
 });
 
-describe("plan-store — migrateV4 (v4 → v5, direction defaults LR)", () => {
-  it("flips the header, defaults flowDirection 'LR'; stages/links/timestamps verbatim", () => {
-    const v4 = samplePlanV4({
-      createdAt: "2020-01-01T00:00:00.000Z",
-      updatedAt: "2021-02-03T04:05:06.000Z",
-      stages: [
-        { name: "A", selection: sampleSelection(), position: { x: 5, y: 6 } },
-        { name: "B", selection: sampleSelection() },
-      ],
-      links: [{ from: 0, to: 1, itemId: "iron_ingot" }],
-    });
-    const v5 = migrateV4(v4);
-    expect(v5.format_version).toBe(5);
-    // A v4 file never carried a direction → "LR" (its implicit orientation).
-    expect(v5.flowDirection).toBe("LR");
-    expect(v5.createdAt).toBe("2020-01-01T00:00:00.000Z");
-    expect(v5.updatedAt).toBe("2021-02-03T04:05:06.000Z");
-    expect(v5.stages).toBe(v4.stages);
-    expect(v5.links).toEqual(v4.links);
-    // No userPlaced flag is synthesized — pre-v5 seeding falls back to
-    // position-presence at load, not to a written flag.
-    expect(v5.stages[0]!.userPlaced).toBeUndefined();
-  });
-
+// The v4 -> v5 step function was retired under #130: `migrateLegacyV4` maps v1-v4
+// straight to v6, so a standalone v4 -> v5 export had no production caller. Its
+// test also asserted `userPlaced === undefined`, a state no live load path
+// produces (`migrateLegacyV4` always writes the boolean). The legacy load path
+// itself is covered below and by "materializes legacy placement from original
+// position presence".
+describe("plan-store — legacy v4 load path (direction defaults LR)", () => {
   it("a stored v4 row still loads (migrated to v8) through loadPlan", async () => {
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", samplePlanV4({ name: "legacy-v4" }), "id");
@@ -1300,6 +1282,24 @@ describe("plan-store — migrateV4 (v4 → v5, direction defaults LR)", () => {
     expect(loaded!.format_version).toBe(8);
     expect(loaded!.flowDirection).toBe("LR");
     expect(loaded!.name).toBe("legacy-v4");
+  });
+
+  it("carries legacy timestamps through the chain verbatim", async () => {
+    // The save-over path reads the prior file's createdAt, so a migrated row must
+    // not reset it. This was only pinned via the standalone v4 -> v5 step function
+    // deleted under #130; the live v1-v4 chain needs it asserted directly.
+    const db = await (await import("./db.ts")).openDb();
+    await db.put(
+      "plans",
+      samplePlanV4({
+        createdAt: "2020-01-01T00:00:00.000Z",
+        updatedAt: "2021-02-03T04:05:06.000Z",
+      }),
+      "legacy-ts",
+    );
+    const loaded = await loadPlan("legacy-ts");
+    expect(loaded!.createdAt).toBe("2020-01-01T00:00:00.000Z");
+    expect(loaded!.updatedAt).toBe("2021-02-03T04:05:06.000Z");
   });
 });
 

@@ -37,8 +37,10 @@ reconsideration:
 - **Implementation plan:** `phase-1/implementation-plan.md` frozen at r8 after
   correctness convergence and one-shot parsimony disposition
 - **Production edits:** `1fc4361`, `5bcd381`, `40e4f72`, `b937bfc`, `254e1ae`
-- **Verification:** 39 files / 1028 tests, checked-in Chromium/CDP geometry and
-  interaction gate, and ten canonical mutation break/restore probes
+- **Verification (at phase close, not current):** 39 files / 1028 tests,
+  checked-in Chromium/CDP geometry and interaction gate, and ten canonical
+  mutation break/restore probes; #130 later appended probes 11 and 12 for the
+  `c8828d2` fold, so the log now records twelve
 - **Completion report:** `phase-1/completion-report.md`
 
 ### Phase 2 - purity mix

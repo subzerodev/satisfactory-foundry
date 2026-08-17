@@ -397,28 +397,6 @@ export function migrateV3(plan: PlanFileV3): PlanFileV4 {
   };
 }
 
-/**
- * Migrate a validated v4 file to v5 in memory (Stage 10 / Phase 1): IDENTITY on
- * the graph — a v4 file never carried a direction, so it migrates as `"LR"`,
- * which is exactly how it was laid out (the implicit pre-v5 orientation). Stages
- * carry over unchanged (no `userPlaced` flag — a pre-v5 file's seeding falls back
- * to position-presence at load, the store's conservative pinning cost). Only the
- * version header flips + the direction defaults. Timestamps carry VERBATIM (the
- * save-over path reads the prior file's createdAt, so a migrated row must not
- * reset it).
- */
-export function migrateV4(plan: PlanFileV4): PlanFileV5 {
-  return {
-    format_version: 5,
-    name: plan.name,
-    createdAt: plan.createdAt,
-    updatedAt: plan.updatedAt,
-    flowDirection: "LR",
-    stages: plan.stages,
-    links: plan.links,
-  };
-}
-
 export function migrateV5(plan: PlanFileV5): PlanFileV6 {
   return {
     format_version: 6,

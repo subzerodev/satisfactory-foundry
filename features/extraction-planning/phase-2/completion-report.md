@@ -2,7 +2,10 @@
 
 **Ticket:** Forgejo #124
 **Branch:** `feature/s22-124-extraction-p2-purity`
-**Status:** accepted and merged to `develop` at `d5649c2`
+**Status:** merged to `develop` at `d5649c2`. Its post-simplify round **r3 did not
+run before that merge**; #130 ran it retroactively and it found no production
+defect, though it did surface an unpinned purity-precedence guard pair, now closed.
+The verdicts are recorded on #130.
 
 ## Delivered
 

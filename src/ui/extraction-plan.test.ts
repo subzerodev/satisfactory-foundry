@@ -259,10 +259,28 @@ describe("deriveExtractionPlan", () => {
     expect(exact.purity.balance.amount.toString()).toBe("0");
   });
 
+  // The single-field rows pin each multiplier but NOT the guard ORDER: with one
+  // field set, every guard permutation picks the same arm.
+  //
+  // Of the mixed rows, {impure:1, normal:1, pure:0} is LOAD-BEARING and must not
+  // be trimmed as redundant: normal-vs-impure was the only guard pair unpinned
+  // anywhere in the repo, and this row is its sole killer (a normal/impure swap
+  // yields 120 instead of 270). Pure's precedence over both others was already
+  // pinned before these rows existed -- see the clock-250 {1,1,1} case below,
+  // which expects 1200 and fails at 780/480 under a normal-first/impure-first
+  // chain, and GraphCanvas.dom.test.tsx's "Mk4 belt or better" row. The other
+  // two mixed rows below are deliberate belt-and-braces overlap with that
+  // existing coverage; only the third closes a real gap.
   it.each([
     [{ impure: "0", normal: "0", pure: "1" }, "480"],
     [{ impure: "0", normal: "1", pure: "0" }, "270"],
     [{ impure: "1", normal: "0", pure: "0" }, "120"],
+    // pure over normal: a normal-first chain would yield 270.
+    [{ impure: "0", normal: "1", pure: "1" }, "480"],
+    // pure over impure: an impure-first chain would yield 120.
+    [{ impure: "1", normal: "0", pure: "1" }, "480"],
+    // normal over impure: an impure-first chain would yield 120.
+    [{ impure: "1", normal: "1", pure: "0" }, "270"],
   ])(
     "uses the highest nonzero purity output for transport: %o",
     (purityMix, capacity) => {
