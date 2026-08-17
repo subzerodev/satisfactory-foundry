@@ -124,7 +124,10 @@ only round after correctness convergence that changed migration and derivation
 code. Its closing tally at the top of this log still read `39 files, 1030
 tests`, the PRE-fold count, which is itself proof the log was never re-run after
 the fold. All three probes below were run against the working tree during the #130
-fix-forward -- `985ed1c` plus that uncommitted fold, NOT `985ed1c` alone.
+fix-forward -- `985ed1c` plus that uncommitted #130 fold, NOT `985ed1c` alone.
+("the fold" alone is ambiguous in this section: the sentence above uses it for
+`c8828d2`, the simplify fold under review. Two independent reviewers resolved the
+bare demonstrative in opposite directions, so it is spelled out here.)
 
 **Probes 11 and 12** cover the `c8828d2` simplify fold. **Probe 13 does not** --
 it covers #130's own deletion of the dead `migrateV4` export.
@@ -208,9 +211,10 @@ Tests  1141 passed (1141)
 
 ### Probe 13 -- legacy timestamps must pass through verbatim
 
-Deleting the standalone `migrateV4` step function removed the only assertion that
-timestamps survive the **v4 step** specifically. Two narrower claims were made here
-earlier and both were wrong, so both are recorded:
+Deleting the standalone `migrateV4` step function removed the only assertion
+targeting the **v4 step in isolation**. Coverage of the step's behaviour is a
+different question, and two claims made here earlier got it wrong -- one broader
+than this sentence, one narrower. Both are recorded rather than quietly replaced:
 
 1. "the only assertion that timestamps survive migration" -- false: sibling step
    functions keep theirs (`plan-store.test.ts` covers `migrateV1`, `migrateV2`,
@@ -253,8 +257,8 @@ Three kills across two suites, not one. Restored to green (1141 passed).
 
 ### Delivered-tree verification
 
-Run after the LAST edit of the #130 fix-forward, so this — not either probe's
-restore line — is the count for the state being committed:
+Run after the LAST edit of the #130 fix-forward, so this — not any probe's restore
+line — is the count for the state being committed:
 
 ```text
 npm test        Test Files  44 passed (44) / Tests  1141 passed (1141)
