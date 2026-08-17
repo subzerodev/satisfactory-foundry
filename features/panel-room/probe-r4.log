@@ -1,0 +1,38 @@
+== GEOMETRY (harness pins canvas 340) ==
+BASELINE  360px extraction canvas=340 flow=1..339 wrapper=49..219(h170) stack=49..219(h170) maxH=170px content=380/170 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/false] wrapperPE=auto hit=n/a
+SIZE-ONLY 360px extraction canvas=340 flow=1..339 wrapper=49..331(h282) stack=49..220(h171) maxH=calc(100% - 111px) content=380/171 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/true/true] wrapperPE=auto hit=react-flow__panel top right
+SIZE+PE   360px extraction canvas=340 flow=1..339 wrapper=49..331(h282) stack=49..220(h171) maxH=calc(100% - 111px) content=380/171 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/true/true] wrapperPE=none hit=react-flow__pane draggable
+
+BASELINE  360px combined canvas=340 flow=1..339 wrapper=49..219(h170) stack=49..219(h170) maxH=170px content=430/170 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/false] wrapperPE=auto hit=n/a
+SIZE-ONLY 360px combined canvas=340 flow=1..339 wrapper=49..331(h282) stack=49..220(h171) maxH=calc(100% - 111px) content=430/171 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/true/true] wrapperPE=auto hit=react-flow__panel top right
+SIZE+PE   360px combined canvas=340 flow=1..339 wrapper=49..331(h282) stack=49..220(h171) maxH=calc(100% - 111px) content=430/171 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/true/true] wrapperPE=none hit=react-flow__pane draggable
+
+BASELINE  720px extraction canvas=340 flow=1..339 wrapper=49..219(h170) stack=49..219(h170) maxH=170px content=380/170 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/false] wrapperPE=auto hit=n/a
+SIZE-ONLY 720px extraction canvas=340 flow=1..339 wrapper=49..331(h282) stack=49..220(h171) maxH=calc(100% - 111px) content=380/171 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/true/true] wrapperPE=auto hit=react-flow__panel top right
+SIZE+PE   720px extraction canvas=340 flow=1..339 wrapper=49..331(h282) stack=49..220(h171) maxH=calc(100% - 111px) content=380/171 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/true/true] wrapperPE=none hit=react-flow__pane draggable
+
+BASELINE  720px combined canvas=340 flow=1..339 wrapper=49..219(h170) stack=49..219(h170) maxH=170px content=430/170 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/false] wrapperPE=auto hit=n/a
+SIZE-ONLY 720px combined canvas=340 flow=1..339 wrapper=49..331(h282) stack=49..220(h171) maxH=calc(100% - 111px) content=430/171 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/true/true] wrapperPE=auto hit=react-flow__panel top right
+SIZE+PE   720px combined canvas=340 flow=1..339 wrapper=49..331(h282) stack=49..220(h171) maxH=calc(100% - 111px) content=430/171 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/true/true] wrapperPE=none hit=react-flow__pane draggable
+
+BASELINE  1280px extraction canvas=340 flow=1..339 wrapper=16..276(h260) stack=16..276(h260) maxH=260px content=380/260 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/false] wrapperPE=auto hit=n/a
+SIZE-ONLY 1280px extraction canvas=340 flow=1..339 wrapper=16..324(h308) stack=16..282(h266) maxH=calc(100% - 42px) content=380/266 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/true] wrapperPE=auto hit=react-flow__panel top right
+SIZE+PE   1280px extraction canvas=340 flow=1..339 wrapper=16..324(h308) stack=16..282(h266) maxH=calc(100% - 42px) content=380/266 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/true] wrapperPE=none hit=react-flow__pane draggable
+
+BASELINE  1280px combined canvas=340 flow=1..339 wrapper=16..276(h260) stack=16..276(h260) maxH=260px content=430/260 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/false] wrapperPE=auto hit=n/a
+SIZE-ONLY 1280px combined canvas=340 flow=1..339 wrapper=16..324(h308) stack=16..282(h266) maxH=calc(100% - 42px) content=430/266 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/true] wrapperPE=auto hit=react-flow__panel top right
+SIZE+PE   1280px combined canvas=340 flow=1..339 wrapper=16..324(h308) stack=16..282(h266) maxH=calc(100% - 42px) content=430/266 overflowing=true ctl=220..324 pwr=282..324 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/true] wrapperPE=none hit=react-flow__pane draggable
+
+== INTERACTION (real .graph-canvas height, mix expanded) ==
+BASELINE  360px interaction canvas=560 flow=1..559 wrapper=49..219(h170) stack=49..219(h170) maxH=170px content=380/170 overflowing=true ctl=440..544 pwr=502..544 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/false] wrapperPE=auto hit=n/a
+SIZE-ONLY 360px interaction canvas=560 flow=1..559 wrapper=49..551(h502) stack=49..429(h380) maxH=calc(100% - 111px) content=380/380 overflowing=false ctl=440..544 pwr=502..544 collide[stack tl/ctl/pwr=false/false/false wrapper=false/true/true] wrapperPE=auto hit=react-flow__panel top right
+SIZE+PE   360px interaction canvas=560 flow=1..559 wrapper=49..551(h502) stack=49..429(h380) maxH=calc(100% - 111px) content=380/380 overflowing=false ctl=440..544 pwr=502..544 collide[stack tl/ctl/pwr=false/false/false wrapper=false/true/true] wrapperPE=none hit=react-flow__pane draggable
+
+BASELINE  720px interaction canvas=560 flow=1..559 wrapper=49..219(h170) stack=49..219(h170) maxH=170px content=380/170 overflowing=true ctl=440..544 pwr=502..544 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/false] wrapperPE=auto hit=n/a
+SIZE-ONLY 720px interaction canvas=560 flow=1..559 wrapper=49..551(h502) stack=49..429(h380) maxH=calc(100% - 111px) content=380/380 overflowing=false ctl=440..544 pwr=502..544 collide[stack tl/ctl/pwr=false/false/false wrapper=false/true/true] wrapperPE=auto hit=react-flow__panel top right
+SIZE+PE   720px interaction canvas=560 flow=1..559 wrapper=49..551(h502) stack=49..429(h380) maxH=calc(100% - 111px) content=380/380 overflowing=false ctl=440..544 pwr=502..544 collide[stack tl/ctl/pwr=false/false/false wrapper=false/true/true] wrapperPE=none hit=react-flow__pane draggable
+
+BASELINE  1280px interaction canvas=560 flow=1..559 wrapper=16..276(h260) stack=16..276(h260) maxH=260px content=380/260 overflowing=true ctl=440..544 pwr=502..544 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/false] wrapperPE=auto hit=n/a
+SIZE-ONLY 1280px interaction canvas=560 flow=1..559 wrapper=16..544(h528) stack=16..396(h380) maxH=calc(100% - 42px) content=380/380 overflowing=false ctl=440..544 pwr=502..544 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/true] wrapperPE=auto hit=react-flow__panel top right
+SIZE+PE   1280px interaction canvas=560 flow=1..559 wrapper=16..544(h528) stack=16..396(h380) maxH=calc(100% - 42px) content=380/380 overflowing=false ctl=440..544 pwr=502..544 collide[stack tl/ctl/pwr=false/false/false wrapper=false/false/true] wrapperPE=none hit=react-flow__pane draggable
+

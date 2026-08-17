@@ -1,0 +1,38 @@
+== GEOMETRY (canvas pinned 340) — full matrix incl. notice ==
+BASELINE 360px notice canvas=340 wrapper=49..91(h42) wrapMaxH=none wrapOverflowY=visible stackMaxH=170px content=42/42 overflowing=false clear[pwr=191 ctl=129 canvas=249] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+VARIANT-D 360px notice canvas=340 wrapper=49..91(h42) wrapMaxH=calc(100% - 173px) wrapOverflowY=auto stackMaxH=none content=42/42 overflowing=false clear[pwr=191 ctl=129 canvas=249] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+
+BASELINE 360px extraction canvas=340 wrapper=49..219(h170) wrapMaxH=none wrapOverflowY=visible stackMaxH=170px content=170/170 overflowing=false clear[pwr=63 ctl=1 canvas=121] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+VARIANT-D 360px extraction canvas=340 wrapper=49..214(h165) wrapMaxH=calc(100% - 173px) wrapOverflowY=auto stackMaxH=none content=380/165 overflowing=true clear[pwr=68 ctl=6 canvas=126] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+
+BASELINE 360px combined canvas=340 wrapper=49..219(h170) wrapMaxH=none wrapOverflowY=visible stackMaxH=170px content=170/170 overflowing=false clear[pwr=63 ctl=1 canvas=121] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+VARIANT-D 360px combined canvas=340 wrapper=49..214(h165) wrapMaxH=calc(100% - 173px) wrapOverflowY=auto stackMaxH=none content=430/165 overflowing=true clear[pwr=68 ctl=6 canvas=126] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+
+BASELINE 720px notice canvas=340 wrapper=49..91(h42) wrapMaxH=none wrapOverflowY=visible stackMaxH=170px content=42/42 overflowing=false clear[pwr=191 ctl=129 canvas=249] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+VARIANT-D 720px notice canvas=340 wrapper=49..91(h42) wrapMaxH=calc(100% - 173px) wrapOverflowY=auto stackMaxH=none content=42/42 overflowing=false clear[pwr=191 ctl=129 canvas=249] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+
+BASELINE 720px extraction canvas=340 wrapper=49..219(h170) wrapMaxH=none wrapOverflowY=visible stackMaxH=170px content=170/170 overflowing=false clear[pwr=63 ctl=1 canvas=121] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+VARIANT-D 720px extraction canvas=340 wrapper=49..214(h165) wrapMaxH=calc(100% - 173px) wrapOverflowY=auto stackMaxH=none content=380/165 overflowing=true clear[pwr=68 ctl=6 canvas=126] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+
+BASELINE 720px combined canvas=340 wrapper=49..219(h170) wrapMaxH=none wrapOverflowY=visible stackMaxH=170px content=170/170 overflowing=false clear[pwr=63 ctl=1 canvas=121] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+VARIANT-D 720px combined canvas=340 wrapper=49..214(h165) wrapMaxH=calc(100% - 173px) wrapOverflowY=auto stackMaxH=none content=430/165 overflowing=true clear[pwr=68 ctl=6 canvas=126] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+
+BASELINE 1280px notice canvas=340 wrapper=16..58(h42) wrapMaxH=none wrapOverflowY=visible stackMaxH=260px content=42/42 overflowing=false clear[pwr=224 ctl=162 canvas=282] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+VARIANT-D 1280px notice canvas=340 wrapper=16..58(h42) wrapMaxH=calc(100% - 78px) wrapOverflowY=auto stackMaxH=none content=42/42 overflowing=false clear[pwr=224 ctl=162 canvas=282] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+
+BASELINE 1280px extraction canvas=340 wrapper=16..276(h260) wrapMaxH=none wrapOverflowY=visible stackMaxH=260px content=260/260 overflowing=false clear[pwr=6 ctl=-56 canvas=64] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+VARIANT-D 1280px extraction canvas=340 wrapper=16..276(h260) wrapMaxH=calc(100% - 78px) wrapOverflowY=auto stackMaxH=none content=380/260 overflowing=true clear[pwr=6 ctl=-56 canvas=64] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+
+BASELINE 1280px combined canvas=340 wrapper=16..276(h260) wrapMaxH=none wrapOverflowY=visible stackMaxH=260px content=260/260 overflowing=false clear[pwr=6 ctl=-56 canvas=64] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+VARIANT-D 1280px combined canvas=340 wrapper=16..276(h260) wrapMaxH=calc(100% - 78px) wrapOverflowY=auto stackMaxH=none content=430/260 overflowing=true clear[pwr=6 ctl=-56 canvas=64] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=A]
+
+== INTERACTION (real 560 canvas, mix expanded) ==
+BASELINE 360px interaction canvas=560 wrapper=49..219(h170) wrapMaxH=none wrapOverflowY=visible stackMaxH=170px content=170/170 overflowing=false clear[pwr=283 ctl=221 canvas=341] collide[tl/ctl/pwr=false/false/false] hit[below=stage-node-recipe ctlBtn=[object SVGAnimatedString] attr=A grip=graph-canvas]
+VARIANT-D 360px interaction canvas=560 wrapper=49..429(h380) wrapMaxH=calc(100% - 173px) wrapOverflowY=auto stackMaxH=none content=380/380 overflowing=false clear[pwr=73 ctl=11 canvas=131] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=graph-canvas]
+
+BASELINE 720px interaction canvas=560 wrapper=49..219(h170) wrapMaxH=none wrapOverflowY=visible stackMaxH=170px content=170/170 overflowing=false clear[pwr=283 ctl=221 canvas=341] collide[tl/ctl/pwr=false/false/false] hit[below=stage-node-power ctlBtn=[object SVGAnimatedString] attr=A grip=graph-canvas]
+VARIANT-D 720px interaction canvas=560 wrapper=49..429(h380) wrapMaxH=calc(100% - 173px) wrapOverflowY=auto stackMaxH=none content=380/380 overflowing=false clear[pwr=73 ctl=11 canvas=131] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=[object SVGAnimatedString] attr=A grip=graph-canvas]
+
+BASELINE 1280px interaction canvas=560 wrapper=16..276(h260) wrapMaxH=none wrapOverflowY=visible stackMaxH=260px content=260/260 overflowing=false clear[pwr=226 ctl=164 canvas=284] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=react-flow__panel react-flow__controls vertical bottom left attr=A grip=graph-canvas]
+VARIANT-D 1280px interaction canvas=560 wrapper=16..396(h380) wrapMaxH=calc(100% - 78px) wrapOverflowY=auto stackMaxH=none content=380/380 overflowing=false clear[pwr=106 ctl=44 canvas=164] collide[tl/ctl/pwr=false/false/false] hit[below=react-flow__pane draggable ctlBtn=react-flow__panel react-flow__controls vertical bottom left attr=A grip=graph-canvas]
+
