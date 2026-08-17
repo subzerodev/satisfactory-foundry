@@ -261,6 +261,15 @@ git diff --check develop...HEAD
       two browser gates' CDP/Vite/Chromium runtime, delegate normalized v7
       transport migration to the core canonicalizer, skip the redundant ordinary
       link derivation for intersteps, and remove the zero-logic packaging facade.
-      No behavior test or `r2-verification.log` mutation row was added.
+      The refactor itself added no behavior test or `r2-verification.log` mutation
+      row.
+- [x] Fold post-simplify correctness r3's accepted findings with TDD: rebuild
+      every v7-valid outer transport and nested trip into plain objects before
+      strict core canonicalization, while continuing to rebuild train `sharedEnds`
+      to exact literal-true `from`/`to` keys. Keep v8 validation untouched.
+- [x] Add focused outer-belt plus vehicle/drone trip array migration coverage,
+      record its genuine red/green evidence and seventh production
+      break/fail/restore cycle, and correct the completion report's stale
+      four-vs-six mutation summary to the final seven.
 - [ ] Re-run the correctness pair on the post-simplify cumulative diff, then merge
       only after both approve. This remains a separate parent-workflow action.

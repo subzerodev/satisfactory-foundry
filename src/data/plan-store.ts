@@ -460,18 +460,19 @@ export function migrateV7(plan: PlanFileV7): PlanFileV8 {
 }
 
 function canonicalLegacyTransport(transport: LinkTransport): LinkTransport {
-  const normalized =
-    transport.mode === "train" && transport.sharedEnds !== undefined
-      ? {
-          ...transport,
-          sharedEnds: {
-            ...(transport.sharedEnds.from === true
-              ? { from: true as const }
-              : {}),
-            ...(transport.sharedEnds.to === true ? { to: true as const } : {}),
-          },
-        }
-      : transport;
+  const legacy = transport as unknown as Record<string, unknown>;
+  const normalized: Record<string, unknown> = {
+    ...legacy,
+    ...(legacy.trip !== null && typeof legacy.trip === "object"
+      ? { trip: { ...(legacy.trip as Record<string, unknown>) } }
+      : {}),
+  };
+  if (transport.mode === "train" && transport.sharedEnds !== undefined) {
+    normalized.sharedEnds = {
+      ...(transport.sharedEnds.from === true ? { from: true as const } : {}),
+      ...(transport.sharedEnds.to === true ? { to: true as const } : {}),
+    };
+  }
   const canonical = canonicalizeLinkTransport(normalized);
   if (canonical === null) {
     throw new Error("validated v7 transport could not be canonicalized");

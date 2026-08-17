@@ -361,3 +361,60 @@ Green rerun output:
 Test Files  1 passed (1)
 Tests  1 passed | 4 skipped (5)
 ```
+
+## 7. Historical v7 array canonicalization
+
+Green command:
+
+```text
+NO_COLOR=1 npx vitest run src/data/plan-store.test.ts -t "migrates v7-valid array transports and trips to exact v8 objects" --reporter=verbose
+```
+
+Green output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates v7-valid array transports and trips to exact v8 objects 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 79 skipped (80)
+```
+
+Temporary break:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-  const canonical = canonicalizeLinkTransport(normalized);
++  const canonical = canonicalizeLinkTransport(transport);
+*** End Patch
+```
+
+Focused failure:
+
+```text
+× src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates v7-valid array transports and trips to exact v8 objects 5ms
+  → validated v7 transport could not be canonicalized
+FAIL  src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates v7-valid array transports and trips to exact v8 objects
+Error: validated v7 transport could not be canonicalized
+Test Files  1 failed (1)
+Tests  1 failed | 79 skipped (80)
+```
+
+Restore:
+
+```diff
+*** Begin Patch
+*** Update File: src/data/plan-store.ts
+@@
+-  const canonical = canonicalizeLinkTransport(transport);
++  const canonical = canonicalizeLinkTransport(normalized);
+*** End Patch
+```
+
+Green rerun output:
+
+```text
+✓ src/data/plan-store.test.ts > plan-store — v8 packaging interstep persistence (#113) > migrates v7-valid array transports and trips to exact v8 objects 3ms
+Test Files  1 passed (1)
+Tests  1 passed | 79 skipped (80)
+```

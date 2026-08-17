@@ -536,6 +536,70 @@ describe("plan-store — v8 packaging interstep persistence (#113)", () => {
     expect(await loadPlan("canonical-v8")).toEqual(migrated);
   });
 
+  it("migrates v7-valid array transports and trips to exact v8 objects", () => {
+    const outerBelt = Object.assign([], {
+      mode: "belt",
+      ignored: true,
+    });
+    const vehicleTrip = Object.assign([], {
+      kind: "estimated",
+      distanceText: "500",
+      ignored: true,
+    });
+    const droneTrip = Object.assign([], {
+      kind: "measured",
+      roundTripSecondsText: "300",
+      flightMetersText: "1200",
+      ignored: true,
+    });
+    const legacy = samplePlanV7({
+      stages,
+      links: [
+        {
+          from: 0,
+          to: 1,
+          itemId: "iron",
+          transport: outerBelt,
+        } as never,
+        {
+          from: 0,
+          to: 1,
+          itemId: "coal",
+          transport: { mode: "truck", trip: vehicleTrip },
+        } as never,
+        {
+          from: 0,
+          to: 1,
+          itemId: "nitrogen",
+          transport: {
+            mode: "drone",
+            fuel: "battery",
+            trip: droneTrip,
+          },
+        } as never,
+      ],
+    });
+
+    expect(
+      validatePlanFile(legacy)?.links.map((link) => link.transport),
+    ).toStrictEqual([
+      { mode: "belt" },
+      {
+        mode: "truck",
+        trip: { kind: "estimated", distanceText: "500" },
+      },
+      {
+        mode: "drone",
+        fuel: "battery",
+        trip: {
+          kind: "measured",
+          roundTripSecondsText: "300",
+          flightMetersText: "1200",
+        },
+      },
+    ]);
+  });
+
   it("rejects future v9 while migrating v7 to canonical v8", () => {
     expect(
       validatePlanFile({ ...samplePlanV8(), format_version: 9 }),

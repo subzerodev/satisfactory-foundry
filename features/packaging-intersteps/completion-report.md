@@ -16,7 +16,8 @@
 - Keeps material reconciliation in original fluid/gas units while projecting
   transport into packaged units; material and interstep diagnostics coexist.
 - Persists raw editable intent in plan v8, canonicalizes v7 transport data, and
-  keeps stale intent recoverable after catalog replacement.
+  keeps stale intent recoverable after catalog replacement. Historically valid
+  v7 array-shaped transports and trips migrate to exact plain v8 objects.
 - Canonicalizes public transport/interstep setter input field-by-field, stripping
   wider runtime properties and refusing malformed required structure before it
   can enter strict-v8 state.
@@ -57,13 +58,16 @@ interaction rows at 360, 720, and 1280px, including document width 360/360,
 
 ## Bidirectional Evidence
 
-`r2-verification.log` records four temporary `apply_patch` mutations and their
+`r2-verification.log` records seven temporary `apply_patch` mutations and their
 named failing tests, exact restore patches, and green reruns:
 
 - pair/derive machine math;
 - the v8-saveable store route guard;
 - combined graph diagnostic precedence;
-- inspector default intent and exact rendering.
+- inspector default intent and exact rendering;
+- non-positive packaging-rate rejection;
+- public setter canonicalization;
+- historical v7 array transport/trip canonicalization.
 
 No mutation remains in the worktree.
 
@@ -72,11 +76,11 @@ No mutation remains in the worktree.
 ```text
 npm test
 Test Files  44 passed (44)
-Tests  1135 passed (1135)
+Tests  1136 passed (1136)
 
-npm test -- --run src/data/plan-store.test.ts src/data/packaging.test.ts src/ui/LinkInspector.test.ts src/ui/LinkInspector.dom.test.tsx
-Test Files  4 passed (4)
-Tests  117 passed (117)
+npm test -- src/data/plan-store.test.ts
+Test Files  1 passed (1)
+Tests  80 passed (80)
 
 npm run check
 TypeScript, ESLint, and Prettier passed.
@@ -85,7 +89,7 @@ npm run build
 230 modules transformed; PWA generated; build passed.
 The existing >500 kB application-chunk advisory remains non-fatal.
 
-git diff --check
+git diff --check develop...HEAD
 No output (passed).
 ```
 
@@ -117,6 +121,11 @@ No output (passed).
   the browser gates now share only their CDP/Vite/Chromium mechanics; v7
   migration normalizes lenient `sharedEnds` and delegates to the core transport
   canonicalizer; intersteps skip the redundant ordinary link derivation; and the
-  zero-logic `src/data/packaging.ts` facade was removed. These are refactors only,
-  so no behavior test or `r2-verification.log` mutation row was added.
-- The post-simplify correctness rerun and merge remain parent-workflow actions.
+  zero-logic `src/data/packaging.ts` facade was removed. That refactor itself did
+  not add a behavior test or mutation row.
+- Post-simplify correctness r3 found that the refactor rejected historically
+  v7-valid arrays carrying own named transport/trip fields and that this report
+  still described four mutations after six existed. Both findings were folded
+  with a focused migration regression and a seventh break/fail/restore cycle;
+  v8 validation remains unchanged.
+- The next post-fold correctness rerun and merge remain parent-workflow actions.
