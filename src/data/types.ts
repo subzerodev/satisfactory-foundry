@@ -97,7 +97,8 @@ export interface CatalogRecipe {
    *  mVariablePowerConsumption* fields parse. CONSULTED ONLY when the
    *  producing machine is variable-power (the building-class gate) — 3 of
    *  the 46 field-carrying recipes sit on constant-power machines where
-   *  the fields are inert (the Ballistic Warp Drive trap). */
+   *  the fields are inert (46 total, 43 on variable buildings — the
+   *  Ballistic Warp Drive trap). */
   variablePower?: { constantMw: Fraction; factorMw: Fraction };
 }
 
