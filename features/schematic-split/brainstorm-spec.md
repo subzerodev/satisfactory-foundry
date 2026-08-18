@@ -1,146 +1,201 @@
 # #135 — Split the schematic (Stage 23)
 
 **Ticket:** #135 · **Epic:** #136 · **Milestone:** 94 · **Tier:** 2
-**Status:** design r1
+**Status:** design r2
 
 ## Purpose
 
 Michael: *"this diagram needs rethought i dont understand what its saying from
 the layout of it."* The schematic answers three questions at once — where the
-belts run, which stretches are over capacity, and how 106 machines are arranged —
-and the third fights the first two for space, arriving as a grey smear with a
-colliding number strip.
+belts run, which stretches are over capacity, and how the machines are arranged —
+and the third fights the first two for space.
 
 ## Settled — do NOT re-litigate
 
 From Michael, 2026-08-17 (#135 comment 24630):
 
 > **The schematic splits into separate views.** The bus/feed drawing answers
-> **how to physically build it** *and* **what is over capacity** — those belong
-> together, because where a belt runs and whether that stretch needs doubling are
-> the same question at the same place. **The 106-machine block becomes its own
-> view.**
+> **how to physically build it** *and* **what is over capacity** — together.
+> **The 106-machine block becomes its own view.**
 
-Carried constraints from epic #136:
+Constraints from epic #136: **presentation only** — the solver, the saturation
+model and #120's parallel-line semantics are unchanged. And from Stage 13/14
+(`docs/master-plan.md:211-252`): **nothing is deleted**; the block moves.
 
-- **Presentation only.** The solver, the saturation model and #120's
-  parallel-line semantics are unchanged — only how they are drawn.
-- Stage 13/14 already removed a view and had to restore it, because a mislabelled
-  toggle made the user ask for the wrong deletion (`docs/master-plan.md:211-252`).
-  **Nothing is deleted here** — the machine block moves, it does not go away.
+## What r1 got wrong, because it drives everything below
 
-## The fact that shapes the design
+r1 built the split around `MachineBand`. **`MachineBand` does not run at Michael's
+machine count.**
 
-**The bus rows are spatially indexed by the machine axis.** `LaneTrack.segments`
-carries both machine ordinals *and* pixel positions derived from them
-(`ui/layout.ts:76-85`: `fromMachine`, `toMachine`, `x1`, `x2`), and every x in the
-drawing comes from `computeLayout`'s single machine axis (`:275-340`).
+`bandMode(N)` is `USABLE / N < minPitch` = `912 / N < 8` (`layout.ts:100-102`,
+`:21`, `:30`), so it engages only at **N > 114**. At N = 106,
+`912 / 106 = 8.60`, which is **not** < 8 → `band === false`, and
+`Schematic.tsx:507` takes the *else* arm.
 
-So "move the machine block out" cannot mean "remove the machine axis". A belt
-segment spanning x=120..300 *means* "machines 12 through 45"; without an index
-reference on that axis the build-guide drawing stops being a build guide, which
-would defeat the half of the decision that says it answers **how to physically
-build it**.
+**His screenshot confirms it independently:** the number strip reads 1, 3, 6, 9 …
+105, 106 — every third index, which is the non-band `labelStep` rule
+`ceil(106 × 20 / 912) = 3` (`layout.ts:297-300`). Band mode does not use
+`labelStep` at all.
 
-The split therefore is:
+So what he is looking at is **106 adjacent 6px rects at pitch 8, 40px tall**
+(`Schematic.tsx:516-537`) — not a band. r1 moved elements that are not rendered.
 
-- the **grey band rect and its `×106` count** move to the new view — they are the
-  "how are the machines arranged" answer;
-- the **ticks and index labels stay** in the bus view as a machine-axis ruler —
-  they are the reference that makes belt spans legible. They are already
-  decluttered by Stage 15's greedy label thinning (`layout.ts:190-211`), so they
-  are the cheap, readable part.
+**The non-band path is therefore the primary path this design must specify.**
+
+## The second thing r1 assumed and source refutes
+
+The non-band branch emits exactly two things per machine: a `<rect>`
+(`Schematic.tsx:518-523`) and a conditional `<text class="machine-label">`
+(`:524-535`). **There is no tick `<line>`** — the rect *is* the positional mark.
+
+So "move the rects out and the ticks stay" is impossible below the threshold: it
+would leave numbers floating with nothing marking the boundaries the belt
+segments' `x1`/`x2` land on. **The schematic's machine axis has to be drawn, not
+retained.** That is the substantive design work in this ticket.
 
 ## Design
 
-### 1. A third view
+### 1. The machine axis (new drawing, both modes)
 
-`type View = "schematic" | "blueprint"` (`ui/App.tsx:66`) gains `"machines"`.
-Blast radius is five sites, all in `App.tsx`, and view state is component-local
-(`:158`) — no store change:
+The schematic keeps a **thin ruler** where the 40px machine row is today:
 
-| Site | Change |
-|---|---|
-| `:66` | widen the union |
-| `:158` | default stays `"schematic"` |
-| `:429-446` | third tab button, after BLUEPRINT |
-| `:447-469` | third conditional arm |
-| `app.css` `.view-tab` | already scales to N buttons |
+- a continuous baseline rule spanning the machine axis;
+- a **tick** at each labelled index;
+- the existing index labels beneath, unchanged in content and x-position.
 
-### 2. `MachineBand` splits by role
+Height **12px**, replacing 40px. It reads as a scale rather than a filled block,
+which is the point: a rule with ticks cannot smear.
 
-`Schematic.tsx:356-411` currently draws four things. They divide cleanly:
+One component, two index sources — the only mode difference:
 
-| Element | Lines | Goes to |
+| | tick indices | label indices |
 |---|---|---|
-| grey `<rect>` band | `:382` | machines view |
-| `×N` count text | `:383-385` | machines view |
-| boundary ticks at significant indices | `:393` | **stays** (the ruler) |
-| index labels at thinned indices | `:399-405` | **stays** (the ruler) |
+| non-band (N ≤ 114) | machines where `m.labeled` | same |
+| band (N > 114) | `layout.significant` | `layout.labeledSignificant` |
 
-Extract a `MachineAxis` component carrying the ticks + labels, used by the
-schematic. The machines view renders the band and the count.
+At N = 106 that is ticks and labels at 1, 3, 6 … 106 (~37 marks). At N = 20,
+`pitch ≥ labelPitch` so `labelStep = 1` (`layout.ts:297-300`) and every machine
+gets a tick — the axis is denser at small N, which is correct and readable.
 
-The non-band path (`Schematic.tsx:516-537`, N ≤ 114 per `bandMode`,
-`layout.ts:100-102`) splits the same way: per-machine rects move to the machines
-view; ticks and labels stay as the ruler.
+*(The "colliding number strip" in Michael's report is the label crowding at
+`labelStep = 3`; this design does not change label placement, so it does not fix
+that. It is part of what #138 must address — flagged, not silently inherited.)*
 
-### 3. The machines view
+### 2. The machines view
 
-Renders the machine row with the full drawing width to itself, reusing
-`computeLayout`'s existing geometry — the same `machines[]` positions, the same
-`significant`/`labeledSignificant` sets, the same band/non-band rule. **No new
-layout math.**
+Renders the machine row at its **current** 40px height with the full drawing width
+to itself, reusing `computeLayout`'s x positions and the existing band/non-band
+split verbatim: `MachineBand` for N > 114, per-machine rects for N ≤ 114. **The
+block is moved, not redesigned** — what it should *become* is #138, blocked by this.
 
-**Deliberately NOT redesigned in this ticket.** Michael's decision settles that
-the block gets its own view; it does not say what the block should *become*. At
-106 machines in a single row, more space alone will not make it communicate —
-wrapping into a grid, or replacing it with a per-segment table, is a different
-design act and needs his call. Filed as a follow-on rather than guessed at here.
+### 3. Layout: the 40px is reclaimed, and that is a `layout.ts` change
+
+r1 claimed the space could be reclaimed in CSS and that there was "no new layout
+math". **Both were wrong** — the height is `layout.height` computed at
+`layout.ts:321-326` with `LAYOUT.machineH` unconditional, and `.schematic` carries
+no height (`app.css:684-692`).
+
+`computeLayout` gains an explicit machine-row height:
+
+```ts
+computeLayout(result, machineCount, machineRowH)   // schematic: 12, machines: 40
+```
+
+x geometry (`pitch`, `machines[]`, every `x1`/`x2` via `boundaryX`) is independent
+of it and is **identical in both views** — that is what keeps the two drawings in
+register.
+
+**Consequences, stated rather than denied:** `machineTop`, `outputTop` and
+`height` all shift, so the output lanes and their breakout arrows **move up by
+28px** in the schematic. The r1 criterion "output breakouts are pixel-unchanged"
+was therefore unachievable and is withdrawn; the honest criterion is that they are
+unchanged *relative to the machine axis*, and that the drawing gets shorter.
+
+The literal `40` is duplicated at `Schematic.tsx:382`, `:393`, `:522`, `:553`
+rather than read from `LAYOUT.machineH`. Those must read the parameter, or the
+ticks silently desynchronise from the row.
+
+### 4. A third view
+
+`type View = "schematic" | "blueprint"` (`App.tsx:66`) gains `"machines"`. Sites:
+`:66` union, `:158` default (stays `"schematic"`), `:429-446` a third tab,
+`:447-469` a third arm, plus the `Machines` import — **five in `App.tsx`** — and
+`.view-tabs` already scales (`app.css:850-853`). No store change; view state is
+`useState`.
 
 ## Changes
 
-1. `ui/App.tsx` — third view (five sites above).
-2. `ui/Schematic.tsx` — extract `MachineAxis` (ticks + labels) from `MachineBand`;
-   the schematic renders the axis, not the band. Same split on the non-band path.
-3. `ui/Machines.tsx` (new) — the machines view: band or per-machine rects, plus
-   the count.
-4. `ui/app.css` — height for the schematic once the 40px band leaves it; styles
-   for the new view.
-5. Tests — below.
+1. `ui/layout.ts` — `computeLayout` takes `machineRowH`; `machineTop`/`outputTop`/
+   `height` derive from it.
+2. `ui/Schematic.tsx` — new `MachineAxis` (baseline + ticks + labels); the
+   schematic renders it at 12px instead of the machine row; the four literal `40`s
+   read the parameter.
+3. `ui/Machines.tsx` (new) — the machine row at 40px, band and non-band arms moved
+   verbatim.
+4. `ui/App.tsx` — the third view.
+5. `ui/app.css` — `.machine-axis` styles; `.view-tab` untouched.
+6. Tests — below.
+
+## Tests
+
+**Four existing tests assert machine-block markup inside `<Schematic>` and will
+fail. Each is re-pointed, not deleted** (the Stage 13/14 "nothing is deleted"
+invariant applies to their coverage too):
+
+| Test | Asserts | Lands |
+|---|---|---|
+| `smoke.test.tsx:204` | ≥20 `<rect>` at N=20 | `<Machines>` — `LaneG` emits no rects, so the schematic would have none |
+| `smoke.test.tsx:330-332` | `machine-band` count 1, `×161` | `<Machines>` |
+| `smoke.test.tsx:446-448` | `class="machine"` count 114 | `<Machines>` |
+| `smoke.test.tsx:371-375` | `machine-band-mark` vs `machine-label` counts | split: marks → `<Machines>`, the axis keeps `machine-label` |
+
+New tests:
+
+1. **`bandMode` boundary is pinned in the split**: at N=106 the schematic renders
+   the axis and **no** `class="machine"` rects; at N=161 the same, with the band in
+   `<Machines>`. This is the pin on r1's root error.
+2. The axis renders a tick per labelled index at N=20, N=106 and N=161.
+3. `computeLayout` y-geometry at `machineRowH` 12 vs 40 — both pinned explicitly,
+   with the expectation written as a **literal**, not derived from `LAYOUT.machineH`.
+   *(r1's proposed tripwire — "if `layout.test.ts` changes, the split leaked" —
+   cannot fire: `layout.test.ts:49-59` computes its expectation from the constant
+   itself, so shrinking it keeps the test green. That tripwire is retired and
+   replaced by these explicit pins.)*
+4. Belt segment `x1`/`x2` are identical between the two views at the same N.
 
 ## Acceptance criteria
 
-- Three tabs; SCHEMATIC is still first and default (Stage 14's restoration).
-- The schematic keeps its machine-index ruler: every significant index keeps a
-  tick, and the Stage 15 label thinning is unchanged — **no new label collisions**.
-- The schematic no longer draws the grey band or the `×N` count.
-- The machines view shows every machine the schematic used to, with the same
-  indices, at the same band/non-band threshold.
-- Belt segments, `x2` parallel marks, seams, feed entry marks and output breakouts
-  are pixel-unchanged in the schematic apart from the vertical space the band
-  vacates.
-- Nothing is deleted: no view, no data, no solver output.
+- Three tabs; SCHEMATIC still first and default.
+- **At N = 106** (the reported case): the schematic shows the tick axis with labels
+  and **no** machine rects; the machines view shows all 106.
+- **At N = 161**: the schematic shows the tick axis from `significant`; the
+  machines view shows the band and its `×161`.
+- **At N = 20**: the schematic shows a tick per machine; the machines view shows 20
+  rects.
+- Belt segments, `x2` marks, seams and feed entry marks are unchanged in x; output
+  lanes move up 28px and are unchanged relative to the axis.
+- Nothing is deleted: no view, no data, no test coverage.
 - `npm test`, `npm run check`, `npm run build` green; both browser matrices green.
 - **Bidirectionality:** every new test fails with its production code reverted,
   captured in `features/schematic-split/r2-verification.log`.
 
 ## Out of scope
 
-- **Redesigning the machine block** — see above; follow-on ticket.
+- **Redesigning the machine block, and fixing the label crowding** — #138.
 - The solver, the saturation model, #120's parallel-line semantics.
 - The Blueprint view.
-- The number strip's *meaning* (1-based machine ordinals, Stage 16 #85) — it moves
-  intact.
 
 ## Assumptions ledger
 
 | Assumption | Grounding |
 |---|---|
-| Bus geometry is machine-indexed, so the axis must stay | **Verified** — `layout.ts:76-85` (`fromMachine`/`toMachine` alongside `x1`/`x2`); all x from `computeLayout` `:275-340` |
-| Adding a view touches five sites, none in the store | **Verified** — `App.tsx:66`, `:158`, `:429-446`, `:447-469`; view state is `useState` at `:158` |
-| `MachineBand` divides cleanly into band vs ruler | **Verified** — `Schematic.tsx:382` (rect), `:383-385` (count), `:393` (ticks), `:399-405` (labels) are separate elements in one `<g>` |
-| Band mode is a pure function of N and needs no change | **Verified** — `layout.ts:100-102`, `bandMode(N)` = `USABLE/N < minPitch`, N > 114 |
-| Label thinning survives the move untouched | **Verified** — `layout.ts:190-211` operates on `significant`, which the ruler keeps in full |
-| No snapshot tests to churn | **Verified via map, spot-checked** — `smoke.test.tsx`, `layout.test.ts`, `parallel-feed-belts.test.tsx`, `coincident-feed-marks.test.tsx` assert structure, not snapshots. `layout.test.ts` is pure math and should not need to change — if it does, the split has leaked into layout, which it should not |
-| More space alone will not fix the 106-machine block | **Judgement, not measurement** — stated as the reason for scoping the redesign out, not as a finding |
+| Bus geometry is machine-indexed, so the axis must stay | **Verified** — `layout.ts:77-85`; all x via `boundaryX` (`:214-216`, `:229`, `:234-235`, `:243`, `:306`) |
+| N = 106 is **not** band mode | **Verified by arithmetic** — `912/106 = 8.60` ≮ 8 (`layout.ts:100-102`); corroborated by the screenshot's every-3rd labels matching `labelStep(106) = 3` |
+| The non-band path has no ticks | **Verified** — `Schematic.tsx:516-537` emits `<rect>` + conditional `<text>` only |
+| The 40px is layout, not CSS | **Verified** — `layout.ts:321-326`; `.schematic` has no height (`app.css:684-692`) |
+| The `40` literal is duplicated in four places | **Verified** — `Schematic.tsx:382`, `:393`, `:522`, `:553` |
+| Four smoke tests break | **Verified** — `smoke.test.tsx:204`, `:330-332`, `:371-375`, `:446-448` |
+| r1's leak tripwire cannot fire | **Verified** — `layout.test.ts:49-59` derives its expectation from `LAYOUT.machineH` |
+| Adding a view touches five `App.tsx` sites, none in the store | **Verified** — `:66`, `:158`, `:429-446`, `:447-469`, plus the import |
+| Stage 15 thinning applies to band mode only | **Verified** — `labeledSignificantOf` called only when `band` (`layout.ts:292-295`) |
+| A 12px tick ruler reads better than a 40px filled row | **Judgement, not measurement.** The functional claim — a rule with ticks cannot smear the way 106 adjacent filled rects do — is the reason; whether it *communicates* is Michael's call, and #138 is where the block's own legibility is decided |
