@@ -1,0 +1,45 @@
+# #145 bidirectionality verification — 2026-08-18T20:50:59Z
+
+## 1. PASS with production code present
+$ npx vitest run src/core/manifold.test.ts src/ui/parallel-feed-belts.test.tsx 2>&1 | tail -3
+   Start at  21:50:59
+   Duration  458ms (transform 75ms, setup 0ms, import 110ms, tests 102ms, environment 236ms)
+
+
+## 2. Revert production code (the one-predicate change in manifold.ts)
+$ git stash push src/core/manifold.ts
+Saved working directory and index state WIP on feature/pipe-parallel-count: 542060b spec(145): pipe parallelCount suppression - design frozen at r4
+
+## 3. FAIL with production code reverted (both pipe pins must fail)
+$ npx vitest run src/core/manifold.test.ts src/ui/parallel-feed-belts.test.tsx 2>&1 | grep -E "FAIL|×|✕|Tests " | head -12
+     × a pipe lane never bundles - an over-tier peak is a finding (#145) 3ms
+     × renders an over-tier pipe as a single errored dashed line - pipes never bundle (#145) 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/manifold.test.ts > solveFeedLane — bounded parallel feed buses (#120) > a pipe lane never bundles - an over-tier peak is a finding (#145)
+ FAIL  src/ui/parallel-feed-belts.test.tsx > parallel feed-bus schematic > renders an over-tier pipe as a single errored dashed line - pipes never bundle (#145)
+Received: "<div class="schematic"><svg width="960" height="184" viewBox="0 0 960 184"><g class="lane lane-feed" data-item="water"><text class="lane-name" x="4" y="28">water</text><g class="parallel-segment" data-parallel-segment="1-3" role="img" tabindex="0" aria-label="machines 1–3 · peak 601/min · 2 parallel lines × 600/min"><line class="parallel-rail seg-error lane-pipe" x1="24" x2="168" y1="60" y2="60" stroke="#d92b2b"></line><line class="parallel-rail seg-error lane-pipe" x1="24" x2="168" y1="68" y2="68" stroke="#d92b2b"></line></g><text class="parallel-run-label" x="96" y="55">x2</text><g class="feed-mark-group" data-feed-indices="0,1" role="img" tabindex="0" aria-label="Feeds 1-2 - 2 slots - 601/min total capacity - enter at head"><line class="feed-group-stem lane-pipe" x1="22" x2="22" y1="32" y2="64"></line><line class="feed-group-stem lane-pipe" x1="26" x2="26" y1="32" y2="64"></line><text class="feed-group-count" x="28" y="45">x2</text></g></g><g class="machine"><rect x="24" y="100" width="46" height="40"></rect><text class="machine-label" x="48" y="152">1</text></g><g class="machine"><rect x="72" y="100" width="46" height="40"></rect><text class="machine-label" x="96" y="152">2</text></g><g class="machine"><rect x="120" y="100" width="46" height="40"></rect><text class="machine-label" x="144" y="152">3</text></g></svg></div>"
+      Tests  2 failed | 60 passed (62)
+
+## 4. Restore
+$ git stash pop
+On branch feature/pipe-parallel-count
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   src/core/manifold.test.ts
+	modified:   src/core/manifold.ts
+	modified:   src/ui/parallel-feed-belts.test.tsx
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	features/clock-validation/diff-r1-prompt.md
+	features/clock-validation/diff-r1.diff
+	features/clock-validation/diff-simplify-prompt.md
+	features/pipe-parallel-count/r2-verification.log
+
+no changes added to commit (use "git add" and/or "git commit -a")
+Dropped refs/stash@{0} (27dcdaf4efe1c210ff2ce78e62b5b82c239e1c43)
+
+## 5. Green confirmation (full counts, post-restore)
+ Test Files  2 passed (2)
+      Tests  62 passed (62)
