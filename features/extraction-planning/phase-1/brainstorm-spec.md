@@ -335,12 +335,19 @@ XYFlow Panels cannot overlap. The extraction region is not a nested card or
 modal. It is a labeled non-modal dialog region and moves focus to its first
 control. It contains:
 
-The stack always has a bounded height and internal vertical scrolling so it
-stops above the bottom-left React Flow controls and bottom-right chain-power
-panel. Desktop top-right content is capped at 260px. At canvas widths `<=720px`,
-it additionally clears the horizontal top-left `+ stage` / flow-direction row,
-fits the canvas width minus side gutters, and caps at 170px; on the app's 340px
-minimum-height canvas this leaves explicit top and bottom control zones. The
+The top-right **wrapper** always has a bounded height and internal vertical
+scrolling so it stops above the bottom-left React Flow controls and bottom-right
+chain-power panel. *(Stage 23 / #134 moved these properties from the stack to the
+wrapper, so the wrapper shrink-wraps to `min(content, cap)` instead of always
+reserving the full cap.)* Desktop top-right content is capped at `H − 80`, where
+`H` is the canvas height — 260px on the app's 340px minimum canvas, 480px at the
+560px default. At canvas widths `<=720px`, it additionally clears the horizontal
+top-left `+ stage` / flow-direction row, fits the canvas width minus side
+gutters, and caps at `H − 171` — 169px at that same 340px canvas, 389px at the
+default; on the app's 340px minimum-height canvas this leaves explicit top and
+bottom control zones. Neither cap is a constant: both are derived from the
+furniture they clear, so a drifting constant fails the gate rather than
+re-baselining it. The
 mobile browser gate inspects 360px and 720px widths at 340px canvas height with
 chain power present, covering notice-only, extraction-only, and combined states.
 
@@ -475,9 +482,11 @@ phase with map/node inputs; it is not silently absorbed into purity mixing.
 - Canvas notice and extraction content coexist in one top-right vertical stack
   with neither overlap nor dismissal of the other.
 - At 360px and 720px widths with the 340px minimum canvas height and chain power
-  present, the stack clears top-left controls and stops above both bottom control
-  zones, stays within side gutters, and scrolls internally in every notice /
-  extraction combination.
+  present, the top-right **wrapper** clears top-left controls and stops above both
+  bottom control zones, stays within side gutters, and scrolls internally in every
+  notice / extraction combination. *(Stage 23 / #134: the wrapper carries these
+  properties, not `.graph-top-right-stack` — the stack now lays out at its full
+  content height inside it.)*
 - Nitrogen displays the explicit Resource Well message and no miner control or
   count.
 - Existing raw-node position, source handle, linked-input suppression, and

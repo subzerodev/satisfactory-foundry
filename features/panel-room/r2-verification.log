@@ -1,0 +1,121 @@
+# #134 — gate bidirectionality verification
+
+Every assertion added by this change is shown to PASS with the production CSS
+present and to FAIL with it broken. A gate that only ever passes is not a gate.
+
+Commands run from the repo root. Mutations were applied to the working tree and
+reverted from a pristine copy after each run; the final section confirms the tree
+is back to the intended state.
+
+---
+
+## Baseline — production CSS present
+
+```
+$ node scripts/extraction-panel-browser-check.mjs
+PASS geometry 360px notice {"top":49,"bottom":91,"height":42} document=360/360 controls=0
+PASS geometry 360px extraction {"top":49,"bottom":218,"height":169} document=360/360 controls=6
+PASS geometry 360px combined {"top":49,"bottom":218,"height":169} document=360/360 controls=6
+PASS geometry 720px notice {"top":49,"bottom":91,"height":42} document=720/720 controls=0
+PASS geometry 720px extraction {"top":49,"bottom":218,"height":169} document=720/720 controls=6
+PASS geometry 720px combined {"top":49,"bottom":218,"height":169} document=720/720 controls=6
+PASS geometry 1280px notice {"top":16,"bottom":58,"height":42} document=1280/1280 controls=0
+PASS geometry 1280px extraction {"top":16,"bottom":276,"height":260} document=1280/1280 controls=6
+PASS geometry 1280px combined {"top":16,"bottom":276,"height":260} document=1280/1280 controls=6
+PASS interaction 360px … controls contained (extractor scroll 0, toggle 0, Pure 0) …
+PASS interaction 720px … controls contained (extractor scroll 0, toggle 0, Pure 0) …
+PASS interaction 1280px … controls contained (extractor scroll 0, toggle 0, Pure 0) …
+```
+
+Matches the design's predictions: caps of **169** narrow and **260** desktop at
+the pinned 340px canvas, the wrapper shrink-wrapping to **42** in `state=notice`,
+and the `PASS interaction` scroll readings printing **0 / 0 / 0** where the
+shipped build printed `0 / 68 / 112` at 360 and 720 and `0 / 0 / 22` at 1280
+(`phase-2/completion-report.md:45-47`). Those zeros are the ticket's goal: the
+mix is reachable without scrolling.
+
+---
+
+## Mutation A — the CSS change reverted to the shipped shape
+
+Cap and scroll put back on `.graph-top-right-stack` and removed from the wrapper,
+i.e. the change fails to land at all.
+
+```
+$ node scripts/extraction-panel-browser-check.mjs
+Error: 360/extraction: expanded extraction panel is not internally scrollable;
+       extraction wrapper is not min(content, responsive cap)
+       … "scrollable":false … "stack":{"top":49,"bottom":219,"height":170}
+```
+
+**FAILS**, on both new assertions at once. Gate change 4 fires because the
+wrapper's `overflow-y` is no longer `auto`; gate change 3 fires because the
+wrapper measures 170 against a derived cap of 169.
+
+---
+
+## Mutation B — the desktop constant drifts (78 → 100), isolating gate change 3
+
+The wrapper keeps `overflow-y: auto`, so change 4 stays green and only the cap
+assertion can fire.
+
+```
+$ sed -i 's/max-height: calc(100% - 78px);/max-height: calc(100% - 100px);/' src/ui/app.css
+$ node scripts/extraction-panel-browser-check.mjs        # exit=1
+7 PASS lines (all six narrow rows + 1280 notice)
+Error: 1280/extraction: extraction wrapper is not min(content, responsive cap)
+       … "stack":{"top":16,"bottom":254,"height":238}
+```
+
+**FAILS**, and narrowly: the measured wrapper is 238 (`338 − 100`) against the
+derived 260, a 22px difference. The narrow rows pass untouched, so this is gate
+change 3 firing alone — and it is the case the r7 formulation could not have
+caught, because that one compared the wrapper against itself.
+
+---
+
+## Mutation C — a cap too small for the content, isolating gate change 7
+
+CSS and gate constants moved together to `K = 250`, so the 340px geometry matrix
+stays self-consistent and only the 560px interaction assertion can fire.
+
+```
+$ sed -i 's/calc(100% - 78px)/calc(100% - 250px)/; s/calc(100% - 169px)/calc(100% - 250px)/' src/ui/app.css
+$ sed -i 's/c.height - 171 : c.height - 80/c.height - 252 : c.height - 252/' scripts/extraction-panel-browser-check.mjs
+$ node scripts/extraction-panel-browser-check.mjs        # exit=1
+9 PASS geometry rows (the full 340px matrix, all green)
+Error: 360px: extraction wrapper overflows at the default canvas
+       {"found":true,"overflowing":true,"scrollHeight":380,"clientHeight":308,"contained":true,"overhang":-26}
+```
+
+**FAILS**, at the 560px canvas only. `scrollHeight` 380 exceeds `clientHeight`
+308 (`558 − 250`). The entire pinned-340px matrix passes, which is the point:
+gate change 7 covers a world the geometry matrix structurally cannot reach.
+
+---
+
+## Restore
+
+```
+$ grep -c 'calc(100% - 250px)\|calc(100% - 100px)\|c.height - 252' src/ui/app.css scripts/extraction-panel-browser-check.mjs
+scripts/extraction-panel-browser-check.mjs:0
+src/ui/app.css:0
+$ grep -c 'calc(100% - 78px)\|calc(100% - 169px)' src/ui/app.css
+2
+```
+
+No mutation text remains and both intended caps are present. The baseline run at
+the top of this file is the restored state.
+
+---
+
+## Known gap, recorded rather than papered over
+
+If the `.graph-top-right-stack` cap deletion fails to land *while the wrapper
+change does*, the 340px matrix does not reliably catch it: at narrow the wrapper
+is clamped to 169 by its own cap while the stack sits at 170, so gate change 3
+computes `|169 − min(170, 169)| = 0` and passes. Gate change 7 catches it at
+560px in both sub-cases — containment if `overflow-y` was also retained, overflow
+if not. That analysis is source-derived, and is **not** measured above: the
+mutations here model complete deletions, not partial ones. It is written up in
+`brainstorm-spec.md` § gate changes, change 3.
