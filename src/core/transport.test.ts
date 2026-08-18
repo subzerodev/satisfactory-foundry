@@ -20,8 +20,9 @@ import {
 // measured-vs-estimated basis propagation, the train cars-vs-trains enumeration
 // (bound, power, ceiling binding), and the drone model (fuel-speed round trip,
 // the exact battery formula, and the null-battery honesty rule). Wiki-computed
-// ceilings are validated as EXACT fractions from the 27.08 s constant; where the
-// wiki's 2-dp figure diverges it is a documented rounding artifact (see below).
+// ceilings are validated as EXACT fractions from the 27 s constant (#140
+// decision 24796 retired the wiki's 27.08 s); where a wiki 2-dp figure diverges
+// it is a documented rounding artifact (see below).
 
 describe("transport-facts — cited constants", () => {
   it("pins the vehicle/train/drone fact-table catalogue against fat-finger edits", () => {
@@ -151,11 +152,11 @@ describe("vehicleFleet — shared road-vehicle math", () => {
 });
 
 describe("trainOptions — cars-vs-trains enumeration", () => {
-  // Optimal RtD for stack 50: TtF = (50×32)/2400 min + 27.08 s, in seconds.
-  // (1600/2400)×60 = 40 s fill + 27.08 s = 67.08 s round trip at optimality.
+  // Optimal RtD for stack 50: TtF = (50×32)/2400 min + 27 s, in seconds.
+  // (1600/2400)×60 = 40 s fill + 27 s = 67 s round trip at optimality.
   const stackSize = Fraction.from(50);
   const cargoPerCar = FREIGHT_CAR_SLOTS.mul(stackSize); // 1600
-  const optimalRtdSeconds = Fraction.of(6708, 100); // 40 + 27.08 = 67.08 s
+  const optimalRtdSeconds = Fraction.of(6700, 100); // 40 + 27 = 67 s
   const beltFeed = Fraction.from(2400); // dual Mk.6
 
   it("default bound is 13 rows (flat-haul guidance); c raises with opts", () => {
@@ -235,12 +236,11 @@ describe("trainOptions — cars-vs-trains enumeration", () => {
     }
   });
 
-  it("stack-50 per-platform ceiling = EXACT 800000/559 from the 27.08 s constant", () => {
-    // At the optimal RtD the belt term and capacity term coincide; the exact
-    // fraction the 27.08 s constant yields is 800000/559. This rounds to 1431.13
-    // at 2 dp — NOT the wiki's precomputed 1431.17, which was derived from the
-    // rounded 0.4513 min (= 27.078 s). We assert the honest exact value; the
-    // 0.04/min gap is a documented rounding artifact, not a math error.
+  it("stack-50 per-platform ceiling = EXACT 96000/67 from the 27 s constant", () => {
+    // At the optimal RtD the belt term and capacity term coincide. With the
+    // corrected 27 s lockout (RtD 67 s) both terms equal 1600×60/67 =
+    // (67−27)/67 × 2400 = 96000/67, rounding to 1432.84 at 2 dp. (#140 decision
+    // 24796 retired the wiki's 27.08 s, which yielded the old 800000/559.)
     const rows = trainOptions(
       Fraction.from(1),
       cargoPerCar,
@@ -248,15 +248,15 @@ describe("trainOptions — cars-vs-trains enumeration", () => {
       { beltFeed },
     );
     const c1 = rows[0];
-    expect(c1?.perPlatformCeiling.eq(Fraction.of(800000, 559))).toBe(true);
-    expect(c1?.perPlatformCeiling.toDecimalString(2)).toBe("1431.13");
+    expect(c1?.perPlatformCeiling.eq(Fraction.of(96000, 67))).toBe(true);
+    expect(c1?.perPlatformCeiling.toDecimalString(2)).toBe("1432.84");
   });
 
   it("ceilingBound varies per row: belt feed binds when it is the smaller term", () => {
     // A long round trip with a low belt feed makes the belt term bind for a
     // large consist (capacity term rises with cargoPerCar/RtD only via RtD,
     // while the belt term is capped at beltFeed). Use a short RtD so the belt
-    // term (throttled by the 27.08 s lockout fraction) falls below capacity.
+    // term (throttled by the 27 s lockout fraction) falls below capacity.
     const rows = trainOptions(
       Fraction.from(1000),
       cargoPerCar,
@@ -265,10 +265,10 @@ describe("trainOptions — cars-vs-trains enumeration", () => {
     );
     // With a low belt feed and short RtD, the belt term binds for the 1-car row.
     const c1 = rows[0];
-    // capacity term = 1600 × 60 / 30 = 3200/min; belt term = (30−27.08)/30 × 120
-    //   = (2.92/30) × 120 = 11.68/min → belt binds.
+    // capacity term = 1600 × 60 / 30 = 3200/min; belt term = (30−27)/30 × 120
+    //   = (3/30) × 120 = 12/min → belt binds.
     expect(c1?.ceilingBound).toBe(true);
-    expect(c1?.perPlatformCeiling.eq(Fraction.of(1168, 100))).toBe(true);
+    expect(c1?.perPlatformCeiling.eq(Fraction.of(1200, 100))).toBe(true);
   });
 
   it("without beltFeed the belt term never binds (ceilingBound false)", () => {
@@ -278,10 +278,10 @@ describe("trainOptions — cars-vs-trains enumeration", () => {
       optimalRtdSeconds,
     );
     expect(rows[0]?.ceilingBound).toBe(false);
-    // ceiling falls back to the pure capacity term = 1600 × 60 / (6708/100).
+    // ceiling falls back to the pure capacity term = 1600 × 60 / (6700/100).
     expect(
       rows[0]?.perPlatformCeiling.eq(
-        Fraction.from(1600).mul(Fraction.from(60)).div(Fraction.of(6708, 100)),
+        Fraction.from(1600).mul(Fraction.from(60)).div(Fraction.of(6700, 100)),
       ),
     ).toBe(true);
   });
