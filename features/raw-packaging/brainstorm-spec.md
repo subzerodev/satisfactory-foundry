@@ -1,7 +1,7 @@
 # #133 — Packaging for a raw input (Stage 23)
 
 **Ticket:** #133 · **Epic:** #136 · **Milestone:** 94 · **Tier:** 2
-**Status:** design r2
+**Status:** design r3
 
 ## Purpose
 
@@ -96,8 +96,26 @@ export interface PlanFileV9 {                            // NEW
   malformed `returnTransport`; the correct validator already exists.
 - `isPlanFileV9` gates on `9` and uses `isStageV8Shape`; `isPlanFileV8` keeps
   `isStageV7Shape`, so v8 acceptance is unchanged.
-- `migrateV8(v8): PlanFileV9` — a passthrough bump; a ≤v8 file cannot contain
-  `packaging` by construction.
+- **`migrateV8` must REBUILD each extraction selection field-by-field, not pass it
+  through.** r2 said "a passthrough bump; a ≤v8 file cannot contain `packaging` by
+  construction" — that **inverts this spec's own central finding one step further
+  down the chain**, exactly as r1 did. If the v7/v8 stage validators check named
+  fields only (they do), then a v8-headered file *can* carry `packaging`: a
+  hand-edited or imported JSON with `format_version: 8` and a garbage `packaging`
+  blob passes `isPlanFileV8`, is returned verbatim by `validatePlanFile` (`:303`),
+  and a passthrough `migrateV8` delivers it into a `PlanFileV9` **having passed no
+  `packaging` validation at all** — `isStageV8Shape` is reachable only from the
+  `isPlanFileV9` arm. It then lands in live state via the shallow spread
+  (`store.ts:758`) and is re-saved as a v9 row `isStageV8Shape` will *reject*: the
+  app writes a row it can never read back. That directly falsifies this spec's own
+  criterion "a malformed blob is rejected, not admitted".
+  The codebase idiom is rebuild-not-passthrough for precisely this reason:
+  `migrateV3:382-398` rebuilds each transport, `migrateV7:436-443` rebuilds each
+  link field-by-field (silently dropping a smuggled `interstep`), and
+  `copyHistoricalExtraction:494-506` rebuilds each selection.
+- **`migrateV7:435` is the same hole.** It passes `stages: plan.stages` **verbatim**
+  while rebuilding `links` field-by-field, so a *v7*-headered file reaches v9
+  through the identical gap. It needs the same rebuild.
 - Save writes v9; reads accept v1–v9.
 
 ## Design
@@ -150,8 +168,18 @@ reusing the type verbatim (`link-transport.ts:34-41`). **Three sites carry it:**
 ### UI
 
 **Inside the `result.status === "planned"` block** (`GraphCanvas.tsx:477-580`),
-below the purity fields — *not* between `:580` and `:581`, which is outside the
-block and would render with `selection === null` and nowhere to write.
+**after the water-gated purity fragment closes at `:578`** — i.e. between `:578`
+and `:579`.
+
+Two boundaries, both load-bearing, and r2 named only one:
+- *not* between `:580` and `:581` — outside the planned block, so it would render
+  with `selection === null` and nowhere to write;
+- *not* "below the purity fields" as r2 said — the purity fragment is wrapped in
+  `{rawNode.data.itemId !== "water" && (` at `:504`, so that region is **excluded
+  for water**. Water is the motivating case and acceptance criterion #1. r2 would
+  have hidden the feature from the exact input it exists for, and nothing in the
+  verification plan would have caught it: the browser harness cannot cover the
+  visible water case, and no test touches panel placement.
 
 - **Gate:** `selection !== null` **and**
   `pairs.length > 0 || selection.packaging !== undefined` — the second arm mirrors
@@ -176,7 +204,10 @@ permanently while `discoverPackagingPairs` is non-empty for it. Under the gate
 above it therefore shows no packaging control. That is correct and follows from
 Michael's decision — packaging sits *under the extractor plan*, and an item that
 cannot be planned has no plan to sit under. It is consistent with the panel's
-existing Resource Well refusal (`:581`), not a new limitation.
+existing refusal to plan it — the `unavailable` arm at `:469-471`, fed by
+`resourceWellDetail` (`extraction-plan.ts:285-294`) and pinned by
+`GraphCanvas.dom.test.tsx:614-628`. *(Not `:581`, which is the one branch that
+explicitly **excludes** `nitrogen_gas`.)*
 
 ## Changes
 
@@ -188,7 +219,15 @@ existing Resource Well refusal (`:581`), not a new limitation.
    packaging plan alongside the extractor plan.
 4. `data/plan-store.ts` — `ExtractionSelectionV7` frozen, `PlanStageV8`,
    `PlanFileV9`, `isStageV8Shape` (via `isPackagingInterstepShape`),
-   `isPlanFileV9`, `migrateV8`; save writes v9.
+   `isPlanFileV9`, a **rebuilding** `migrateV8`, the `migrateV7` stage rebuild, and
+   `listPlans`' hardcoded validator chain (`:271-293`, starting `isPlanFileV8` at
+   `:279`).
+5. `state/store.ts` — **this is where "save writes v9" actually lives**: the
+   `format_version` literals are `:1998` and `:2009`, not in `plan-store.ts`
+   (`savePlan:261` only takes the file). Also `PlanBundle.plans` (`:387`) and the
+   type annotations at `:727`, `:1260`, `:1269`, `:1277`, `:2076`, `:2127`. All
+   caught by `npm run check`, so churn rather than silent defect — but r2's change
+   list understated it.
 5. `ui/GraphCanvas.tsx` — the panel UI, the gate, and the `setMachine` arm.
 6. Tests — below.
 
@@ -211,13 +250,21 @@ New tests required:
 
 1. `deriveLinkPlan` with **decorrelated** `unlockedTiers` (e.g. `{belt: 2, pipe: 1}`
    against a catalog with more tiers), pinning that the adapter reads `stages`
-   rather than falling back.
+   rather than falling back. *(Only the **tiers** read is fixture-degenerate —
+   supply and demand also come from `stages` and are asserted at
+   `link-plan.test.ts:23-27`, `:48-52`. r2's "an adapter that ignored `stages`
+   entirely would pass every test" overstated it.)*
 2. `deriveLinkPlan` with an unsolved endpoint, pinning the null-demand branch.
 3. `derivePackagingPlan` called directly with explicit supply/demand, pinning
    parity with the adapter on the same inputs.
 4. Round trip: save → load with `packaging`, and a v8 file loading forward.
 5. A malformed `packaging` blob is **rejected** by `isStageV8Shape`.
 6. Extractor change preserves `packaging`.
+7. **A v8 file carrying a garbage `packaging` blob is stripped by `migrateV8`,
+   not admitted** — the blocker above, and the one test that would have caught it.
+8. Re-point `plan-store.test.ts:679-684` and `:898-901`, which assert that
+   `format_version: 9` on a v8 body is rejected; under v9 that payload is valid, so
+   both must move to `10`. They fail loudly, so this is bookkeeping.
 
 ## Acceptance criteria
 
@@ -252,6 +299,8 @@ New tests required:
 | The `format_version` bump is required | **Verified** — the rule at `plan-store.ts:22-35`, the exact-match gate at `:713`, the named-field-only stage checker at `:1091-1117`, and a PWA with `registerType: 'prompt'` (`vite.config.ts:15-35`) putting old readers on devices |
 | `isPackagingInterstepShape` validates the payload adequately | **Verified** — `:780-797`: `hasExactKeys` + `isRawTransportShapeV8` + illegal-route refusal |
 | `copyHistoricalExtraction` cannot drop `packaging` | **Verified, corrected** — it is reachable for **any file ≤ v6** (`migrateV6` at `:423`, reached from `:305`), *not* pre-v5-only as r1 said. The conclusion holds because `ExtractionSelectionV6` (`:182-185`) is frozen without the field, so a ≤v6 file cannot carry it |
-| `setMachine` would drop the field without an arm | **Verified** — `GraphCanvas.tsx:362-372` has no `...selection` |
+| `setMachine` would drop the field without an arm | **Verified** — `GraphCanvas.tsx:362-372` has no `...selection`. Every other copy site spreads and carries it automatically (`store.ts:758`, `:1621`, `:1977`, `GraphCanvas.tsx:378`/`383`/`391`/`455`) |
+| `StageLink` is passed to `deriveLinkPlan` at **four** sites, not two | **Verified, corrected** — `LinkInspector.tsx:151`, `store.ts:630`, `graph-flow.ts:484`, `:535`. This strengthens the assignability conclusion |
+| `materialSupply` = the extraction plan's `totalSupply` | **Underspecified** — `deriveExtractionPlan` returns two: top-level `totalSupply` (`extraction-plan.ts:162`) and `purity.totalSupply` (`:200`, `:227`), which diverge when a node mix is configured. Harmless today because `cargoSupply` is displayed nowhere, but the implementer must pick the top-level one |
 | The existing `link-plan.test.ts` is **not** a sufficient pin | **Verified** — degenerate `unlockedTiers` fixture (`:236-242`) and no null-demand coverage |
 | The extraction browser harness cannot cover the visible case | **Verified** — its catalog has `recipes: {}` and only `stone` (`extraction-panel-browser-harness.tsx:18-52`), so `discoverPackagingPairs` is empty there. It can cover the hidden case; the visible (water) case needs a fixture or is covered by unit tests instead |
