@@ -1,0 +1,540 @@
+diff --git a/src/core/machine-power.test.ts b/src/core/machine-power.test.ts
+index a2b73d4..76b3007 100644
+--- a/src/core/machine-power.test.ts
++++ b/src/core/machine-power.test.ts
+@@ -1,5 +1,8 @@
+ import { Fraction } from "./fraction.ts";
+-import { machinePowerProjection } from "./machine-power.ts";
++import {
++  machinePowerProjection,
++  effectiveMachinePower,
++} from "./machine-power.ts";
+ import type { MachinePowerInput } from "./machine-power.ts";
+ 
+ const constant: MachinePowerInput = {
+@@ -56,3 +59,40 @@ describe("machinePowerProjection", () => {
+     expect(variableResult.variableBoundsMw?.max).toBeCloseTo(3000 * factor, 10);
+   });
+ });
++
++describe("effectiveMachinePower (#142)", () => {
++  const recipeRange = {
++    constantMw: Fraction.from(250),
++    factorMw: Fraction.from(500),
++  };
++
++  it("variable machine + recipe fields → exact per-recipe range", () => {
++    const got = effectiveMachinePower(variable, recipeRange);
++    expect(got.variable).toBe(true);
++    expect(got.mw.eq(Fraction.from(500))).toBe(true); // 250 + 500/2
++    expect(got.minMw?.eq(Fraction.from(250))).toBe(true);
++    expect(got.maxMw?.eq(Fraction.from(750))).toBe(true);
++    expect(got.exponent.eq(variable.exponent)).toBe(true);
++  });
++
++  it("constant machine + recipe fields → UNCHANGED (the Ballistic Warp Drive pin)", () => {
++    // The building class is the gate: a constant-power Manufacturer's inert
++    // recipe fields must never fire (gating on the fields would report the
++    // 55 MW Ballistic Warp Drive at 500–1500 MW).
++    expect(effectiveMachinePower(constant, recipeRange)).toBe(constant);
++  });
++
++  it("variable machine without recipe fields → the envelope fallback", () => {
++    expect(effectiveMachinePower(variable, undefined)).toBe(variable);
++  });
++
++  it("factor 0 is legal: a degenerate exact range", () => {
++    const got = effectiveMachinePower(variable, {
++      constantMw: Fraction.from(100),
++      factorMw: Fraction.from(0),
++    });
++    expect(got.mw.eq(Fraction.from(100))).toBe(true);
++    expect(got.minMw?.eq(Fraction.from(100))).toBe(true);
++    expect(got.maxMw?.eq(Fraction.from(100))).toBe(true);
++  });
++});
+diff --git a/src/core/machine-power.ts b/src/core/machine-power.ts
+index 6ddeb07..e7d6efb 100644
+--- a/src/core/machine-power.ts
++++ b/src/core/machine-power.ts
+@@ -20,6 +20,38 @@ export type MachinePowerProjection =
+       variableBoundsMw?: { min: number; max: number };
+     };
+ 
++/** A recipe's variable-power range: draw spans [constantMw, constantMw +
++ *  factorMw]. Mirrors CatalogRecipe.variablePower structurally (#142). */
++export interface RecipeVariablePower {
++  constantMw: Fraction;
++  factorMw: Fraction;
++}
++
++/**
++ * The recipe-level power correction (#142), single owner of the gating rule:
++ * the building class is the gate — `power.variable` is set exclusively for
++ * the three FGBuildableManufacturerVariablePower classes — so a
++ * constant-power machine's inert recipe fields (the Ballistic Warp Drive
++ * trap) can never fire. A variable machine with a field-carrying recipe gets
++ * the exact per-recipe range in place of the all-recipes envelope; without
++ * fields it keeps the envelope (honest fallback).
++ */
++export function effectiveMachinePower(
++  power: MachinePowerInput,
++  recipeVariable?: RecipeVariablePower,
++): MachinePowerInput {
++  if (!power.variable || recipeVariable === undefined) return power;
++  const min = recipeVariable.constantMw;
++  const max = recipeVariable.constantMw.add(recipeVariable.factorMw);
++  return {
++    variable: true,
++    mw: min.add(max).div(Fraction.from(2)),
++    minMw: min,
++    maxMw: max,
++    exponent: power.exponent,
++  };
++}
++
+ export function machinePowerProjection(
+   power: MachinePowerInput,
+   machineCount: number,
+diff --git a/src/data/catalog-store.test.ts b/src/data/catalog-store.test.ts
+index e19855d..8f8a993 100644
+--- a/src/data/catalog-store.test.ts
++++ b/src/data/catalog-store.test.ts
+@@ -52,6 +52,12 @@ function sampleCatalog(): Catalog {
+         inputs: [{ itemId: "ore_iron", perMinute: Fraction.of(75, 2) }],
+         outputs: [{ itemId: "iron_ingot", perMinute: Fraction.from(30) }],
+         primaryOutputId: "iron_ingot",
++        // #142: the round-trip test asserts this survives serialize/revive
++        // (the isRawResource scar class — a field that silently vanished).
++        variablePower: {
++          constantMw: Fraction.from(250),
++          factorMw: Fraction.of(1, 2),
++        },
+       },
+     },
+     extractors: {
+@@ -93,6 +99,11 @@ describe("catalog cache — round-trip (spec row 7)", () => {
+     expect(rate.eq(Fraction.of(75, 2))).toBe(true);
+     const out = result.catalog.recipes["ingot_iron"]!.outputs[0]!.perMinute;
+     expect(out.eq(Fraction.from(30))).toBe(true);
++    // #142: recipe-level variable power survives the round-trip as Fractions.
++    const vp = result.catalog.recipes["ingot_iron"]!.variablePower;
++    expect(vp).toBeDefined();
++    expect(vp!.constantMw.eq(Fraction.from(250))).toBe(true);
++    expect(vp!.factorMw.eq(Fraction.of(1, 2))).toBe(true);
+     // Machine power Fractions survive the serialize/revive round-trip as real
+     // Fractions (structured-clone would otherwise strip the prototype).
+     const power = result.catalog.machines["smelter_mk1"]!.power;
+@@ -141,7 +152,7 @@ describe("catalog cache — round-trip (spec row 7)", () => {
+     const db = await openDb();
+     const stored = await db.get<Record<string, unknown>>("catalog", "current");
+     await db.put("catalog", { ...stored, parser_version: 2 }, "current");
+-    expect(CATALOG_PARSER_VERSION).toBe(6);
++    expect(CATALOG_PARSER_VERSION).toBe(7);
+     expect((await loadCatalog()).status).toBe("stale");
+   });
+ 
+@@ -158,12 +169,14 @@ describe("catalog cache — round-trip (spec row 7)", () => {
+     expect((await loadCatalog()).status).toBe("stale");
+   });
+ 
+-  it("treats a parser-version-5 cache as stale under version 6", async () => {
++  it("treats a parser-version-6 cache as stale under version 7 (#142 AC4)", async () => {
++    // The #142 schema widening (recipe variablePower) must reach cached
++    // users; a v6 row re-parses rather than reviving without the field.
+     await saveCatalog("raw", sampleCatalog());
+     const db = await openDb();
+     const stored = await db.get<Record<string, unknown>>("catalog", "current");
+-    await db.put("catalog", { ...stored, parser_version: 5 }, "current");
+-    expect(CATALOG_PARSER_VERSION).toBe(6);
++    await db.put("catalog", { ...stored, parser_version: 6 }, "current");
++    expect(CATALOG_PARSER_VERSION).toBe(7);
+     expect((await loadCatalog()).status).toBe("stale");
+   });
+ 
+diff --git a/src/data/catalog-store.ts b/src/data/catalog-store.ts
+index 61bf333..9f9fe9f 100644
+--- a/src/data/catalog-store.ts
++++ b/src/data/catalog-store.ts
+@@ -46,8 +46,13 @@ const CATALOG_KEY = "current";
+  *
+  * 5 -> 6 (#112): catalogs now include structured extractor rates, topology,
+  * and raw-resource applicability. Older caches cannot reconstruct this data.
++ *
++ * 6 -> 7 (#142): recipes carry the optional variablePower range
++ * (mVariablePowerConsumptionConstant/Factor). Without the bump a cached
++ * catalog never regains the field and the per-recipe power correction
++ * silently no-ops for existing users — the isRawResource scar class.
+  */
+-export const CATALOG_PARSER_VERSION = 6;
++export const CATALOG_PARSER_VERSION = 7;
+ 
+ /**
+  * JSON-safe CatalogItem: `stackSize` is a toString() string or null. Items
+@@ -80,6 +85,10 @@ interface StoredRecipe {
+   inputs: StoredRecipeIO[];
+   outputs: StoredRecipeIO[];
+   primaryOutputId: string;
++  /** #142: recipe-level variable-power range, Fraction.toString round-trip.
++   *  Optional like isRawResource (truthiness-safe reads) — the v6→7 parser
++   *  bump is what carries it to cached users (the isRawResource scar). */
++  variablePower?: { constant: string; factor: string };
+ }
+ /** JSON-safe machine power: every Fraction is a toString() string; optional
+  *  bounds stay optional. */
+@@ -226,6 +235,14 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
+       inputs: r.inputs.map(serializeIO),
+       outputs: r.outputs.map(serializeIO),
+       primaryOutputId: r.primaryOutputId,
++      ...(r.variablePower
++        ? {
++            variablePower: {
++              constant: r.variablePower.constantMw.toString(),
++              factor: r.variablePower.factorMw.toString(),
++            },
++          }
++        : {}),
+     };
+   }
+   const machines: Record<string, StoredCatalogMachine> = Object.create(null);
+@@ -316,6 +333,14 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
+       inputs: r.inputs.map(reviveIO),
+       outputs: r.outputs.map(reviveIO),
+       primaryOutputId: r.primaryOutputId,
++      ...(r.variablePower
++        ? {
++            variablePower: {
++              constantMw: parseRational(r.variablePower.constant),
++              factorMw: parseRational(r.variablePower.factor),
++            },
++          }
++        : {}),
+     };
+   }
+   const machines: Catalog["machines"] = Object.create(null);
+diff --git a/src/data/docs-loader.test.ts b/src/data/docs-loader.test.ts
+index fbd8ab9..ded0298 100644
+--- a/src/data/docs-loader.test.ts
++++ b/src/data/docs-loader.test.ts
+@@ -1091,3 +1091,79 @@ describe("parseDocsJson — FGSchematic unlock tiers (S20 P3, spec row 8)", () =
+     expect(cat.recipeUnlocks["constructor"]).toBeUndefined();
+   });
+ });
++
++describe("recipe variable-power parse (#142)", () => {
++  const docsWith = (extra: Record<string, string>) => [
++    {
++      NativeClass:
++        "/Script/CoreUObject.Class'/Script/FactoryGame.FGItemDescriptor'",
++      Classes: [
++        { ClassName: "Desc_A_C", mDisplayName: "A", mForm: "RF_SOLID" },
++        { ClassName: "Desc_B_C", mDisplayName: "B", mForm: "RF_SOLID" },
++      ],
++    },
++    {
++      NativeClass:
++        "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'",
++      Classes: [{ ClassName: "Build_M_C", mDisplayName: "M" }],
++    },
++    {
++      NativeClass: "/Script/CoreUObject.Class'/Script/FactoryGame.FGRecipe'",
++      Classes: [
++        {
++          ClassName: "Recipe_X_C",
++          mDisplayName: "X",
++          mIngredients:
++            "((ItemClass=BlueprintGeneratedClass'\"/Game/P/Desc_A_C\"',Amount=1))",
++          mProduct:
++            "((ItemClass=BlueprintGeneratedClass'\"/Game/P/Desc_B_C\"',Amount=1))",
++          mManufactoringDuration: "1",
++          mProducedIn: "/Game/P/Build_M_C",
++          ...extra,
++        },
++      ],
++    },
++  ];
++
++  it("both fields present → attached exactly", () => {
++    const cat = parseDocsJson(
++      docsWith({
++        mVariablePowerConsumptionConstant: "250.000000",
++        mVariablePowerConsumptionFactor: "500.000000",
++      }),
++    );
++    const vp = cat.recipes["x"]!.variablePower;
++    expect(vp).toBeDefined();
++    expect(vp!.constantMw.eq(Fraction.from(250))).toBe(true);
++    expect(vp!.factorMw.eq(Fraction.from(500))).toBe(true);
++  });
++
++  it("one field missing → absent", () => {
++    const cat = parseDocsJson(
++      docsWith({ mVariablePowerConsumptionConstant: "250.000000" }),
++    );
++    expect(cat.recipes["x"]!.variablePower).toBeUndefined();
++  });
++
++  it("malformed field → absent (lenient, never a rejection)", () => {
++    const cat = parseDocsJson(
++      docsWith({
++        mVariablePowerConsumptionConstant: "nope",
++        mVariablePowerConsumptionFactor: "500.000000",
++      }),
++    );
++    expect(cat.recipes["x"]!.variablePower).toBeUndefined();
++  });
++
++  it("factor 0 → attached", () => {
++    const cat = parseDocsJson(
++      docsWith({
++        mVariablePowerConsumptionConstant: "100.000000",
++        mVariablePowerConsumptionFactor: "0.000000",
++      }),
++    );
++    const vp = cat.recipes["x"]!.variablePower;
++    expect(vp).toBeDefined();
++    expect(vp!.factorMw.eq(Fraction.from(0))).toBe(true);
++  });
++});
+diff --git a/src/data/docs-loader.ts b/src/data/docs-loader.ts
+index ed6ce9e..864c953 100644
+--- a/src/data/docs-loader.ts
++++ b/src/data/docs-loader.ts
+@@ -47,6 +47,9 @@ interface RawRecipe {
+   product: string;
+   duration: string;
+   producedIn: string;
++  /** Raw mVariablePowerConsumption* strings (#142); empty = absent. */
++  variablePowerConstant: string;
++  variablePowerFactor: string;
+ }
+ 
+ /**
+@@ -145,6 +148,14 @@ export function parseDocsJson(raw: unknown): Catalog {
+               ? c.mManufactoringDuration
+               : "",
+           producedIn: (c.mProducedIn as string | undefined) ?? "",
++          variablePowerConstant:
++            typeof c.mVariablePowerConsumptionConstant === "string"
++              ? c.mVariablePowerConsumptionConstant
++              : "",
++          variablePowerFactor:
++            typeof c.mVariablePowerConsumptionFactor === "string"
++              ? c.mVariablePowerConsumptionFactor
++              : "",
+         });
+       }
+     } else if (nativeClass.includes(NATIVE_SCHEMATIC)) {
+@@ -200,6 +211,11 @@ export function parseDocsJson(raw: unknown): Catalog {
+     const isAlternate =
+       id.includes("alternate_") || r.displayName.startsWith("Alternate:");
+ 
++    // #142: attach the recipe-level variable-power range only when BOTH
++    // fields parse as decimals (the parseMachinePower posture — malformed or
++    // missing is silently absent, never a rejection). factor 0 is legal.
++    const vpConstant = parsePowerField(r.variablePowerConstant);
++    const vpFactor = parsePowerField(r.variablePowerFactor);
+     recipes[id] = {
+       id,
+       displayName: r.displayName.replace(/^Alternate:\s*/, ""),
+@@ -208,6 +224,9 @@ export function parseDocsJson(raw: unknown): Catalog {
+       inputs,
+       outputs,
+       primaryOutputId: outputs[0]!.itemId,
++      ...(vpConstant !== null && vpFactor !== null
++        ? { variablePower: { constantMw: vpConstant, factorMw: vpFactor } }
++        : {}),
+     };
+   }
+ 
+diff --git a/src/data/types.ts b/src/data/types.ts
+index 23d4116..0d7f2f1 100644
+--- a/src/data/types.ts
++++ b/src/data/types.ts
+@@ -92,6 +92,14 @@ export interface CatalogRecipe {
+   outputs: RecipeIO[];
+   /** = outputs[0].itemId (the port's primary-output rule, renamed field). */
+   primaryOutputId: string;
++  /** Recipe-level variable-power range (#142): [constantMw, constantMw +
++   *  factorMw], mean constantMw + factorMw/2. Present only when BOTH
++   *  mVariablePowerConsumption* fields parse. CONSULTED ONLY when the
++   *  producing machine is variable-power (the building-class gate) — 3 of
++   *  the 46 field-carrying recipes sit on constant-power machines where
++   *  the fields are inert (46 total, 43 on variable buildings — the
++   *  Ballistic Warp Drive trap). */
++  variablePower?: { constantMw: Fraction; factorMw: Fraction };
+ }
+ 
+ export interface CatalogExtractor {
+diff --git a/src/ui/advice.test.ts b/src/ui/advice.test.ts
+index 1d626fb..2b9735e 100644
+--- a/src/ui/advice.test.ts
++++ b/src/ui/advice.test.ts
+@@ -13,6 +13,7 @@ import {
+   suggestSupply,
+   tierFixHint,
+   stagePowerText,
++  stagePowerTextFor,
+   chainPowerText,
+ } from "./advice.ts";
+ import type { ChainStage, ChainCatalog } from "./advice.ts";
+@@ -239,3 +240,41 @@ describe("chainPowerText", () => {
+     expect(chainPowerText([], chainCatalog)).toBeNull();
+   });
+ });
++
++describe("recipe-level variable power through the chain surfaces (#142)", () => {
++  const catalog: ChainCatalog = {
++    recipes: {
++      plutonium: {
++        machineId: "accelerator",
++        variablePower: {
++          constantMw: f(250),
++          factorMw: f(500),
++        },
++      },
++      fieldless: { machineId: "accelerator" },
++    },
++    machines: { accelerator: { power: variablePower } },
++  };
++  const stage = (recipeId: string): ChainStage => ({
++    selection: { recipeId, machineCount: 1, clockPercentText: "100" },
++    solve: { status: "solved" },
++  });
++
++  it("field-carrying recipe on a variable machine → exact per-recipe text", () => {
++    // The 875-envelope machine corrected to the recipe truth: mean 500,
++    // bounds 250–750 (the gap-report W1 worked example).
++    expect(stagePowerTextFor(catalog, stage("plutonium"))).toBe(
++      "500 MW (varies 250–750 MW)",
++    );
++  });
++
++  it("field-less recipe on the same machine → the envelope fallback", () => {
++    expect(stagePowerTextFor(catalog, stage("fieldless"))).toBe(
++      "875 MW (varies 250–1500 MW)",
++    );
++  });
++
++  it("chain Σ uses the corrected per-recipe mean", () => {
++    expect(chainPowerText([stage("plutonium")], catalog)).toBe("Σ ≈ 500 MW");
++  });
++});
+diff --git a/src/ui/advice.ts b/src/ui/advice.ts
+index dffecff..dc0e527 100644
+--- a/src/ui/advice.ts
++++ b/src/ui/advice.ts
+@@ -9,7 +9,11 @@
+  */
+ 
+ import { Fraction } from "../core/fraction.ts";
+-import { machinePowerProjection } from "../core/machine-power.ts";
++import {
++  machinePowerProjection,
++  effectiveMachinePower,
++} from "../core/machine-power.ts";
++import type { RecipeVariablePower } from "../core/machine-power.ts";
+ import type { LaneKind } from "../core/manifold.ts";
+ import type { MachinePower, TierTable } from "../data/types.ts";
+ import { formatRate } from "./format.ts";
+@@ -117,12 +121,12 @@ export function chainPowerText(
+   let total = 0;
+   let anyContributor = false;
+   for (const stage of stages) {
+-    const power = stagePowerOf(stage, catalog);
+-    if (power === null) continue;
++    const resolved = stagePowerOf(stage, catalog);
++    if (resolved === null) continue;
+     const clock = parseClock(stage.selection.clockPercentText);
+     if (clock === null) continue; // an invalid clock can't reach solved anyway
+     const projection = machinePowerProjection(
+-      power,
++      effectiveMachinePower(resolved.power, resolved.variablePower),
+       stage.selection.machineCount,
+       clock,
+     );
+@@ -155,7 +159,12 @@ export interface ChainStage {
+ /** The catalog fields chainPowerText reads: recipe→machine→power resolution.
+  *  Structurally a subset of the store's Catalog. */
+ export interface ChainCatalog {
+-  recipes: Record<string, { machineId: string } | undefined>;
++  recipes: Record<
++    string,
++    // variablePower (#142): consulted only for variable-power machines —
++    // the recipe-level range that replaces the building envelope.
++    { machineId: string; variablePower?: RecipeVariablePower } | undefined
++  >;
+   machines: Record<string, { power: MachinePower } | undefined>;
+ }
+ 
+@@ -164,7 +173,7 @@ export interface ChainCatalog {
+ function stagePowerOf(
+   stage: ChainStage,
+   catalog: ChainCatalog,
+-): MachinePower | null {
++): { power: MachinePower; variablePower?: RecipeVariablePower } | null {
+   if (stage.solve.status !== "solved") return null;
+   const recipeId = stage.selection.recipeId;
+   if (recipeId === null) return null;
+@@ -179,7 +188,9 @@ function stagePowerOf(
+   if (!Object.hasOwn(catalog.machines, recipe.machineId)) return null;
+   const machine = catalog.machines[recipe.machineId];
+   if (machine === undefined) return null;
+-  return machine.power;
++  // #142: carry the recipe's variable-power range out (previously discarded)
++  // so callers can apply the per-recipe correction for variable machines.
++  return { power: machine.power, variablePower: recipe.variablePower };
+ }
+ 
+ /** The shared per-stage power-text resolver (simplify fold — this absorbed two
+@@ -190,11 +201,15 @@ export function stagePowerTextFor(
+   catalog: ChainCatalog,
+   stage: ChainStage,
+ ): string | null {
+-  const power = stagePowerOf(stage, catalog);
+-  if (power === null) return null;
++  const resolved = stagePowerOf(stage, catalog);
++  if (resolved === null) return null;
+   const clock = parseClock(stage.selection.clockPercentText);
+   if (clock === null) return null;
+-  return stagePowerText(power, stage.selection.machineCount, clock);
++  return stagePowerText(
++    effectiveMachinePower(resolved.power, resolved.variablePower),
++    stage.selection.machineCount,
++    clock,
++  );
+ }
+ 
+ // ---------------------------------------------------------------------------
+diff --git a/src/ui/chain-builder-adapter.ts b/src/ui/chain-builder-adapter.ts
+index 448436f..5c6e86a 100644
+--- a/src/ui/chain-builder-adapter.ts
++++ b/src/ui/chain-builder-adapter.ts
+@@ -11,6 +11,7 @@
+  */
+ 
+ import { proposeChain } from "../core/chain-builder.ts";
++import { effectiveMachinePower } from "../core/machine-power.ts";
+ import type {
+   ChainProposal,
+   ItemRate,
+@@ -791,10 +792,16 @@ export function proposalMetrics(
+   let powerAtClockMw = 0;
+   for (const stage of proposal.stages) {
+     machineCount += stage.machineCount;
+-    const machineId = catalog.recipes[stage.recipeId]?.machineId;
++    const recipe = catalog.recipes[stage.recipeId];
++    const machineId = recipe?.machineId;
+     if (machineId === undefined) continue;
+-    const power = catalog.machines[machineId]?.power;
+-    if (power === undefined) continue;
++    const rawPower = catalog.machines[machineId]?.power;
++    if (rawPower === undefined) continue;
++    // #142: per-recipe correction BEFORE summing — the projection only runs
++    // later over the aggregated totals, after recipe identity is gone, so
++    // this loop is the one place the recipe range can enter. Identity for
++    // constant-power machines and field-less recipes.
++    const power = effectiveMachinePower(rawPower, recipe?.variablePower);
+     const count = Fraction.from(stage.machineCount);
+     powerMw = powerMw.add(count.mul(power.mw));
+     if (power.variable) powerVaries = true;

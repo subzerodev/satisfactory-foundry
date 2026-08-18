@@ -1091,3 +1091,79 @@ describe("parseDocsJson — FGSchematic unlock tiers (S20 P3, spec row 8)", () =
     expect(cat.recipeUnlocks["constructor"]).toBeUndefined();
   });
 });
+
+describe("recipe variable-power parse (#142)", () => {
+  const docsWith = (extra: Record<string, string>) => [
+    {
+      NativeClass:
+        "/Script/CoreUObject.Class'/Script/FactoryGame.FGItemDescriptor'",
+      Classes: [
+        { ClassName: "Desc_A_C", mDisplayName: "A", mForm: "RF_SOLID" },
+        { ClassName: "Desc_B_C", mDisplayName: "B", mForm: "RF_SOLID" },
+      ],
+    },
+    {
+      NativeClass:
+        "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'",
+      Classes: [{ ClassName: "Build_M_C", mDisplayName: "M" }],
+    },
+    {
+      NativeClass: "/Script/CoreUObject.Class'/Script/FactoryGame.FGRecipe'",
+      Classes: [
+        {
+          ClassName: "Recipe_X_C",
+          mDisplayName: "X",
+          mIngredients:
+            "((ItemClass=BlueprintGeneratedClass'\"/Game/P/Desc_A_C\"',Amount=1))",
+          mProduct:
+            "((ItemClass=BlueprintGeneratedClass'\"/Game/P/Desc_B_C\"',Amount=1))",
+          mManufactoringDuration: "1",
+          mProducedIn: "/Game/P/Build_M_C",
+          ...extra,
+        },
+      ],
+    },
+  ];
+
+  it("both fields present → attached exactly", () => {
+    const cat = parseDocsJson(
+      docsWith({
+        mVariablePowerConsumptionConstant: "250.000000",
+        mVariablePowerConsumptionFactor: "500.000000",
+      }),
+    );
+    const vp = cat.recipes["x"]!.variablePower;
+    expect(vp).toBeDefined();
+    expect(vp!.constantMw.eq(Fraction.from(250))).toBe(true);
+    expect(vp!.factorMw.eq(Fraction.from(500))).toBe(true);
+  });
+
+  it("one field missing → absent", () => {
+    const cat = parseDocsJson(
+      docsWith({ mVariablePowerConsumptionConstant: "250.000000" }),
+    );
+    expect(cat.recipes["x"]!.variablePower).toBeUndefined();
+  });
+
+  it("malformed field → absent (lenient, never a rejection)", () => {
+    const cat = parseDocsJson(
+      docsWith({
+        mVariablePowerConsumptionConstant: "nope",
+        mVariablePowerConsumptionFactor: "500.000000",
+      }),
+    );
+    expect(cat.recipes["x"]!.variablePower).toBeUndefined();
+  });
+
+  it("factor 0 → attached", () => {
+    const cat = parseDocsJson(
+      docsWith({
+        mVariablePowerConsumptionConstant: "100.000000",
+        mVariablePowerConsumptionFactor: "0.000000",
+      }),
+    );
+    const vp = cat.recipes["x"]!.variablePower;
+    expect(vp).toBeDefined();
+    expect(vp!.factorMw.eq(Fraction.from(0))).toBe(true);
+  });
+});

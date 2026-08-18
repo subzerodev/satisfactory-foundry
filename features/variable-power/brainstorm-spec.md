@@ -180,7 +180,10 @@ fields. The only test-file edits are additions.
 4. `CATALOG_PARSER_VERSION` is 7; a v6 cache row loads as stale and
    re-parses.
 5. `npm test` + `npm run check` green; no existing test file edited except
-   by addition.
+   by addition — EXCEPT the version-pin retargeting AC4 forces
+   (`catalog-store.test.ts` pins asserting `CATALOG_PARSER_VERSION` and the
+   stale-under-current-version fixture must move with the bump; diff-review
+   adjudication).
 
 ## Assumptions ledger
 
@@ -247,3 +250,12 @@ fields. The only test-file edits are additions.
   recipe identity is destroyed; the bump-and-optional-field persistence is
   the recorded-scar-minimal path; the knock-on inventory judged
   proportionate given this repo's silent-drop history. DESIGN FROZEN at r2.
+- **post-freeze amendment (diff review r1, code-reviewer
+  APPROVED_WITH_NITS):** AC4 and AC5 were mutually unsatisfiable as
+  written — bumping the version constant forces the two existing
+  catalog-store.test.ts pins to move. AC5 amended to admit exactly that
+  forced retargeting. Root cause recorded: the deletion sweep matched
+  feature terms but not the VERSION LITERAL — third instance of the
+  changed-pin class this session; a version bump must sweep the version
+  literal too (memory updated). types.ts doc-comment phrasing harmonized
+  (46 total / 43 variable / 3 inert).

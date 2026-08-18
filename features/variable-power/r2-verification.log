@@ -1,0 +1,35 @@
+# #142 bidirectionality verification — 2026-08-18T21:57:37Z
+# Production committed BEFORE mutating (commit-before-mutating rule).
+
+## 0. PASS with production code present
+ Test Files  4 passed (4)
+      Tests  105 passed (105)
+
+## 1. Behaviour: the building-class gate — Mutation A (gate removed: fields fire on ANY machine)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/machine-power.test.ts > effectiveMachinePower (#142) > constant machine + recipe fields → UNCHANGED (the Ballistic Warp Drive pin)
+      Tests  1 failed | 5 passed (6)
+Updated 1 path from the index
+restored
+
+## 2. Behaviour: the correction itself — Mutation B (helper is identity)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/machine-power.test.ts > effectiveMachinePower (#142) > variable machine + recipe fields → exact per-recipe range
+ FAIL  src/core/machine-power.test.ts > effectiveMachinePower (#142) > factor 0 is legal: a degenerate exact range
+ FAIL  src/ui/advice.test.ts > recipe-level variable power through the chain surfaces (#142) > field-carrying recipe on a variable machine → exact per-recipe text
+ FAIL  src/ui/advice.test.ts > recipe-level variable power through the chain surfaces (#142) > chain Σ uses the corrected per-recipe mean
+      Tests  4 failed | 24 passed (28)
+Updated 1 path from the index
+restored
+
+## 3. Behaviour: the parse — Mutation C (fields never attached)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/docs-loader.test.ts > recipe variable-power parse (#142) > both fields present → attached exactly
+ FAIL  src/data/docs-loader.test.ts > recipe variable-power parse (#142) > factor 0 → attached
+      Tests  2 failed | 61 passed (63)
+Updated 1 path from the index
+restored
+
+## 4. Green confirmation post-restore
+ Test Files  4 passed (4)
+      Tests  105 passed (105)

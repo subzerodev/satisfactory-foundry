@@ -9,7 +9,11 @@
  */
 
 import { Fraction } from "../core/fraction.ts";
-import { machinePowerProjection } from "../core/machine-power.ts";
+import {
+  machinePowerProjection,
+  effectiveMachinePower,
+} from "../core/machine-power.ts";
+import type { RecipeVariablePower } from "../core/machine-power.ts";
 import type { LaneKind } from "../core/manifold.ts";
 import type { MachinePower, TierTable } from "../data/types.ts";
 import { formatRate } from "./format.ts";
@@ -117,12 +121,12 @@ export function chainPowerText(
   let total = 0;
   let anyContributor = false;
   for (const stage of stages) {
-    const power = stagePowerOf(stage, catalog);
-    if (power === null) continue;
+    const resolved = stagePowerOf(stage, catalog);
+    if (resolved === null) continue;
     const clock = parseClock(stage.selection.clockPercentText);
     if (clock === null) continue; // an invalid clock can't reach solved anyway
     const projection = machinePowerProjection(
-      power,
+      effectiveMachinePower(resolved.power, resolved.variablePower),
       stage.selection.machineCount,
       clock,
     );
@@ -155,7 +159,12 @@ export interface ChainStage {
 /** The catalog fields chainPowerText reads: recipe→machine→power resolution.
  *  Structurally a subset of the store's Catalog. */
 export interface ChainCatalog {
-  recipes: Record<string, { machineId: string } | undefined>;
+  recipes: Record<
+    string,
+    // variablePower (#142): consulted only for variable-power machines —
+    // the recipe-level range that replaces the building envelope.
+    { machineId: string; variablePower?: RecipeVariablePower } | undefined
+  >;
   machines: Record<string, { power: MachinePower } | undefined>;
 }
 
@@ -164,7 +173,7 @@ export interface ChainCatalog {
 function stagePowerOf(
   stage: ChainStage,
   catalog: ChainCatalog,
-): MachinePower | null {
+): { power: MachinePower; variablePower?: RecipeVariablePower } | null {
   if (stage.solve.status !== "solved") return null;
   const recipeId = stage.selection.recipeId;
   if (recipeId === null) return null;
@@ -179,7 +188,9 @@ function stagePowerOf(
   if (!Object.hasOwn(catalog.machines, recipe.machineId)) return null;
   const machine = catalog.machines[recipe.machineId];
   if (machine === undefined) return null;
-  return machine.power;
+  // #142: carry the recipe's variable-power range out (previously discarded)
+  // so callers can apply the per-recipe correction for variable machines.
+  return { power: machine.power, variablePower: recipe.variablePower };
 }
 
 /** The shared per-stage power-text resolver (simplify fold — this absorbed two
@@ -190,11 +201,15 @@ export function stagePowerTextFor(
   catalog: ChainCatalog,
   stage: ChainStage,
 ): string | null {
-  const power = stagePowerOf(stage, catalog);
-  if (power === null) return null;
+  const resolved = stagePowerOf(stage, catalog);
+  if (resolved === null) return null;
   const clock = parseClock(stage.selection.clockPercentText);
   if (clock === null) return null;
-  return stagePowerText(power, stage.selection.machineCount, clock);
+  return stagePowerText(
+    effectiveMachinePower(resolved.power, resolved.variablePower),
+    stage.selection.machineCount,
+    clock,
+  );
 }
 
 // ---------------------------------------------------------------------------

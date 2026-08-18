@@ -13,6 +13,7 @@ import {
   suggestSupply,
   tierFixHint,
   stagePowerText,
+  stagePowerTextFor,
   chainPowerText,
 } from "./advice.ts";
 import type { ChainStage, ChainCatalog } from "./advice.ts";
@@ -237,5 +238,43 @@ describe("chainPowerText", () => {
 
   it("null on an empty stage list", () => {
     expect(chainPowerText([], chainCatalog)).toBeNull();
+  });
+});
+
+describe("recipe-level variable power through the chain surfaces (#142)", () => {
+  const catalog: ChainCatalog = {
+    recipes: {
+      plutonium: {
+        machineId: "accelerator",
+        variablePower: {
+          constantMw: f(250),
+          factorMw: f(500),
+        },
+      },
+      fieldless: { machineId: "accelerator" },
+    },
+    machines: { accelerator: { power: variablePower } },
+  };
+  const stage = (recipeId: string): ChainStage => ({
+    selection: { recipeId, machineCount: 1, clockPercentText: "100" },
+    solve: { status: "solved" },
+  });
+
+  it("field-carrying recipe on a variable machine → exact per-recipe text", () => {
+    // The 875-envelope machine corrected to the recipe truth: mean 500,
+    // bounds 250–750 (the gap-report W1 worked example).
+    expect(stagePowerTextFor(catalog, stage("plutonium"))).toBe(
+      "500 MW (varies 250–750 MW)",
+    );
+  });
+
+  it("field-less recipe on the same machine → the envelope fallback", () => {
+    expect(stagePowerTextFor(catalog, stage("fieldless"))).toBe(
+      "875 MW (varies 250–1500 MW)",
+    );
+  });
+
+  it("chain Σ uses the corrected per-recipe mean", () => {
+    expect(chainPowerText([stage("plutonium")], catalog)).toBe("Σ ≈ 500 MW");
   });
 });

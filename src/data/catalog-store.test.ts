@@ -52,6 +52,12 @@ function sampleCatalog(): Catalog {
         inputs: [{ itemId: "ore_iron", perMinute: Fraction.of(75, 2) }],
         outputs: [{ itemId: "iron_ingot", perMinute: Fraction.from(30) }],
         primaryOutputId: "iron_ingot",
+        // #142: the round-trip test asserts this survives serialize/revive
+        // (the isRawResource scar class — a field that silently vanished).
+        variablePower: {
+          constantMw: Fraction.from(250),
+          factorMw: Fraction.of(1, 2),
+        },
       },
     },
     extractors: {
@@ -93,6 +99,11 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     expect(rate.eq(Fraction.of(75, 2))).toBe(true);
     const out = result.catalog.recipes["ingot_iron"]!.outputs[0]!.perMinute;
     expect(out.eq(Fraction.from(30))).toBe(true);
+    // #142: recipe-level variable power survives the round-trip as Fractions.
+    const vp = result.catalog.recipes["ingot_iron"]!.variablePower;
+    expect(vp).toBeDefined();
+    expect(vp!.constantMw.eq(Fraction.from(250))).toBe(true);
+    expect(vp!.factorMw.eq(Fraction.of(1, 2))).toBe(true);
     // Machine power Fractions survive the serialize/revive round-trip as real
     // Fractions (structured-clone would otherwise strip the prototype).
     const power = result.catalog.machines["smelter_mk1"]!.power;
@@ -141,7 +152,7 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     const db = await openDb();
     const stored = await db.get<Record<string, unknown>>("catalog", "current");
     await db.put("catalog", { ...stored, parser_version: 2 }, "current");
-    expect(CATALOG_PARSER_VERSION).toBe(6);
+    expect(CATALOG_PARSER_VERSION).toBe(7);
     expect((await loadCatalog()).status).toBe("stale");
   });
 
@@ -158,12 +169,14 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     expect((await loadCatalog()).status).toBe("stale");
   });
 
-  it("treats a parser-version-5 cache as stale under version 6", async () => {
+  it("treats a parser-version-6 cache as stale under version 7 (#142 AC4)", async () => {
+    // The #142 schema widening (recipe variablePower) must reach cached
+    // users; a v6 row re-parses rather than reviving without the field.
     await saveCatalog("raw", sampleCatalog());
     const db = await openDb();
     const stored = await db.get<Record<string, unknown>>("catalog", "current");
-    await db.put("catalog", { ...stored, parser_version: 5 }, "current");
-    expect(CATALOG_PARSER_VERSION).toBe(6);
+    await db.put("catalog", { ...stored, parser_version: 6 }, "current");
+    expect(CATALOG_PARSER_VERSION).toBe(7);
     expect((await loadCatalog()).status).toBe("stale");
   });
 
