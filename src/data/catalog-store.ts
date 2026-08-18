@@ -47,7 +47,7 @@ const CATALOG_KEY = "current";
  * 5 -> 6 (#112): catalogs now include structured extractor rates, topology,
  * and raw-resource applicability. Older caches cannot reconstruct this data.
  */
-export const CATALOG_PARSER_VERSION = 6;
+export const CATALOG_PARSER_VERSION = 7;
 
 /**
  * JSON-safe CatalogItem: `stackSize` is a toString() string or null. Items
@@ -80,6 +80,10 @@ interface StoredRecipe {
   inputs: StoredRecipeIO[];
   outputs: StoredRecipeIO[];
   primaryOutputId: string;
+  /** #142: recipe-level variable-power range, Fraction.toString round-trip.
+   *  Optional like isRawResource (truthiness-safe reads) — the v6→7 parser
+   *  bump is what carries it to cached users (the isRawResource scar). */
+  variablePower?: { constant: string; factor: string };
 }
 /** JSON-safe machine power: every Fraction is a toString() string; optional
  *  bounds stay optional. */
@@ -226,6 +230,14 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
       inputs: r.inputs.map(serializeIO),
       outputs: r.outputs.map(serializeIO),
       primaryOutputId: r.primaryOutputId,
+      ...(r.variablePower
+        ? {
+            variablePower: {
+              constant: r.variablePower.constantMw.toString(),
+              factor: r.variablePower.factorMw.toString(),
+            },
+          }
+        : {}),
     };
   }
   const machines: Record<string, StoredCatalogMachine> = Object.create(null);
@@ -316,6 +328,14 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
       inputs: r.inputs.map(reviveIO),
       outputs: r.outputs.map(reviveIO),
       primaryOutputId: r.primaryOutputId,
+      ...(r.variablePower
+        ? {
+            variablePower: {
+              constantMw: parseRational(r.variablePower.constant),
+              factorMw: parseRational(r.variablePower.factor),
+            },
+          }
+        : {}),
     };
   }
   const machines: Catalog["machines"] = Object.create(null);

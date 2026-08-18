@@ -47,6 +47,9 @@ interface RawRecipe {
   product: string;
   duration: string;
   producedIn: string;
+  /** Raw mVariablePowerConsumption* strings (#142); empty = absent. */
+  variablePowerConstant: string;
+  variablePowerFactor: string;
 }
 
 /**
@@ -145,6 +148,14 @@ export function parseDocsJson(raw: unknown): Catalog {
               ? c.mManufactoringDuration
               : "",
           producedIn: (c.mProducedIn as string | undefined) ?? "",
+          variablePowerConstant:
+            typeof c.mVariablePowerConsumptionConstant === "string"
+              ? c.mVariablePowerConsumptionConstant
+              : "",
+          variablePowerFactor:
+            typeof c.mVariablePowerConsumptionFactor === "string"
+              ? c.mVariablePowerConsumptionFactor
+              : "",
         });
       }
     } else if (nativeClass.includes(NATIVE_SCHEMATIC)) {
@@ -200,6 +211,11 @@ export function parseDocsJson(raw: unknown): Catalog {
     const isAlternate =
       id.includes("alternate_") || r.displayName.startsWith("Alternate:");
 
+    // #142: attach the recipe-level variable-power range only when BOTH
+    // fields parse as decimals (the parseMachinePower posture — malformed or
+    // missing is silently absent, never a rejection). factor 0 is legal.
+    const vpConstant = parsePowerField(r.variablePowerConstant);
+    const vpFactor = parsePowerField(r.variablePowerFactor);
     recipes[id] = {
       id,
       displayName: r.displayName.replace(/^Alternate:\s*/, ""),
@@ -208,6 +224,9 @@ export function parseDocsJson(raw: unknown): Catalog {
       inputs,
       outputs,
       primaryOutputId: outputs[0]!.itemId,
+      ...(vpConstant !== null && vpFactor !== null
+        ? { variablePower: { constantMw: vpConstant, factorMw: vpFactor } }
+        : {}),
     };
   }
 
