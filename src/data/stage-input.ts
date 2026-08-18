@@ -1,7 +1,6 @@
 import { Fraction } from "../core/fraction.ts";
 import type { LaneInput, LaneKind, StageInput } from "../core/manifold.ts";
-import type { Catalog, CatalogRecipe, RecipeIO } from "./types.ts";
-import { TIER_TABLE } from "./tiers.ts";
+import type { Catalog, CatalogRecipe, RecipeIO, TierTable } from "./types.ts";
 
 export interface StageOptions {
   machineCount: number;
@@ -33,8 +32,8 @@ export function toStageInput(
   opts: StageOptions,
 ): StageInput {
   const capacities = {
-    belt: sliceTier("belt", opts.unlockedTiers.belt),
-    pipe: sliceTier("pipe", opts.unlockedTiers.pipe),
+    belt: sliceTier(catalog.tiers, "belt", opts.unlockedTiers.belt),
+    pipe: sliceTier(catalog.tiers, "pipe", opts.unlockedTiers.pipe),
   };
 
   const feeds = buildLanes(
@@ -60,13 +59,20 @@ export function toStageInput(
 }
 
 /**
- * Slice the first `count` unlocked tiers of a kind. `count` must be ≥ 1 and
- * within the table: an empty capacity list would pass the solver's ascending
- * check yet crash its top-tier assert, so it is a SHAPE error thrown here (not
- * a solver finding). Ascending order is inherited from TIER_TABLE.
+ * Slice the first `count` unlocked tiers of a kind from the catalog's OWN tier
+ * table (parsed from the file, #140 P0 — no longer the curated constant). `count`
+ * must be ≥ 1 and within the table: an empty capacity list would pass the
+ * solver's ascending check yet crash its top-tier assert, so it is a SHAPE error
+ * thrown here (not a solver finding). Ascending order is inherited from the
+ * table. The store's ready clamp keeps `count` within the live table's length,
+ * so this RangeError is unreachable from store-driven flows.
  */
-function sliceTier(kind: LaneKind, count: number): Fraction[] {
-  const table = TIER_TABLE[kind];
+function sliceTier(
+  tiers: TierTable,
+  kind: LaneKind,
+  count: number,
+): Fraction[] {
+  const table = tiers[kind];
   if (!Number.isInteger(count) || count < 1 || count > table.length) {
     throw new RangeError(
       `toStageInput: unlockedTiers.${kind} must be an integer in [1, ${table.length}]; got ${count}.`,

@@ -142,6 +142,38 @@ const BUNDLED_DOCS_TEXT = readFileSync(
   "utf8",
 );
 
+// #140 P0: a Docs.json text carrying the `ingot_iron` spine PLUS an explicit
+// belt/pipe tier count, so a parsed catalog has a KNOWN-length tier table (the
+// ready clamp / selector-max reroute pins). `beltTiers` belt classes derive to
+// ascending tiers (mSpeed = 2 × items/min); `pipeTiers` pipe classes likewise
+// (mFlowLimit = m³/min ÷ 60). Both must be ≥ 1.
+function docsTextWithTierCount(beltTiers: number, pipeTiers: number): string {
+  const belts = Array.from({ length: beltTiers }, (_, i) => ({
+    ClassName: `Build_ConveyorBeltMk${i + 1}_C`,
+    // Distinct ascending speeds: 120, 240, 360, … → items/min 60, 120, 180, …
+    mSpeed: `${(i + 1) * 120}.000000`,
+  }));
+  const pipes = Array.from({ length: pipeTiers }, (_, i) => ({
+    ClassName: `Build_PipelineMk${i + 1}_C`,
+    // Distinct ascending flow limits: 5, 10, 15, … → m³/min 300, 600, 900, …
+    mFlowLimit: `${(i + 1) * 5}.000000`,
+  }));
+  const parsed = JSON.parse(DOCS_TEXT) as unknown[];
+  return JSON.stringify([
+    ...parsed,
+    {
+      NativeClass:
+        "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableConveyorBelt'",
+      Classes: belts,
+    },
+    {
+      NativeClass:
+        "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildablePipeline'",
+      Classes: pipes,
+    },
+  ]);
+}
+
 function compileTimeNewLinkConstraint(): void {
   const wider = {} as StageLink;
   // @ts-expect-error A wider StageLink may carry guarded interstep intent.
@@ -859,7 +891,12 @@ describe("persistence (spec row 7)", () => {
     });
   });
 
-  it("out-of-range persisted tiers are clamped on hydration", async () => {
+  it("out-of-range persisted tiers survive the merge, then clamp at the READY transition (#140 P0 deferred semantics)", async () => {
+    // #140 P0: the merge no longer bounds above (it runs pre-catalog and can't
+    // see the live table). A too-high belt PERSISTS through hydration — inert,
+    // since nothing consumes the count pre-ready — and the AUTHORITATIVE clamp
+    // fires when a catalog goes ready. pipe 0 is present-but-corrupt → floors
+    // to 1 at the merge already.
     const { storage } = makeStorageStub({
       "satis_foundry:tiers": JSON.stringify({
         state: { unlockedTiers: { belt: 99, pipe: 0 } },
@@ -867,7 +904,103 @@ describe("persistence (spec row 7)", () => {
       }),
     });
     const store = createAppStore(storage);
-    // belt clamps to the table length (6); pipe clamps up to the floor (1).
+    // Pre-ready: belt 99 kept verbatim; pipe floored to 1 by the merge.
+    expect(store.getState().selection.unlockedTiers).toEqual({
+      belt: 99,
+      pipe: 1,
+    });
+    expect(store.getState().catalog.status).not.toBe("ready");
+
+    // Drive a ready transition via a real upload (a 6-belt / 2-pipe table).
+    await store.getState().uploadDocsText(docsTextWithTierCount(6, 2));
+    expect(store.getState().catalog.status).toBe("ready");
+    // Now the live table's lengths bind: belt 99 → 6, pipe stays 1.
+    expect(store.getState().selection.unlockedTiers).toEqual({
+      belt: 6,
+      pipe: 1,
+    });
+  });
+
+  it("NON-VACUOUS clamp-at-ready: a persisted 6 clamps to a SHORTER parsed 3-belt table and solves, not throws (#140 P0)", async () => {
+    // The pin that would pass vacuously against the 6-tier fallback: a persisted
+    // belt of 6 loading a PARSED table of only 3 belt tiers must clamp to 3 at
+    // the ready transition, else sliceTier throws its RangeError into the first
+    // solve. Pinning against the fallback-length table would miss exactly this.
+    const { storage } = makeStorageStub({
+      "satis_foundry:tiers": JSON.stringify({
+        state: { unlockedTiers: { belt: 6, pipe: 2 } },
+        version: 0,
+      }),
+    });
+    const store = createAppStore(storage);
+    expect(store.getState().selection.unlockedTiers.belt).toBe(6);
+
+    // Upload a catalog whose parsed belt table has only 3 tiers.
+    await store.getState().uploadDocsText(docsTextWithTierCount(3, 1));
+    expect(store.getState().catalog.status).toBe("ready");
+    // Clamped to the shorter table: belt 3, pipe 1.
+    expect(store.getState().selection.unlockedTiers).toEqual({
+      belt: 3,
+      pipe: 1,
+    });
+    // And a solve against that clamp does NOT throw sliceTier's RangeError: pick
+    // the recipe, then confirm the stage solves (not an invalid bad-override).
+    store.getState().selectRecipe("ingot_iron");
+    expect(store.getState().solve.status).toBe("solved");
+  });
+
+  it("loss-free reboot: persisted belt 7 + a 7-tier parsed catalog stays 7 (no constant-bound merge clamp) (#140 P0)", async () => {
+    // The regression killer: a legitimate modded 7-belt count must survive the
+    // reboot. The merge keeps it (no upper bound); the ready clamp sees max 7,
+    // so it stays 7 — a down-bounding merge clamp would have destroyed it.
+    const { storage } = makeStorageStub({
+      "satis_foundry:tiers": JSON.stringify({
+        state: { unlockedTiers: { belt: 7, pipe: 2 } },
+        version: 0,
+      }),
+    });
+    const store = createAppStore(storage);
+    expect(store.getState().selection.unlockedTiers.belt).toBe(7);
+
+    await store.getState().uploadDocsText(docsTextWithTierCount(7, 2));
+    expect(store.getState().catalog.status).toBe("ready");
+    expect(store.getState().selection.unlockedTiers).toEqual({
+      belt: 7,
+      pipe: 2,
+    });
+  });
+
+  it("junk sanitization: a present-but-corrupt persisted belt (-5 / 'x' / 3.5) floors to 1 at the merge (#140 P0)", () => {
+    // Present-but-corrupt ≠ missing: fail-minimal to 1, NOT to max. Exercised
+    // pre-ready so the merge floor is what's asserted (each drives the bucket-3
+    // branch of sanitizeMergeTier).
+    for (const bad of [-5, "x", 3.5] as const) {
+      const { storage } = makeStorageStub({
+        "satis_foundry:tiers": JSON.stringify({
+          state: { unlockedTiers: { belt: bad, pipe: 2 } },
+          version: 0,
+        }),
+      });
+      const store = createAppStore(storage);
+      expect(store.getState().selection.unlockedTiers.belt).toBe(1);
+      // pipe 2 is a valid present integer → kept as-is (no upper bound pre-ready).
+      expect(store.getState().selection.unlockedTiers.pipe).toBe(2);
+    }
+  });
+
+  it("missing-field sanitization: an absent belt field → the full fallback length (6) VIA THE MERGE, pipe kept (#140 P0)", () => {
+    // Bucket 1 (undefined → max). Every other persistence fixture supplies BOTH
+    // fields, so this is the only pin that drives the merge's `undefined` branch
+    // through a valid-JSON row — a sanitizer routing undefined → 1 would pass
+    // every other test while silently regressing a full unlock to 1.
+    const { storage } = makeStorageStub({
+      "satis_foundry:tiers": JSON.stringify({
+        state: { unlockedTiers: { pipe: 1 } },
+        version: 0,
+      }),
+    });
+    const store = createAppStore(storage);
+    // belt absent → full fallback length (6); pipe 1 kept.
     expect(store.getState().selection.unlockedTiers).toEqual({
       belt: 6,
       pipe: 1,

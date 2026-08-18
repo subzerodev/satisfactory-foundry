@@ -222,14 +222,14 @@ export interface TrainOption {
   throughput: Fraction;
   /**
    * Per-platform sustained ceiling (per minute):
-   * `min(cargoPerCar × 60 / T_round, (T_round − 27.08 s) / T_round × beltFeed)`.
+   * `min(cargoPerCar × 60 / T_round, (T_round − 27 s) / T_round × beltFeed)`.
    */
   perPlatformCeiling: Fraction;
   /**
    * True when the belt-feed term of `perPlatformCeiling` binds (i.e. the belt
    * feed, not the per-trip capacity, is the limit). Both ceiling terms are
    * c-INDEPENDENT (neither the capacity term `cargoPerCar × 60 / T_round` nor
-   * the belt term `(T_round − 27.08 s) / T_round × beltFeed` reference `c`), so
+   * the belt term `(T_round − 27 s) / T_round × beltFeed` reference `c`), so
    * for fixed inputs this flag is CONSTANT across the enumeration — a per-CONFIG
    * discriminator (which of the two terms wins for the given cargo/trip/belt
    * feed), not a per-row one.
@@ -260,8 +260,8 @@ export interface TrainOptions {
  * Enumerate feasible train consist sizes as comparable rows. `cargoPerCar` is
  * the exact per-car cargo (`32 × stackSize` solid, or `2400` m³ fluid — the
  * caller builds it via {@link cargoPerTrip} on a one-car cargo). `roundTripSeconds`
- * is `T_travel + 2 × 27.08 s` (the caller adds the lockout, or passes a measured
- * round trip; the per-platform ceiling re-subtracts one 27.08 s window per the
+ * is `T_travel + 2 × 27 s` (the caller adds the lockout, or passes a measured
+ * round trip; the per-platform ceiling re-subtracts one 27 s window per the
  * wiki formula). Returns one row per `c = 1..maxCars`; the math is total.
  */
 export function trainOptions(
@@ -307,7 +307,7 @@ export function trainOptions(
       perPlatformCeiling = capacityTerm;
       ceilingBound = false;
     } else {
-      // beltTerm = (T_round − 27.08 s) / T_round × beltFeed
+      // beltTerm = (T_round − 27 s) / T_round × beltFeed
       const beltTerm = roundTripSeconds
         .sub(TRAIN_LOCKOUT_SECONDS)
         .div(roundTripSeconds)
