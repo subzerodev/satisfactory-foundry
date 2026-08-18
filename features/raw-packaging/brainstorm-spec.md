@@ -1,7 +1,7 @@
 # #133 — Packaging for a raw input (Stage 23)
 
 **Ticket:** #133 · **Epic:** #136 · **Milestone:** 94 · **Tier:** 2
-**Status:** design r3
+**Status:** design r4
 
 ## Purpose
 
@@ -51,8 +51,9 @@ the rule twice:
 > the file loudly (load → null) instead."*
 
 **The mechanism, verified:** `isPlanFileV8` gates on `format_version !== 8`
-exactly (`:713`) and delegates to `isStageV7Shape`, which checks **named fields
-only** (`:1091-1117`). An older build reading a v8 file carrying `packaging`
+exactly (`:713`) and delegates to `isStageV7Shape` (`:1091-1117`, which adds only
+the `purityMix` check) → `isStageV6Shape` (`:1062-1089`, where the named-field-only
+extraction loop actually lives). An older build reading a v8 file carrying `packaging`
 accepts it, drops the field, and re-saves without it.
 
 **The old reader is real.** The app ships as a PWA with Workbox precache and
@@ -156,6 +157,24 @@ constraint warns against.
 
 ### State
 
+**The write boundary must canonicalize, and r3 missed it.** The link path does not
+trust its UI: `setLinkInterstep` runs every incoming payload through
+`canonicalizePackagingInterstep` (`store.ts:1834`; `link-transport.ts:168-183`),
+which *rebuilds* the object, canonicalizes `returnTransport` via
+`canonicalizeLinkTransport` (`:101-165`), and **returns null for a pipe /
+fluid-truck return route, dropping the write** (`store.ts:1835`). That rebuild is
+why the strict `hasExactKeys` in `isPackagingInterstepShape` is satisfiable at all.
+
+The extraction path writes through `setExtractionSelection` (`store.ts:1608-1633`),
+which only spreads via `copyExtractionSelection`, and `savePlan` is a bare
+`db.put` (`plan-store.ts:261-264`) — no validation. So a stale key left by the
+return-transport selector, or an illegal `pipe` choice, would reach IndexedDB
+unvalidated and surface on the *next* load as a refusal of **the entire plan**.
+
+**Therefore: route the extraction packaging write through
+`canonicalizePackagingInterstep`, exactly as `setLinkInterstep` does.** Not
+optional, and not an implementation detail.
+
 `ExtractionSelection` (`store.ts:101-105`) gains `packaging?: PackagingInterstep`,
 reusing the type verbatim (`link-transport.ts:34-41`). **Three sites carry it:**
 
@@ -219,9 +238,10 @@ explicitly **excludes** `nitrogen_gas`.)*
    packaging plan alongside the extractor plan.
 4. `data/plan-store.ts` — `ExtractionSelectionV7` frozen, `PlanStageV8`,
    `PlanFileV9`, `isStageV8Shape` (via `isPackagingInterstepShape`),
-   `isPlanFileV9`, a **rebuilding** `migrateV8`, the `migrateV7` stage rebuild, and
-   `listPlans`' hardcoded validator chain (`:271-293`, starting `isPlanFileV8` at
-   `:279`).
+   `isPlanFileV9`, a **rebuilding** `migrateV8`, the `migrateV7` stage rebuild,
+   `listPlans`' hardcoded validator chain (`:271-293`), `copyHistoricalExtraction`'s
+   declared return type re-typed to the frozen alias (`:494-496`), and the stale
+   header comment (`:19-20`).
 5. `state/store.ts` — **this is where "save writes v9" actually lives**: the
    `format_version` literals are `:1998` and `:2009`, not in `plan-store.ts`
    (`savePlan:261` only takes the file). Also `PlanBundle.plans` (`:387`) and the
@@ -264,7 +284,23 @@ New tests required:
    not admitted** — the blocker above, and the one test that would have caught it.
 8. Re-point `plan-store.test.ts:679-684` and `:898-901`, which assert that
    `format_version: 9` on a v8 body is rejected; under v9 that payload is valid, so
-   both must move to `10`. They fail loudly, so this is bookkeeping.
+   both must move to `10`.
+9. **~17 further assertions pin 8 as the migration/save/export target** —
+   `plan-store.test.ts:105`, `139`, `197`, `528`, `683`, `704`, `1053`, `1148`,
+   `1282`, `1330`; `store.test.ts:1756`, `2064`, `3179`, `3215`, `3225`, `3259`,
+   `3576`. **Two of these are not bookkeeping:** `store.test.ts:1756`
+   (`written.format_version`) and `:3179` are the pins that would catch a
+   passthrough `migrateV8` once updated. The stale header comment at
+   `plan-store.ts:19-20` and `listPlans`' "all eight versions" (`:277`) go too.
+10. **Pin the early return.** The one thing this spec calls "easy to lose in the
+    split" — the `interstep === undefined` guard and its
+    `"packaging interstep is not enabled"` string (`link-plan.ts:101-106`) — appears
+    in no test, and both production call sites guard on `interstep !== undefined`
+    (`LinkInspector.tsx:150-151`, `store.ts:626-630`), so losing it would be
+    invisible to `npm test` *and* to the app. One assertion closes it.
+11. **A test that a freshly saved plan has `format_version === 9`** — no listed
+    test pinned it, and the round-trip test passes either way because
+    `isStageV7Shape` admits the unknown key and `store.ts:758` spreads it through.
 
 ## Acceptance criteria
 
