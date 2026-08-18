@@ -394,6 +394,7 @@ export default function App() {
         recipes={recipes}
         machines={catalog.machines}
         selection={selection}
+        tiers={catalog.tiers}
         hasOverrides={anyOverride(selection.overrides)}
         onSelectRecipe={s.selectRecipe}
         onMachineCount={s.setMachineCount}

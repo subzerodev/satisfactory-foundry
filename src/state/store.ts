@@ -28,7 +28,7 @@ import {
   type LinkTransport,
   type PackagingInterstep,
 } from "../core/link-transport.ts";
-import type { Catalog } from "../data/types.ts";
+import type { Catalog, TierTable } from "../data/types.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
 import { loadCatalog, saveCatalog } from "../data/catalog-store.ts";
@@ -539,7 +539,9 @@ function derive(catalog: CatalogState, selection: Selection): SolveState {
   }
 
   // Build opts → toStageInput. Its SHAPE throws (unknown override key,
-  // duplicate lane; tier-range is unreachable — clamped at the setter) →
+  // duplicate lane; tier-range is unreachable — clamped against the live
+  // catalog.tiers at every catalog→ready transition and at setUnlockedTiers,
+  // #140 P0, so no count reaching here exceeds the current table) →
   // 'bad-override'. Then solveStage: count-excess overrides surface as a
   // solver VALUE finding INSIDE result, i.e. 'solved' — the routing split.
   try {
@@ -1134,16 +1136,61 @@ function validTier(value: unknown): number | null {
     : null;
 }
 
-/** Clamp a tier count to `[1, TIER_TABLE.<kind>.length]`, defaulting a corrupt
- *  or missing value to the full table length. */
-function clampTier(kind: "belt" | "pipe", value: unknown): number {
-  const max = TIER_TABLE[kind].length;
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    return max;
+/**
+ * Sanitize ONE persisted tier count at the persist-`merge` boundary (#140 P0).
+ * The merge runs synchronously during `createAppStore`, BEFORE any catalog
+ * exists, so it CANNOT bound above against the live table — it keeps only the
+ * validity floor. Three branches (the trichotomy the P0 spec pins):
+ *   - `undefined` (a MISSING field on a valid-JSON row) → the full fallback
+ *     length (today's default-seed disposition; the ready clamp re-adjusts it
+ *     if the live table differs). A whole-row corrupt-JSON persist never reaches
+ *     the merge — `JSON.parse` throws inside the storage getItem and zustand
+ *     short-circuits to the hydration catch, so the seed default survives.
+ *   - a present positive integer → kept AS-IS, NO upper bound (a legitimate
+ *     modded 7-tier count must survive the reboot; the ready clamp is the sole
+ *     upper bound, loss-free against the live table).
+ *   - a present-but-corrupt value ("x", 3.5, -5, 0, null, array) → the minimal
+ *     1 (fail-minimal: "corrupt" ≠ "missing", so it does NOT map to max).
+ * An out-of-range positive count parked here is inert: nothing consumes the
+ * count pre-ready (no solve without a catalog, no tier strip on the pre-ready
+ * screens), and the ready transition clamps it before the first solve.
+ */
+function sanitizeMergeTier(value: unknown, fallbackLength: number): number {
+  if (value === undefined) return fallbackLength;
+  if (typeof value === "number" && Number.isInteger(value) && value >= 1) {
+    return value;
   }
-  if (value < 1) return 1;
-  if (value > max) return max;
-  return value;
+  return 1;
+}
+
+/**
+ * Clamp a tier count to `[1, tableLength]` against a LIVE table length (#140 P0).
+ * The authoritative upper clamp: applied at every catalog→ready transition and
+ * by `setUnlockedTiers`, both of which can see the parsed `catalog.tiers`. A
+ * non-integer / below-1 value floors to 1; above the table length clamps down.
+ * This is what keeps `sliceTier`'s RangeError unreachable once the parsed table
+ * can diverge in length from the curated fallback.
+ */
+function clampTierToTable(count: number, tableLength: number): number {
+  if (!Number.isInteger(count) || count < 1) return 1;
+  if (count > tableLength) return tableLength;
+  return count;
+}
+
+/**
+ * Re-clamp a stage's `unlockedTiers` against a catalog's live tier table. Used
+ * inside the same `set()` that installs a ready catalog (composed into
+ * mapSelection at the install-and-derive sites, or as a plain pre-clamp before
+ * the shared derive) so no stale persisted/modded count reaches the solve.
+ */
+function clampSelectionTiers(sel: Selection, tiers: TierTable): Selection {
+  return {
+    ...sel,
+    unlockedTiers: {
+      belt: clampTierToTable(sel.unlockedTiers.belt, tiers.belt.length),
+      pipe: clampTierToTable(sel.unlockedTiers.pipe, tiers.pipe.length),
+    },
+  };
 }
 
 /** Normalize a caught plan-op failure to a string for `planError`. */
@@ -1479,8 +1526,19 @@ export function createAppStore(storage?: StateStorage) {
             }
             // First derive, after hydration + the catalog resolves. Re-derive
             // ALL stages (cadence table): hydration is tiers-only and every
-            // stage boots default, so no #5 override-clear is needed — identity.
-            set((s) => deriveAllStages(s, (sel) => sel));
+            // stage boots default, so no #5 override-clear is needed. #140 P0:
+            // the ready clamp for BOTH bare-install sites (the hit branch and
+            // the loadBundled fallback) lives HERE — a plain pre-clamp before
+            // this shared derive, re-clamping each stage's unlockedTiers against
+            // the now-live table. When the catalog resolved to needs-upload the
+            // mapper is identity (no table to clamp against).
+            set((s) =>
+              deriveAllStages(s, (sel) =>
+                s.catalog.status === "ready"
+                  ? clampSelectionTiers(sel, s.catalog.catalog.tiers)
+                  : sel,
+              ),
+            );
 
             // #144 bundled-staleness self-heal: DETACHED continuation — init()
             // resolves here; production never awaits this chain (tests do, via
@@ -1521,8 +1579,12 @@ export function createAppStore(storage?: StateStorage) {
                           catalog: { status: "ready", catalog },
                         };
                         return {
+                          // #140 P0: clamp each stage's tiers against the new
+                          // table BEFORE the derive (composed into mapSelection),
+                          // else a persisted/modded count could exceed a
+                          // shorter parsed table and crash sliceTier.
                           ...deriveAllStages(withCatalog, (sel) => ({
-                            ...sel,
+                            ...clampSelectionTiers(sel, catalog.tiers),
                             recipeId:
                               sel.recipeId !== null &&
                               catalog.recipes[sel.recipeId] !== undefined
@@ -1588,8 +1650,12 @@ export function createAppStore(storage?: StateStorage) {
                 catalog: { status: "ready", catalog },
               };
               return {
+                // #140 P0: clamp each stage's tiers against the uploaded table
+                // BEFORE the derive (composed into mapSelection), else a
+                // persisted/modded count could exceed a shorter parsed table
+                // and crash sliceTier on the first solve.
                 ...deriveAllStages(withCatalog, (sel) => ({
-                  ...sel,
+                  ...clampSelectionTiers(sel, catalog.tiers),
                   recipeId:
                     sel.recipeId !== null &&
                     catalog.recipes[sel.recipeId] !== undefined
@@ -1686,11 +1752,18 @@ export function createAppStore(storage?: StateStorage) {
           setUnlockedTiers(t: { belt: number; pipe: number }) {
             // Tiers are GLOBAL (game progression, not per-stage config): a tier
             // change writes ALL stages and re-derives every one (cadence table).
-            // Clamp at the action boundary so toStageInput's tier-range throw is
-            // unreachable from store-driven flows (derive still catches).
+            // Clamp at the action boundary against the LIVE catalog table (#140
+            // P0) so toStageInput's tier-range throw is unreachable from
+            // store-driven flows (derive still catches). A tier control only
+            // renders on a ready catalog; guard defensively — with no ready
+            // catalog fall back to the curated table lengths.
+            const tiers =
+              get().catalog.status === "ready"
+                ? (get().catalog as { catalog: Catalog }).catalog.tiers
+                : TIER_TABLE;
             const clamped = {
-              belt: clampTier("belt", t.belt),
-              pipe: clampTier("pipe", t.pipe),
+              belt: clampTierToTable(t.belt, tiers.belt.length),
+              pipe: clampTierToTable(t.pipe, tiers.pipe.length),
             };
             set((s) =>
               deriveAllStages(s, (sel) => ({
@@ -2376,15 +2449,22 @@ export function createAppStore(storage?: StateStorage) {
           proposePrefs: s.proposePrefs,
         }),
         // Validating merge (runs synchronously during createAppStore, before
-        // init): write the persisted tiers, clamped/defaulted, into EVERY stage
+        // init): write the persisted tiers, sanitized, into EVERY stage
         // (tiers-global) + the top-level mirror. At merge time only the default
         // stage exists, but writing all stages keeps the invariant honest.
+        //
+        // #140 P0: the merge is FLOOR-ONLY — no catalog exists yet, so it cannot
+        // bound above. `undefined` (a missing field) defaults to the full
+        // fallback length; a present positive integer is KEPT (a modded 7-tier
+        // count must survive the reboot — down-bounding here was a silent-loss
+        // defect); anything present-but-corrupt fails minimal to 1. The
+        // authoritative upper clamp fires at the catalog→ready transition.
         merge: (persisted, current): Store => {
           const p = persisted as Partial<PersistedShape> | undefined;
           const tiers = p?.unlockedTiers;
           const unlockedTiers = {
-            belt: clampTier("belt", tiers?.belt),
-            pipe: clampTier("pipe", tiers?.pipe),
+            belt: sanitizeMergeTier(tiers?.belt, TIER_TABLE.belt.length),
+            pipe: sanitizeMergeTier(tiers?.pipe, TIER_TABLE.pipe.length),
           };
           const stages: Record<string, StageNode> = {};
           for (const id of Object.keys(current.stages)) {

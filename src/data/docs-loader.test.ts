@@ -1230,7 +1230,10 @@ describe("parseDocsJson — parsed tier table (#140 P0)", () => {
         [
           { className: "Build_Pipeline_C", mFlowLimit: "5.000000" }, // 300
           { className: "Build_PipelineMK2_C", mFlowLimit: "10.000000" }, // 600
-          { className: "Build_PipelineMK2_NoIndicator_C", mFlowLimit: "10.000000" },
+          {
+            className: "Build_PipelineMK2_NoIndicator_C",
+            mFlowLimit: "10.000000",
+          },
           { className: "Build_Pipeline_NoIndicator_C", mFlowLimit: "5.000000" },
         ],
       ),

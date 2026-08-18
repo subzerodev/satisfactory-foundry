@@ -126,6 +126,7 @@ describe("ControlsStrip", () => {
           ...defaultSelection(),
           unlockedTiers: { belt: 2, pipe: 1 },
         }}
+        tiers={TIER_TABLE}
         hasOverrides={false}
         onSelectRecipe={noop}
         onMachineCount={noop}
@@ -140,6 +141,35 @@ describe("ControlsStrip", () => {
     );
     expect(html).toContain("Iron Ingot (alt)");
     expect(html).toContain("— pick a recipe —");
+  });
+
+  it("offers Mk1..MkN belt toggles from the CATALOG tier table, not the constant (#140 P0)", () => {
+    // The selector-max reroute: a modded/parsed 7-belt table must offer 7 belt
+    // toggles (the curated constant has 6). Drives the tiers prop cascade.
+    const sevenBeltTiers = {
+      belt: [60, 120, 180, 270, 480, 780, 1200].map((n) => Fraction.from(n)),
+      pipe: [300, 600].map((n) => Fraction.from(n)),
+    };
+    const html = renderToStaticMarkup(
+      <ControlsStrip
+        recipes={recipes}
+        machines={machines}
+        selection={{
+          ...defaultSelection(),
+          unlockedTiers: { belt: 7, pipe: 2 },
+        }}
+        tiers={sevenBeltTiers}
+        hasOverrides={false}
+        onSelectRecipe={noop}
+        onMachineCount={noop}
+        onClockText={noop}
+        onTiers={noop}
+        onClearOverrides={noop}
+      />,
+    );
+    // Mk7 belt toggle exists (the curated 6-tier constant would stop at Mk6).
+    expect(html).toContain(">Mk7<");
+    expect(html).not.toContain(">Mk8<");
   });
 });
 
