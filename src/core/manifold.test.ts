@@ -358,7 +358,7 @@ describe("solveFeedLane — bounded parallel feed buses (#120)", () => {
     );
   });
 
-  it("applies the same exact bundle rule to a non-divisible pipe lane", () => {
+  it("a pipe lane never bundles - an over-tier peak is a finding (#145)", () => {
     const r = solveFeed({
       n: 3,
       rate: F(350),
@@ -367,10 +367,15 @@ describe("solveFeedLane — bounded parallel feed buses (#120)", () => {
     });
     expect(r.belts.map((b) => b.capacity.toString())).toEqual(["600", "600"]);
     expect(r.segments[1]!.peakFlow.eq(F(850))).toBe(true);
-    expect(r.segments[1]!.parallelCount).toBe(2);
-    expect(r.findings.some((f) => f.type === "segment-over-capacity")).toBe(
-      false,
-    );
+    // Parallel pipes share a pressure group and do not add capacity: no
+    // second line exists to bundle onto, so the honest output is a finding.
+    expect(r.segments.every((s) => s.parallelCount === 1)).toBe(true);
+    const over = r.findings.filter((f) => f.type === "segment-over-capacity");
+    expect(over).toHaveLength(1);
+    expect(
+      over[0]!.type === "segment-over-capacity" &&
+        over[0]!.busCapacity.eq(F(600)),
+    ).toBe(true);
   });
 
   it("keeps starvation authoritative on an otherwise valid x2 segment", () => {

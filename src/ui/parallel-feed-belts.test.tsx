@@ -174,7 +174,7 @@ describe("parallel feed-bus schematic", () => {
     expect(remainderArrow?.getAttribute("stroke")).toBe(TIER_COLORS.belt[2]);
   });
 
-  it("keeps bundled pipes dashed, starvation red, and short x2 labels suppressed", () => {
+  it("renders an over-tier pipe as a single errored dashed line - pipes never bundle (#145)", () => {
     const starvingPipe = solveStage({
       machineCount: 3,
       clockPercent: F(100),
@@ -198,7 +198,8 @@ describe("parallel feed-bus schematic", () => {
         itemName={itemName}
       />,
     );
-    expect(pipeHtml).toContain("parallel-rail seg-error lane-pipe");
+    expect(pipeHtml).toContain("bus-seg seg-error lane-pipe");
+    expect(pipeHtml).not.toContain("parallel-rail");
 
     const shortHtml = renderToStaticMarkup(
       <Schematic
