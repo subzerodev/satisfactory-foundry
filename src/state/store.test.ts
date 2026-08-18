@@ -369,13 +369,23 @@ describe("invalid-input routing (spec row 5)", () => {
     return store;
   }
 
-  it("clock '0' / 'abc' / '-5' → invalid bad-clock", async () => {
+  it("clock '0' / 'abc' / '-5' / '0.5' / '1000' → invalid bad-clock", async () => {
+    // '0.5' and '1000' pin ticket #143: the derive now shares parseClockText's
+    // [1, 250] range, so an out-of-range clock can no longer reach the solver.
     const store = await readyWithRecipe();
-    for (const bad of ["0", "abc", "-5"]) {
+    for (const bad of ["0", "abc", "-5", "0.5", "1000"]) {
       store.getState().setClockPercentText(bad);
       const s = store.getState().solve;
       expect(s.status, `clock ${bad}`).toBe("invalid");
       if (s.status === "invalid") expect(s.reason).toBe("bad-clock");
+    }
+  });
+
+  it("clock '1' (the floor) and '250' (the cap) solve", async () => {
+    const store = await readyWithRecipe();
+    for (const ok of ["1", "250"]) {
+      store.getState().setClockPercentText(ok);
+      expect(store.getState().solve.status, `clock ${ok}`).toBe("solved");
     }
   });
 

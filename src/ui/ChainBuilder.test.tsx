@@ -51,7 +51,7 @@ describe("parseRateText", () => {
   });
 });
 
-describe("parseClockText (S20 P2, (0, 250])", () => {
+describe("parseClockText (S20 P2, [1, 250])", () => {
   it("accepts the 100 default → exact Fraction", () => {
     const r = parseClockText("100");
     expect(r.ok).toBe(true);
@@ -73,22 +73,39 @@ describe("parseClockText (S20 P2, (0, 250])", () => {
   it("rejects garbage with the labeled error", () => {
     expect(parseClockText("nope")).toEqual({
       ok: false,
-      error: "clock % must be a number in (0, 250]",
+      error: "clock % must be a number in [1, 250]",
     });
   });
 
-  it("rejects zero (non-positive)", () => {
+  it("rejects zero (below the 1% floor)", () => {
     expect(parseClockText("0")).toEqual({
       ok: false,
-      error: "clock % must be greater than 0",
+      error: "clock % must be at least 1 (the game's minimum clock)",
     });
   });
 
-  it("rejects a negative clock", () => {
+  it("rejects a negative clock (below the 1% floor)", () => {
     expect(parseClockText("-10")).toEqual({
       ok: false,
-      error: "clock % must be greater than 0",
+      error: "clock % must be at least 1 (the game's minimum clock)",
     });
+  });
+
+  it("rejects a sub-1% clock (game mMinPotential is 1%)", () => {
+    expect(parseClockText("0.5")).toEqual({
+      ok: false,
+      error: "clock % must be at least 1 (the game's minimum clock)",
+    });
+    expect(parseClockText("0.99")).toEqual({
+      ok: false,
+      error: "clock % must be at least 1 (the game's minimum clock)",
+    });
+  });
+
+  it("accepts the 1% floor exactly", () => {
+    const r = parseClockText("1");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.eq(Fraction.from(1))).toBe(true);
   });
 
   it("rejects above 250 (past the shard-boosted max)", () => {

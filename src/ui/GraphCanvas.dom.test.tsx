@@ -608,7 +608,7 @@ describe("RawFeedNode", () => {
         />,
       );
     });
-    expect(host.textContent).toContain("clock % must be a number in (0, 250]");
+    expect(host.textContent).toContain("clock % must be a number in [1, 250]");
     expect(host.textContent).not.toContain("53 ×");
 
     await act(async () => {

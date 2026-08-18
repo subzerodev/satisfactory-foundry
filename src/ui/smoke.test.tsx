@@ -912,7 +912,8 @@ describe("FindingsPanel", () => {
     const solve: SolveState = {
       status: "invalid",
       reason: "bad-clock",
-      detail: "clock percent must be a positive number.",
+      detail:
+        'clock % must be at least 1 (the game\'s minimum clock); got "0.5".',
     };
     const html = renderToStaticMarkup(
       <FindingsPanel
@@ -924,7 +925,7 @@ describe("FindingsPanel", () => {
       />,
     );
     expect(html).toContain("Clock %");
-    expect(html).toContain("clock percent must be a positive number.");
+    expect(html).toContain("clock % must be at least 1");
   });
 
   it("renders each finding sentence", () => {

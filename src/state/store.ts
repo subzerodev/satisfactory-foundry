@@ -20,6 +20,7 @@ import type { StageSolveResult } from "../core/manifold.ts";
 import { reconcileLinks } from "../core/reconcile.ts";
 import type { LinkInput, LinkFinding } from "../core/reconcile.ts";
 import { deriveLinkPlan } from "../core/link-plan.ts";
+import { parseClockText } from "../core/clock.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
 import {
   canonicalizeLinkTransport,
@@ -497,24 +498,18 @@ function derive(catalog: CatalogState, selection: Selection): SolveState {
     return { status: "idle" };
   }
 
-  // Clock text → positive Fraction, or 'bad-clock'.
-  let clockPercent: Fraction;
-  try {
-    clockPercent = Fraction.parse(selection.clockPercentText);
-  } catch {
+  // Clock text → Fraction in [1, 250], or 'bad-clock'. parseClockText is the
+  // single owner of the clock range (ticket #143) — the derive must accept and
+  // reject exactly what the chain builder and extraction panel do.
+  const clockResult = parseClockText(selection.clockPercentText);
+  if (!clockResult.ok) {
     return {
       status: "invalid",
       reason: "bad-clock",
-      detail: `clock percent must be a positive number; got ${JSON.stringify(selection.clockPercentText)}.`,
+      detail: `${clockResult.error}; got ${JSON.stringify(selection.clockPercentText)}.`,
     };
   }
-  if (clockPercent.lte(Fraction.from(0))) {
-    return {
-      status: "invalid",
-      reason: "bad-clock",
-      detail: `clock percent must be > 0; got ${JSON.stringify(selection.clockPercentText)}.`,
-    };
-  }
+  const clockPercent = clockResult.value;
 
   // machineCount: non-negative safe integer. 0 is VALID (solver-degenerate).
   if (
