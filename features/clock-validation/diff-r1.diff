@@ -1,0 +1,222 @@
+diff --git a/src/core/clock.ts b/src/core/clock.ts
+index a162323..9ea77ad 100644
+--- a/src/core/clock.ts
++++ b/src/core/clock.ts
+@@ -1,5 +1,9 @@
+ import { Fraction } from "../core/fraction.ts";
+ 
++// The [1, 250] range is a gameplay fact, deliberately hardcoded (ticket #143):
++// Docs.json ships mMaxPotential = 1.000000 on every carrying class (the +150%
++// from Power Shards is engine-default knowledge, not file data), so parsing it
++// naively would yield a wrong 100% cap. The floor is mMinPotential = 0.01 = 1%.
+ export function parseClockText(
+   text: string,
+ ): { ok: true; value: Fraction } | { ok: false; error: string } {
+@@ -7,10 +11,13 @@ export function parseClockText(
+   try {
+     value = Fraction.parse(text);
+   } catch {
+-    return { ok: false, error: "clock % must be a number in (0, 250]" };
++    return { ok: false, error: "clock % must be a number in [1, 250]" };
+   }
+-  if (value.lte(Fraction.from(0))) {
+-    return { ok: false, error: "clock % must be greater than 0" };
++  if (value.lt(Fraction.from(1))) {
++    return {
++      ok: false,
++      error: "clock % must be at least 1 (the game's minimum clock)",
++    };
+   }
+   if (value.gt(Fraction.from(250))) {
+     return { ok: false, error: "clock % must be at most 250" };
+diff --git a/src/state/store.test.ts b/src/state/store.test.ts
+index 8a69843..9976c43 100644
+--- a/src/state/store.test.ts
++++ b/src/state/store.test.ts
+@@ -369,9 +369,11 @@ describe("invalid-input routing (spec row 5)", () => {
+     return store;
+   }
+ 
+-  it("clock '0' / 'abc' / '-5' → invalid bad-clock", async () => {
++  it("clock '0' / 'abc' / '-5' / '0.5' / '1000' → invalid bad-clock", async () => {
++    // '0.5' and '1000' pin ticket #143: the derive now shares parseClockText's
++    // [1, 250] range, so an out-of-range clock can no longer reach the solver.
+     const store = await readyWithRecipe();
+-    for (const bad of ["0", "abc", "-5"]) {
++    for (const bad of ["0", "abc", "-5", "0.5", "1000"]) {
+       store.getState().setClockPercentText(bad);
+       const s = store.getState().solve;
+       expect(s.status, `clock ${bad}`).toBe("invalid");
+@@ -379,6 +381,14 @@ describe("invalid-input routing (spec row 5)", () => {
+     }
+   });
+ 
++  it("clock '1' (the floor) and '250' (the cap) solve", async () => {
++    const store = await readyWithRecipe();
++    for (const ok of ["1", "250"]) {
++      store.getState().setClockPercentText(ok);
++      expect(store.getState().solve.status, `clock ${ok}`).toBe("solved");
++    }
++  });
++
+   it("machineCount 1.5 / -1 → invalid bad-machine-count", async () => {
+     const store = await readyWithRecipe();
+     for (const bad of [1.5, -1]) {
+diff --git a/src/state/store.ts b/src/state/store.ts
+index a2809ec..d038ac1 100644
+--- a/src/state/store.ts
++++ b/src/state/store.ts
+@@ -20,6 +20,7 @@ import type { StageSolveResult } from "../core/manifold.ts";
+ import { reconcileLinks } from "../core/reconcile.ts";
+ import type { LinkInput, LinkFinding } from "../core/reconcile.ts";
+ import { deriveLinkPlan } from "../core/link-plan.ts";
++import { parseClockText } from "../core/clock.ts";
+ import type { ChainProposal } from "../core/chain-builder.ts";
+ import {
+   canonicalizeLinkTransport,
+@@ -497,24 +498,18 @@ function derive(catalog: CatalogState, selection: Selection): SolveState {
+     return { status: "idle" };
+   }
+ 
+-  // Clock text → positive Fraction, or 'bad-clock'.
+-  let clockPercent: Fraction;
+-  try {
+-    clockPercent = Fraction.parse(selection.clockPercentText);
+-  } catch {
+-    return {
+-      status: "invalid",
+-      reason: "bad-clock",
+-      detail: `clock percent must be a positive number; got ${JSON.stringify(selection.clockPercentText)}.`,
+-    };
+-  }
+-  if (clockPercent.lte(Fraction.from(0))) {
++  // Clock text → Fraction in [1, 250], or 'bad-clock'. parseClockText is the
++  // single owner of the clock range (ticket #143) — the derive must accept and
++  // reject exactly what the chain builder and extraction panel do.
++  const clockResult = parseClockText(selection.clockPercentText);
++  if (!clockResult.ok) {
+     return {
+       status: "invalid",
+       reason: "bad-clock",
+-      detail: `clock percent must be > 0; got ${JSON.stringify(selection.clockPercentText)}.`,
++      detail: `${clockResult.error}; got ${JSON.stringify(selection.clockPercentText)}.`,
+     };
+   }
++  const clockPercent = clockResult.value;
+ 
+   // machineCount: non-negative safe integer. 0 is VALID (solver-degenerate).
+   if (
+diff --git a/src/ui/ChainBuilder.test.tsx b/src/ui/ChainBuilder.test.tsx
+index f08ee55..8b62319 100644
+--- a/src/ui/ChainBuilder.test.tsx
++++ b/src/ui/ChainBuilder.test.tsx
+@@ -51,7 +51,7 @@ describe("parseRateText", () => {
+   });
+ });
+ 
+-describe("parseClockText (S20 P2, (0, 250])", () => {
++describe("parseClockText (S20 P2, [1, 250])", () => {
+   it("accepts the 100 default → exact Fraction", () => {
+     const r = parseClockText("100");
+     expect(r.ok).toBe(true);
+@@ -73,22 +73,39 @@ describe("parseClockText (S20 P2, (0, 250])", () => {
+   it("rejects garbage with the labeled error", () => {
+     expect(parseClockText("nope")).toEqual({
+       ok: false,
+-      error: "clock % must be a number in (0, 250]",
++      error: "clock % must be a number in [1, 250]",
+     });
+   });
+ 
+-  it("rejects zero (non-positive)", () => {
++  it("rejects zero (below the 1% floor)", () => {
+     expect(parseClockText("0")).toEqual({
+       ok: false,
+-      error: "clock % must be greater than 0",
++      error: "clock % must be at least 1 (the game's minimum clock)",
+     });
+   });
+ 
+-  it("rejects a negative clock", () => {
++  it("rejects a negative clock (below the 1% floor)", () => {
+     expect(parseClockText("-10")).toEqual({
+       ok: false,
+-      error: "clock % must be greater than 0",
++      error: "clock % must be at least 1 (the game's minimum clock)",
++    });
++  });
++
++  it("rejects a sub-1% clock (game mMinPotential is 1%)", () => {
++    expect(parseClockText("0.5")).toEqual({
++      ok: false,
++      error: "clock % must be at least 1 (the game's minimum clock)",
+     });
++    expect(parseClockText("0.99")).toEqual({
++      ok: false,
++      error: "clock % must be at least 1 (the game's minimum clock)",
++    });
++  });
++
++  it("accepts the 1% floor exactly", () => {
++    const r = parseClockText("1");
++    expect(r.ok).toBe(true);
++    if (r.ok) expect(r.value.eq(Fraction.from(1))).toBe(true);
+   });
+ 
+   it("rejects above 250 (past the shard-boosted max)", () => {
+diff --git a/src/ui/GraphCanvas.dom.test.tsx b/src/ui/GraphCanvas.dom.test.tsx
+index a1d1ea3..ec6a528 100644
+--- a/src/ui/GraphCanvas.dom.test.tsx
++++ b/src/ui/GraphCanvas.dom.test.tsx
+@@ -608,7 +608,7 @@ describe("RawFeedNode", () => {
+         />,
+       );
+     });
+-    expect(host.textContent).toContain("clock % must be a number in (0, 250]");
++    expect(host.textContent).toContain("clock % must be a number in [1, 250]");
+     expect(host.textContent).not.toContain("53 ×");
+ 
+     await act(async () => {
+diff --git a/src/ui/extraction-plan.test.ts b/src/ui/extraction-plan.test.ts
+index be349d7..a93a579 100644
+--- a/src/ui/extraction-plan.test.ts
++++ b/src/ui/extraction-plan.test.ts
+@@ -417,10 +417,11 @@ describe("deriveExtractionPlan", () => {
+   });
+ 
+   it.each([
+-    ["", "clock % must be a number in (0, 250]"],
+-    ["nope", "clock % must be a number in (0, 250]"],
+-    ["0", "clock % must be greater than 0"],
+-    ["-1", "clock % must be greater than 0"],
++    ["", "clock % must be a number in [1, 250]"],
++    ["nope", "clock % must be a number in [1, 250]"],
++    ["0", "clock % must be at least 1 (the game's minimum clock)"],
++    ["-1", "clock % must be at least 1 (the game's minimum clock)"],
++    ["0.5", "clock % must be at least 1 (the game's minimum clock)"],
+     ["251", "clock % must be at most 250"],
+   ])("uses the shared clock error for %s", (clock, detail) => {
+     expect(derive("stone", F(1), "miner_mk3", clock)).toEqual({
+diff --git a/src/ui/smoke.test.tsx b/src/ui/smoke.test.tsx
+index 0120e72..dc7ce3f 100644
+--- a/src/ui/smoke.test.tsx
++++ b/src/ui/smoke.test.tsx
+@@ -912,7 +912,8 @@ describe("FindingsPanel", () => {
+     const solve: SolveState = {
+       status: "invalid",
+       reason: "bad-clock",
+-      detail: "clock percent must be a positive number.",
++      detail:
++        'clock % must be at least 1 (the game\'s minimum clock); got "0.5".',
+     };
+     const html = renderToStaticMarkup(
+       <FindingsPanel
+@@ -924,7 +925,7 @@ describe("FindingsPanel", () => {
+       />,
+     );
+     expect(html).toContain("Clock %");
+-    expect(html).toContain("clock percent must be a positive number.");
++    expect(html).toContain("clock % must be at least 1");
+   });
+ 
+   it("renders each finding sentence", () => {
