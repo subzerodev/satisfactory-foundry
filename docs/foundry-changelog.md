@@ -3,6 +3,19 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-18 — The extraction panel no longer hides its own controls
+
+> Hey Michael — you said you didn't like having to scroll the little panel. You
+> shouldn't have to any more. The EXTRACTION panel used to be locked to a fixed
+> height whether or not it needed one, so the node-mix controls sat just below
+> the fold and you had to scroll about 110 pixels to reach Pure. Now the panel
+> sizes itself to its contents and only stops growing when it would reach the
+> canvas controls below it, so at a normal window the whole mix is visible at
+> once. Short panels shrink to fit too, instead of reserving a tall empty box
+> over the canvas. On a small or deliberately shortened canvas it still scrolls,
+> because there genuinely isn't room — but it now keeps a little more clearance
+> above the controls than it used to.
+
 ## 2026-08-17 — Package fluid links for solid transport
 
 > Hey Michael — a fluid or gas link can now be packaged before transport and
