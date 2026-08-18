@@ -3,6 +3,22 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-19 — Belt and pipe speeds now come from the game's own data (P0 of the rework arc)
+
+> Hey Michael — until now the app carried its own hardcoded list of belt and
+> pipe speeds. It happened to match the game, but only because someone kept it
+> matched by hand — a game patch changing a belt speed would have slipped
+> through silently. Now the speeds are read straight out of the game's Docs
+> file (the bundled one, or whatever file you upload), so a modded or patched
+> file with different speeds — even an extra belt tier — genuinely works end
+> to end. If a file is missing or malformed the app quietly falls back to the
+> known-good table, never an error. There's also a tripwire test that fails
+> loudly if a future game build changes any speed. One number fix rode along:
+> the train loading lockout is now exactly 27 seconds (the game's own value)
+> instead of the wiki's 27.08, so train throughput figures shift by a hair.
+> You shouldn't notice anything else — this phase is the foundation the
+> splitter-aware solver rework builds on.
+
 ## 2026-08-18 — The extraction panel no longer hides its own controls
 
 > Hey Michael — you said you didn't like having to scroll the little panel. You
