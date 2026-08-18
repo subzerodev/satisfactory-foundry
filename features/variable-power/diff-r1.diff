@@ -153,19 +153,25 @@ index e19855d..8f8a993 100644
    });
  
 diff --git a/src/data/catalog-store.ts b/src/data/catalog-store.ts
-index 61bf333..e734049 100644
+index 61bf333..9f9fe9f 100644
 --- a/src/data/catalog-store.ts
 +++ b/src/data/catalog-store.ts
-@@ -47,7 +47,7 @@ const CATALOG_KEY = "current";
+@@ -46,8 +46,13 @@ const CATALOG_KEY = "current";
+  *
   * 5 -> 6 (#112): catalogs now include structured extractor rates, topology,
   * and raw-resource applicability. Older caches cannot reconstruct this data.
++ *
++ * 6 -> 7 (#142): recipes carry the optional variablePower range
++ * (mVariablePowerConsumptionConstant/Factor). Without the bump a cached
++ * catalog never regains the field and the per-recipe power correction
++ * silently no-ops for existing users — the isRawResource scar class.
   */
 -export const CATALOG_PARSER_VERSION = 6;
 +export const CATALOG_PARSER_VERSION = 7;
  
  /**
   * JSON-safe CatalogItem: `stackSize` is a toString() string or null. Items
-@@ -80,6 +80,10 @@ interface StoredRecipe {
+@@ -80,6 +85,10 @@ interface StoredRecipe {
    inputs: StoredRecipeIO[];
    outputs: StoredRecipeIO[];
    primaryOutputId: string;
@@ -176,7 +182,7 @@ index 61bf333..e734049 100644
  }
  /** JSON-safe machine power: every Fraction is a toString() string; optional
   *  bounds stay optional. */
-@@ -226,6 +230,14 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
+@@ -226,6 +235,14 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
        inputs: r.inputs.map(serializeIO),
        outputs: r.outputs.map(serializeIO),
        primaryOutputId: r.primaryOutputId,
@@ -191,7 +197,7 @@ index 61bf333..e734049 100644
      };
    }
    const machines: Record<string, StoredCatalogMachine> = Object.create(null);
-@@ -316,6 +328,14 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
+@@ -316,6 +333,14 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
        inputs: r.inputs.map(reviveIO),
        outputs: r.outputs.map(reviveIO),
        primaryOutputId: r.primaryOutputId,
@@ -342,10 +348,10 @@ index ed6ce9e..864c953 100644
    }
  
 diff --git a/src/data/types.ts b/src/data/types.ts
-index 23d4116..1a83386 100644
+index 23d4116..0d7f2f1 100644
 --- a/src/data/types.ts
 +++ b/src/data/types.ts
-@@ -92,6 +92,13 @@ export interface CatalogRecipe {
+@@ -92,6 +92,14 @@ export interface CatalogRecipe {
    outputs: RecipeIO[];
    /** = outputs[0].itemId (the port's primary-output rule, renamed field). */
    primaryOutputId: string;
@@ -354,7 +360,8 @@ index 23d4116..1a83386 100644
 +   *  mVariablePowerConsumption* fields parse. CONSULTED ONLY when the
 +   *  producing machine is variable-power (the building-class gate) — 3 of
 +   *  the 46 field-carrying recipes sit on constant-power machines where
-+   *  the fields are inert (the Ballistic Warp Drive trap). */
++   *  the fields are inert (46 total, 43 on variable buildings — the
++   *  Ballistic Warp Drive trap). */
 +  variablePower?: { constantMw: Fraction; factorMw: Fraction };
  }
  

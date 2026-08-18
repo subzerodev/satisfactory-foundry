@@ -46,6 +46,11 @@ const CATALOG_KEY = "current";
  *
  * 5 -> 6 (#112): catalogs now include structured extractor rates, topology,
  * and raw-resource applicability. Older caches cannot reconstruct this data.
+ *
+ * 6 -> 7 (#142): recipes carry the optional variablePower range
+ * (mVariablePowerConsumptionConstant/Factor). Without the bump a cached
+ * catalog never regains the field and the per-recipe power correction
+ * silently no-ops for existing users — the isRawResource scar class.
  */
 export const CATALOG_PARSER_VERSION = 7;
 
