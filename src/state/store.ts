@@ -1191,6 +1191,64 @@ export function setBundledDocsProvider(
   bundledDocsProvider = provider;
 }
 
+/**
+ * Provenance-only seam (#144): the bundled-staleness comparison needs the
+ * ~200-byte provenance sidecar, never the 5.3 MB docs text — routing the check
+ * through bundledDocsProvider would re-download the catalog on every bundled
+ * boot, which is exactly what the cache exists to avoid. Default resolves null
+ * (unwired = no comparison, today's behaviour).
+ */
+let bundledProvenanceProvider: () => Promise<Provenance | null> = async () =>
+  null;
+
+export function setBundledProvenanceProvider(
+  provider: () => Promise<Provenance | null>,
+): void {
+  bundledProvenanceProvider = provider;
+}
+
+/**
+ * The detached bundled-refresh continuation, retained for the harness (#144):
+ * production never awaits it; tests await it to observe the refresh
+ * deterministically instead of polling. Null when no refresh was detached.
+ */
+let pendingRefresh: Promise<void> | null = null;
+
+export function pendingBundledRefresh(): Promise<void> | null {
+  return pendingRefresh;
+}
+
+/**
+ * Catalog-save serialization (#144): one last-writer-wins IDB row, three async
+ * writers (init's non-hit load, the detached refresh, user uploads). The queue
+ * makes row-write order equal set order, so the last set on any interleaving —
+ * always the user's — wins the row (never-evict). The chain itself never
+ * poisons (both outcomes settle it); the returned promise carries the op's
+ * real outcome so each caller keeps its own error handling. The planOpChain
+ * totality discipline, applied module-wide.
+ */
+let catalogSaveQueue: Promise<void> = Promise.resolve();
+
+function enqueueCatalogSave<T>(op: () => Promise<T>): Promise<T> {
+  const result = catalogSaveQueue.then(op);
+  catalogSaveQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+/**
+ * Test-only reset of the three #144 module-level bindings (leak hygiene, spec
+ * D1b): per-link totality already rules out queue poisoning and every enqueue
+ * is awaited before its action returns, so this is hygiene, not correctness.
+ */
+export function resetBundledRefreshSeams(): void {
+  bundledProvenanceProvider = async () => null;
+  pendingRefresh = null;
+  catalogSaveQueue = Promise.resolve();
+}
+
 // ---------------------------------------------------------------------------
 // Store construction (frozen brainstorm Axis 1)
 // ---------------------------------------------------------------------------
@@ -1314,10 +1372,71 @@ export function createAppStore(storage?: StateStorage) {
           proposePrefs: defaultProposePrefs(),
 
           async init() {
+            // The bundled load+parse+save sequence, shared by the non-hit
+            // fallback and the #144 staleness refresh. Parameterized by its
+            // APPLY (each caller decides how — and whether — a parsed catalog
+            // enters the store; returning false declines it) with the FAILURE
+            // fallback left to the caller. `unavailable` keeps the boundary-r1
+            // no-save carve-out: an unreadable row must not be clobbered, so
+            // that caller applies WITHOUT saving. Saves go through
+            // enqueueCatalogSave — the #144 row-write serialization.
+            const loadBundled = async (opts: {
+              unavailable: boolean;
+              apply: (catalog: Catalog, source: CatalogSource) => boolean;
+            }): Promise<boolean> => {
+              let bundled: { text: string; provenance: Provenance } | null;
+              try {
+                bundled = await bundledDocsProvider();
+              } catch {
+                bundled = null;
+              }
+              if (bundled === null) return false;
+              try {
+                const catalog = parseCatalogFromText(bundled.text);
+                const source: CatalogSource = {
+                  kind: "bundled",
+                  steamBuild: bundled.provenance.steamBuild,
+                  extractedAt: bundled.provenance.extractedAt,
+                };
+                if (!opts.apply(catalog, source)) return false;
+                if (opts.unavailable) {
+                  // Do NOT save: the unreadable row stays intact for a later
+                  // boot that can read it again (proven by the data-
+                  // preservation test).
+                  set({
+                    uploadError:
+                      "cached data couldn't be read this session — using bundled data",
+                  });
+                } else {
+                  // Cache the bundled catalog so later boots hit the fast
+                  // path (and keep the banner). Never-block save: a failure
+                  // leaves it usable this session, merely uncached, with an
+                  // uploadError note — same semantics as the upload path.
+                  try {
+                    await enqueueCatalogSave(() =>
+                      saveCatalog(bundled.text, catalog, source),
+                    );
+                  } catch (err) {
+                    const message =
+                      err instanceof Error ? err.message : String(err);
+                    set({
+                      uploadError: `bundled catalog loaded but could not be cached: ${message}`,
+                    });
+                  }
+                }
+                return true;
+              } catch {
+                // A corrupt bundled asset: the caller's failure fallback runs.
+                return false;
+              }
+            };
+
             const result = await loadCatalog();
             if (result.status === "hit") {
               // Cache wins: a user upload or a previously-cached bundled catalog
               // never regresses. The persisted row's source drives the banner.
+              // #144 set-first ordering: this fires before ANY network — the
+              // staleness check below is a detached continuation.
               set({
                 catalog: { status: "ready", catalog: result.catalog },
                 catalogSource: result.source,
@@ -1337,55 +1456,16 @@ export function createAppStore(storage?: StateStorage) {
               // we run bundled WITHOUT saving (usable this session, cache
               // untouched) and note it distinctly.
               const unavailable = result.status === "unavailable";
-              let bundled: { text: string; provenance: Provenance } | null;
-              try {
-                bundled = await bundledDocsProvider();
-              } catch {
-                bundled = null;
-              }
-
-              let ready = false;
-              if (bundled !== null) {
-                try {
-                  const catalog = parseCatalogFromText(bundled.text);
-                  const source: CatalogSource = {
-                    kind: "bundled",
-                    steamBuild: bundled.provenance.steamBuild,
-                    extractedAt: bundled.provenance.extractedAt,
-                  };
+              const ready = await loadBundled({
+                unavailable,
+                apply: (catalog, source) => {
                   set({
                     catalog: { status: "ready", catalog },
                     catalogSource: source,
                   });
-                  ready = true;
-                  if (unavailable) {
-                    // Do NOT save: the unreadable row stays intact for a later
-                    // boot that can read it again (proven by the data-
-                    // preservation test).
-                    set({
-                      uploadError:
-                        "cached data couldn't be read this session — using bundled data",
-                    });
-                  } else {
-                    // empty / stale: cache the bundled catalog so later boots hit
-                    // the fast path (and keep the banner). Never-block save: a
-                    // failure leaves it usable this session, merely uncached,
-                    // with an uploadError note — same semantics as the upload path.
-                    try {
-                      await saveCatalog(bundled.text, catalog, source);
-                    } catch (err) {
-                      const message =
-                        err instanceof Error ? err.message : String(err);
-                      set({
-                        uploadError: `bundled catalog loaded but could not be cached: ${message}`,
-                      });
-                    }
-                  }
-                } catch {
-                  // A corrupt bundled asset degrades to needs-upload below.
-                  ready = false;
-                }
-              }
+                  return true;
+                },
+              });
 
               if (!ready) {
                 // 'unavailable' is not a UI reason (the frozen union has only
@@ -1401,6 +1481,67 @@ export function createAppStore(storage?: StateStorage) {
             // ALL stages (cadence table): hydration is tiers-only and every
             // stage boots default, so no #5 override-clear is needed — identity.
             set((s) => deriveAllStages(s, (sel) => sel));
+
+            // #144 bundled-staleness self-heal: DETACHED continuation — init()
+            // resolves here; production never awaits this chain (tests do, via
+            // pendingBundledRefresh). It swallows every error. A user row never
+            // enters (never-evict by construction); a legacy backfilled row
+            // reads {kind:"user"} and correctly never auto-refreshes.
+            if (result.status === "hit" && result.source.kind === "bundled") {
+              const cachedBuild = result.source.steamBuild;
+              pendingRefresh = (async () => {
+                try {
+                  let prov: Provenance | null;
+                  try {
+                    prov = await bundledProvenanceProvider();
+                  } catch {
+                    prov = null;
+                  }
+                  // Fetch failed / unwired / equal build → keep the hit.
+                  if (prov === null || prov.steamBuild === cachedBuild) return;
+                  await loadBundled({
+                    unavailable: false,
+                    apply: (catalog, source) => {
+                      // Never-evict guard (spec D1b): a user upload may have
+                      // landed during the refresh window — apply only if the
+                      // live source is still bundled. Check and set share one
+                      // microtask; the save-vs-save race is closed separately
+                      // by enqueueCatalogSave (row-write order = set order).
+                      if (get().catalogSource?.kind !== "bundled") return false;
+                      // Apply like a live upload (the replace-while-ready
+                      // precedent): one set carrying the new catalog AND the
+                      // full re-derive, else stages stay solved against the
+                      // old catalog. Bundled swaps are same-schema, so unlike
+                      // an upload no recipeId re-validation is needed — but
+                      // the #5 treatment is kept identical to the upload path
+                      // for the same reason it exists there.
+                      set((s) => {
+                        const withCatalog: GraphSlice = {
+                          ...s,
+                          catalog: { status: "ready", catalog },
+                        };
+                        return {
+                          ...deriveAllStages(withCatalog, (sel) => ({
+                            ...sel,
+                            recipeId:
+                              sel.recipeId !== null &&
+                              catalog.recipes[sel.recipeId] !== undefined
+                                ? sel.recipeId
+                                : null,
+                            overrides: { feeds: {}, outputs: {} },
+                          })),
+                          catalogSource: source,
+                        };
+                      });
+                      return true;
+                    },
+                  });
+                } catch {
+                  // Detached chain: nothing may escape to an unhandled
+                  // rejection (spec D1b promise boundary).
+                }
+              })();
+            }
           },
 
           async uploadDocsText(text: string) {
@@ -1465,7 +1606,9 @@ export function createAppStore(storage?: StateStorage) {
             // catalog is usable this session, merely uncached — with uploadError
             // noting the cache miss (frozen Axis 4 wide catch).
             try {
-              await saveCatalog(text, catalog, { kind: "user" });
+              await enqueueCatalogSave(() =>
+                saveCatalog(text, catalog, { kind: "user" }),
+              );
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err);
               set({

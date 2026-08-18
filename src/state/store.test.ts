@@ -8,7 +8,14 @@ import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
 import type { Catalog } from "../data/types.ts";
 import type { PlanFileV1, PlanFileV2, PlanFileV8 } from "../data/plan-store.ts";
-import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
+import {
+  createAppStore,
+  setBundledDocsProvider,
+  setBundledProvenanceProvider,
+  pendingBundledRefresh,
+  resetBundledRefreshSeams,
+  canLink,
+} from "./store.ts";
 import type {
   StageLink,
   NewStageLink,
@@ -224,6 +231,10 @@ beforeEach(async () => {
   // Reset the module-level bundled-docs seam so a test that installs a provider
   // never leaks into the next; the default degrades (resolves null).
   setBundledDocsProvider(async () => null);
+  // #144: reset all three refresh bindings in the same place (provenance
+  // provider, retained refresh promise, save queue) — leak hygiene; a
+  // never-resolving provenance stub would otherwise dangle across tests.
+  resetBundledRefreshSeams();
 });
 
 // ---------------------------------------------------------------------------
@@ -275,6 +286,165 @@ describe("catalog lifecycle (spec row 1)", () => {
     if (s.catalog.status === "needs-upload") {
       expect(s.catalog.reason).toBe("stale");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #144 — bundled-staleness self-heal (spec: features/catalog-staleness)
+// ---------------------------------------------------------------------------
+
+describe("bundled staleness self-heal (#144)", () => {
+  const NEW_PROVENANCE = { steamBuild: "99999999", extractedAt: "2026-08-18" };
+
+  /** Seed the IDB row as a BUNDLED catalog at the fixture build. */
+  async function seedBundledRow(): Promise<void> {
+    await saveCatalog(DOCS_TEXT, parseCatalogFromText(DOCS_TEXT), {
+      kind: "bundled",
+      ...BUNDLED_PROVENANCE,
+    });
+  }
+
+  async function readRowSource(): Promise<unknown> {
+    const { openDb } = await import("../data/db.ts");
+    const db = await openDb();
+    const row = await db.get<{ source?: unknown }>("catalog", "current");
+    return row?.source;
+  }
+
+  it("equal build → ready from cache, docs provider never called", async () => {
+    await seedBundledRow();
+    let docsCalls = 0;
+    setBundledDocsProvider(async () => {
+      docsCalls++;
+      return null;
+    });
+    setBundledProvenanceProvider(async () => ({ ...BUNDLED_PROVENANCE }));
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    await pendingBundledRefresh();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    expect(s.catalogSource).toEqual({ kind: "bundled", ...BUNDLED_PROVENANCE });
+    expect(docsCalls).toBe(0);
+  });
+
+  it("differing build → refresh applies + row re-saved on the new build", async () => {
+    await seedBundledRow();
+    setBundledProvenanceProvider(async () => ({ ...NEW_PROVENANCE }));
+    setBundledDocsProvider(async () => ({
+      text: DOCS_TEXT,
+      provenance: { ...NEW_PROVENANCE },
+    }));
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    await pendingBundledRefresh();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    expect(s.catalogSource).toEqual({ kind: "bundled", ...NEW_PROVENANCE });
+    expect(await readRowSource()).toEqual({
+      kind: "bundled",
+      ...NEW_PROVENANCE,
+    });
+  });
+
+  it("provenance fetch fails → cached hit kept, no eviction", async () => {
+    await seedBundledRow();
+    let docsCalls = 0;
+    setBundledDocsProvider(async () => {
+      docsCalls++;
+      return null;
+    });
+    setBundledProvenanceProvider(async () => {
+      throw new Error("offline");
+    });
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    await pendingBundledRefresh();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    expect(s.catalogSource).toEqual({ kind: "bundled", ...BUNDLED_PROVENANCE });
+    expect(docsCalls).toBe(0);
+  });
+
+  it("differing build + docs provider fails → ready stays on the CACHED catalog", async () => {
+    await seedBundledRow();
+    setBundledProvenanceProvider(async () => ({ ...NEW_PROVENANCE }));
+    setBundledDocsProvider(async () => null);
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    await pendingBundledRefresh();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    expect(s.catalogSource).toEqual({ kind: "bundled", ...BUNDLED_PROVENANCE });
+    expect(await readRowSource()).toEqual({
+      kind: "bundled",
+      ...BUNDLED_PROVENANCE,
+    });
+  });
+
+  it("user hit → provenance provider never consulted, no refresh detached", async () => {
+    await saveCatalog(DOCS_TEXT, parseCatalogFromText(DOCS_TEXT)); // {kind:"user"}
+    let provCalls = 0;
+    setBundledProvenanceProvider(async () => {
+      provCalls++;
+      return { ...NEW_PROVENANCE };
+    });
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    expect(provCalls).toBe(0);
+    expect(pendingBundledRefresh()).toBeNull();
+    expect(store.getState().catalogSource).toEqual({ kind: "user" });
+  });
+
+  it("ordering pin: a never-resolving provenance fetch does not block ready", async () => {
+    await seedBundledRow();
+    setBundledProvenanceProvider(() => new Promise(() => {}));
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init(); // must RETURN — the refresh is detached
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    expect(s.catalogSource).toEqual({ kind: "bundled", ...BUNDLED_PROVENANCE });
+  });
+
+  it("upload-race pin: an upload landing mid-window wins memory AND the row", async () => {
+    await seedBundledRow();
+    setBundledProvenanceProvider(async () => ({ ...NEW_PROVENANCE }));
+    // Gate the docs fetch so the refresh can only complete after the upload.
+    let releaseDocs: () => void = () => {};
+    const docsGate = new Promise<void>((r) => {
+      releaseDocs = r;
+    });
+    setBundledDocsProvider(async () => {
+      await docsGate;
+      return { text: DOCS_TEXT, provenance: { ...NEW_PROVENANCE } };
+    });
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    // The refresh is now parked on the gate; land a user upload first.
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    releaseDocs();
+    await pendingBundledRefresh();
+    // The guard must have discarded the refresh: user survives everywhere.
+    expect(store.getState().catalogSource).toEqual({ kind: "user" });
+    expect(await readRowSource()).toEqual({ kind: "user" });
+  });
+
+  it("save-serialization pin: a race between refresh and upload always ends user", async () => {
+    await seedBundledRow();
+    setBundledProvenanceProvider(async () => ({ ...NEW_PROVENANCE }));
+    setBundledDocsProvider(async () => ({
+      text: DOCS_TEXT,
+      provenance: { ...NEW_PROVENANCE },
+    }));
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    // Fire the upload WITHOUT awaiting the refresh first: the two async
+    // chains genuinely race; the save queue must make the user's row-write
+    // land last on every interleaving.
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    await pendingBundledRefresh();
+    expect(store.getState().catalogSource).toEqual({ kind: "user" });
+    expect(await readRowSource()).toEqual({ kind: "user" });
   });
 });
 
