@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   useAppStore,
   setBundledDocsProvider,
+  setBundledProvenanceProvider,
   activeSelection,
   activeSolve,
 } from "../state/store.ts";
@@ -56,6 +57,25 @@ setBundledDocsProvider(async () => {
         extractedAt: prov.extractedAt,
       },
     };
+  } catch {
+    return null;
+  }
+});
+
+// #144: the lightweight staleness probe — provenance sidecar only (~200
+// bytes), never the 5.3 MB catalog. Failure resolves null: the cached hit is
+// kept (offline PWA boots serve the precached sidecar, which matches the
+// precached docs within one SW generation).
+setBundledProvenanceProvider(async () => {
+  const base = import.meta.env.BASE_URL;
+  try {
+    const provRes = await fetch(`${base}bundled-docs/provenance.json`);
+    if (!provRes.ok) return null;
+    const prov = (await provRes.json()) as {
+      steamBuild: string;
+      extractedAt: string;
+    };
+    return { steamBuild: prov.steamBuild, extractedAt: prov.extractedAt };
   } catch {
     return null;
   }

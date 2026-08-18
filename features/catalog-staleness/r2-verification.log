@@ -1,0 +1,70 @@
+# #144 bidirectionality verification — 2026-08-18T21:29:27Z
+# Production code committed at b15e474 BEFORE mutating (an earlier attempt
+# used git checkout against uncommitted work and destroyed it — redone).
+# Method: the test file imports the new seams, so a whole-file revert fails
+# on unresolved imports (meaningless). One targeted mutation per distinct
+# production behaviour; each restored via git checkout to the commit.
+
+## 0. PASS with production code present
+ Test Files  1 passed (1)
+      Tests  188 passed (188)
+
+## 1. Behaviour: refresh applies on build mismatch — Mutation A (detach trigger disabled)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > bundled staleness self-heal (#144) > differing build → refresh applies + row re-saved on the new build
+      Tests  1 failed | 187 passed (188)
+Updated 1 path from the index
+restored
+
+## 2. Behaviour: never-evict guard — Mutation B (guard removed)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > bundled staleness self-heal (#144) > upload-race pin: an upload landing mid-window wins memory AND the row
+ FAIL  src/state/store.test.ts > bundled staleness self-heal (#144) > save-serialization pin: a race between refresh and upload always ends user
+      Tests  2 failed | 186 passed (188)
+Updated 1 path from the index
+restored
+
+## 3. Behaviour: save serialization — Mutation C (refresh save bypasses the queue)
+# NOTE: without the queue the outcome is a genuine race; the pin is
+# outcome-deterministic only WITH the queue. 3 runs; any FAIL = pin live.
+--- run 1 ---
+      Tests  188 passed (188)
+--- run 2 ---
+      Tests  188 passed (188)
+--- run 3 ---
+      Tests  188 passed (188)
+Updated 1 path from the index
+restored
+
+## 4. Green confirmation post-restore
+ Test Files  1 passed (1)
+      Tests  188 passed (188)
+
+## 3b. Behaviour: save serialization — RETRY with the focused delayed-save pin
+# The integration race pin (3.) proved a NO-OP against Mutation C (the
+# refresh completes before the upload starts on achievable interleavings
+# — a green mutant, caught per the strong-results-need-scrutiny rule).
+# New focused test src/state/store.save-race.test.ts vi.mocks saveCatalog
+# to delay bundled-source writes 25ms, forcing the r4 BLOCKER interleaving.
+# PASS with queue (above: 1 passed). Mutation C (bypass queue):
+--- run 1 ---
+     × an upload landing while the refresh's save is IN FLIGHT still wins the row 60ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.save-race.test.ts > catalogSaveQueue serialization under a delayed bundled save (#144) > an upload landing while the refresh's save is IN FLIGHT still wins the row
+      Tests  1 failed (1)
+--- run 2 ---
+     × an upload landing while the refresh's save is IN FLIGHT still wins the row 61ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.save-race.test.ts > catalogSaveQueue serialization under a delayed bundled save (#144) > an upload landing while the refresh's save is IN FLIGHT still wins the row
+      Tests  1 failed (1)
+--- run 3 ---
+     × an upload landing while the refresh's save is IN FLIGHT still wins the row 60ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.save-race.test.ts > catalogSaveQueue serialization under a delayed bundled save (#144) > an upload landing while the refresh's save is IN FLIGHT still wins the row
+      Tests  1 failed (1)
+Updated 1 path from the index
+restored
+
+## 4b. Green confirmation post-restore (both files)
+ Test Files  2 passed (2)
+      Tests  189 passed (189)
