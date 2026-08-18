@@ -215,7 +215,8 @@ describe("transport-text — train rows + chip", () => {
   });
 
   it("non-terminating sustained rate renders the honest ≈ form, never n/d", () => {
-    // roundTrip 414.16 s with cargo 6400/car: 6400×60/(10354/25) is
+    // roundTrip 10354/25 s (an arbitrary measured input, not a lockout
+    // derivation) with cargo 6400/car: 6400×60/(10354/25) is
     // non-terminating → the cell must read "≈ …", not a raw fraction.
     const plan = {
       ...trainPlan(300, "measured"),
