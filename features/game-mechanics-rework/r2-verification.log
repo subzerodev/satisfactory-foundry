@@ -1,0 +1,195 @@
+Phase P0 — bidirectionality verification log (#140 arc)
+=======================================================
+
+Method: each new production behaviour is proven bidirectionally — the pinning
+test PASSES on committed code, a compiling MUTATION of the committed code makes
+that test FAIL for the RIGHT reason (a real value/behaviour diff, not a
+compile/crash artifact), and RESTORE returns the suite to green. Mutations were
+applied to committed code (all work committed first) and reverted with
+`git checkout`; targets addressed by content (capture-then-grep), never line
+numbers. Every mutant compiled (tsc-valid) — a mutant that fails to compile
+proves nothing.
+
+All commands run from the worktree root:
+  /home/subzerodev/workspace/satisfactory-foundry/.worktrees/phase-p0
+
+Baseline before P0: 1165 tests passing. After P0: 1177 tests passing (+12).
+
+---------------------------------------------------------------------------
+Behaviour 1 — tier PARSE (belt = mSpeed × 1/2, pipe = mFlowLimit × 60)
+---------------------------------------------------------------------------
+Production: src/data/docs-loader.ts  (BELT_RATE_FACTOR = Fraction.of(1, 2))
+Pinning test: docs-loader.test.ts "derives belt = mSpeed × 1/2, pipe = mFlowLimit × 60,
+  sorted ascending from a scrambled fragment" (+ the D3 real-file guard).
+
+PASS (committed):
+  $ npx vitest run src/data/docs-loader.test.ts -t "derives belt = mSpeed"
+  → Tests  1 passed | 68 skipped (69)
+
+BREAK (compiles — wrong factor):
+  sed -i 's/const BELT_RATE_FACTOR = Fraction.of(1, 2);/const BELT_RATE_FACTOR = Fraction.of(1, 3);/' src/data/docs-loader.ts
+
+FAIL (genuine framework failure, real value diff):
+  × derives belt = mSpeed × 1/2, pipe = mFlowLimit × 60, sorted ascending from a scrambled fragment
+  AssertionError: expected [ '40', '80', '180', '520' ] to deeply equal [ '60', '120', '270', '780' ]
+  → Tests  1 failed | 68 skipped (69)
+
+RESTORE + re-run green:
+  $ git checkout src/data/docs-loader.ts
+  → Tests  1 passed | 68 skipped (69)
+
+---------------------------------------------------------------------------
+Behaviour 2 — READY CLAMP (clampSelectionTiers at the catalog→ready transition)
+---------------------------------------------------------------------------
+Production: src/state/store.ts  (clampTierToTable upper bound; composed into the
+  ready-transition sets)
+Pinning test: store.test.ts "NON-VACUOUS clamp-at-ready: a persisted 6 clamps to
+  a SHORTER parsed 3-belt table and solves, not throws".
+
+PASS (committed):
+  $ npx vitest run src/state/store.test.ts -t "NON-VACUOUS clamp-at-ready"
+  → Tests  1 passed | 191 skipped (192)
+
+BREAK (compiles — drops the upper clamp):
+  sed -i 's/  if (count > tableLength) return tableLength;/  if (count > tableLength) return count;/' src/state/store.ts
+
+FAIL (genuine — stale count survives against the shorter table):
+  × NON-VACUOUS clamp-at-ready: a persisted 6 clamps to a SHORTER parsed 3-belt table and solves, not throws (#140 P0)
+  AssertionError: expected { belt: 6, pipe: 2 } to deeply equal { belt: 3, pipe: 1 }
+  → Tests  1 failed | 191 skipped (192)
+
+RESTORE + re-run green:
+  $ git checkout src/state/store.ts
+  → Tests  1 passed
+
+---------------------------------------------------------------------------
+Behaviour 3a — SANITIZER, undefined → full fallback length (missing-field branch)
+---------------------------------------------------------------------------
+Production: src/state/store.ts  sanitizeMergeTier: `if (value === undefined) return fallbackLength;`
+Pinning test: store.test.ts "missing-field sanitization: an absent belt field →
+  the full fallback length (6) VIA THE MERGE, pipe kept".
+
+PASS (committed):
+  $ npx vitest run src/state/store.test.ts -t "missing-field sanitization"
+  → Tests  1 passed | 191 skipped (192)
+
+BREAK (compiles — the exact `undefined → 1` regression the r8 fold warned of):
+  sed -i 's/  if (value === undefined) return fallbackLength;/  if (value === undefined) return 1;/' src/state/store.ts
+
+FAIL (genuine — full unlock silently regresses to 1):
+  × missing-field sanitization: an absent belt field → the full fallback length (6) VIA THE MERGE, pipe kept (#140 P0)
+  AssertionError: expected { belt: 1, pipe: 1 } to deeply equal { belt: 6, pipe: 1 }
+  → Tests  1 failed | 191 skipped (192)
+
+RESTORE + re-run green:
+  $ git checkout src/state/store.ts
+  → Tests  1 passed
+
+---------------------------------------------------------------------------
+Behaviour 3b — SANITIZER, present-but-corrupt → 1 (fail-minimal branch)
+---------------------------------------------------------------------------
+Production: src/state/store.ts  sanitizeMergeTier bucket-3 `return 1;`
+Pinning test: store.test.ts "junk sanitization: a present-but-corrupt persisted
+  belt (-5 / 'x' / 3.5) floors to 1 at the merge".
+
+PASS (committed):
+  $ npx vitest run src/state/store.test.ts -t "junk sanitization"
+  → Tests  1 passed | 191 skipped (192)
+
+BREAK (compiles — maps corrupt to max instead of fail-minimal 1):
+  bucket-3 `return 1;`  →  `return fallbackLength;`  (applied by content anchor)
+
+FAIL (genuine — corrupt -5 maps to 6, not 1):
+  × junk sanitization: a present-but-corrupt persisted belt (-5 / 'x' / 3.5) floors to 1 at the merge (#140 P0)
+  AssertionError: expected 6 to be 1
+  → Tests  1 failed | 191 skipped (192)
+
+RESTORE + re-run green:
+  $ git checkout src/state/store.ts
+  → Tests  1 passed
+
+---------------------------------------------------------------------------
+Behaviour 3c — MERGE keeps a present positive integer as-is (loss-free, no upper bound)
+---------------------------------------------------------------------------
+Production: src/state/store.ts  sanitizeMergeTier bucket-2 `return value;`
+Pinning test: store.test.ts "loss-free reboot: persisted belt 7 + a 7-tier
+  parsed catalog stays 7 (no constant-bound merge clamp)".
+
+PASS (committed):
+  $ npx vitest run src/state/store.test.ts -t "loss-free reboot"
+  → Tests  1 passed | 191 skipped (192)
+
+BREAK (compiles — the r4 down-bounding silent-loss defect):
+  bucket-2 `return value;`  →  `return Math.min(value, fallbackLength);`  (by content anchor)
+
+FAIL (genuine — the legitimate persisted 7 dies to 6 at the merge, then the
+  down-only path can never restore it):
+  × loss-free reboot: persisted belt 7 + a 7-tier parsed catalog stays 7 (no constant-bound merge clamp) (#140 P0)
+  AssertionError: expected 6 to be 7
+  → Tests  1 failed | 191 skipped (192)
+
+RESTORE + re-run green:
+  $ git checkout src/state/store.ts
+  → Tests  1 passed
+
+---------------------------------------------------------------------------
+Behaviour 4 — ROUND-TRIP (tiers serialize → revive exactly through the cache)
+---------------------------------------------------------------------------
+Production: src/data/catalog-store.ts  (serializeCatalog tiers; reviveCatalog rebuild)
+Pinning test: catalog-store.test.ts "tiers round-trip exactly — a NON-curated
+  table survives serialize → revive".
+
+PASS (committed):
+  $ npx vitest run src/data/catalog-store.test.ts -t "tiers round-trip exactly"
+  → Tests  1 passed | 14 skipped (15)
+
+BREAK (compiles — serializer drops the belt tiers):
+  `belt: catalog.tiers.belt.map((f) => f.toString()),`  →  `belt: [],`  (by content anchor)
+
+FAIL (genuine — the non-curated belt table is lost on revive):
+  × tiers round-trip exactly — a NON-curated table survives serialize → revive (#140 P0)
+  AssertionError: expected [] to deeply equal [ '60', '120', '555/2' ]
+  → Tests  1 failed | 14 skipped (15)
+
+RESTORE + re-run green:
+  $ git checkout src/data/catalog-store.ts
+  → Tests  1 passed
+
+---------------------------------------------------------------------------
+Behaviour 5 — LOCKOUT (TRAIN_LOCKOUT_SECONDS = 27, game field)
+---------------------------------------------------------------------------
+Production: src/core/transport-facts.ts  (Fraction.from(27))
+Pinning test: transport.test.ts "stack-50 per-platform ceiling = EXACT 96000/67
+  from the 27 s constant" (one of the re-derived docking/lockout assertions).
+
+PASS (committed):
+  $ npx vitest run src/core/transport.test.ts -t "stack-50 per-platform ceiling"
+  → Tests  1 passed | 24 skipped (25)
+
+BREAK (compiles — reverts to the retired wiki 27.08 s):
+  sed -i 's/export const TRAIN_LOCKOUT_SECONDS = Fraction.from(27);/export const TRAIN_LOCKOUT_SECONDS = Fraction.of(2708, 100);/' src/core/transport-facts.ts
+
+FAIL (genuine — the derived ceiling 96000/67 no longer holds):
+  × stack-50 per-platform ceiling = EXACT 96000/67 from the 27 s constant
+  AssertionError: expected false to be true  (perPlatformCeiling.eq(96000/67))
+  → Tests  1 failed | 24 skipped (25)
+
+RESTORE + re-run green:
+  $ git checkout src/core/transport-facts.ts
+  → Tests  1 passed
+
+---------------------------------------------------------------------------
+Summary
+---------------------------------------------------------------------------
+Behaviours mutation-proven (compiling mutant → genuine framework FAIL → restore green):
+  1. tier parse (belt factor)                          ✓
+  2. ready clamp (upper bound at catalog→ready)        ✓
+  3a. sanitizer undefined → fallback length            ✓
+  3b. sanitizer present-but-corrupt → 1                ✓
+  3c. merge keeps present positive integer (loss-free) ✓
+  4. cache round-trip of parsed tiers                  ✓
+  5. train lockout constant (27, derived ceiling)      ✓
+
+No green mutants were encountered (each mutation flipped its pin to red as
+expected). Full suite after all restores: 1177 passed (45 files);
+`npm run check` clean (tsc + eslint + prettier).
