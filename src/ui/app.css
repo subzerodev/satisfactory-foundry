@@ -1275,8 +1275,18 @@ body {
   border-radius: 0;
 }
 
+/* Stage 23 (#134): the height cap and scroll live on the WRAPPER, not the stack.
+   The cap is a percentage of .react-flow, which has a definite height, so it
+   resolves against a box that is not sized by its own content. The wrapper stays
+   height:auto and therefore shrink-wraps to min(content, cap) — that is what
+   keeps a short panel from reserving a tall transparent box over the canvas.
+   78 = top inset 16 + power panel inset 58 + 6px clearance - 2px canvas border
+   (already excluded from the percentage basis). */
 .graph-canvas .react-flow__panel.top.right {
   max-width: min(360px, calc(100% - 32px));
+  max-height: calc(100% - 78px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .graph-top-right-stack {
@@ -1284,9 +1294,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 260px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
 .extraction-panel {
@@ -1570,11 +1577,17 @@ body {
     left: 8px;
     max-width: none;
     margin: 0;
+    /* Narrow spans the full canvas width, so it overlaps the controls' column
+       and the CONTROLS bind rather than the power panel:
+       169 = top inset 49 + controls inset 120 + 2px clearance - 2px border.
+       2px, not 6: the controls are fixed-pixel chrome that does not move under
+       font drift, and overlap() is a strict comparison, so this only has to
+       cover subpixel rounding. The freed budget goes to content margin. */
+    max-height: calc(100% - 169px);
   }
 
   .graph-top-right-stack {
     width: 100%;
-    max-height: 170px;
   }
 
   .extraction-panel {

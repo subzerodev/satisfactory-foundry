@@ -50,7 +50,10 @@ async function pointerFocusControl(cdp, selector, label) {
     cdp,
     `(() => {
       const control = document.querySelector(${selectorText});
-      const panel = document.querySelector('.graph-top-right-stack');
+      // Stage 23 (#134): the wrapper is the scroll container, so containment and
+      // scrollTop must be read from it. Its rect-in-rect half behaves like the
+      // geometry loop's post-scroll test; the viewport half below stays armed.
+      const panel = document.querySelector('.react-flow__panel.top.right');
       if (!control || !panel) return { found: false };
       control.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       const r = control.getBoundingClientRect();
@@ -147,12 +150,24 @@ const geometryCheck = `(() => {
   if (overflow.length) errors.push('text overflow: ' + overflow.join(','));
   const content = document.querySelector('.graph-top-right-stack');
   const state = new URLSearchParams(location.search).get('state');
-  const expectedCap = innerWidth <= 720 ? 170 : 260;
-  const scrollable = content
-    ? ['auto', 'scroll'].includes(getComputedStyle(content).overflowY) && content.scrollHeight > content.clientHeight
-    : false;
-  if (state !== 'notice' && !scrollable) errors.push('expanded extraction stack is not internally scrollable');
-  if (state !== 'notice' && Math.abs(s.height - expectedCap) > 0.5) errors.push('expanded extraction stack does not reach its responsive height cap');
+  // Stage 23 (#134): derived from the canvas, not pinned. The wrapper's cap is a
+  // percentage of .react-flow, whose height is the canvas height less its 2px
+  // border, so the cap is c.height - (K + 2). A drifting constant now fails here
+  // instead of silently re-baselining the gate.
+  const expectedCap = innerWidth <= 720 ? c.height - 171 : c.height - 80;
+  // The scroll container is the WRAPPER (the const named stack, rect s), not
+  // .graph-top-right-stack.
+  const scrollable = ['auto', 'scroll'].includes(getComputedStyle(stack).overflowY)
+    && stack.scrollHeight > stack.clientHeight;
+  if (state !== 'notice' && !scrollable) errors.push('expanded extraction panel is not internally scrollable');
+  // Always armed, including state=notice: the wrapper must equal min(content, cap).
+  // Measured against the STACK's laid-out height — the wrapper's own scrollHeight
+  // is floored at its clientHeight, so comparing it to the wrapper would be an
+  // identity and could never fire. 0.5px because both terms are fractional.
+  const contentHeight = rect(content).height;
+  if (Math.abs(s.height - Math.min(contentHeight, expectedCap)) > 0.5) {
+    errors.push('extraction wrapper is not min(content, responsive cap)');
+  }
   const controlMeasurements = [];
   if (state !== 'notice') {
     const purityInputs = ['Impure nodes', 'Normal nodes', 'Pure nodes'];
@@ -161,8 +176,14 @@ const geometryCheck = `(() => {
     }
     if (!document.querySelector('.extraction-purity-result')) errors.push('missing expanded purity result');
     for (const control of document.querySelectorAll('.extraction-panel select, .extraction-panel input')) {
+      // Post-scroll, so this is a chrome-avoidance test rather than a reachability
+      // oracle: contained is green for any control the scrollport can fit. It
+      // still fires when a control is larger than the scrollport, because
+      // block:'nearest' scrolls minimally and leaves the far edge outside.
+      // Reachability-without-scrolling is asserted at 560px in the interaction
+      // loop, where the content actually fits.
       control.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      const r = rect(control), visible = rect(content);
+      const r = rect(control), visible = rect(stack);
       const name = control.getAttribute('aria-label') || control.closest('label')?.querySelector('span')?.textContent || control.tagName;
       const contained = r.left >= visible.left && r.right <= visible.right && r.top >= visible.top && r.bottom <= visible.bottom;
       const avoidsChrome = !overlap(r, t) && !overlap(r, ctl) && !overlap(r, p);
@@ -323,6 +344,41 @@ async function main({ cdp, vitePort }) {
   })()`,
       "seeded Limestone purity mix",
     );
+    // Stage 23 (#134) gate change 7. At the real 560px canvas the mix must fit
+    // WITHOUT scrolling — the point of the ticket. Measured here, before the
+    // purity pointerFocusControl calls, because those scroll and would mask it.
+    // The containment half is the shipped-build regression witness; the overflow
+    // half passes today (the stack was the scroll container, so the wrapper
+    // shrink-wrapped) and stays live after the change, firing on any cap below
+    // the content height.
+    const noScrollFit = await evaluate(
+      cdp,
+      `(() => {
+    const wrapper = document.querySelector('.react-flow__panel.top.right');
+    const pure = document.querySelector('[role="dialog"] [aria-label="Pure nodes"]');
+    if (!wrapper || !pure) return { found: false };
+    const w = wrapper.getBoundingClientRect(), r = pure.getBoundingClientRect();
+    return {
+      found: true,
+      overflowing: wrapper.scrollHeight > wrapper.clientHeight + 1,
+      scrollHeight: wrapper.scrollHeight,
+      clientHeight: wrapper.clientHeight,
+      contained: r.top >= w.top && r.bottom <= w.bottom && r.left >= w.left && r.right <= w.right,
+      overhang: Math.round(r.bottom - w.bottom),
+    };
+  })()`,
+    );
+    if (!noScrollFit.found)
+      throw new Error(`${width}px: wrapper or Pure nodes input missing before purity interaction`);
+    if (noScrollFit.overflowing)
+      throw new Error(
+        `${width}px: extraction wrapper overflows at the default canvas ${JSON.stringify(noScrollFit)}`,
+      );
+    if (!noScrollFit.contained)
+      throw new Error(
+        `${width}px: Pure nodes input is not visible without scrolling ${JSON.stringify(noScrollFit)}`,
+      );
+
     const purityControlGeometry = [];
     for (const [label, field] of [
       ["Impure nodes", "impure"],

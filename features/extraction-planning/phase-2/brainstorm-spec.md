@@ -131,9 +131,15 @@ mix totals. Water shows the existing Phase 1 result with no purity controls.
 Closing and reopening restores the persisted mix. Keyboard focus continues to
 land on the extractor select, with existing close-focus restoration unchanged.
 
-The panel remains within the established responsive stack. Its body already
+The panel remains within the established responsive stack, and the browser gate
+must prove the new controls do not overlap chain controls.
+
+*Superseded by Stage 23 / #134:* this paragraph originally read "Its body already
 scrolls at the measured 170px mobile cap; the browser gate must prove the new
-controls are reachable by scrolling at 360px and do not overlap chain controls.
+controls are reachable **by scrolling** at 360px." That 170px cap no longer
+exists and the scroll container is now the top-right wrapper, not the panel body.
+At the default 560px canvas the controls are reachable **without** scrolling —
+which the gate now asserts — while the 340px minimum canvas still scrolls.
 
 ## Error And Lifecycle Rules
 
