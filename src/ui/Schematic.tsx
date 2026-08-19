@@ -563,7 +563,6 @@ function Ruler({
   const xOf = (index: number) => machines[index - 1]!.x;
   // Every machine carries an index label + minor tick — the readable pitch floor
   // (#154) keeps 3-digit labels from crowding, so no thinning is needed.
-  const labeled = machines;
   const MINOR_H = 4;
   return (
     <g className="machine-ruler">
@@ -588,7 +587,7 @@ function Ruler({
           y2={baseline}
         />
       ))}
-      {labeled.map((m) => (
+      {machines.map((m) => (
         <g key={`minor-${m.index}`} className="ruler-minor">
           {/* MINOR tick — 4px up from the baseline at the cell CENTRE
               (m.x + pitch/2), binding the label below to its machine cell. */}
