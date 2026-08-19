@@ -31,6 +31,7 @@ lift, #148/#149 on-demand only (24834/24836).
 ## Child issues
 
 - P0 = #150 (MERGED @ cece96d 2026-08-19; completion report p0-completion.md).
+- P2 = #152 (design in progress 2026-08-19; USER GATE 2 passed #140 c24881).
 - P1 = #151 (MERGED 2026-08-19; completion report p1-completion.md — P2 MUST honor its hand-off caveats: terminal handoffResidue is capacity surplus not onward flow; segTooltip 'peak' copy awaits the P2 format pass).
 - P3 = #135, P4 = #133 (existing tickets are the children).
 - P0/P1/P2: check-then-create at each phase start, anchored here.
