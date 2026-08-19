@@ -692,11 +692,11 @@ export function ExtractionPanel({
               packaging={selection.packaging}
               plan={packagingPlan}
               endpoints={{
-                left:
-                  result.status === "planned"
-                    ? `${result.count} × ${catalog.machines[selection.machineId]?.displayName ?? selection.machineId}`
-                    : (catalog.machines[selection.machineId]?.displayName ??
-                      selection.machineId),
+                // This JSX only renders under result.status === "planned"
+                // (the block opened above), so result.count is always present.
+                // The machine name resolves two-hop through the extractor, like
+                // the Total line — not the extractor-id === machine-id shortcut.
+                left: `${result.count} × ${catalog.machines[catalog.extractors[selection.machineId]?.machineId ?? ""]?.displayName ?? selection.machineId}`,
                 right: "Delivery",
               }}
               onSetEnabled={setPackagingEnabled}
