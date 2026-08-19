@@ -107,19 +107,63 @@ export function feedGroupLabel(belts: readonly FeedBelt[]): string {
 }
 
 /**
- * A bus segment's hover-tooltip text. The exact string is owned here (Stage 5
- * item 1) so any styled tooltip and the unit test share one source of truth,
- * rather than being buried in `<title>` markup. `busCapString` is the already-
- * formatted bus capacity (formatRate) the caller passes; `entryFlow` is the
- * segment's exact head/entry flow, formatted here.
+ * A bus segment's hover-tooltip text (P2 D3, rewriting the stale "peak" copy of
+ * caveat 2 into the entry/hand-off vocabulary the ribbon draws). The exact
+ * string is owned here (Stage 5 item 1) so any styled tooltip and the unit test
+ * share one source of truth. `busCapString` is the already-formatted bus
+ * capacity (formatRate) the caller passes; `entryFlow`/`handoffResidue` are the
+ * segment's exact flows, formatted here. Three shapes, keyed by `side` + the
+ * `terminal` flag:
+ *
+ *   - Non-terminal feed: `entry N → hand-off M · bus B` — the ribbon's reset
+ *     thickness and its onward carry.
+ *   - Terminal feed with surplus (caveat 1): `entry N → 0/min onward · S/min
+ *     spare belt capacity` — the terminal `handoffResidue` is UNUSED CAPACITY,
+ *     never onward flow, so onward reads 0 and the surplus surfaces textually.
+ *   - Output: `collects N/min of B/min` — a break-out belt's flat span load;
+ *     handoff is always 0 there, so no onward term.
  */
 export function segTooltip(
-  seg: { fromMachine: number; toMachine: number; entryFlow: Fraction },
+  seg: {
+    fromMachine: number;
+    toMachine: number;
+    entryFlow: Fraction;
+    handoffResidue: Fraction;
+  },
   busCapString: string,
+  side: "feed" | "output",
+  terminal: boolean,
 ): string {
-  return `machines ${seg.fromMachine}–${seg.toMachine} · peak ${formatRate(
-    seg.entryFlow,
-  )}/min of ${busCapString}/min`;
+  const span = `machines ${seg.fromMachine}–${seg.toMachine}`;
+  if (side === "output") {
+    return `${span} · collects ${formatRate(seg.entryFlow)}/min of ${busCapString}/min`;
+  }
+  const entry = `entry ${formatRate(seg.entryFlow)}/min`;
+  if (terminal) {
+    // Caveat 1: onward flow is always 0 on the terminal stretch; any positive
+    // handoffResidue is spare belt capacity, surfaced separately, never as flow.
+    const surplus = seg.handoffResidue.isZero()
+      ? ""
+      : ` · ${formatRate(seg.handoffResidue)}/min spare belt capacity`;
+    return `${span} · ${entry} → 0/min onward${surplus}`;
+  }
+  return `${span} · ${entry} → hand-off ${formatRate(seg.handoffResidue)}/min · bus ${busCapString}/min`;
+}
+
+/**
+ * The pipe feed connector's hover-tooltip (P2 D4). A pipe manifold is an
+ * unordered equal-split pressure group, so the connector claims no ordered flow
+ * — just the lane's total demand D, the summed supplied capacity S of its runs,
+ * and the nominal-ceiling caveat (pipe ratings are nominal; real steady-state
+ * can sit lower). Owned here so the connector and its pin share one string.
+ */
+export function pipeConnectorTooltip(
+  demand: Fraction,
+  supplied: Fraction,
+): string {
+  return `total demand ${formatRate(demand)}/min · supplied ${formatRate(
+    supplied,
+  )}/min (nominal pipe ceiling)`;
 }
 
 /** One human sentence per finding variant. */

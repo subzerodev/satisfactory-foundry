@@ -161,7 +161,9 @@ describe("layoutStage — lane geometry", () => {
       3,
     );
     const j = layout.feedLanes[0]!.junctions[1]!;
-    expect(j).toEqual({ x: 65, y: -40, w: 40, h: 40 });
+    // A feed column with no seam residue-in is a splitter (P2 D7); this fixture
+    // has no segments, so every feed junction is a plain splitter.
+    expect(j).toEqual({ x: 65, y: -40, w: 40, h: 40, kind: "splitter" });
     expect(j.w).toBe(SPLITTER_FOOTPRINT.width);
     expect(j.h).toBe(SPLITTER_FOOTPRINT.length);
   });
@@ -175,6 +177,138 @@ describe("layoutStage — lane geometry", () => {
     const j = layout.outputLanes[0]!.junctions[0]!;
     expect(j.w).toBe(MERGER_FOOTPRINT.width);
     expect(j.h).toBe(MERGER_FOOTPRINT.length);
+  });
+});
+
+// ── Junction attachment kinds (P2 D7) ───────────────────────────────────────
+
+/**
+ * A feed lane with explicit belts AND segments, so the junction-kind derivation
+ * (seam-merger ⇔ a stretch's residue-in > 0, residue-in = entryFlow −
+ * belt.capacity) can be exercised directly. Segments name their beltIndex so the
+ * derivation resolves the right belt capacity.
+ */
+function feedLaneKinds(
+  itemId: string,
+  belts: { index: number; entersAfterMachine: number; capacity: number }[],
+  segments: {
+    fromMachine: number;
+    toMachine: number;
+    entryFlow: number;
+    handoffResidue: number;
+    beltIndex: number;
+  }[],
+): FeedLaneResult {
+  return {
+    itemId,
+    kind: "belt",
+    perMachineDemand: F(0),
+    totalDemand: F(0),
+    belts: belts.map((b) => ({
+      index: b.index,
+      capacity: F(b.capacity),
+      overridden: false,
+      entersAfterMachine: b.entersAfterMachine,
+    })),
+    segments: segments.map((s) => ({
+      fromMachine: s.fromMachine,
+      toMachine: s.toMachine,
+      entryFlow: F(s.entryFlow),
+      handoffResidue: F(s.handoffResidue),
+      beltIndex: s.beltIndex,
+    })),
+    hardware: null,
+    standingBufferItems: 0,
+    findings: [],
+  };
+}
+
+describe("layoutStage — junction attachment kinds (P2 D7)", () => {
+  it("labels exactly the seam column seam-merger, the rest splitter", () => {
+    // The N=13 shape: stretch [1-6] entry 780 handoff 60 (belt0 cap 780, no
+    // residue-in → splitter head), stretch [7-13] entry 840 (belt1 cap 780 →
+    // residue-in 60 > 0 → the seam at column 6, machine 7's 0-based col).
+    const feed = feedLaneKinds(
+      "feed",
+      [
+        { index: 0, entersAfterMachine: 0, capacity: 780 },
+        { index: 1, entersAfterMachine: 6, capacity: 780 },
+      ],
+      [
+        {
+          fromMachine: 1,
+          toMachine: 6,
+          entryFlow: 780,
+          handoffResidue: 60,
+          beltIndex: 0,
+        },
+        {
+          fromMachine: 7,
+          toMachine: 13,
+          entryFlow: 840,
+          handoffResidue: 0,
+          beltIndex: 1,
+        },
+      ],
+    );
+    const layout = layoutStage(solve([feed], []), "smelter_mk1", 13);
+    const kinds = layout.feedLanes[0]!.junctions.map((j) => j.kind);
+    // Exactly one seam-merger, at column 6 (machine 7 → 0-based col 6).
+    expect(kinds.filter((k) => k === "seam-merger")).toHaveLength(1);
+    expect(kinds[6]).toBe("seam-merger");
+    expect(kinds.every((k, i) => (i === 6 ? true : k === "splitter"))).toBe(
+      true,
+    );
+  });
+
+  it("labels every output-lane junction merger", () => {
+    const out = outputLane("b", [
+      { index: 0, startsAfterMachine: 0, capacity: 480, load: 240 },
+    ]);
+    const layout = layoutStage(solve([], [out]), "smelter_mk1", 5);
+    const kinds = layout.outputLanes[0]!.junctions.map((j) => j.kind);
+    expect(kinds).toEqual(["merger", "merger", "merger", "merger", "merger"]);
+  });
+
+  it("labels a seam after an EMPTY-SPAN belt seam-merger (kills segments[j-1])", () => {
+    // The r1 empty-span counter-case: an emitted stretch A hands off 0, then an
+    // empty-span belt (belt1) emits NO segment but carries its capacity forward,
+    // then stretch B (belt2) is a real seam (residue-in > 0). The rejected
+    // segments[j-1].handoffResidue read would see A's 0 and mislabel B a
+    // splitter; the subtraction derivation (entryFlow − belt.capacity) survives.
+    //   A = [1-2] entry 240 handoff 0 (belt0 cap 240, d=120 exact-drains).
+    //   belt1 empty span at machine 2, capacity 120 carries forward (no segment).
+    //   B = [3-...] entry 900 (= 120 carried + belt2 cap 780) → residue-in 120.
+    const feed = feedLaneKinds(
+      "feed",
+      [
+        { index: 0, entersAfterMachine: 0, capacity: 240 },
+        { index: 1, entersAfterMachine: 2, capacity: 120 },
+        { index: 2, entersAfterMachine: 2, capacity: 780 },
+      ],
+      [
+        {
+          fromMachine: 1,
+          toMachine: 2,
+          entryFlow: 240,
+          handoffResidue: 0,
+          beltIndex: 0,
+        },
+        // belt1 is the empty span (entersAfterMachine 2 == belt2's) — no segment.
+        {
+          fromMachine: 3,
+          toMachine: 9,
+          entryFlow: 900,
+          handoffResidue: 0,
+          beltIndex: 2,
+        },
+      ],
+    );
+    const layout = layoutStage(solve([feed], []), "smelter_mk1", 9);
+    const kinds = layout.feedLanes[0]!.junctions.map((j) => j.kind);
+    // The seam is stretch B's fromMachine 3 → 0-based col 2.
+    expect(kinds[2]).toBe("seam-merger");
+    expect(kinds.filter((k) => k === "seam-merger")).toHaveLength(1);
   });
 });
 

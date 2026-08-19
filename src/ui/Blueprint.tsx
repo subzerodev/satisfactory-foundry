@@ -258,11 +258,16 @@ function BusAndJunctions({ lane, kind }: { lane: LaneLayout; kind: LaneKind }) {
         <rect
           key={`j-${i}`}
           className="bp-junction"
+          data-kind={j.kind}
           x={j.x}
           y={j.y}
           width={j.w}
           height={j.h}
-        />
+        >
+          {/* The attachment kind as the rect's tooltip word (P2 D7). Footprint
+              sizes are identical (4×4) — this is naming, not new geometry. */}
+          <title>{j.kind}</title>
+        </rect>
       ))}
     </g>
   );

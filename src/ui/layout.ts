@@ -81,6 +81,9 @@ export interface LaneTrack {
     x2: number;
     beltIndex: number;
     entryFlow: Fraction; // solver's entry/head flow, passed through for the title
+    handoffResidue: Fraction; // trunk carry past the span (display data; never a
+    // coordinate — same convention as entryFlow). Feeds the D1 ribbon's right
+    // half-height + the D2/D3 hand-off number; ZERO on every output span.
   }[];
   seams: number[];
 }
@@ -234,6 +237,7 @@ function feedTrack(
       x2: boundaryX(s.toMachine, pitch),
       beltIndex: s.beltIndex,
       entryFlow: s.entryFlow,
+      handoffResidue: s.handoffResidue,
     })),
     // Interior seams: each segment start boundary except the head (machine 1).
     seams: lane.segments
@@ -262,6 +266,7 @@ function outputTrack(
       x2: boundaryX(s.toMachine, pitch),
       beltIndex: s.beltIndex,
       entryFlow: s.entryFlow,
+      handoffResidue: s.handoffResidue,
     })),
     seams: lane.segments
       .filter((s) => s.fromMachine > 1)

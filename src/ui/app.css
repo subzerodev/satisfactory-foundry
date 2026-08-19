@@ -670,6 +670,14 @@ body {
   color: var(--fg-muted);
 }
 
+/* The P2 D5 side-table lines (hardware / buffer / spare on feed cards; the
+   collection-cascade suffix on output cards) — quiet, one per line under the
+   count. */
+.card-detail {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
 /* The power-draw card (Stage 6 P2) — same card chrome, muted rate line. */
 .summary-card-power .card-rate {
   color: var(--fg-muted);
@@ -761,6 +769,40 @@ body {
 
 .bus-seg {
   stroke-width: 6;
+}
+
+/* Feed ribbon (P2 D1): the trapezoid fills its belt-capacity colour at reduced
+   opacity with a 1px same-colour outline — a filled shape, not a 6px rule. The
+   line variant on OUTPUT lanes keeps the 6px stroke above; a polygon takes no
+   stroke-width for its body, so scope the fill treatment to the polygon. */
+polygon.bus-seg {
+  fill-opacity: 0.35;
+  stroke-width: 1;
+}
+
+/* Ribbon endpoint numbers (P2 D2): entry / hand-off / terminal "0", one baseline
+   above the ribbon, overlaying the entry arrows by construction — so they carry
+   the same text-over-linework halo idiom as .lane-name / .feed-group-count (a
+   --bg stroke UNDER the glyphs via paint-order). */
+.ribbon-endpoint {
+  font-family: var(--font-mono-num);
+  font-size: 10px;
+  fill: var(--fg);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+/* Pipe manifold connector (P2 D4): a neutral 2px dashed line spanning the runs,
+   reusing the lane-pipe dashed rhythm but at its own neutral width and colour —
+   an UNORDERED group, so no tier colour is claimed. The lane-undersupplied error
+   colours the whole connector (seg-error) via the existing error path. */
+.pipe-manifold {
+  stroke: var(--fg-muted);
+  stroke-width: 2;
+  stroke-dasharray: 10 5;
+  opacity: 0.85;
 }
 
 .belt-arrow {
@@ -1197,6 +1239,35 @@ body {
    would double-count the pipe rules. Kept as a sibling class. */
 .legend-rule-dashed {
   border-top-style: dashed;
+}
+
+/* P2 D6 line-convention samples. None carries the "legend-swatch" substring (the
+   count pin above) — they are the drawing's non-tier conventions:
+   - taper: a small filled triangle standing for the ribbon that thins as
+     machines draw (a CSS border triangle in the muted ink);
+   - seam: a short dashed vertical tick, the belt-seam / merger mark;
+   - pipe-manifold: the neutral dashed connector, unordered by design. */
+.legend-taper {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 18px solid var(--fg-muted);
+}
+
+.legend-seam {
+  display: inline-block;
+  width: 0;
+  height: 12px;
+  border-left: 2px dashed var(--junction-fill);
+}
+
+.legend-pipe-manifold {
+  display: inline-block;
+  width: 22px;
+  height: 0;
+  border-top: 2px dashed var(--fg-muted);
 }
 
 /* -------------------------------------------------------------------------

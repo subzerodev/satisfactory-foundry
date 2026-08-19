@@ -526,27 +526,31 @@ describe("segTooltip (bus-segment hover string, Stage 5 item 1)", () => {
   // The segTooltip helper survives the schematic removal (#68) — it is a pure
   // formatter for the bus-segment hover string, still fed real solves here so
   // the pinned strings gate against a live solver, not a hand-built fixture.
-  it("carries the worked example's honest bus-segment string", () => {
-    // The feed lane's head segment carries the full 480/min peak at N=20.
+  it("carries the worked example's honest feed entry → hand-off string", () => {
+    // The feed lane's head segment (non-terminal) resets to the full 480/min
+    // entry at N=20 and hands 0 onward (16×30 exactly drains it). P2 D3 copy.
     const result = workedResult();
-    const feedSeg = result.feeds[0]!.segments[0]!;
+    const feedSegs = result.feeds[0]!.segments;
+    const feedSeg = feedSegs[0]!;
     const busCap = formatRate(FIXTURE_TIERS.belt[3]!); // Mk4 = 480
-    expect(segTooltip(feedSeg, busCap)).toBe(
-      "machines 1–16 · peak 480/min of 480/min",
+    const terminal = feedSegs.length === 1;
+    expect(segTooltip(feedSeg, busCap, "feed", terminal)).toBe(
+      "machines 1–16 · entry 480/min → hand-off 0/min · bus 480/min",
     );
   });
 
-  it("shows a segment's honest entryFlow, not the belt's capacity", () => {
-    // N=17: the last output breakout carries 30/min on a Mk1 (60/min) belt —
-    // the tooltip must say peak 30, not 60 (boundary review r1 catch).
+  it("shows an output segment's honest collected load, not the belt's capacity", () => {
+    // N=17: the last output breakout collects 30/min on a Mk1 (60/min) belt —
+    // the tooltip must say collects 30, not 60 (boundary review r1 catch). An
+    // output segment is never terminal-feed; side="output" selects the copy.
     const result = solveStage({ ...WORKED_INPUT, machineCount: 17 });
     const outSegs = result.outputs[0]!.segments;
     const tailSeg = outSegs[outSegs.length - 1]!;
     expect(tailSeg.fromMachine).toBe(17);
     expect(tailSeg.toMachine).toBe(17);
     const busCap = formatRate(FIXTURE_TIERS.belt[3]!); // 480
-    expect(segTooltip(tailSeg, busCap)).toBe(
-      "machines 17–17 · peak 30/min of 480/min",
+    expect(segTooltip(tailSeg, busCap, "output", false)).toBe(
+      "machines 17–17 · collects 30/min of 480/min",
     );
   });
 });
