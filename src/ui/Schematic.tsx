@@ -10,7 +10,13 @@ import type {
 import type { TierTable } from "../data/types.ts";
 import { computeLayout, LAYOUT } from "./layout.ts";
 import type { LaneTrack, SchematicLayout } from "./layout.ts";
-import { beltLabel, feedGroupLabel, formatRate, segTooltip } from "./format.ts";
+import {
+  beltLabel,
+  feedGroupLabel,
+  formatRate,
+  segTooltip,
+  pipeConnectorTooltip,
+} from "./format.ts";
 import { colorForCapacity, ERROR_COLOR } from "./colors.ts";
 import {
   feedCountToken,
@@ -58,9 +64,28 @@ const OUTPUT_SEAM_HALF = 6;
 /** Endpoint-label baseline sits one row ABOVE the ribbon (D2); the two numbers
  *  share it, kept apart by opposite anchoring at a seam. */
 const ENDPOINT_DY = RIBBON_MAX + 4;
-/** A stretch narrower than this cannot hold both its entry and hand-off glyphs;
- *  the hand-off label drops (entry wins — it carries the reset). D2 thinning. */
-const ENDPOINT_MIN_STRETCH = 60;
+/** Per-glyph width estimate for the 10px mono endpoint numbers (D2 thinning). A
+ *  stretch drops its hand-off label when it cannot hold BOTH the (start-anchored)
+ *  entry glyphs extending right and the (end-anchored) hand-off glyphs extending
+ *  left, plus a small gap — estimated, since jsdom has no text metrics. The
+ *  worst-case sum is ~60px (the spec's ceiling); at 8411's ~50px stretches the
+ *  short "780"/"60" glyph pairs fit and nothing thins. */
+const ENDPOINT_GLYPH_PX = 6;
+const ENDPOINT_GAP_PX = 6;
+
+/** True when a stretch is too narrow to hold both its entry and hand-off glyphs
+ *  (the hand-off drops — entry wins, it carries the reset). */
+function endpointsCollide(
+  stretchWidth: number,
+  entryText: string,
+  handoffText: string,
+): boolean {
+  const entryPx = entryText.length * ENDPOINT_GLYPH_PX;
+  const handoffPx = handoffText.length * ENDPOINT_GLYPH_PX;
+  // Both anchors inset 3px from their edges; between them must fit both glyph
+  // runs plus a gap, else they overlap.
+  return stretchWidth - 6 < entryPx + handoffPx + ENDPOINT_GAP_PX;
+}
 /** When a rendered feed-group-count token sits on a boundary within this many px
  *  of an endpoint label's own anchor, they collide (D2 two-sided rule). */
 const TOKEN_COLLISION_PX = 1;
@@ -315,7 +340,12 @@ function LaneG({
           // rendered group token takes the LEFT candidate at this stretch's end
           // boundary (pushing an end-anchored label left would detach it from its
           // endpoint; the segment tooltip keeps the hand-off findable).
-          const narrow = seg.x2 - seg.x1 < ENDPOINT_MIN_STRETCH;
+          const handoffText = formatRate(seg.handoffResidue);
+          const narrow = endpointsCollide(
+            seg.x2 - seg.x1,
+            formatRate(seg.entryFlow),
+            handoffText,
+          );
           const leftTokenBlocks = leftTokenBoundaries.some(
             (b) => Math.abs(b - seg.x2) <= TOKEN_COLLISION_PX,
           );
@@ -331,7 +361,7 @@ function LaneG({
                   y={baselineY}
                   textAnchor="end"
                 >
-                  {formatRate(seg.handoffResidue)}
+                  {handoffText}
                 </text>
               )}
             </g>
@@ -479,9 +509,7 @@ function PipeConnector({
   // the run xs alone would collapse; the row span reads as the unordered group.
   const x1 = Math.min(laneStart, ...track.belts.map((b) => b.x));
   const x2 = laneEnd;
-  const tip = `total demand ${formatRate(demand)}/min · supplied ${formatRate(
-    supplied,
-  )}/min (nominal pipe ceiling)`;
+  const tip = pipeConnectorTooltip(demand, supplied);
   return (
     <line
       className={`pipe-manifold lane-pipe${errored ? " seg-error" : ""}`}

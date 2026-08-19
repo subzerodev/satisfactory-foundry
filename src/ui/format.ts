@@ -150,6 +150,22 @@ export function segTooltip(
   return `${span} · ${entry} → hand-off ${formatRate(seg.handoffResidue)}/min · bus ${busCapString}/min`;
 }
 
+/**
+ * The pipe feed connector's hover-tooltip (P2 D4). A pipe manifold is an
+ * unordered equal-split pressure group, so the connector claims no ordered flow
+ * — just the lane's total demand D, the summed supplied capacity S of its runs,
+ * and the nominal-ceiling caveat (pipe ratings are nominal; real steady-state
+ * can sit lower). Owned here so the connector and its pin share one string.
+ */
+export function pipeConnectorTooltip(
+  demand: Fraction,
+  supplied: Fraction,
+): string {
+  return `total demand ${formatRate(demand)}/min · supplied ${formatRate(
+    supplied,
+  )}/min (nominal pipe ceiling)`;
+}
+
 /** One human sentence per finding variant. */
 export function findingText(
   f: Finding,
