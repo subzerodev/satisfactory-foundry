@@ -23,15 +23,15 @@ lift, #148/#149 on-demand only (24834/24836).
 | Phase | Scope | Status | Classification |
 |---|---|---|---|
 | P0 — data foundations | Parse the tier table from mSpeed÷2 / mFlowLimit×60 (dedupe + sort, derivation test); TRAIN_LOCKOUT_SECONDS 27.08→27 cited to mTimeToCompleteLoad | DONE (#150, merged cece96d) | READY — independent of the topology model |
-| P1 — solver core: overflow-chain model | manifold.ts feed lanes become overflow chains: peak ≤ B invariant, belt parallelCount retired, trunk carry (S − i·d) per segment, attachment/cascade counts (≤3), standing-buffer figure, Level-1 fluid honesty (unordered pipe shortfall + nominal-ceiling caveat) | design in progress (#151) | READY — all decisions locked |
-| P2 — drawing: ribbon + endpoints + legend | Schematic tapering ribbon + endpoint numbers, layout attachment kinds, tables (cascade counts + buffer line), the drawing's legend, format/SummaryCards text | pending | DESIGN after P1 spec freezes (consumes its result shape); plan deferred until P1 lands |
+| P1 — solver core: overflow-chain model | manifold.ts feed lanes become overflow chains: peak ≤ B invariant, belt parallelCount retired, trunk carry (S − i·d) per segment, attachment/cascade counts (≤3), standing-buffer figure, Level-1 fluid honesty (unordered pipe shortfall + nominal-ceiling caveat) | DONE (#151, merged) | READY — all decisions locked |
+| P2 — drawing: ribbon + endpoints + legend (design now UNBLOCKED; consumes P1's entryFlow/handoffResidue + hardware fields; two hand-off caveats in p1-completion.md) | Schematic tapering ribbon + endpoint numbers, layout attachment kinds, tables (cascade counts + buffer line), the drawing's legend, format/SummaryCards text | pending | DESIGN after P1 spec freezes (consumes its result shape); plan deferred until P1 lands |
 | P3 — schematic split (#135) | Separate views per #135 decision 24630; the r3 spec was built on the OLD model + the un-agreed 12px ruler — re-brainstorm required | pending | DEFERRED until P1+P2 land (must observe the new drawing) |
 | P4 — raw packaging (#133) | Extraction-panel packaging per r4 spec (never implemented; v9 plan file, migrateV8 rebuild, canonicalized write) | pending | REVALIDATE r4 against post-P0/P1 develop; likely parallel to P2 |
 
 ## Child issues
 
 - P0 = #150 (MERGED @ cece96d 2026-08-19; completion report p0-completion.md).
-- P1 = #151 (design in progress 2026-08-19).
+- P1 = #151 (MERGED 2026-08-19; completion report p1-completion.md — P2 MUST honor its hand-off caveats: terminal handoffResidue is capacity surplus not onward flow; segTooltip 'peak' copy awaits the P2 format pass).
 - P3 = #135, P4 = #133 (existing tickets are the children).
 - P0/P1/P2: check-then-create at each phase start, anchored here.
 

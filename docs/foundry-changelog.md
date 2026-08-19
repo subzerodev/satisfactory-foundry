@@ -3,6 +3,26 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-19 — The x2 belt marks are gone: the solver now plans overflow chains (P1 of the rework arc)
+
+> Hey Michael — this is the big one from your 8411 Concrete complaint. The
+> solver no longer pretends leftover flow has to ride a second belt alongside
+> the bus: it now plans the build you'd actually make — a Smart Splitter set
+> to Overflow at each machine, with the leftover riding the trunk onward and a
+> small merger completing the machine at each belt seam. All eight of the
+> "x2" runs in your 8411 case turn out to be exactly those seams. Every "x2"
+> mark, the "2 parallel lines" text, and the confusing "bus up to 2 parallel ·
+> Mk6 supports one bus line" card wording are gone. In their place the solver
+> now knows, per feed lane: what enters and what hands off at each belt's
+> stretch, how many splitters and seam mergers the build needs (with splitter
+> cascades counted in threes, so every junction is buildable), and the
+> standing buffer (about 9 items sat in each splitter). Pipes are honest now
+> too: instead of pretending machines starve in order along a pipe, the app
+> just tells you a pipe lane is under-supplied by X per minute, with the
+> caveat that pipe ratings are nominal. The pictures don't change yet — the
+> new tapering-ribbon drawing is the next phase; this phase changed what the
+> solver knows.
+
 ## 2026-08-19 — Belt and pipe speeds now come from the game's own data (P0 of the rework arc)
 
 > Hey Michael — until now the app carried its own hardcoded list of belt and
