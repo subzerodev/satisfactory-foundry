@@ -1,0 +1,194 @@
+# #154 build-view-pan — bidirectionality + deletion-sweep verification log
+
+Worktree: .worktrees/build-view-pan  ·  branch feature/build-view-pan
+Base HEAD at dispatch: 82bb7dc
+Commands (from CLAUDE.md ## Workflow commands): test = `npm test`, lint = `npm run check`
+Final status: `npm test` 47 files / 1227 tests PASS · `npm run check` PASS (tsc + eslint + prettier)
+
+All source + test work was COMMITTED before any mutation (a270550, d4adc46, b92def8).
+Every mutant was applied/restored with an asserted string replace (capture-then-grep
+by content: the replace aborts if the anchor is absent) — never `git checkout`.
+
+================================================================================
+PART A — BIDIRECTIONALITY (one COMPILING mutant per distinct new behaviour)
+================================================================================
+Protocol per mutant: baseline PASS → apply mutant → confirm it COMPILES (tsc -b
+rc=0, i.e. a live mutant not a type error) → run tests → GENUINE FAIL naming the
+new test(s) → restore → GREEN. A green mutant would be a finding; none occurred.
+
+--- Behaviour 1: the 24px readable pitch floor ---------------------------------
+Mutant: layout.ts  `minPitch: 24` → `minPitch: 8`.
+Compiles: tsc -b rc=0.
+FAILED (killed by): layout.test.ts
+  × "floors at 24 and scrolls at Michael's N=106: pitch 24, width 2592"
+  × "floors at 24 and scrolls for N=161 too"
+  × "pins the N=38/39 scroll boundary (the 24px sliver, r1)"
+  and smoke.test.tsx
+  × "pans the ruler at Michael's N=106: labels every machine, none within 24px …"
+Restored → layout.test.ts 24/24 GREEN.
+
+--- Behaviour 2: the scrolled rule (pitch·N > USABLE) --------------------------
+Mutant: layout.ts  `scrolled = pitch * N > USABLE` → `>= USABLE` (boundary flip).
+Compiles: tsc -b rc=0.
+FAILED (killed by): layout.test.ts
+  × "pins the N=38/39 scroll boundary (the 24px sliver, r1)"  (N=38: 912>=912 wrongly scrolls)
+  × "keeps N≤38 pixel-identical to the old fit range (AC4): N=38 fits at 960"
+Restored → layout.test.ts 24/24 GREEN.
+
+--- Behaviour 3: the grab-drag math + threshold + background gate --------------
+3a  Mutant: useGrabScroll.ts  `scrollLeft = startScroll - dx` → `+ dx` (sign flip).
+    Compiles: tsc -b rc=0.
+    FAILED: useGrabScroll.dom.test.tsx
+      × "pans the container by the drag delta (scrollLeft = startScroll − dx)"
+      × "keeps tracking across multiple moves from the same pointerdown"
+    Restored → GREEN.
+3b  Mutant: `if (Math.abs(dx) > DRAG_THRESHOLD)` → `> DRAG_THRESHOLD + 1000`
+    (moved never trips → click never suppressed). Compiles rc=0.
+    FAILED: × "suppresses the click after a drag past the 4px threshold"
+    Restored → GREEN.
+3c  Mutant: isBackground second return `SVGSVGElement && parent===container` → `true`
+    (a bus segment would start a drag). Compiles rc=0.
+    FAILED: × "does NOT start a drag from a bus segment (interactive child)"
+    Restored → useGrabScroll.dom.test.tsx 5/5 GREEN.
+
+--- Behaviour 4: the ruler labels EVERY machine (label-thinning retired) --------
+Mutant: Schematic.tsx Ruler  `const labeled = machines;`
+        → `machines.filter((_m, i) => i % 2 === 0);` (re-introduce thinning).
+Compiles: tsc -b rc=0.
+FAILED (killed by): smoke.test.tsx
+  × "registers the ruler at N=20: major ticks on boundaries, minor at cell centres (P3)"
+  × "pans the ruler at Michael's N=106: labels every machine, none within 24px …"
+Restored → smoke.test.tsx 70/70 GREEN.
+
+--- Behaviour 5: the ruler legend entry ---------------------------------------
+Mutant: Legend.tsx  drop "starts/ends" from the ruler ConventionEntry label.
+Compiles: tsc -b rc=0.
+FAILED (killed by): smoke.test.tsx × "names the ruler's two tick kinds (#154, AC3)"
+Restored → smoke.test.tsx 70/70 GREEN.
+
+--- Behaviour 6: the re-derived left-fallback fixture (pitch-24 suppression) ----
+Mutant: Schematic.tsx  `showHandoff = … && !narrow && !leftTokenBlocks`
+        → drop `&& !leftTokenBlocks` (LEFT-token no longer suppresses the hand-off).
+Compiles: LIVE under the test runner (vitest/esbuild) — the mutant ran; tsc -b
+  additionally emitted TS6133 (leftTokenBlocks now unused) which esbuild ignores,
+  so the behavioural kill is genuine, not a type-error miss.
+FAILED (killed by): p2-drawing.test.tsx
+  × "suppresses a hand-off label when a group token takes the LEFT candidate at
+     its x2 (r3, re-derived at pitch 24)"   ← the "90" hand-off re-appears
+Restored → p2-drawing.test.tsx 19/19 GREEN, and `npm run check` GREEN (var used again).
+
+================================================================================
+PART B — DELETION-SWEEP DISPOSITION TABLE
+================================================================================
+Gate (spec §Tests): `grep -rin "band\|labeledsignificant\|labelstep\|minpitch\|114" src/`
+Post-implementation hit count: 66. Undispositioned: 0.
+
+Per the spec: the GREP IS THE AUTHORITY; the enumeration is the MAP. Every hit
+below is dispositioned delete / de-band / re-derive / re-pin / discard-as-unrelated
+/ live-code. Assumption ledger re-verified: `grep -rln "labelStep|\.band|labeledSignificant"
+src/ (non-test)` → ONLY layout.ts / Schematic.tsx / Machines.tsx read those; all
+three are edited here — no outside consumer. (labelStep/band/labeledSignificant no
+longer appear as identifiers anywhere in src.)
+
+--- src/ui/layout.ts (9 hits) — LIVE CODE / DELETED-MACHINERY ------------------
+:25  comment "…fit-to-width band mode (S12 P1)"        LIVE (retirement rationale, A4/A1)
+:26  `minPitch: 24`                                     LIVE (the A1 floor — deleted the 8)
+:203 `LAYOUT.minPitch` in the clamp                     LIVE (reads the new floor)
+:141,:146,:147,:170,:175,:176 `bandY` param/field       DISCARD-as-unrelated (spec r3): the
+     LANE track's vertical y param is named bandY — a lane-band sense, NOT the LOD band.
+DELETED here (no longer grep-hits): bandMode(), the `band` field + its doc, labeledSignificant
+     + labeledSignificantOf(), labelStep, labelPitch, machines[].labeled, the findingReferenced
+     split. (verified: 0 identifier hits for those tokens in src.)
+
+--- src/ui/Schematic.tsx (2 hits) — LIVE COMMENTS -----------------------------
+:538 Ruler doc "…never a pitch-thinning artifact"      LIVE (re-worded; the old
+     "density modes / labelStep" phrasing was cleaned this diff)
+:544 Ruler doc "The band rect + ×N count … machines view"  LIVE (accurate: they moved)
+DELETED here: the band branch, the `band`/`labeledSignificant` props, the band label source.
+
+--- src/ui/Machines.tsx (4 hits) — LIVE COMMENTS ------------------------------
+:13,:15,:16 "band's break convention retired / grey band / band's one useful datum"  LIVE
+     (#154 retirement rationale in the view docstring)
+:33  "a label band below it"                            LIVE (a layout label-row comment)
+DELETED here: MachineBand() entirely, the `layout.band ?` branch, labeledSignificant prop.
+
+--- src/ui/app.css (2 hits) — LIVE COMMENTS -----------------------------------
+:747 ".machines-count … the band's one useful datum"    LIVE (the ×N caption rationale)
+:770 "…~1px seam-band margin…"                          DISCARD-as-unrelated (lane-name seam band)
+DELETED here: .machine-band / .machine-band-count / .machine-band-mark rules.
+
+--- src/ui/layout.test.ts (11 hits) -------------------------------------------
+:5   (was) `import { bandMode … }`                       DELETED (import removed; bandMode gone)
+:44,:48,:49,:50 "lane bands" / `outBandY`                DISCARD-as-unrelated (spec r3: the
+     vertical lane-band / outputTop sense — NOT the LOD band; the toEqual kept)
+:107 `expect(layout.pitch).toBe(LAYOUT.minPitch)` (N=106) RE-DERIVED (layout-value; new 24 floor)
+:129 `LAYOUT.minPitch * 2000` (N=2000 width)             RE-DERIVED (layout-value; still valid at 24)
+:217 comment "Band mode retired with #154"               LIVE (de-banded significant test prose)
+:219,:223,:225 N=114 significant `toEqual([… 112,113,114])` DE-BAND+DATA: the `.band` read
+     dropped; the 114 members are legitimate significant-set data at N=114 (discard-as-data)
+:258 N=161 significant `toEqual([… 112,113,114 …])`      DISCARD-as-data (significant members)
+DELETED here: the bandMode threshold describe (:178-187), all labeledSignificant pins
+     (the labeledSignificant describes + the empty-below-threshold pin), the labelStep pins,
+     the `.every(m => m.labeled)` + `labelStep` assertions in the N=20 describe.
+
+--- src/ui/smoke.test.tsx (14 hits) -------------------------------------------
+:221 "no band rect" prose in the build-view test         LIVE (comment; the `not.toContain
+     ("machine-band")` tombstone at :234 was DELETED per r4 — machine-band has no producer)
+:297 "no label thinning, no band" (ruler N=106)          LIVE (re-pinned test prose)
+:444,:445,:472,:473,:476,:477,:478 "seam band / bbox band / nameBand…"  DISCARD-as-unrelated
+     (the #76 output-name-vs-seam-band geometry — a lane sense, untouched)
+:530,:531,:537,:539 "…no band (#154) / band mode retired / no band collapse / band's one datum"
+     LIVE (the re-pinned Machines-view rect+×N test)
+:670 "lifts mark labels OFF the lane band"               DISCARD-as-unrelated (Blueprint sense)
+DELETED here: the band-render Machines pins (#78 ticks-vs-labels :532-567, #86 band-centering
+     :569-614), the ruler-band-mode-from-labeledSignificant pin (re-pinned to the N=106 pan
+     test), the N=114 below-threshold pin (:616-624 — DELETE per simplify adjudication, a
+     third collinear point behind N=20/N=161), the `if (!m.labeled) continue` guards.
+
+--- src/ui/p2-drawing.test.tsx (8 hits) — RE-DERIVED FIXTURE -------------------
+:285,:286,:288 re-derivation math comment ("machine 114 … 24·114 = 2760 …")  LIVE (the r3
+     left-fallback fixture, RE-DERIVED at pitch 24; the pitch-8 `toBe(896)` literal replaced)
+:307,:313,:319,:325 `entersAfterMachine: 114` / `toMachine: 114`  RE-DERIVED-FIXTURE-DATA
+     (the group now enters after machine 114 at N=115 so the LEFT candidate + hand-off
+     suppression fire at the 24px lane end; supersedes the old fromMachine:114 / entersAfter:113)
+:350 "Stretch [1-114]'s hand-off '90' is SUPPRESSED"     LIVE (re-derived assertion prose)
+:360 "24px at the #154 readable pitch floor …"           LIVE (the N=130 narrow-thinning
+     fixture SURVIVES; comment updated from the stale "8px at band pitch"; endpointsCollide
+     re-verified true at 24px: 24−6 < 18+18+6)
+
+--- src/ui/Blueprint.tsx (3) + src/ui/Blueprint.geometry.test.ts (13) ----------
+ALL DISCARD-as-unrelated (spec r1/r3): the site-plan / junction "band" sense
+(labelBand, junction band, lane band) is a different feature entirely — touched nothing.
+
+================================================================================
+PART C — SPEC-vs-SOURCE FINDINGS (surfaced, not improvised past)
+================================================================================
+FINDING (sweep-map incompleteness, NOT a spec contradiction): the spec's sweep
+enumeration named `p2-drawing.test.tsx` as the pitch-8-keyed fixture file both
+design reviewers had missed — but a THIRD such file exists that the map and the
+grep gate BOTH miss: `src/ui/coincident-feed-marks.test.tsx`. Two of its tests
+render the Schematic at N=115 and assert pitch-8-derived literals:
+  • :292 "suppresses a dense Schematic token …"  adjacent x1 32 → 48 (boundaryX(1)
+    at pitch 24) — a layout-value re-derivation; behaviour (token suppressed at the
+    scrolled edge) preserved.
+  • :317 "prevents inward-facing Schematic group tokens from overlapping" — the
+    fixture put the two coincident groups at machines 110 & 115 (40px apart at the
+    retired 8px pitch, so their inward tokens collided). At 24px that gap widens to
+    120px and BOTH tokens fit, DISSOLVING the collision the test exists to pin. This
+    is the exact class of trigger-inversion the spec called out for p2-drawing's
+    left-fallback. RE-DERIVED (not renamed blind): the fixture now places the groups
+    at machines 113 & 115 (48px at pitch 24) so the inward tokens overlap again and
+    the near-edge group is suppressed — same pinned behaviour, re-forced under the
+    new pitch. Enters via override array `[F(3390), F(0), null×6]` → entersAfter
+    [0,113,113,115,115,115,115,115]; surviving token "x2" at boundaryX(113)+4 = 2740.
+These tests carry NONE of the gate's grep tokens (no band/114/minpitch/…), so the
+gate could not surface them — same limitation the spec acknowledged for the
+p2-drawing pitch-8 semantics. Handled by the spec's governing principle for the
+class (re-derive to preserve behaviour); flagged here so the reviewers can confirm
+the re-derivations preserve intent rather than launder a broken pin.
+
+No genuine spec-vs-code CONTRADICTION was found — every cited path/signature/anchor
+in the pre-implementation drift hunt matched live source (layout.ts:289-295 clamp,
+Schematic.tsx:686 scroll-container select, Machines.tsx:102, app.css:693-700,
+Legend ConventionEntry idiom + the /legend-swatch/g count pin). Implementation
+proceeded with zero drift.
