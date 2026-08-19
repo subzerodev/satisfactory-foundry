@@ -283,11 +283,18 @@ describe("LinkInspector packaging intersteps", () => {
         returnTransport: { mode: "belt" },
       },
     });
-    expect(host.textContent).toContain("1 package");
-    expect(host.textContent).toContain("1 unpackage");
-    expect(host.textContent).toContain("20 MW");
-    expect(host.textContent).toContain("60/min packaged");
-    expect(host.textContent).toContain("60/min empty containers");
+    // The A3 figures line keeps the lowercase idiom + the packaging power.
+    expect(host.textContent).toContain("1 package · 1 unpackage · 20 MW");
+    // The strip's node boxes carry the per-group counts (#156 A2/A5).
+    expect(host.textContent).toContain("1 ×");
+    // The old flat "/min packaged" / "/min empty containers" prose is absorbed
+    // into the strip's forward/return edge labels — same numbers, now named.
+    expect(host.textContent).toContain("60/min Packaged Water · 1 belt");
+    expect(host.textContent).toContain("60/min Empty Canister · 1 belt");
+    // The endpoint labels are the from/to stage names (the strip's generalization).
+    expect(host.textContent).toContain("Water Plant");
+    expect(host.textContent).toContain("Factory");
+    // The advisories block is OUTSIDE the restructured summary — untouched.
     expect(host.textContent).toContain("seed the loop with containers");
     expect(host.textContent).toContain("provide a separate return path");
     expect(host.textContent).toContain("apply ×2 to Water Plant");

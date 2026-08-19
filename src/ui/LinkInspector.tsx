@@ -53,7 +53,9 @@ import {
   TRAIN_PLATFORM_FOOTNOTE,
   defaultTransportFor,
   packagingPowerText,
+  routeSummary,
 } from "./transport-text.ts";
+import { PackagingChainStrip } from "./PackagingChainStrip.tsx";
 
 const DRONE_FUELS: DroneFuel[] = [
   "battery",
@@ -254,6 +256,11 @@ export function LinkInspector() {
   );
 }
 
+/** A catalog item's display name, falling back to its id (missing-item guard). */
+function itemName(catalog: Catalog, itemId: string): string {
+  return catalog.items[itemId]?.displayName ?? itemId;
+}
+
 function InterstepEditor({
   catalog,
   link,
@@ -326,6 +333,17 @@ function InterstepEditor({
       ) : (
         <>
           <div className="link-inspector-interstep-summary">
+            <PackagingChainStrip
+              plan={plan}
+              leftLabel={fromName}
+              rightLabel={toName}
+              feedName={itemName(catalog, plan.pair.fluidItemId)}
+              packagedName={itemName(catalog, plan.packagedItemId)}
+              deliveredName={itemName(catalog, plan.pair.fluidItemId)}
+              containerName={itemName(catalog, plan.containerItemId)}
+              forwardRouteText={routeSummary(plan.forwardTransport)}
+              returnRouteText={routeSummary(plan.returnTransport)}
+            />
             {plan.packageMachines !== null &&
               plan.unpackageMachines !== null &&
               plan.power !== null && (
@@ -334,12 +352,6 @@ function InterstepEditor({
                   unpackage · {packagingPowerText(plan.power)}
                 </p>
               )}
-            {plan.cargoDemand !== null && plan.containerReturnRate !== null && (
-              <p>
-                {formatRate(plan.cargoDemand)}/min packaged ·{" "}
-                {formatRate(plan.containerReturnRate)}/min empty containers
-              </p>
-            )}
           </div>
 
           <RouteEditor
