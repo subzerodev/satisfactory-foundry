@@ -496,10 +496,11 @@ export function planForLink(
 }
 
 /**
- * The transport chip suffix for one link's edge label ("· 3 trucks", "≈" when
- * estimated), or "" when the link is belt-mode / unsolved / errored — the belt
- * case renders exactly as today. Belt-skips per-surface, then defers to the
- * shared planForLink resolver + the pure edgeChip helper.
+ * The transport chip suffix for one link's edge label ("· 9 belts", "· 3
+ * trucks", "≈" when estimated), or "" when the link is unsolved / errored or
+ * an unconfigured default-belt link (no transport config to size against).
+ * Skips the default-belt case per-surface, then defers to the shared
+ * planForLink resolver + the pure edgeChip helper.
  */
 function transportChipFor(
   link: StageLink,
@@ -517,8 +518,11 @@ function transportChipFor(
       .map((chip) => ` ${chip}`)
       .join("");
   }
-  // Belt default (absent transport) never chips — the today-unchanged path.
-  if (link.transport === undefined || link.transport.mode === "belt") {
+  // Default belt (absent transport) never chips — no config to size against, the
+  // today-unchanged path. A CONFIGURED belt link flows through to edgeChip like
+  // any other configured mode (#157 A4): the mode-half skip lifted so belt lane
+  // counts surface; only the undefined half survives.
+  if (link.transport === undefined) {
     return "";
   }
   const plan = planForLink(link, catalog, stages);

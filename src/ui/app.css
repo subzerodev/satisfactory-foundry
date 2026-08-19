@@ -904,6 +904,62 @@ polygon.bus-seg {
   border-color: var(--accent);
 }
 
+/* A disabled view tab (#157 A3: Blueprint under a packaging subject) — muted,
+   non-active, no hover/pointer affordance. */
+.view-tab:disabled {
+  color: var(--fg-muted);
+  border-color: var(--border-soft);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Drawing-subject selector (#157 A2) — a quiet mono select above the view tabs
+   that re-points the drawing at a packaging chain. Same mono idiom as the tabs;
+   absent entirely when the plan has no packaging chains. */
+.drawing-subject {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.drawing-subject-label {
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+
+.drawing-subject select {
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  color: var(--fg);
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  padding: 2px 6px;
+}
+
+/* One stacked machine group of a packaging subject (#157 A3): the count + power
+   heading over its manifold. Two groups stack (packager above, unpackager
+   below). */
+.packaging-group + .packaging-group {
+  margin-top: 12px;
+}
+
+.packaging-group-heading {
+  margin: 0 0 4px;
+  font-family: var(--font-mono-num);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--fg);
+}
+
+.packaging-group-power {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
 /* Theme toggle (Stage 5 item 3; re-skinned S9P0) — a quiet mono control that
    NAMES its destination medium ("CYANOTYPE" on vellum, "VELLUM" on cyanotype).
    The words are the feature now, so the glyphs are gone. */
@@ -1474,6 +1530,88 @@ polygon.bus-seg {
 
 .extraction-muted {
   color: var(--fg-muted);
+}
+
+/* Panel section head (#156 A1) — a muted 11px label with a top hairline, the
+   drafting idiom that separates the Extraction / Package-for-transport sections
+   without tabs. Applied to the NEW "Extraction" label AND (as a modifier) to the
+   existing packaging checkbox <label>, so the checkbox keeps its visible text
+   while reading as the section head — no duplicate text. */
+.extraction-section-label {
+  margin: 10px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The packaging chain strip (#156 A2) — shared by the extraction panel and the
+   LinkInspector interstep. The SVG designs to a 320-unit viewBox and scales to
+   the container via width:100%; all colour is the panel's own vars, no new
+   system. Text sizes track the strip's ~11px design at panel width. */
+.packaging-chain-strip {
+  margin: 8px 0 0;
+}
+
+.packaging-chain-strip-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.packaging-chain-strip .pcs-node {
+  fill: var(--bg-panel);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.packaging-chain-strip .pcs-node-count {
+  fill: var(--fg);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.packaging-chain-strip .pcs-node-role {
+  fill: var(--fg);
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.packaging-chain-strip .pcs-endpoint {
+  fill: var(--fg-muted);
+  font-size: 9px;
+}
+
+.packaging-chain-strip .pcs-feed,
+.packaging-chain-strip .pcs-delivered,
+.packaging-chain-strip .pcs-edge-label,
+.packaging-chain-strip .pcs-return-label {
+  fill: var(--fg);
+  font-size: 9px;
+}
+
+.packaging-chain-strip .pcs-return-label {
+  fill: var(--fg-muted);
+}
+
+.packaging-chain-strip .pcs-edge {
+  stroke: var(--fg);
+  stroke-width: 1;
+}
+
+.packaging-chain-strip .pcs-arrow {
+  fill: var(--fg);
+}
+
+/* The return loop is dashed — a return path reads as the loop it is. */
+.packaging-chain-strip .pcs-return {
+  stroke: var(--fg-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
 }
 
 /* Machine plate (Stage 9 P1 Axis 1). The stage card reads as a bordered ink

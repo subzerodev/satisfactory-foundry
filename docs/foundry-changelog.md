@@ -3,6 +3,43 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-19 — The extraction popup finally shows you the loop (#156)
+
+> Hey Michael — the water popup you screenshotted got its restructure. The
+> packaging info is no longer three squashed lines of text: there's now a
+> little diagram right in the popup — your packagers and unpackagers as
+> boxes, the packaged water flowing forward with its belt count, and the
+> empty canisters drawn coming BACK as a dashed return loop, each direction
+> labeled with its rate and what's actually on the belt ("Packaged Water",
+> "Empty Canister" — named at last). Below it: the machine counts with the
+> packaging power, and a new Total power line that adds your extractors and
+> the packaging machines together (the 1780 + 2660 = 4440 MW that was never
+> shown anywhere). The popup is also sectioned now — Extraction, then
+> Package for transport — instead of one run-on wall. The same diagram
+> appears in the link inspector when a stage-to-stage link packages its
+> cargo. And a small hint at the bottom points you to the drawing's new
+> DRAWING selector for the full manifold view from the last update. One
+> honest omission: "canisters circulating in the loop" isn't shown — sizing
+> that needs belt lengths the planner doesn't know.
+
+## 2026-08-19 — Packaging chains get their own drawing, and belts get counted (#157)
+
+> Hey Michael — your packagers and unpackagers are drawable now. When a plan
+> has a packaging chain (like your water setup), a new picker appears above
+> the drawing tabs: choose the chain and the schematic draws BOTH machine
+> banks stacked — the packagers with their water pipe and canister belt
+> feeds, the unpackagers below — with the same ribbons, ruler, feed lanes,
+> and pan you have for any stage, plus each bank's power. So "how do the
+> manifolds work" is now answered by the drawing itself. And "how many
+> belts": belt routes finally show their count everywhere a route is
+> summarized — your 10600/min packaged water says how many belts it takes
+> forward and back for the empties, the same way pipes already showed "N
+> pipes". One tab sits this out: Blueprint still draws stages only (a chain
+> is two machine kinds and the blueprint can hold one for now — it's tracked
+> as its own follow-up); the tab greys out while a chain is selected. The
+> extraction popup itself gets its restructure next (#156) — this update is
+> the drawing and the numbers underneath it.
+
 ## 2026-08-19 — The drawing is moveable now, and the ruler explains itself (#154)
 
 > Hey Michael — your two field reports, both fixed. The build view (and the

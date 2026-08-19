@@ -289,7 +289,8 @@ describe("transport-text — train rows + chip", () => {
     expect(meas!.startsWith("· ")).toBe(true);
   });
 
-  it("belt continuous → no chip (renders as today)", () => {
+  it("belt continuous → the lane count chip (#157)", () => {
+    // 600/min over a 480/min belt tier → ceil(600/480) = 2 lanes (non-trivial).
     const plan: TransportContinuous = {
       kind: "continuous",
       mode: "belt",
@@ -297,7 +298,19 @@ describe("transport-text — train rows + chip", () => {
       tierIndex: 4,
       deratePercent: null,
     };
-    expect(edgeChip(plan)).toBeNull();
+    expect(edgeChip(plan)).toBe("· 2 belts");
+  });
+
+  it("belt continuous of exactly one lane → the singular 'belt' noun (#157)", () => {
+    // 480/min over a 480/min belt tier → exactly 1 lane, exercising the noun arm.
+    const plan: TransportContinuous = {
+      kind: "continuous",
+      mode: "belt",
+      result: continuousRuns("belt", Fraction.from(480), Fraction.from(480)),
+      tierIndex: 4,
+      deratePercent: null,
+    };
+    expect(edgeChip(plan)).toBe("· 1 belt");
   });
 });
 
@@ -311,22 +324,28 @@ describe("routeEdgeChip", () => {
     );
   });
 
-  it("omits unsolved, error, and belt route summaries", () => {
+  it("omits unsolved and error route summaries", () => {
     expect(
       routeEdgeChip("forward", { kind: "unsolved", mode: "truck" }),
     ).toBeNull();
     expect(
       routeEdgeChip("forward", { kind: "error", message: "bad trip" }),
     ).toBeNull();
+  });
+
+  it("labels a belt route summary with its lane count (#157)", () => {
+    // routeEdgeChip has no belt guard of its own — it delegates to edgeChip, so
+    // the #157 belt chip flows straight through to the route label.
+    // 600/min over a 270/min belt tier → ceil(600/270) = 3 lanes (non-trivial).
     expect(
       routeEdgeChip("forward", {
         kind: "continuous",
         mode: "belt",
-        result: continuousRuns("belt", Fraction.from(10), Fraction.from(60)),
-        tierIndex: 1,
+        result: continuousRuns("belt", Fraction.from(600), Fraction.from(270)),
+        tierIndex: 3,
         deratePercent: null,
       }),
-    ).toBeNull();
+    ).toBe("· forward 3 belts");
   });
 });
 

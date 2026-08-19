@@ -1057,6 +1057,22 @@ describe("graphToFlow — transport edge chip", () => {
     expect(edges[0]!.label).toBe("Iron Ingot · ok");
   });
 
+  it("a CONFIGURED belt link appends the lane-count chip (#157)", () => {
+    // 600/min demand over the unlocked belt tier 4 (480/min) → ceil(600/480) = 2
+    // lanes. Post-A4-lift the mode-half skip is gone, so a configured belt link
+    // reaches edgeChip like any other configured mode.
+    const { edges } = graphToFlow(
+      transportCatalog,
+      base,
+      order,
+      linkWith({ mode: "belt" }),
+      [],
+      pos,
+      "a",
+    );
+    expect(edges[0]!.label).toBe("Iron Ingot · ok · 2 belts");
+  });
+
   it("a measured truck link appends a count chip (no ≈)", () => {
     const { edges } = graphToFlow(
       transportCatalog,
