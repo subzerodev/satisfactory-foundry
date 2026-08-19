@@ -3,6 +3,21 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-19 — You can finally click to package the water (P4 of the rework arc)
+
+> Hey Michael — the thing you couldn't find a button for now has one, where
+> you said it should be: directly under the extractor plan. Open a raw
+> input's Extraction panel (your 10,600 water is the case this was built
+> for) and there's a "Package for transport" control. Turn it on and it
+> reports the Packagers, Unpackagers, power, packaged cargo rate, and the
+> empty-container return route — same numbers the link version gives, no
+> extra machines added to your factory graph. It's remembered with the
+> plan, survives changing the extractor, and refuses illegal return routes
+> (you can't send empty canisters back through a pipe). One consequence
+> worth knowing: saved plan files step up a version internally, so a plan
+> saved by this build won't open in an older build — old plans open fine
+> here.
+
 ## 2026-08-19 — The drawing now shows the overflow chains: tapering ribbons and endpoint numbers (P2 of the rework arc)
 
 > Hey Michael — the pictures caught up with the solver. Feed buses now draw

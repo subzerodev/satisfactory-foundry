@@ -33,7 +33,7 @@ lift, #148/#149 on-demand only (24834/24836).
 - P0 = #150 (MERGED @ cece96d 2026-08-19; completion report p0-completion.md).
 - P2 = #152 (MERGED 2026-08-19; completion report p2-completion.md).
 - P1 = #151 (MERGED 2026-08-19; completion report p1-completion.md — P2 MUST honor its hand-off caveats: terminal handoffResidue is capacity surplus not onward flow; segTooltip 'peak' copy awaits the P2 format pass).
-- P4 = #133 (design r5 frozen 2026-08-19 @ ceed250 after the fresh r4 gate + revalidation; implementing on feature/phase-p4).
+- P4 = #133 (MERGED 2026-08-19; completion report features/raw-packaging/p4-completion.md).
 - P3 = #135 (queued after P4; fresh brainstorm on the ribbon drawing).
 - P0/P1/P2: check-then-create at each phase start, anchored here.
 
