@@ -231,11 +231,11 @@ export function trainSharedEndsFootnote(
 // ---------------------------------------------------------------------------
 
 /**
- * The compact edge-label chip for a configured NON-belt link ("· 3 trucks",
+ * The compact edge-label chip for a configured link ("· 9 belts", "· 3 trucks",
  * "· 2×4-car trains", "· 5 drones"), with a leading "≈" when the basis is
- * estimated. Returns null for a belt link (renders exactly as today), an
- * unsolved link (no count yet), or an errored/parse-failed config (the chip
- * carries only counts, never error prose — the inspector shows the error).
+ * estimated. Returns null for an unsolved link (no count yet) or an
+ * errored/parse-failed config (the chip carries only counts, never error prose —
+ * the inspector shows the error).
  *
  * The train chip picks the SMALLEST-consist row (cars 1) as the representative
  * count — a stable, single summary for the many comparable options.
@@ -243,10 +243,12 @@ export function trainSharedEndsFootnote(
 export function edgeChip(plan: TransportPlan): string | null {
   switch (plan.kind) {
     case "continuous":
-      // Belt renders as today (no chip); a configured pipe shows its count.
-      if (plan.mode === "belt") return null;
+      // Belt and pipe both show their lane count (runs), the count the solver
+      // already computed for every continuous plan (#157).
       return chip(
-        `${plan.result.runs} ${plan.result.runs === 1n ? "pipe" : "pipes"}`,
+        plan.mode === "belt"
+          ? `${plan.result.runs} ${plan.result.runs === 1n ? "belt" : "belts"}`
+          : `${plan.result.runs} ${plan.result.runs === 1n ? "pipe" : "pipes"}`,
         false,
       );
     case "vehicle": {
