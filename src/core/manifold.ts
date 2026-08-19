@@ -702,7 +702,6 @@ export function solveOutputLane(
   base.segments = segments;
   // Collection cascade: b break-out belts merge toward the downstream link
   // through 3-way mergers (c24797). Belt-only ordered collection; null on pipes.
-  base.collectionCascade =
-    lane.kind === "belt" ? cascadeFor(beltCount) : null;
+  base.collectionCascade = lane.kind === "belt" ? cascadeFor(beltCount) : null;
   return base;
 }

@@ -84,12 +84,7 @@ function fixHint(
   const bestUnlocked = tiers[kind][unlocked[kind] - 1];
 
   if (finding.type === "segment-over-capacity") {
-    const hint = tierFixHint(
-      finding.flow,
-      kind,
-      finding.busCapacity,
-      tiers,
-    );
+    const hint = tierFixHint(finding.flow, kind, finding.busCapacity, tiers);
     if (hint === null) return "";
     const token = tierLabel(kind, hint.capacity, tiers);
     const rate = formatRate(hint.capacity);

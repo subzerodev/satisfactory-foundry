@@ -181,6 +181,7 @@ describe("drawnDistanceDm — two-site measure (#89)", () => {
             totalOutput: Fraction.from(15),
             breakouts: [],
             segments: [],
+            collectionCascade: null,
             findings: [],
           },
         ],

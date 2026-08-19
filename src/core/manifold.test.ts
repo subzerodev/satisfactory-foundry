@@ -377,14 +377,27 @@ describe("solveFeedLane — full 8411 integration (#151)", () => {
     // that describes the exact-demand ideal, but the auto-sizer's smallest
     // tier ≥ 240 is 270, leaving +30. Pinned to the computed value.
     expect(r.segments.map((s) => s.handoffResidue.toString())).toEqual([
-      "60", "0", "60", "0", "60", "0", "60", "0", "60", "0", "60", "0", "60",
-      "0", "60", "0", "30",
+      "60",
+      "0",
+      "60",
+      "0",
+      "60",
+      "0",
+      "60",
+      "0",
+      "60",
+      "0",
+      "60",
+      "0",
+      "60",
+      "0",
+      "60",
+      "0",
+      "30",
     ]);
     // Exactly 8 positive residues among the machine-bearing stretches feed a
     // seam — the terminal 30 feeds none, so seamMergers stays 8.
-    expect(
-      r.segments.filter((s) => s.handoffResidue.gt(F(0))).length,
-    ).toBe(9); // eight 60s + the terminal 30 surplus
+    expect(r.segments.filter((s) => s.handoffResidue.gt(F(0))).length).toBe(9); // eight 60s + the terminal 30 surplus
 
     expect(r.hardware).not.toBeNull();
     expect(r.hardware!.seamMergers).toBe(8);

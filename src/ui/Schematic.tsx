@@ -9,12 +9,7 @@ import type {
 import type { TierTable } from "../data/types.ts";
 import { computeLayout, LAYOUT } from "./layout.ts";
 import type { LaneTrack, SchematicLayout } from "./layout.ts";
-import {
-  beltLabel,
-  feedGroupLabel,
-  formatRate,
-  segTooltip,
-} from "./format.ts";
+import { beltLabel, feedGroupLabel, formatRate, segTooltip } from "./format.ts";
 import { colorForCapacity, ERROR_COLOR } from "./colors.ts";
 import {
   feedCountToken,

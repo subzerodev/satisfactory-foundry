@@ -180,8 +180,6 @@ describe("SummaryCards", () => {
         result={workedResult()}
         itemName={itemName}
         powerText={null}
-        tiers={TIER_TABLE}
-        unlocked={{ belt: 4, pipe: 2 }}
       />,
     );
     expect(html).toContain("600/min in");
@@ -197,8 +195,6 @@ describe("SummaryCards", () => {
         result={workedResult()}
         itemName={itemName}
         powerText="80 MW"
-        tiers={TIER_TABLE}
-        unlocked={{ belt: 4, pipe: 2 }}
       />,
     );
     expect(html).toContain("summary-card-power");
@@ -212,8 +208,6 @@ describe("SummaryCards", () => {
         result={workedResult()}
         itemName={itemName}
         powerText={null}
-        tiers={TIER_TABLE}
-        unlocked={{ belt: 4, pipe: 2 }}
       />,
     );
     expect(html).not.toContain("summary-card-power");
@@ -289,7 +283,7 @@ describe("Schematic", () => {
                   itemId: lane.itemId,
                   fromMachine: 1,
                   toMachine: 16,
-                  peakFlow: Fraction.from(480),
+                  flow: Fraction.from(480),
                   busCapacity: Fraction.from(480),
                 },
               ],
@@ -542,7 +536,7 @@ describe("segTooltip (bus-segment hover string, Stage 5 item 1)", () => {
     );
   });
 
-  it("shows a segment's honest peakFlow, not the belt's capacity", () => {
+  it("shows a segment's honest entryFlow, not the belt's capacity", () => {
     // N=17: the last output breakout carries 30/min on a Mk1 (60/min) belt —
     // the tooltip must say peak 30, not 60 (boundary review r1 catch).
     const result = solveStage({ ...WORKED_INPUT, machineCount: 17 });
@@ -966,7 +960,7 @@ describe("FindingsPanel", () => {
         itemId: "ore_iron",
         fromMachine: 9,
         toMachine: 16,
-        peakFlow: Fraction.from(540),
+        flow: Fraction.from(540),
         busCapacity: Fraction.from(480),
       },
     ];
@@ -994,7 +988,7 @@ describe("FindingsPanel", () => {
       itemId: "ore_iron",
       fromMachine: 1,
       toMachine: 8,
-      peakFlow: Fraction.from(200),
+      flow: Fraction.from(200),
       busCapacity: Fraction.from(120),
     };
     const base = workedResult();
@@ -1028,7 +1022,7 @@ describe("FindingsPanel", () => {
       itemId: "iron_ingot",
       fromMachine: 1,
       toMachine: 1,
-      peakFlow: Fraction.from(100),
+      flow: Fraction.from(100),
       busCapacity: Fraction.from(90),
     };
     const base = workedResult();
