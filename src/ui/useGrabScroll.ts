@@ -21,10 +21,7 @@ interface GrabScroll {
 /** The background is the container div or its direct svg child — NOT a lane
  *  segment, label, or other interactive descendant (those are the drag's
  *  no-go). Restricting to the container/svg keeps interactive children live. */
-function isBackground(
-  target: EventTarget,
-  container: HTMLDivElement,
-): boolean {
+function isBackground(target: EventTarget, container: HTMLDivElement): boolean {
   if (target === container) return true;
   return target instanceof SVGSVGElement && target.parentElement === container;
 }
