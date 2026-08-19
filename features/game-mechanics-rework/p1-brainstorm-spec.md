@@ -55,7 +55,14 @@ Worked 8411 check (the ticket's live case): d=120, B=780, D=12720, k=17.
 Entries after machines 0,6,13,19,26,… (floor(6.5·j)); stretches alternate 7 and
 6 machines; residues alternate 60 and 0 — the eight 60-residues are exactly the
 eight old x2 segments, now eight seam mergers. Final belt: remainder 240 →
-Mk3 (270), hand-off 0 — the "final 0" endpoint number of c24769.
+Mk3 (270), hand-off 30 — the terminal CAPACITY SURPLUS (270 − 240), corrected
+at the diff review: the original prose said "hand-off 0", conflating the tail
+demand (240) with the tail belt's capacity (270). The terminal
+`handoffResidue` is unused capacity, a DIFFERENT quantity from c24769's
+ribbon "final 0" (onward flow to a consumer — there is none; the source
+produces exactly D and the machines consume exactly D). P2 must render the
+two distinctly: the terminal endpoint number is not "30/min leaves the
+lane". Recorded as the P2 hand-off caveat in p1-completion.md.
 
 ## Design
 
@@ -297,6 +304,10 @@ consumers (advice/format vocab) gain the `lane-undersupplied` rendering:
   before review: grep for `parallelCount`, `peakFlow`, `maxParallelCount`,
   `parallel lines`, `one bus line`, `x2 max` across src/ — all zero
   (except the finding's renamed `flow` and revision-history mentions).
+  Diff-review addition: the CSS class names too (`parallel-rail`,
+  `parallel-segment`, `parallel-run-label`, `bp-parallel-max`) — the r1
+  adversarial found five dead selectors in app.css that the string-only
+  gate missed.
 - Bidirectionality log per behaviour: endpoints, seam-merger count, cascade
   formula, buffer product, pipe undersupplied, x2-string absence.
 
