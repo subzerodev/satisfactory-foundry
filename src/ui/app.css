@@ -763,6 +763,40 @@ body {
   stroke-width: 6;
 }
 
+/* Feed ribbon (P2 D1): the trapezoid fills its belt-capacity colour at reduced
+   opacity with a 1px same-colour outline — a filled shape, not a 6px rule. The
+   line variant on OUTPUT lanes keeps the 6px stroke above; a polygon takes no
+   stroke-width for its body, so scope the fill treatment to the polygon. */
+polygon.bus-seg {
+  fill-opacity: 0.35;
+  stroke-width: 1;
+}
+
+/* Ribbon endpoint numbers (P2 D2): entry / hand-off / terminal "0", one baseline
+   above the ribbon, overlaying the entry arrows by construction — so they carry
+   the same text-over-linework halo idiom as .lane-name / .feed-group-count (a
+   --bg stroke UNDER the glyphs via paint-order). */
+.ribbon-endpoint {
+  font-family: var(--font-mono-num);
+  font-size: 10px;
+  fill: var(--fg);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+/* Pipe manifold connector (P2 D4): a neutral 2px dashed line spanning the runs,
+   reusing the lane-pipe dashed rhythm but at its own neutral width and colour —
+   an UNORDERED group, so no tier colour is claimed. The lane-undersupplied error
+   colours the whole connector (seg-error) via the existing error path. */
+.pipe-manifold {
+  stroke: var(--fg-muted);
+  stroke-width: 2;
+  stroke-dasharray: 10 5;
+  opacity: 0.85;
+}
+
 .belt-arrow {
   stroke-width: 2;
 }
