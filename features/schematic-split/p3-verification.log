@@ -1,0 +1,116 @@
+# P3 bidirectionality verification log (#135 — the schematic split)
+
+Worktree: .worktrees/phase-p3, branch feature/phase-p3.
+Baseline HEAD at verification: c0db95b (all P3 work committed before any mutation).
+Discipline: every mutant COMPILES clean (tsc -b exit 0), fails via a GENUINE
+assertion naming the new/re-pinned test, then git checkout restores green. A
+green mutant would be a finding to investigate — none occurred.
+
+Baseline: npm test → 46 files, 1227 tests PASS. npm run check → clean.
+
+---
+
+## B1 — the :735 output-arrow anchor parameterization (the r1 HIGH)
+
+New behaviour: the output break-out arrows' top endpoint anchors at
+`machineTop + rulerH`, NOT the old `+ 40` literal (which the risen outputTop
+now equals — the coincidence trap that would float the arrows in the lane).
+
+- PASS (clean): smoke "anchors output belt-arrows at machineTop + rulerH …
+  (P3 register pin)" green.
+- MUTANT (compiles): Schematic.tsx `machineTopY={machineTopY + LAYOUT.rulerH}`
+  → `machineTopY={machineTopY + 40}`. tsc -b exit 0.
+- FAIL (genuine): register pin → `AssertionError: expected 140 to be 112`
+  (140 = machineTop 100 + 40 = the output lane top; 112 = machineTop 100 +
+  rulerH 12 = the row bottom). Falsifiable against the coincidence, exactly as
+  the r2 adversarial proved.
+- RESTORE: git checkout src/ui/Schematic.tsx → pin green.
+
+## B2 — the un-gated significant (the r2 registration fix)
+
+New behaviour: `significant` computes in BOTH density modes, not just band.
+
+- PASS (clean): layout "computes the significant set BELOW the threshold too
+  (P3 un-gating)" and "computes significant non-empty at N=106 …" green.
+- MUTANT (compiles): layout.ts `const sig = significantMachines(result, N);`
+  → re-gated `const sig = band ? significantMachines(result, N) : { significant:
+  [], findingReferenced: [] };`. tsc -b exit 0.
+- FAIL (genuine): BOTH pins → `AssertionError: expected 0 to be greater than 0`
+  (re-gated significant is empty at N=114 and N=106).
+- RESTORE: git checkout src/ui/layout.ts → pins green.
+
+## B3 — the machineRowH parameterization / height reclaim
+
+New behaviour: outputTop + height shrink with the passed machineRowH; the build
+view reclaims exactly 28px (machineH 40 → rulerH 12) with machineTop unchanged.
+
+- PASS (clean): layout "shrinks the view by exactly 28px at rulerH 12 vs the
+  default 40" green.
+- MUTANT (compiles): layout.ts height term `machineRowH +` → `LAYOUT.machineH +`
+  (height ignores the parameter). tsc -b exit 0.
+- FAIL (genuine): reclaim pin → `AssertionError: expected +0 to be 28` (both
+  heights equal, so the reclaim is 0).
+- RESTORE: git checkout src/ui/layout.ts → pin green.
+
+## B4 — the ruler MINOR mark (cell-centre binding, the r2 registration defect)
+
+New behaviour: MINOR ticks sit at the cell CENTRE (m.x + pitch/2), binding each
+label to its machine — never equidistant between two boundary ticks.
+
+- PASS (clean): smoke "registers the ruler at N=20 …" green.
+- MUTANT (compiles): Schematic.tsx minor-tick `x1={m.x + pitch / 2}` → `x1={m.x}`
+  (bare boundary). tsc -b exit 0.
+- FAIL (genuine): registration pin → expected minor tick `x1="46.5"` (machine 1's
+  cell centre, 24 + 45/2), received `x1="24"` (the boundary). The r2 defect,
+  re-introduced and caught.
+- RESTORE: git checkout src/ui/Schematic.tsx → pin green.
+
+## B5 — the ruler MAJOR mark (solver-derived boundary registration)
+
+New behaviour: MAJOR ticks sit at xOf(index) — the belt-stretch BOUNDARY — for
+every `significant` index, in both density modes (the r1 blocker's fix: never
+labelStep arithmetic).
+
+- PASS (clean): smoke "registers the ruler at N=20 …" and "draws the ruler in
+  band mode from labeledSignificant, no band rect (N=161)" green.
+- MUTANT (compiles): Schematic.tsx major-tick `x1={xOf(index)}` →
+  `x1={xOf(index) + pitch / 2}` (cell centre, keeps `significant` used → tsc
+  clean, exit 0). (An earlier `significant`→`labeledSignificant` variant was
+  REJECTED because it left `significant` unused → TS6133, a non-compiling mutant;
+  replaced with this compiling one per the discipline.)
+- FAIL (genuine): BOTH pins → expected major tick `x1="24"` (the boundary),
+  received the shifted cell-centre x. Registration proven in both modes.
+- RESTORE: git checkout src/ui/Schematic.tsx → pins green.
+
+## B6 — the machines view (band arm)
+
+New behaviour: the machines view renders the band break convention (band rect +
+×N) above the threshold, verbatim from the old Schematic block.
+
+- PASS (clean): smoke "band mode (N=161): ONE band + ×161 …" (Machines describe)
+  green.
+- MUTANT (compiles): Machines.tsx `{layout.band ? (` → `{false ? (` (always the
+  non-band rect arm). tsc -b exit 0.
+- FAIL (genuine): ×161 pin → `machine-band` count expected 1, received 0; "×161"
+  absent (the view rendered 161 rects instead of the band).
+- RESTORE: git checkout src/ui/Machines.tsx → pin green.
+
+## B7 — the third tab / leaf distinction
+
+New behaviour: the MACHINES tab mounts the Machines leaf (the block); the
+Schematic leaf is the ruler. The two leaves are distinct — the block view never
+emits the ruler and vice-versa.
+
+- PASS (clean): smoke "mounts/unmounts the Machines leaf (P3 third tab smoke)"
+  green.
+- MUTANT (compiles): Machines.tsx root div className leaks a `machine-ruler`
+  class (`"schematic"` → `"schematic machine-ruler"`). tsc -b exit 0.
+- FAIL (genuine): tab smoke → `expect(mounted).not.toContain("machine-ruler")`
+  fails (the block leaf leaked the ruler class — the leaf-confusion the tab
+  wiring must not allow).
+- RESTORE: git checkout src/ui/Machines.tsx → pin green.
+
+---
+
+Post-verification: tree clean, npm test 1227 PASS, npm run check clean.
+No green mutant encountered; every new behaviour is bidirectionally pinned.

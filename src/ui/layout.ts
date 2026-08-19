@@ -22,6 +22,9 @@ export const LAYOUT = {
   maxPitch: 48,
   labelPitch: 20,
   machineH: 40,
+  rulerH: 12, // P3: the build-view axis height — a two-mark ruler replaces the
+  // 40px machine block (Michael's option-A pick, #135 c24913). The machines
+  // view keeps the full machineH block via computeLayout's default.
   laneH: 56,
   busH: 28,
   marginY: 16,
@@ -48,16 +51,19 @@ export interface SchematicLayout {
   machineTop: number; // machine-row top y (consumed, never re-derived)
   machines: { index: number; x: number; labeled: boolean }[];
   /**
-   * In band mode, the machine indices that still carry an individual boundary
-   * tick + index label: feed entries, output breakouts, segment boundaries, and
-   * any machine a finding references (the complete textual reference set —
-   * nothing else references interior indices). One set-union over existing solve
-   * data; empty when `band` is false (the full tick row renders instead).
+   * The machine indices that carry an individual boundary tick: feed entries,
+   * output breakouts, segment boundaries, and any machine a finding references
+   * (the complete textual reference set — nothing else references interior
+   * indices). One set-union over existing solve data. Computed in BOTH density
+   * modes (P3 — the build view's ruler draws MAJOR ticks at these belt-stretch
+   * boundaries whether or not the row is banded; the machines view's band reads
+   * it only when `band`). Never empty on a solved lane.
    */
   significant: number[];
   /**
    * The subset of `significant` that carries an index LABEL (ticks stay on every
-   * significant index — only the text thins). Empty when `band` is false. The
+   * significant index — only the text thins). Empty when `band` is false (label
+   * thinning is a band-density concern — non-band modes label per the pitch). The
    * finding-referenced machines are always labeled (the S12P1 findability
    * invariant: the findings panel names exactly those indices); the remaining
    * significant indices are greedy-filled so no two kept labels sit closer than
@@ -277,6 +283,7 @@ function outputTrack(
 export function computeLayout(
   result: StageSolveResult,
   machineCount: number,
+  machineRowH: number = LAYOUT.machineH,
 ): SchematicLayout {
   const N = machineCount;
   const pitch = clamp(
@@ -288,9 +295,12 @@ export function computeLayout(
   const width = scrolled ? LAYOUT.marginX * 2 + pitch * N : LAYOUT.viewW;
 
   const band = bandMode(N);
-  const sig = band
-    ? significantMachines(result, N)
-    : { significant: [], findingReferenced: [] };
+  // P3 (the r2 registration fix): significant computes in BOTH modes — it is a
+  // pure set-union over existing solve data (entries, breakouts, segment bounds,
+  // finding refs), and the build-view ruler draws its MAJOR ticks from it
+  // regardless of density. labeledSignificant stays band-gated (label thinning
+  // is a band-density concern).
+  const sig = significantMachines(result, N);
   const significant = sig.significant;
   const labeledSignificant = band
     ? labeledSignificantOf(significant, sig.findingReferenced, pitch)
@@ -313,9 +323,12 @@ export function computeLayout(
   const feeds = result.feeds.map((lane, i) =>
     feedTrack(lane, LAYOUT.marginY + i * LAYOUT.laneH, pitch),
   );
+  // machineTop carries NO machineRowH term — it registers with the feed lanes
+  // and P2's endpoint rows above, pixel-identical across both row heights (the
+  // structural register guarantee). Only outputTop + height shrink with the row.
   const machineTop =
     LAYOUT.marginY + result.feeds.length * LAYOUT.laneH + LAYOUT.busH;
-  const outputTop = machineTop + LAYOUT.machineH + LAYOUT.busH;
+  const outputTop = machineTop + machineRowH + LAYOUT.busH;
   const outputs = result.outputs.map((lane, j) =>
     outputTrack(lane, outputTop + j * LAYOUT.laneH, pitch),
   );
@@ -324,7 +337,7 @@ export function computeLayout(
     LAYOUT.marginY * 2 +
     result.feeds.length * LAYOUT.laneH +
     LAYOUT.busH * 2 +
-    LAYOUT.machineH +
+    machineRowH +
     result.outputs.length * LAYOUT.laneH;
 
   return {
