@@ -60,6 +60,7 @@ import {
 } from "./extraction-plan.ts";
 import { formatRate, tierLabel } from "./format.ts";
 import { machinePowerProjection } from "../core/machine-power.ts";
+import type { MachinePowerProjection } from "../core/machine-power.ts";
 import { parseClockText } from "../core/clock.ts";
 import { discoverPackagingPairs } from "../core/packaging-pair.ts";
 import type { PackagingPair } from "../core/packaging-pair.ts";
@@ -475,9 +476,13 @@ export function ExtractionPanel({
       parsedClock.value,
     );
     const pkg = packagingPlan.power;
+    // An exact projection's mw is a Fraction; an estimated one's is already a
+    // float — coalesce to a number for the labeled-approximation branch only.
+    const asMw = (p: MachinePowerProjection): number =>
+      p.kind === "exact" ? Number(p.mw.num) / Number(p.mw.den) : p.mw;
     return baseline.kind === "exact" && pkg.kind === "exact"
       ? `${formatRate(baseline.mw.add(pkg.mw))} MW`
-      : `≈ ${Number(((baseline.kind === "exact" ? Number(baseline.mw.num) / Number(baseline.mw.den) : baseline.mw) + (pkg.kind === "exact" ? Number(pkg.mw.num) / Number(pkg.mw.den) : pkg.mw)).toFixed(1))} MW`;
+      : `≈ ${Number((asMw(baseline) + asMw(pkg)).toFixed(1))} MW`;
   })();
 
   const setPackagingEnabled = (enabled: boolean) => {
