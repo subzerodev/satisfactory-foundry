@@ -670,6 +670,14 @@ body {
   color: var(--fg-muted);
 }
 
+/* The P2 D5 side-table lines (hardware / buffer / spare on feed cards; the
+   collection-cascade suffix on output cards) — quiet, one per line under the
+   count. */
+.card-detail {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
 /* The power-draw card (Stage 6 P2) — same card chrome, muted rate line. */
 .summary-card-power .card-rate {
   color: var(--fg-muted);
@@ -1231,6 +1239,35 @@ polygon.bus-seg {
    would double-count the pipe rules. Kept as a sibling class. */
 .legend-rule-dashed {
   border-top-style: dashed;
+}
+
+/* P2 D6 line-convention samples. None carries the "legend-swatch" substring (the
+   count pin above) — they are the drawing's non-tier conventions:
+   - taper: a small filled triangle standing for the ribbon that thins as
+     machines draw (a CSS border triangle in the muted ink);
+   - seam: a short dashed vertical tick, the belt-seam / merger mark;
+   - pipe-manifold: the neutral dashed connector, unordered by design. */
+.legend-taper {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 18px solid var(--fg-muted);
+}
+
+.legend-seam {
+  display: inline-block;
+  width: 0;
+  height: 12px;
+  border-left: 2px dashed var(--junction-fill);
+}
+
+.legend-pipe-manifold {
+  display: inline-block;
+  width: 22px;
+  height: 0;
+  border-top: 2px dashed var(--fg-muted);
 }
 
 /* -------------------------------------------------------------------------

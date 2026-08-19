@@ -29,6 +29,26 @@ function Swatch({
   );
 }
 
+// The P2 D6 line-convention entries (taper / seam / pipe-manifold). Their sample
+// marks deliberately DO NOT carry the "legend-swatch" substring — the smoke
+// count pin matches /legend-swatch/g against the tier + override/problem
+// swatches only, so a shared substring would inflate that count (same reason
+// .legend-rule-dashed is a sibling class, not a modifier ON legend-swatch).
+function ConventionEntry({
+  sampleClass,
+  label,
+}: {
+  sampleClass: string;
+  label: string;
+}) {
+  return (
+    <span className="legend-entry">
+      <span className={sampleClass} aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
 export function Legend({ tiers }: LegendProps) {
   return (
     <div className="legend">
@@ -49,6 +69,15 @@ export function Legend({ tiers }: LegendProps) {
       ))}
       <Swatch color={OVERRIDE_COLOR} label="override" />
       <Swatch color={ERROR_COLOR} label="problem" />
+      <ConventionEntry
+        sampleClass="legend-taper"
+        label="trunk carry (thins as machines draw)"
+      />
+      <ConventionEntry sampleClass="legend-seam" label="belt seam (merger)" />
+      <ConventionEntry
+        sampleClass="legend-pipe-manifold"
+        label="pipe manifold (unordered)"
+      />
     </div>
   );
 }
