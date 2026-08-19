@@ -1,7 +1,7 @@
 # #133 — Packaging for a raw input (Stage 23)
 
 **Ticket:** #133 · **Epic:** #136 · **Milestone:** 94 · **Tier:** 2
-**Status:** design r4
+**Status:** design r5 (post-arc revalidated)
 
 ## Purpose
 
@@ -207,7 +207,11 @@ Two boundaries, both load-bearing, and r2 named only one:
   its pair.
 - Enabled: packager recipe select (when >1 pair), clock % field, return-transport
   mode — mirroring `LinkInspector.tsx:194-216`, with the same initial shape
-  (`:206-210`).
+  (`:206-210`). **The initial `returnTransport` MUST be belt (r5, adversarial
+  INFO hardened to a requirement):** the link path self-heals a bad seed by
+  forcing belt on first enable (`store.ts:2064-2069`); the extraction path has
+  no such heal — `canonicalizePackagingInterstep` returns null on an illegal
+  route and would silently drop the enabling write forever.
 - Reports Packager/Unpackager counts, power, packaged cargo rate,
   empty-container return rate, and both routes.
 
@@ -243,8 +247,8 @@ explicitly **excludes** `nitrogen_gas`.)*
    declared return type re-typed to the frozen alias (`:494-496`), and the stale
    header comment (`:19-20`).
 5. `state/store.ts` — **this is where "save writes v9" actually lives**: the
-   `format_version` literals are `:1998` and `:2009`, not in `plan-store.ts`
-   (`savePlan:261` only takes the file). Also `PlanBundle.plans` (`:387`) and the
+   `format_version` literals are `:2209` and `:2220` (re-anchored r5 after the
+   P0-P2 shift), not in `plan-store.ts` (`savePlan:261` only takes the file). Also `PlanBundle.plans` (`:387`) and the
    type annotations at `:727`, `:1260`, `:1269`, `:1277`, `:2076`, `:2127`. All
    caught by `npm run check`, so churn rather than silent defect — but r2's change
    list understated it.
@@ -285,11 +289,15 @@ New tests required:
 8. Re-point `plan-store.test.ts:679-684` and `:898-901`, which assert that
    `format_version: 9` on a v8 body is rejected; under v9 that payload is valid, so
    both must move to `10`.
-9. **~17 further assertions pin 8 as the migration/save/export target** —
-   `plan-store.test.ts:105`, `139`, `197`, `528`, `683`, `704`, `1053`, `1148`,
-   `1282`, `1330`; `store.test.ts:1756`, `2064`, `3179`, `3215`, `3225`, `3259`,
-   `3576`. **Two of these are not bookkeeping:** `store.test.ts:1756`
-   (`written.format_version`) and `:3179` are the pins that would catch a
+9. **~17 further assertions pin 8 as the migration/save/export target**
+   (re-anchored r5; treat this as a CONTENT sweep — re-grep both files, never
+   the line list) — `plan-store.test.ts:105`, `139`, `197`, `528`, `683`,
+   `704`, `1053`, `1148`, `1282`, `1330`; `store.test.ts:2069`, `2377`,
+   `3492`, `3528`, `3538`, `3572`, `3889`. Two of the store.test.ts pins are
+   NOT `.toBe(8)`-shaped: `:3538` is a string-literal
+   `toContain('\n  "format_version": 8')` and `:3889` an `=== 8` envelope
+   pin. **Two are not bookkeeping:** `store.test.ts:2069`
+   (`written.format_version`) and the export pins are what catch a
    passthrough `migrateV8` once updated. The stale header comment at
    `plan-store.ts:19-20` and `listPlans`' "all eight versions" (`:277`) go too.
 10. **Pin the early return.** The one thing this spec calls "easy to lose in the
@@ -340,3 +348,20 @@ New tests required:
 | `materialSupply` = the extraction plan's `totalSupply` | **Underspecified** — `deriveExtractionPlan` returns two: top-level `totalSupply` (`extraction-plan.ts:162`) and `purity.totalSupply` (`:200`, `:227`), which diverge when a node mix is configured. Harmless today because `cargoSupply` is displayed nowhere, but the implementer must pick the top-level one |
 | The existing `link-plan.test.ts` is **not** a sufficient pin | **Verified** — degenerate `unlockedTiers` fixture (`:236-242`) and no null-demand coverage |
 | The extraction browser harness cannot cover the visible case | **Verified** — its catalog has `recipes: {}` and only `stone` (`extraction-panel-browser-harness.tsx:18-52`), so `discoverPackagingPairs` is empty there. It can cover the hidden case; the visible (water) case needs a fixture or is covered by unit tests instead |
+
+## Revision history (arc-era)
+
+- **r4 → r5** (the fresh r4 gate the r2 disposition required, run 2026-08-19
+  as P4 of the #140 arc, doubled as post-arc revalidation @ bee9544):
+  code-reviewer APPROVED_WITH_NITS (2 — both stale line lists), adversarial
+  APPROVED (3 NIT/INFO). The never-gated r3/r4 folds verified sound against
+  live source (the rebuild migrations; the canonicalized extraction write);
+  the third-instance hunt (the re-inversion class that produced r1 and r2's
+  blockers) found the class CLOSED at the validatePlanFile chokepoint — no
+  fourth unguarded ingress; tier flow confirmed undrifted by P0/P1
+  (extraction-plan carries stage.selection.unlockedTiers, same clamped source
+  as the link path); the 17-pin sweep count reconciled exactly with
+  re-anchored lines. Folded: §Changes.5 + §Tests.9 re-anchored (content-sweep
+  discipline stated), the belt-initial-returnTransport INFO hardened to a
+  requirement. §Tests.8's v10 flip re-confirmed load-bearing. r5 goes to the
+  one-shot simplify pass (the correctness pair converged this round).
