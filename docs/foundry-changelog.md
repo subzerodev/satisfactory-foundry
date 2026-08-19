@@ -3,6 +3,20 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-19 — The schematic splits in two: a build view with a ruler, and a Machines tab (P3, the arc's last phase)
+
+> Hey Michael — the 106-machine block no longer fights the belt drawing for
+> space. The schematic is now the BUILD view: ribbons, belts, seams, and in
+> place of the old block a thin ruler — tall ticks exactly where belt
+> stretches start and end (they're taken from the solve, so they always
+> line up with the drawing), short ticks tying each number to its machine.
+> That's the option A you picked from the mockups, and the drawing got
+> about 28 pixels of breathing room back. The block itself lives in a new
+> Machines tab next to the Schematic tab — same boxes, same ×106 count at
+> high machine counts, just its own room. What that tab should GROW into
+> is your open #138 ticket; this phase only gave it a home. Everything
+> else — ribbons, numbers, cards, legend — is untouched.
+
 ## 2026-08-19 — You can finally click to package the water (P4 of the rework arc)
 
 > Hey Michael — the thing you couldn't find a button for now has one, where
