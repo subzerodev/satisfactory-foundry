@@ -743,28 +743,25 @@ body {
   stroke-width: 1;
 }
 
-/* Level-of-detail machine band (Stage 12 P1 Axis 1): above N=114 the per-machine
-   tick row becomes one band rect + a count, the drafting break convention. The
-   band reuses the machine rect's surface fill; the count takes the display face
-   (the drawing's own count vocabulary); the significant-machine ticks read as
-   quiet interior boundaries. */
-.machine-band rect {
-  fill: var(--surface-fill);
-  stroke: var(--surface-stroke);
-}
-
-.machine-band-count {
+/* The machines-view ×N caption (#154): the machine total as a static header —
+   the band's one useful datum, now always shown so "how many" needs no scroll. */
+.machines-count {
   font-family: var(--font-display);
   font-size: 16px;
   font-weight: 600;
-  fill: var(--fg);
-  text-anchor: middle;
-  dominant-baseline: middle;
+  color: var(--fg);
+  padding: 0 4px 4px;
 }
 
-.machine-band-mark line {
-  stroke: var(--surface-stroke);
-  stroke-width: 1;
+/* Grab-to-pan cursors (#154): the scroll container invites a drag, and shows the
+   closed hand while dragging (the `grabbing` class the useGrabScroll hook sets). */
+.schematic-scroll {
+  cursor: grab;
+}
+
+.schematic-scroll.grabbing,
+.schematic.grabbing {
+  cursor: grabbing;
 }
 
 /* Lane names (Stage 5) with the S12 label halo (#76): output names now sit just
@@ -1260,7 +1257,8 @@ polygon.bus-seg {
    - taper: a small filled triangle standing for the ribbon that thins as
      machines draw (a CSS border triangle in the muted ink);
    - seam: a short dashed vertical tick, the belt-seam / merger mark;
-   - pipe-manifold: the neutral dashed connector, unordered by design. */
+   - pipe-manifold: the neutral dashed connector, unordered by design;
+   - ruler: the build-view axis's baseline + its two tick kinds (#154). */
 .legend-taper {
   display: inline-block;
   width: 0;
@@ -1282,6 +1280,17 @@ polygon.bus-seg {
   width: 22px;
   height: 0;
   border-top: 2px dashed var(--fg-muted);
+}
+
+/* Ruler sample (#154): a short baseline with a tall registration tick at one
+   end and a short cell tick beside it — the two mark kinds the entry names.
+   Left border = the tall (major) tick; bottom border = the baseline. */
+.legend-ruler {
+  display: inline-block;
+  width: 18px;
+  height: 10px;
+  border-left: 1px solid var(--surface-stroke);
+  border-bottom: 1px solid var(--surface-stroke);
 }
 
 /* -------------------------------------------------------------------------

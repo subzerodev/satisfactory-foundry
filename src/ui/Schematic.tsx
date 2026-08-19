@@ -10,6 +10,7 @@ import type {
 import type { TierTable } from "../data/types.ts";
 import { computeLayout, LAYOUT } from "./layout.ts";
 import type { LaneTrack, SchematicLayout } from "./layout.ts";
+import { useGrabScroll } from "./useGrabScroll.ts";
 import {
   beltLabel,
   feedGroupLabel,
@@ -536,27 +537,22 @@ function PipeConnector({
  *    output breakouts, segment bounds, finding refs), solver-derived in both
  *    density modes — never labelStep arithmetic (the r1 blocker's fix).
  *  - MINOR ticks (4px up from the baseline) at `m.x + pitch/2` — the cell CENTRE
- *    — for every labeled machine: the mark that binds each index label to its
- *    machine cell, so a label is never equidistant between two major ticks (the
- *    r2 registration defect's fix).
- *
- * Labeled machines are `m.labeled` in non-band mode (per the pitch) and
- * `labeledSignificant` in band mode (label thinning). The band rect + ×N count
- * do NOT live here — they moved to the machines view.
+ *    — for EVERY machine: the mark that binds each index label to its machine
+ *    cell, so a label is never equidistant between two major ticks (the r2
+ *    registration defect's fix). At the readable pitch floor (#154) every
+ *    machine gets a legible number, so every machine carries a minor tick +
+ *    label. The band rect + ×N count do NOT live here — they moved to the
+ *    machines view.
  */
 function Ruler({
   machines,
   significant,
-  labeledSignificant,
-  band,
   pitch,
   top,
   rulerH,
 }: {
   machines: SchematicLayout["machines"];
   significant: number[];
-  labeledSignificant: number[];
-  band: boolean;
   pitch: number;
   top: number;
   rulerH: number;
@@ -565,11 +561,9 @@ function Ruler({
   const last = machines[machines.length - 1]!;
   const baseline = top + rulerH;
   const xOf = (index: number) => machines[index - 1]!.x;
-  // The machines that carry an index label + minor tick: the pitch-thinned row
-  // in non-band mode, the label-thinned significant subset in band mode.
-  const labeled = band
-    ? labeledSignificant.map((index) => ({ index, x: xOf(index) }))
-    : machines.filter((m) => m.labeled);
+  // Every machine carries an index label + minor tick — the readable pitch floor
+  // (#154) keeps 3-digit labels from crowding, so no thinning is needed.
+  const labeled = machines;
   const MINOR_H = 4;
   return (
     <g className="machine-ruler">
@@ -638,6 +632,7 @@ export function Schematic({
   // the container box so an edge-hovered segment's tip stays visible.
   const containerRef = useRef<HTMLDivElement>(null);
   const [tip, setTip] = useState<TooltipState | null>(null);
+  const grab = useGrabScroll(containerRef);
 
   const horizontalTipPlacement = (
     container: HTMLDivElement,
@@ -683,7 +678,11 @@ export function Schematic({
   return (
     <div
       ref={containerRef}
-      className={layout.scrolled ? "schematic-scroll" : "schematic"}
+      className={`${layout.scrolled ? "schematic-scroll" : "schematic"}${
+        grab.grabbing ? " grabbing" : ""
+      }`}
+      onPointerDown={grab.onPointerDown}
+      onClickCapture={grab.onClickCapture}
     >
       <svg
         width={layout.width}
@@ -716,8 +715,6 @@ export function Schematic({
         <Ruler
           machines={layout.machines}
           significant={layout.significant}
-          labeledSignificant={layout.labeledSignificant}
-          band={layout.band}
           pitch={layout.pitch}
           top={machineTopY}
           rulerH={LAYOUT.rulerH}
