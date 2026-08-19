@@ -904,6 +904,53 @@ polygon.bus-seg {
   border-color: var(--accent);
 }
 
+/* Drawing-subject selector (#157 A2) — a quiet mono select above the view tabs
+   that re-points the drawing at a packaging chain. Same mono idiom as the tabs;
+   absent entirely when the plan has no packaging chains. */
+.drawing-subject {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.drawing-subject-label {
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+
+.drawing-subject select {
+  font-family: var(--font-mono-num);
+  font-size: 11px;
+  color: var(--fg);
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  padding: 2px 6px;
+}
+
+/* One stacked machine group of a packaging subject (#157 A3): the count + power
+   heading over its manifold. Two groups stack (packager above, unpackager
+   below). */
+.packaging-group + .packaging-group {
+  margin-top: 12px;
+}
+
+.packaging-group-heading {
+  margin: 0 0 4px;
+  font-family: var(--font-mono-num);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--fg);
+}
+
+.packaging-group-power {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
 /* Theme toggle (Stage 5 item 3; re-skinned S9P0) — a quiet mono control that
    NAMES its destination medium ("CYANOTYPE" on vellum, "VELLUM" on cyanotype).
    The words are the feature now, so the glyphs are gone. */

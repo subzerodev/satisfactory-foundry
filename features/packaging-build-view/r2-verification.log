@@ -1,0 +1,137 @@
+# #157 packaging-build-view — bidirectionality verification log
+
+Every new production behaviour: the PASS command + output, a COMPILING mutation
+(tsc verified — a non-compiling mutant proves nothing), the genuine vitest FAIL
+naming the new test, and the restore + green re-run. Mutation sites addressed by
+CONTENT (grep for the line), not line number.
+
+Worktree: .worktrees/packaging-build-view @ feature/packaging-build-view.
+Run cwd = the worktree root.
+
+===========================================================================
+B1 — the A1 adapter lane mapping (src/core/packaging-stage-input.ts)
+===========================================================================
+
+PASS baseline:
+  $ npx vitest run src/core/packaging-stage-input.test.ts
+       Test Files  1 passed (1)
+       Tests  5 passed (5)
+
+MUTATION (compiles): the packager CONTAINER feed reads the FLUID rate — a
+field swap that pins the container↔fluid lane distinction.
+  packaging-stage-input.ts, packager feeds container lane:
+    perMachineRate: pair.packageContainerRate  →  pair.packageFluidRate
+
+  $ npx tsc -b            # (no output = compiles cleanly)
+  (no tsc output = compiles)
+
+FAIL (mutant):
+  × maps the packager group: fluid pipe + container belt feed → packaged belt out
+   FAIL  src/core/packaging-stage-input.test.ts > packagingStageInputs >
+         maps the packager group: fluid pipe + container belt feed → packaged belt out
+  AssertionError: expected false to be true // Object.is equality
+       Tests  1 failed | 4 passed (5)
+
+RESTORE + green:
+  perMachineRate: pair.packageFluidRate  →  pair.packageContainerRate
+  $ npx vitest run src/core/packaging-stage-input.test.ts
+       Tests  5 passed (5)
+
+===========================================================================
+B2 — the belt lane-count chip (src/ui/transport-text.ts, edgeChip belt case)
+===========================================================================
+
+PASS baseline:
+  $ npx vitest run src/ui/transport-text.test.ts src/ui/graph-flow.test.ts
+       Tests  85 passed (85)
+
+MUTATION (compiles): the belt PLURAL noun drops to the singular — the chip text
+regresses so the "N belts" pins bind.
+  transport-text.ts, edgeChip continuous belt branch:
+    runs === 1n ? "belt" : "belts"  →  runs === 1n ? "belt" : "belt"
+
+  $ npx tsc -b
+  (no tsc output = compiles)
+
+FAIL (mutant) — all three belt-chip surfaces (edgeChip, routeEdgeChip delegate,
+transportChipFor post-lift):
+  × belt continuous → the lane count chip (#157)
+  × labels a belt route summary with its lane count (#157)
+  × a CONFIGURED belt link appends the lane-count chip (#157)
+   FAIL  src/ui/graph-flow.test.ts > graphToFlow — transport edge chip >
+         a CONFIGURED belt link appends the lane-count chip (#157)
+   FAIL  src/ui/transport-text.test.ts > transport-text — train rows + chip >
+         belt continuous → the lane count chip (#157)
+   FAIL  src/ui/transport-text.test.ts > routeEdgeChip >
+         labels a belt route summary with its lane count (#157)
+       Tests  3 failed | 82 passed (85)
+
+RESTORE + green:
+  runs === 1n ? "belt" : "belt"  →  runs === 1n ? "belt" : "belts"
+
+===========================================================================
+B3 — the transportChipFor guard lift (src/ui/graph-flow.ts)
+===========================================================================
+
+PASS baseline (part of B2's 85-green run above).
+
+MUTATION (compiles): re-add the lifted MODE half of the short-circuit — the
+regression the A4 lift removed. The UNDEFINED half (its own KEEP pin) stays.
+  graph-flow.ts, transportChipFor default-belt skip:
+    if (link.transport === undefined)  →
+    if (link.transport === undefined || link.transport.mode === "belt")
+
+  $ npx tsc -b
+  (no tsc output = compiles)
+
+FAIL (mutant) — ONLY the configured-belt chip fails; the absent-transport KEEP
+pin stays green (exactly the guard-lift semantics):
+  × a CONFIGURED belt link appends the lane-count chip (#157)
+   FAIL  src/ui/graph-flow.test.ts > graphToFlow — transport edge chip >
+         a CONFIGURED belt link appends the lane-count chip (#157)
+       Tests  1 failed | 55 passed (56)
+
+RESTORE + green:
+  revert to `if (link.transport === undefined)`
+
+===========================================================================
+B4 — the subject selector + stacked packager/unpackager render (src/ui/App.tsx)
+===========================================================================
+
+PASS baseline:
+  $ npx vitest run src/ui/App.packaging.dom.test.tsx
+       Tests  4 passed (4)
+
+MUTATION (compiles): the unpackager group reuses the PACKAGER solve — the
+stacked render collapses to one machine kind, so the distinct-group pin binds.
+  App.tsx, solvePackagingSubject unpackager entry:
+    input: inputs.unpackager, result: solveStage(inputs.unpackager)  →
+    input: inputs.packager,   result: solveStage(inputs.packager)
+
+  $ npx tsc -b
+  (no tsc output = compiles)
+
+FAIL (mutant):
+  × switches the drawing to the STACKED packager + unpackager groups
+   FAIL  src/ui/App.packaging.dom.test.tsx > App drawing-subject selector (#157 A2/A3) >
+         switches the drawing to the STACKED packager + unpackager groups
+  AssertionError: expected '10 × Unpackager · 100 MW' to contain '5 × Unpackager'
+    Expected: "5 × Unpackager"
+    Received: "10 × Unpackager · 100 MW"
+       Tests  1 failed | 3 passed (4)
+  (The received "· 100 MW" also confirms the per-group power heading renders.)
+
+RESTORE + green:
+  revert to `input: inputs.unpackager, result: solveStage(inputs.unpackager)`
+
+===========================================================================
+ALL RESTORED — combined green re-run of every new/changed suite
+===========================================================================
+  $ npx tsc -b   # clean
+  $ npx vitest run src/core/packaging-stage-input.test.ts \
+      src/ui/transport-text.test.ts src/ui/graph-flow.test.ts \
+      src/ui/App.packaging.dom.test.tsx
+       Tests  94 passed (94)
+
+  Full worktree suite: Test Files 49 passed (49) · Tests 1239 passed (1239).
+  Full gate: `npm run check` (tsc + eslint + prettier) — green.
