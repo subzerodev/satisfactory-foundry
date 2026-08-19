@@ -59,8 +59,11 @@ import {
   standaloneExtractors,
 } from "./extraction-plan.ts";
 import { formatRate, tierLabel } from "./format.ts";
+import { machinePowerProjection } from "../core/machine-power.ts";
+import { parseClockText } from "../core/clock.ts";
 import { discoverPackagingPairs } from "../core/packaging-pair.ts";
 import type { PackagingPair } from "../core/packaging-pair.ts";
+import { PackagingChainStrip } from "./PackagingChainStrip.tsx";
 import type {
   PackagingInterstep,
   TransportMode,
@@ -440,6 +443,43 @@ export function ExtractionPanel({
         )
       : null;
 
+  // Total power (extractors + packaging) — the field-report "4440 MW never
+  // shown" gap. Extraction-only, so it lives HERE (its inputs — result,
+  // selection, catalog — are native to ExtractionPanel; PackagingEditor is
+  // strictly prop-driven and reaches none of them, r5). Hidden under a purity
+  // mix, whose block carries its own power and would mislead a baseline sum.
+  // The baseline projection re-derives locally: deriveExtractionPlan exposes
+  // only powerText, and A1 promises no derive change. The clock re-parse uses
+  // core/clock.ts parseClockText — the EXACT function the derive uses.
+  const totalPowerText: string | null = (() => {
+    if (
+      result.status !== "planned" ||
+      selection === null ||
+      selection.purityMix !== undefined ||
+      packagingPlan === null ||
+      packagingPlan.status !== "ready" ||
+      packagingPlan.power === null
+    ) {
+      return null;
+    }
+    const extractor = catalog.extractors[selection.machineId];
+    const machine =
+      extractor === undefined
+        ? undefined
+        : catalog.machines[extractor.machineId];
+    const parsedClock = parseClockText(selection.clockPercentText);
+    if (machine === undefined || !parsedClock.ok) return null;
+    const baseline = machinePowerProjection(
+      machine.power,
+      result.count,
+      parsedClock.value,
+    );
+    const pkg = packagingPlan.power;
+    return baseline.kind === "exact" && pkg.kind === "exact"
+      ? `${formatRate(baseline.mw.add(pkg.mw))} MW`
+      : `≈ ${Number(((baseline.kind === "exact" ? Number(baseline.mw.num) / Number(baseline.mw.den) : baseline.mw) + (pkg.kind === "exact" ? Number(pkg.mw.num) / Number(pkg.mw.den) : pkg.mw)).toFixed(1))} MW`;
+  })();
+
   const setPackagingEnabled = (enabled: boolean) => {
     if (selection === null) return;
     if (!enabled) {
@@ -544,6 +584,7 @@ export function ExtractionPanel({
       )}
       {result.status === "planned" && (
         <div className="extraction-result">
+          <p className="extraction-section-label">Extraction</p>
           <p>
             <strong>Normal baseline</strong>
           </p>
@@ -650,9 +691,22 @@ export function ExtractionPanel({
               pairs={packagingPairs}
               packaging={selection.packaging}
               plan={packagingPlan}
+              endpoints={{
+                left:
+                  result.status === "planned"
+                    ? `${result.count} × ${catalog.machines[selection.machineId]?.displayName ?? selection.machineId}`
+                    : (catalog.machines[selection.machineId]?.displayName ??
+                      selection.machineId),
+                right: "Delivery",
+              }}
               onSetEnabled={setPackagingEnabled}
               onSetIntent={setPackagingIntent}
             />
+          )}
+          {totalPowerText !== null && (
+            <p className="extraction-total-power">
+              <strong>Total power: {totalPowerText}</strong>
+            </p>
           )}
         </div>
       )}
@@ -679,6 +733,7 @@ function PackagingControls({
   pairs,
   packaging,
   plan,
+  endpoints,
   onSetEnabled,
   onSetIntent,
 }: {
@@ -686,12 +741,16 @@ function PackagingControls({
   pairs: PackagingPair[];
   packaging: PackagingInterstep | undefined;
   plan: DerivedLinkPlan | null;
+  endpoints: { left: string; right: string };
   onSetEnabled: (enabled: boolean) => void;
   onSetIntent: (intent: PackagingInterstep) => void;
 }) {
   return (
     <div className="extraction-packaging">
-      <label className="extraction-packaging-toggle">
+      {/* A1: the existing checkbox <label> stays intact and is STYLED as the
+          "Package for transport" section head — no duplicate text, aria-label
+          untouched. */}
+      <label className="extraction-packaging-toggle extraction-section-label">
         <input
           type="checkbox"
           aria-label="Package for transport"
@@ -707,6 +766,7 @@ function PackagingControls({
           pairs={pairs}
           intent={packaging}
           plan={plan}
+          endpoints={endpoints}
           onSetIntent={onSetIntent}
         />
       )}
@@ -719,12 +779,17 @@ function PackagingEditor({
   pairs,
   intent,
   plan,
+  endpoints,
   onSetIntent,
 }: {
   catalog: Catalog;
   pairs: PackagingPair[];
   intent: PackagingInterstep;
   plan: DerivedLinkPlan | null;
+  /** The strip's left/right endpoint labels (extraction: the extractor bank /
+   *  the delivery). Passed in because the extractor identity lives only in
+   *  ExtractionPanel — the editor is otherwise strictly prop-driven. */
+  endpoints: { left: string; right: string };
   onSetIntent: (intent: PackagingInterstep) => void;
 }) {
   const selectedPairKnown = pairs.some(
@@ -809,6 +874,17 @@ function PackagingEditor({
         <p className="extraction-error">{plan.error}</p>
       ) : (
         <div className="extraction-packaging-result">
+          <PackagingChainStrip
+            plan={plan}
+            leftLabel={endpoints.left}
+            rightLabel={endpoints.right}
+            feedName={itemName(catalog, plan.pair.fluidItemId)}
+            packagedName={itemName(catalog, plan.packagedItemId)}
+            deliveredName={itemName(catalog, plan.pair.fluidItemId)}
+            containerName={itemName(catalog, plan.containerItemId)}
+            forwardRouteText={routeSummary(plan.forwardTransport)}
+            returnRouteText={routeSummary(plan.returnTransport)}
+          />
           {plan.packageMachines !== null &&
             plan.unpackageMachines !== null &&
             plan.power !== null && (
@@ -817,20 +893,20 @@ function PackagingEditor({
                 Unpackager · {packagingPowerText(plan.power)}
               </p>
             )}
-          {plan.cargoDemand !== null && plan.containerReturnRate !== null && (
-            <p>
-              {formatRate(plan.cargoDemand)}/min packaged ·{" "}
-              {formatRate(plan.containerReturnRate)}/min empty containers
-            </p>
-          )}
-          <p>
-            Forward: {routeSummary(plan.forwardTransport)} · Return:{" "}
-            {routeSummary(plan.returnTransport)}
+          <p className="extraction-muted">
+            Manifolds: pick &lsquo;Packaging:{" "}
+            {itemName(catalog, plan.pair.fluidItemId)}
+            &rsquo; in the DRAWING selector
           </p>
         </div>
       )}
     </div>
   );
+}
+
+/** A catalog item's display name, falling back to its id (missing-item guard). */
+function itemName(catalog: Catalog, itemId: string): string {
+  return catalog.items[itemId]?.displayName ?? itemId;
 }
 
 function transportText(

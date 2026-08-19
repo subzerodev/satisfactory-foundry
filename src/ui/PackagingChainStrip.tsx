@@ -91,7 +91,14 @@ export function PackagingChainStrip({
         </text>
 
         {/* Packager node box. */}
-        <rect className="pcs-node" x="4" y="54" width="120" height="34" rx="2" />
+        <rect
+          className="pcs-node"
+          x="4"
+          y="54"
+          width="120"
+          height="34"
+          rx="2"
+        />
         <text className="pcs-node-count" x="64" y="70" textAnchor="middle">
           {countText(plan.packageMachines)} ×
         </text>

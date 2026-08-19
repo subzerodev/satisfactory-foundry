@@ -658,6 +658,13 @@ describe("RawFeedNode", () => {
           stackSize: F(100),
           isRawResource: false,
         },
+        packaged_oil: {
+          id: "packaged_oil",
+          displayName: "Packaged Oil",
+          isFluid: false,
+          stackSize: F(100),
+          isRawResource: false,
+        },
       },
       machines: {
         ...base.machines,
@@ -689,6 +696,30 @@ describe("RawFeedNode", () => {
           inputs: [{ itemId: "packaged_water", perMinute: F(120) }],
           outputs: [
             { itemId: "water", perMinute: F(120) },
+            { itemId: "empty_canister", perMinute: F(120) },
+          ],
+        },
+        pkg_oil: {
+          id: "pkg_oil",
+          displayName: "Packaged Oil",
+          machineId: "packager",
+          isAlternate: false,
+          primaryOutputId: "packaged_oil",
+          inputs: [
+            { itemId: "liquid_oil", perMinute: F(60) },
+            { itemId: "empty_canister", perMinute: F(60) },
+          ],
+          outputs: [{ itemId: "packaged_oil", perMinute: F(60) }],
+        },
+        unpkg_oil: {
+          id: "unpkg_oil",
+          displayName: "Unpackage Oil",
+          machineId: "packager",
+          isAlternate: false,
+          primaryOutputId: "liquid_oil",
+          inputs: [{ itemId: "packaged_oil", perMinute: F(120) }],
+          outputs: [
+            { itemId: "liquid_oil", perMinute: F(120) },
             { itemId: "empty_canister", perMinute: F(120) },
           ],
         },
@@ -779,10 +810,56 @@ describe("RawFeedNode", () => {
       }),
     );
     // 120/min water at 60/min per Packager → 2 Packagers, 1 Unpackager.
-    expect(host.textContent).toContain("2 Packager");
-    expect(host.textContent).toContain("1 Unpackager");
-    expect(host.textContent).toContain("/min packaged");
-    expect(host.textContent).toContain("/min empty containers");
+    // The A3 figures line carries the combined count + packaging power.
+    expect(host.textContent).toContain("2 Packager · 1 Unpackager · 30 MW");
+    // The strip's node boxes carry the per-group counts (#156 A2).
+    expect(host.textContent).toContain("2 ×");
+    expect(host.textContent).toContain("1 ×");
+    // The old flat "/min packaged" / "/min empty containers" prose lines are
+    // absorbed into the strip's forward/return edge labels — same numbers, now
+    // named with their items + routes.
+    expect(host.textContent).toContain("120/min Packaged Water · 1 belt");
+    expect(host.textContent).toContain("120/min Empty Canister · 1 belt");
+    // The A4 drawing pointer.
+    expect(host.textContent).toContain(
+      "pick ‘Packaging: Water’ in the DRAWING selector",
+    );
+    // The extraction-only Total (baseline 20 MW + packaging 30 MW, both exact).
+    expect(host.textContent).toContain("Total power: 50 MW");
+  });
+
+  it("hides the Total-power line while a purity mix is active (oil)", async () => {
+    // Oil supports purity; with a mix set, the purity block carries its own
+    // power and a baseline-based Total would mislead (#156 A3), so it is hidden.
+    function Harness({ withMix }: { withMix: boolean }) {
+      return (
+        <ExtractionPanel
+          catalog={packagingCatalog()}
+          rawNode={rawNode("liquid_oil", "Crude Oil", 120)}
+          stage={stage}
+          selection={{
+            machineId: "oil_pump",
+            clockPercentText: "100",
+            ...(withMix
+              ? { purityMix: { impure: "0", normal: "1", pure: "0" } }
+              : {}),
+            packaging: {
+              packageRecipeId: "pkg_oil",
+              clockPercentText: "100",
+              returnTransport: { mode: "belt" },
+            },
+          }}
+          onSetSelection={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+    }
+    // Without a mix, the Total renders (baseline 40 MW + packaging 30 MW = 70).
+    await act(async () => root.render(<Harness withMix={false} />));
+    expect(host.textContent).toContain("Total power: 70 MW");
+    // With a mix active, the Total is suppressed.
+    await act(async () => root.render(<Harness withMix={true} />));
+    expect(host.textContent).not.toContain("Total power:");
   });
 
   it("preserves the packaging config across an extractor change (setMachine)", async () => {
