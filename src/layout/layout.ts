@@ -58,7 +58,6 @@ export interface LaneLayout {
   bus: { from: Point; to: Point };
   junctions: Rect[]; // splitters (feed) / mergers (output), one per machine
   marks: BeltMark[]; // drops (feed) / breakouts (output)
-  maxParallelCount: number; // derived bus cardinality; defaults to one
 }
 
 export type LayoutFinding = { type: "unknown-footprint"; machineId: string };
@@ -132,7 +131,6 @@ export function layoutStage(
       bus: { from: { x: 0, y: 0 }, to: { x: 0, y: 0 } },
       junctions: [],
       marks: [],
-      maxParallelCount: 1,
     });
     return {
       units: "dm",
@@ -203,10 +201,6 @@ function layoutFeedLane(
       at: { x: boundaryX(belt.entersAfterMachine, pitch), y },
       capacity: belt.capacity,
     })),
-    maxParallelCount: lane.segments.reduce(
-      (max, segment) => Math.max(max, segment.parallelCount),
-      1,
-    ),
   };
 }
 
@@ -240,7 +234,6 @@ function layoutOutputLane(
       capacity: belt.capacity,
       load: belt.load,
     })),
-    maxParallelCount: 1,
   };
 }
 

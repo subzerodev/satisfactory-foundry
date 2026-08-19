@@ -54,7 +54,7 @@ function laneKindOf(solve: SolveState, finding: Finding): LaneKind | null {
  * arithmetic fact (never a "resolves"-style claim — a tier change re-solves the
  * whole manifold):
  *
- * - segment-over-capacity: the smallest tier ≥ peakFlow AND > the finding's own
+ * - segment-over-capacity: the smallest tier ≥ the finding's flow AND > its own
  *   busCapacity. hint tier ≤ best-unlocked → "raising this lane's override to
  *   MkN (X/min) would put the bus above this peak" (the overridden-down case);
  *   hint tier > best-unlocked → "unlocking MkN (X/min) would raise the bus
@@ -85,7 +85,7 @@ function fixHint(
 
   if (finding.type === "segment-over-capacity") {
     const hint = tierFixHint(
-      finding.peakFlow,
+      finding.flow,
       kind,
       finding.busCapacity,
       tiers,

@@ -62,22 +62,6 @@ export function tierLabel(
   return kind === "belt" ? `Mk${i + 1}` : `Pipe Mk${i + 1}`;
 }
 
-/** First still-locked tier that reduces an exact bus peak to one line. */
-export function firstLockedTierForOneLine(
-  kind: LaneKind,
-  peakFlow: Fraction,
-  tiers: TierTable,
-  unlockedCount: number,
-): string | null {
-  for (let i = unlockedCount; i < tiers[kind].length; i++) {
-    const capacity = tiers[kind][i]!;
-    if (capacity.gte(peakFlow)) {
-      return tierLabel(kind, capacity, tiers);
-    }
-  }
-  return null;
-}
-
 /**
  * A belt's human label. Feed prints its capacity + entry point; output prints
  * its carried load + break-out point (the two rates differ, so each template
@@ -125,24 +109,17 @@ export function feedGroupLabel(belts: readonly FeedBelt[]): string {
 /**
  * A bus segment's hover-tooltip text. The exact string is owned here (Stage 5
  * item 1) so any styled tooltip and the unit test share one source of truth,
- * rather than being buried in `<title>` markup. `busCapString` is the already-formatted
- * bus capacity (formatRate) the caller passes; `peakFlow` is the segment's exact
- * span maximum, formatted here.
+ * rather than being buried in `<title>` markup. `busCapString` is the already-
+ * formatted bus capacity (formatRate) the caller passes; `entryFlow` is the
+ * segment's exact head/entry flow, formatted here.
  */
 export function segTooltip(
-  seg: { fromMachine: number; toMachine: number; peakFlow: Fraction },
+  seg: { fromMachine: number; toMachine: number; entryFlow: Fraction },
   busCapString: string,
-  parallelCount = 1,
-  oneLineTier: string | null = null,
 ): string {
-  const base = `machines ${seg.fromMachine}–${seg.toMachine} · peak ${formatRate(
-    seg.peakFlow,
-  )}/min`;
-  if (parallelCount === 1) {
-    return `${base} of ${busCapString}/min`;
-  }
-  const bundle = `${base} · ${parallelCount} parallel lines × ${busCapString}/min`;
-  return oneLineTier === null ? bundle : `${bundle} · ${oneLineTier}: 1 line`;
+  return `machines ${seg.fromMachine}–${seg.toMachine} · peak ${formatRate(
+    seg.entryFlow,
+  )}/min of ${busCapString}/min`;
 }
 
 /** One human sentence per finding variant. */
@@ -154,7 +131,9 @@ export function findingText(
     case "infeasible-machine-demand":
       return `${itemName(f.itemId)}: one machine needs ${formatRate(f.demand)}/min — more than the best unlocked tier carries (${formatRate(f.topCapacity)}/min). No manifold can serve it; unlock a higher tier or lower the clock.`;
     case "segment-over-capacity":
-      return `${itemName(f.itemId)}: bus over capacity between machines ${f.fromMachine}–${f.toMachine} — peak ${formatRate(f.peakFlow)}/min exceeds ${formatRate(f.busCapacity)}/min.`;
+      return `${itemName(f.itemId)}: bus over capacity between machines ${f.fromMachine}–${f.toMachine} — peak ${formatRate(f.flow)}/min exceeds ${formatRate(f.busCapacity)}/min.`;
+    case "lane-undersupplied":
+      return `${itemName(f.itemId)}: lane under-supplied by ${formatRate(f.shortfall)}/min (nominal pipe ceiling).`;
     case "starved-machines": {
       let s = `${itemName(f.itemId)}: machines starve`;
       if (f.starvedFrom !== undefined && f.starvedTo !== undefined) {
