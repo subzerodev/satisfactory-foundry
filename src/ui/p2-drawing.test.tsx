@@ -19,6 +19,7 @@ import type { TierTable } from "../data/types.ts";
 import { Schematic } from "./Schematic.tsx";
 import { SummaryCards } from "./SummaryCards.tsx";
 import { Legend } from "./Legend.tsx";
+import { Blueprint } from "./Blueprint.tsx";
 import { pipeConnectorTooltip } from "./format.ts";
 
 const F = (n: number) => Fraction.from(n);
@@ -527,5 +528,48 @@ describe("P2 D6 — legend conventions", () => {
     expect(html).toContain("trunk carry (thins as machines draw)");
     expect(html).toContain("belt seam (merger)");
     expect(html).toContain("pipe manifold (unordered)");
+  });
+});
+
+describe("P2 D7 — Blueprint renders junction data-kind + tooltip word", () => {
+  it("labels the feed seam column seam-merger and the rest splitter, output merger", () => {
+    // The N=13 seam case: stretch [7-13] has residue-in 60 → a seam-merger at
+    // machine 7's column; the rest of the feed row are splitters; the output row
+    // is all mergers.
+    const result = solveStage({
+      machineCount: 13,
+      clockPercent: F(100),
+      capacities: { belt: TIERS.belt.slice(0, 5), pipe: TIERS.pipe },
+      feeds: [{ itemId: "limestone", kind: "belt", perMachineRate: F(120) }],
+      outputs: [{ itemId: "cement", kind: "belt", perMachineRate: F(120) }],
+    });
+    const doc = new DOMParser().parseFromString(
+      renderToStaticMarkup(
+        <Blueprint
+          solve={result}
+          machineId="smelter_mk1"
+          machineCount={13}
+          feedLabels={["Limestone"]}
+          outputLabels={["Cement"]}
+        />,
+      ),
+      "text/html",
+    );
+    const lanes = [...doc.querySelectorAll(".bp-lane")];
+    // The first lane is the feed row; the last is the output row.
+    const feedKinds = [...lanes[0]!.querySelectorAll(".bp-junction")].map((j) =>
+      j.getAttribute("data-kind"),
+    );
+    const outKinds = [
+      ...lanes[lanes.length - 1]!.querySelectorAll(".bp-junction"),
+    ].map((j) => j.getAttribute("data-kind"));
+    expect(feedKinds.filter((k) => k === "seam-merger")).toHaveLength(1);
+    expect(feedKinds.filter((k) => k === "splitter")).toHaveLength(12);
+    expect(outKinds.every((k) => k === "merger")).toBe(true);
+    // The kind word is carried as the rect's <title> tooltip.
+    const seam = [
+      ...doc.querySelectorAll('.bp-junction[data-kind="seam-merger"]'),
+    ];
+    expect(seam[0]!.querySelector("title")?.textContent).toBe("seam-merger");
   });
 });

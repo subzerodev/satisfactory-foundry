@@ -61,7 +61,8 @@ describe("single-lane feed rendering (post-#151, no x2 model)", () => {
         itemName={itemName}
       />,
     );
-    // Every stretch renders as a plain single bus-seg line.
+    // Every stretch renders as a single bus-seg element (P2 D1 turned the feed
+    // bus-seg into a tapering polygon; the class-based count survives).
     expect((html.match(/class="bus-seg/g) ?? []).length).toBe(17);
     for (const s of RETIRED) expect(html).not.toContain(s);
     // The seam-merger seams still draw (interior stretch starts).
