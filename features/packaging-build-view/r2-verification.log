@@ -125,13 +125,54 @@ RESTORE + green:
   revert to `input: inputs.unpackager, result: solveStage(inputs.unpackager)`
 
 ===========================================================================
+diff-r1 folds — new/changed behaviours re-verified
+===========================================================================
+
+B1 re-verified after the adapter fixture DECORRELATION (unpackage side scaled
+×3: packaged 180 / fluid 720 / container 90 — all six rates now distinct). Same
+mutation (container feed → fluid rate), still compiles, still fails
+"maps the packager group: fluid pipe + container belt feed → packaged belt out".
+Restored; adapter suite 5 passed.
+
+B4 re-verified unchanged (unpackager reuses the packager solve): compiles, fails
+"switches the drawing to the STACKED packager + unpackager groups"
+(expected '5 × Unpackager', received '10 × Unpackager · 100 MW'). Restored.
+
+B5 (NEW) — the Blueprint tab is genuinely DISABLED under a packaging subject
+(src/ui/App.tsx, the BLUEPRINT view-tab button).
+  MUTATION (compiles): disabled={packagingSubject !== null} → disabled={false}
+  $ npx tsc -b            # (no output = compiles)
+  FAIL:
+    × DISABLES the Blueprint tab while a packaging subject is drawn — a click
+      does not activate it
+     FAIL  src/ui/App.packaging.dom.test.tsx > App drawing-subject selector
+           (#157 A2/A3) > DISABLES the Blueprint tab while a packaging subject is
+           drawn — a click does not activate it
+         Tests  1 failed | 4 passed (5)
+  RESTORE: revert to disabled={packagingSubject !== null}
+
+B6 (NEW) — the stage-scoped panels (LaneOverrides + FindingsPanel) are HIDDEN
+under a packaging subject (src/ui/App.tsx, their `packagingSubject === null`
+guard).
+  MUTATION (compiles): {packagingSubject === null && ( … )} → {true && ( … )}
+  $ npx tsc -b            # (no output = compiles)
+  FAIL — the stacked-render test's added hidden-panel pins fail (the panels leak
+  back in under a packaging subject):
+    × switches the drawing to the STACKED packager + unpackager groups
+     FAIL  src/ui/App.packaging.dom.test.tsx > App drawing-subject selector
+           (#157 A2/A3) > switches the drawing to the STACKED packager +
+           unpackager groups
+         Tests  1 failed | 4 passed (5)
+  RESTORE: revert to {packagingSubject === null && ( … )}
+
+===========================================================================
 ALL RESTORED — combined green re-run of every new/changed suite
 ===========================================================================
   $ npx tsc -b   # clean
   $ npx vitest run src/core/packaging-stage-input.test.ts \
       src/ui/transport-text.test.ts src/ui/graph-flow.test.ts \
       src/ui/App.packaging.dom.test.tsx
-       Tests  94 passed (94)
+       Tests  95 passed (95)
 
   Full worktree suite: Test Files 49 passed (49) · Tests 1239 passed (1239).
   Full gate: `npm run check` (tsc + eslint + prettier) — green.
