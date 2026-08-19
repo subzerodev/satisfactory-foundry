@@ -762,6 +762,9 @@ body {
 .schematic-scroll.grabbing,
 .schematic.grabbing {
   cursor: grabbing;
+  /* A background pan must not start selecting label/tick text (diff-review
+     nit); selection resumes the moment the drag ends. */
+  user-select: none;
 }
 
 /* Lane names (Stage 5) with the S12 label halo (#76): output names now sit just

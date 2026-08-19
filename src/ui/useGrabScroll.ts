@@ -41,6 +41,10 @@ export function useGrabScroll(
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const container = ref.current;
     if (container === null) return;
+    // A drag that released OUTSIDE the container fires no trailing click on
+    // it, so `moved` could survive and swallow the NEXT unrelated click.
+    // Every fresh pointerdown therefore resets the state (diff-review nit).
+    drag.current = null;
     if (e.button !== 0) return; // primary button only
     if (!isBackground(e.target, container)) return; // interactive child — leave it
     drag.current = {
@@ -61,7 +65,9 @@ export function useGrabScroll(
       setGrabbing(false);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      // Leave drag.current set until the click-capture reads `moved`, then clear.
+      // Leave drag.current set until the click-capture reads `moved`, then
+      // clear — and if no trailing click ever fires (released outside the
+      // container), the next pointerdown's reset clears it instead.
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
