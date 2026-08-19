@@ -3,6 +3,7 @@ import {
   solveStage,
   solveFeedLane,
   solveOutputLane,
+  cascadeFor,
   type LaneInput,
   type StageInput,
   type Finding,
@@ -265,13 +266,13 @@ describe("solveFeedLane — combination + entries + segments (spec row 1)", () =
       toMachine: 16,
       beltIndex: 0,
     });
-    expect(r.segments[0]!.peakFlow.eq(F(480))).toBe(true);
+    expect(r.segments[0]!.entryFlow.eq(F(480))).toBe(true);
     expect(r.segments[1]!).toMatchObject({
       fromMachine: 17,
       toMachine: 20,
       beltIndex: 1,
     });
-    expect(r.segments[1]!.peakFlow.eq(F(120))).toBe(true);
+    expect(r.segments[1]!.entryFlow.eq(F(120))).toBe(true);
     expect(r.findings).toEqual([]);
   });
 });
@@ -285,10 +286,10 @@ describe("solveFeedLane — fractional rates (spec row 2)", () => {
     expect(r.belts[1]!.entersAfterMachine).toBe(12); // floor(480/37.5)=12
     expect(r.segments).toHaveLength(2);
     expect(r.segments[0]!).toMatchObject({ fromMachine: 1, toMachine: 12 });
-    expect(r.segments[0]!.peakFlow.eq(F(480))).toBe(true);
+    expect(r.segments[0]!.entryFlow.eq(F(480))).toBe(true);
     expect(r.segments[1]!).toMatchObject({ fromMachine: 13, toMachine: 13 });
-    // survived into span2 = 480 - 12*37.5 = 30; peak = 30 + 60 = 90
-    expect(r.segments[1]!.peakFlow.eq(F(90))).toBe(true);
+    // survived into span2 = 480 - 12*37.5 = 30; entry = 30 + 60 = 90
+    expect(r.segments[1]!.entryFlow.eq(F(90))).toBe(true);
     expect(r.findings).toEqual([]);
   });
 });
@@ -301,14 +302,60 @@ describe("solveFeedLane — exact-multiple boundary (spec row 3)", () => {
     expect(r.belts[1]!.entersAfterMachine).toBe(16); // floor(480/30)=16
     expect(r.segments[0]!).toMatchObject({ fromMachine: 1, toMachine: 16 });
     expect(r.segments[1]!).toMatchObject({ fromMachine: 17, toMachine: 32 });
-    expect(r.segments[0]!.peakFlow.eq(F(480))).toBe(true);
-    expect(r.segments[1]!.peakFlow.eq(F(480))).toBe(true);
+    expect(r.segments[0]!.entryFlow.eq(F(480))).toBe(true);
+    expect(r.segments[1]!.entryFlow.eq(F(480))).toBe(true);
     expect(r.findings).toEqual([]);
   });
 });
 
-describe("solveFeedLane — bounded parallel feed buses (#120)", () => {
-  it("models Michael's 106-refinery Mk5 plan as 17 feeds and exactly eight x2 spans", () => {
+describe("solveFeedLane — overflow-chain trunk-carry endpoints (#151)", () => {
+  it("scaled 8411 shape: entry/hand-off per stretch, entry boundaries unmoved", () => {
+    // d=120, B=780, N=13, D=1560, k=2. Stretch 1 (m1-6): entry 780, drain
+    // 6×120=720, hand-off 60. Stretch 2 (m7-13): entry 60+780=840, drain
+    // 7×120=840, hand-off 0 — the c24769 "final 0" endpoint.
+    const r = solveFeed({
+      n: 13,
+      rate: F(120),
+      belts: [F(60), F(120), F(270), F(480), F(780)],
+    });
+    expect(r.belts).toHaveLength(2);
+    expect(r.belts.map((b) => b.capacity.toString())).toEqual(["780", "780"]);
+    // Entry boundaries did NOT move vs the old model: floor(780/120)=6.
+    expect(r.belts.map((b) => b.entersAfterMachine)).toEqual([0, 6]);
+    expect(r.segments).toHaveLength(2);
+    expect(r.segments[0]!).toMatchObject({ fromMachine: 1, toMachine: 6 });
+    expect(r.segments[0]!.entryFlow.eq(F(780))).toBe(true);
+    expect(r.segments[0]!.handoffResidue.eq(F(60))).toBe(true);
+    expect(r.segments[1]!).toMatchObject({ fromMachine: 7, toMachine: 13 });
+    expect(r.segments[1]!.entryFlow.eq(F(840))).toBe(true);
+    expect(r.segments[1]!.handoffResidue.isZero()).toBe(true);
+    expect(r.findings).toEqual([]);
+  });
+
+  it("keeps starvation authoritative on an over-B override chain", () => {
+    // override belt0 -> 25 (< d 30), belt1 -> 480: one span [1..20], entry
+    // 25+480=505 (> B 480, an unbuildable single override line), starvation
+    // from the head-first drain still fires. On the overflow chain the
+    // head-first order IS the physical order.
+    const r = solveFeed({
+      n: 20,
+      rate: F(30),
+      overrides: [F(25), F(480)],
+    });
+    expect(r.segments).toHaveLength(1);
+    expect(r.segments[0]!.entryFlow.eq(F(505))).toBe(true);
+    // belt0's 25 <= B 480, so no over-capacity finding for it; belt1's 480 is
+    // its own auto slot value, not > B, so still no over-capacity. The 505
+    // entryFlow is the seam-side head flow, never a "line" of 505.
+    expect(r.findings.some((f) => f.type === "segment-over-capacity")).toBe(
+      false,
+    );
+    expect(r.findings.some((f) => f.type === "starved-machines")).toBe(true);
+  });
+});
+
+describe("solveFeedLane — full 8411 integration (#151)", () => {
+  it("106 refineries: 17 belts, 8 seam mergers, 106 splitters, buffer 954", () => {
     const r = solveFeed({
       n: 106,
       rate: F(120),
@@ -316,81 +363,40 @@ describe("solveFeedLane — bounded parallel feed buses (#120)", () => {
     });
 
     expect(r.belts).toHaveLength(17);
+    expect(r.segments).toHaveLength(17);
     expect(r.belts.map((b) => b.entersAfterMachine)).toEqual([
       0, 6, 13, 19, 26, 32, 39, 45, 52, 58, 65, 71, 78, 84, 91, 97, 104,
     ]);
-    const bundled = r.segments.filter((s) => s.parallelCount === 2);
-    expect(bundled).toHaveLength(8);
-    expect(bundled.every((s) => s.peakFlow.eq(F(840)))).toBe(true);
+    // Residues alternate 60/0 across the first 16 stretches: the eight
+    // 60-residues are exactly the eight old x2 segments, each now a seam merger
+    // for the NEXT stretch (residue-in > 0). The 17th (final) stretch is the
+    // remainder belt: auto-sized to Mk3 (270) for a 240-demand tail, so it
+    // carries 30/min of HONEST SURPLUS past machine 106 — not an error, and no
+    // seam feeds off it (the terminal handoffResidue is exempt from the < d
+    // seam bound, per D1). The spec's §"worked 8411" prose says "hand-off 0";
+    // that describes the exact-demand ideal, but the auto-sizer's smallest
+    // tier ≥ 240 is 270, leaving +30. Pinned to the computed value.
+    expect(r.segments.map((s) => s.handoffResidue.toString())).toEqual([
+      "60", "0", "60", "0", "60", "0", "60", "0", "60", "0", "60", "0", "60",
+      "0", "60", "0", "30",
+    ]);
+    // Exactly 8 positive residues among the machine-bearing stretches feed a
+    // seam — the terminal 30 feeds none, so seamMergers stays 8.
     expect(
-      r.segments
-        .filter((s) => !s.peakFlow.eq(F(840)))
-        .every((s) => s.parallelCount === 1),
-    ).toBe(true);
-    expect(r.findings.some((f) => f.type === "segment-over-capacity")).toBe(
-      false,
-    );
-  });
+      r.segments.filter((s) => s.handoffResidue.gt(F(0))).length,
+    ).toBe(9); // eight 60s + the terminal 30 surplus
 
-  it("uses one line at B, two just above B, and never exceeds two for eligible slots", () => {
-    const atBoundary = solveFeed({
-      n: 20,
-      rate: F(30),
-      overrides: [F(475), F(455)],
+    expect(r.hardware).not.toBeNull();
+    expect(r.hardware!.seamMergers).toBe(8);
+    expect(r.hardware!.splitters).toBe(106);
+    expect(r.hardware!.headCascade).toEqual({
+      ways: 17,
+      junctions: 8,
+      tiers: 3,
     });
-    expect(atBoundary.segments[1]!.peakFlow.eq(F(480))).toBe(true);
-    expect(atBoundary.segments[1]!.parallelCount).toBe(1);
-
-    const aboveBoundary = solveFeed({
-      n: 20,
-      rate: F(30),
-      overrides: [F(475), F(456)],
-    });
-    expect(aboveBoundary.segments[1]!.peakFlow.eq(F(481))).toBe(true);
-    expect(aboveBoundary.segments[1]!.parallelCount).toBe(2);
-    expect(
-      aboveBoundary.segments.every(
-        (s) => s.parallelCount === 1 || s.parallelCount === 2,
-      ),
-    ).toBe(true);
-    expect(aboveBoundary.segments.every((s) => s.peakFlow.lt(F(960)))).toBe(
-      true,
-    );
-  });
-
-  it("a pipe lane never bundles - an over-tier peak is a finding (#145)", () => {
-    const r = solveFeed({
-      n: 3,
-      rate: F(350),
-      kind: "pipe",
-      belts: BELTS,
-    });
-    expect(r.belts.map((b) => b.capacity.toString())).toEqual(["600", "600"]);
-    expect(r.segments[1]!.peakFlow.eq(F(850))).toBe(true);
-    // Parallel pipes share a pressure group and do not add capacity: no
-    // second line exists to bundle onto, so the honest output is a finding.
-    expect(r.segments.every((s) => s.parallelCount === 1)).toBe(true);
-    const over = r.findings.filter((f) => f.type === "segment-over-capacity");
-    expect(over).toHaveLength(1);
-    expect(
-      over[0]!.type === "segment-over-capacity" &&
-        over[0]!.busCapacity.eq(F(600)),
-    ).toBe(true);
-  });
-
-  it("keeps starvation authoritative on an otherwise valid x2 segment", () => {
-    const r = solveFeed({
-      n: 20,
-      rate: F(30),
-      overrides: [F(25), F(480)],
-    });
-    expect(r.segments).toHaveLength(1);
-    expect(r.segments[0]!.peakFlow.eq(F(505))).toBe(true);
-    expect(r.segments[0]!.parallelCount).toBe(2);
-    expect(r.findings.some((f) => f.type === "segment-over-capacity")).toBe(
-      false,
-    );
-    expect(r.findings.some((f) => f.type === "starved-machines")).toBe(true);
+    expect(r.standingBufferItems).toBe(954); // 9 × 106
+    // No parallel-line claim survives — parallelCount no longer exists.
+    expect(r.findings).toEqual([]);
   });
 });
 
@@ -402,7 +408,7 @@ describe("solveFeedLane — clock scaling (spec row 4)", () => {
     // k=1, smallest tier >= 450 is 480; single belt at head
     expect(r.belts.map((b) => b.capacity.toString())).toEqual(["480"]);
     expect(r.belts[0]!.entersAfterMachine).toBe(0);
-    expect(r.segments[0]!.peakFlow.eq(F(480))).toBe(true);
+    expect(r.segments[0]!.entryFlow.eq(F(480))).toBe(true);
     expect(r.findings).toEqual([]);
   });
 
@@ -452,7 +458,7 @@ describe("solveFeedLane — override breaks manifold (spec row 5)", () => {
 });
 
 describe("solveFeedLane — override exceeds bus cap (spec row 6)", () => {
-  it("B=270, override->480: segment-over-capacity peakFlow 480 / busCapacity 270", () => {
+  it("B=270, override->480: segment-over-capacity flow 480 / busCapacity 270", () => {
     // tiers 60/120/270 (top=270). N=8, d=30 -> D=240 -> k=1 belt = 270. Override->480.
     const r = solveFeed({
       n: 8,
@@ -461,12 +467,11 @@ describe("solveFeedLane — override exceeds bus cap (spec row 6)", () => {
       overrides: [F(480)],
     });
     expect(r.belts[0]!.capacity.eq(F(480))).toBe(true);
-    expect(r.segments[0]!.parallelCount).toBe(1);
     const over = r.findings.filter((f) => f.type === "segment-over-capacity");
     expect(over).toHaveLength(1);
     const o = over[0]!;
     if (o.type !== "segment-over-capacity") throw new Error("type");
-    expect(o.peakFlow.eq(F(480))).toBe(true);
+    expect(o.flow.eq(F(480))).toBe(true);
     expect(o.busCapacity.eq(F(270))).toBe(true);
     expect(o.fromMachine).toBe(1);
     expect(o.toMachine).toBe(8);
@@ -487,14 +492,14 @@ describe("solveFeedLane — over-B override clamps entry/span to N (regression)"
     expect(r.belts[1]!.entersAfterMachine).toBeLessThanOrEqual(20);
     expect(r.belts[1]!.entersAfterMachine).toBe(20);
 
-    // Exactly one real segment, spanning the whole stage, peakFlow 630.
+    // Exactly one real segment, spanning the whole stage, entryFlow 630.
     expect(r.segments).toHaveLength(1);
     expect(r.segments[0]!).toMatchObject({
       fromMachine: 1,
       toMachine: 20,
       beltIndex: 0,
     });
-    expect(r.segments[0]!.peakFlow.eq(F(630))).toBe(true);
+    expect(r.segments[0]!.entryFlow.eq(F(630))).toBe(true);
 
     // Exactly one over-capacity finding [1..20] vs busCapacity 480.
     const over = r.findings.filter((f) => f.type === "segment-over-capacity");
@@ -503,7 +508,7 @@ describe("solveFeedLane — over-B override clamps entry/span to N (regression)"
     if (o.type !== "segment-over-capacity") throw new Error("type");
     expect(o.fromMachine).toBe(1);
     expect(o.toMachine).toBe(20);
-    expect(o.peakFlow.eq(F(630))).toBe(true);
+    expect(o.flow.eq(F(630))).toBe(true);
     expect(o.busCapacity.eq(F(480))).toBe(true);
 
     // supply 630 >= demand 600 -> no starvation.
@@ -556,7 +561,7 @@ describe("solveFeedLane — exact feed-entry clamp before narrowing (#122)", () 
 
       const over = r.findings.filter((f) => f.type === "segment-over-capacity");
       expect(over).toHaveLength(1);
-      expect(over[0]!.peakFlow.eq(override)).toBe(true);
+      expect(over[0]!.flow.eq(override)).toBe(true);
       expect(over[0]!).toMatchObject({ fromMachine: 1, toMachine: 3 });
     },
   );
@@ -655,8 +660,7 @@ describe("solveFeedLane — negative and zero overrides", () => {
     const r = solveFeed({ n: 10, rate: F(30), overrides: [F(0)] });
 
     expect(r.belts[0]!.capacity.isZero()).toBe(true);
-    expect(r.segments[0]!.peakFlow.isZero()).toBe(true);
-    expect(r.segments[0]!.parallelCount).toBe(1);
+    expect(r.segments[0]!.entryFlow.isZero()).toBe(true);
     expect(r.findings).toEqual([
       {
         type: "starved-machines",
@@ -675,8 +679,7 @@ describe("solveFeedLane — negative and zero overrides", () => {
     });
 
     expect(r.belts[1]!.capacity.isZero()).toBe(true);
-    expect(r.segments[1]!.peakFlow.eq(F(30))).toBe(true);
-    expect(r.segments[1]!.parallelCount).toBe(1);
+    expect(r.segments[1]!.entryFlow.eq(F(30))).toBe(true);
     expect(r.findings).toEqual([
       {
         type: "starved-machines",
@@ -717,6 +720,7 @@ function solveOut(opts: {
   clock?: Fraction;
   belts?: Fraction[];
   overrides?: (Fraction | null)[];
+  kind?: LaneKindLocal;
 }) {
   const s = stage({
     machineCount: opts.n ?? 20,
@@ -725,6 +729,7 @@ function solveOut(opts: {
   });
   const lane = feed({
     itemId: "iron-ingot",
+    kind: opts.kind ?? "belt",
     perMachineRate: opts.rate ?? F(30),
     overrides: opts.overrides,
   });
@@ -744,19 +749,21 @@ describe("solveOutputLane — mirror of the 20-smelter example (spec row 1)", ()
     expect(r.breakouts[1]!.load.eq(F(120))).toBe(true);
     expect(r.breakouts[1]!.capacity.eq(F(120))).toBe(true);
     expect(r.segments).toHaveLength(2);
-    // peak at the tail = span load
+    // Output segments carry entryFlow = span load, handoffResidue = 0.
     expect(r.segments[0]!).toMatchObject({
       fromMachine: 1,
       toMachine: 16,
       beltIndex: 0,
     });
-    expect(r.segments[0]!.peakFlow.eq(F(480))).toBe(true);
+    expect(r.segments[0]!.entryFlow.eq(F(480))).toBe(true);
+    expect(r.segments[0]!.handoffResidue.isZero()).toBe(true);
     expect(r.segments[1]!).toMatchObject({
       fromMachine: 17,
       toMachine: 20,
       beltIndex: 1,
     });
-    expect(r.segments[1]!.peakFlow.eq(F(120))).toBe(true);
+    expect(r.segments[1]!.entryFlow.eq(F(120))).toBe(true);
+    expect(r.segments[1]!.handoffResidue.isZero()).toBe(true);
     expect(r.findings).toEqual([]);
   });
 });
@@ -771,22 +778,10 @@ describe("solveOutputLane — override undersize (segment-over-capacity)", () =>
     if (o.type !== "segment-over-capacity") throw new Error("type");
     expect(o.fromMachine).toBe(1);
     expect(o.toMachine).toBe(16);
-    expect(o.peakFlow.eq(F(480))).toBe(true); // the span load
+    expect(o.flow.eq(F(480))).toBe(true); // the span load
     expect(o.busCapacity.eq(F(270))).toBe(true); // the binding overridden cap
     // no starvation on the output side, ever
     expect(r.findings.some((f) => f.type === "starved-machines")).toBe(false);
-  });
-});
-
-describe("solveOutputLane — parallel cardinality compatibility (#120)", () => {
-  it("keeps every output segment single-line without changing findings", () => {
-    const r = solveOut({ n: 37, rate: F(30), overrides: [F(270)] });
-    expect(r.segments.length).toBeGreaterThan(1);
-    expect(r.segments.every((segment) => segment.parallelCount === 1)).toBe(
-      true,
-    );
-    expect(r.findings).toHaveLength(1);
-    expect(r.findings[0]!.type).toBe("segment-over-capacity");
   });
 });
 
@@ -838,7 +833,7 @@ describe("solveOutputLane — negative and zero overrides", () => {
         itemId: "iron-ingot",
         fromMachine: 1,
         toMachine: 16,
-        peakFlow: F(480),
+        flow: F(480),
         busCapacity: F(0),
       },
     ]);
@@ -890,10 +885,10 @@ describe("solveOutputLane — p ∤ T break-out walk (ticket #3 decision)", () =
       [13, 24],
       [25, 25],
     ]);
-    // peak at the tail = span load
-    expect(r.segments[0]!.peakFlow.eq(F(450))).toBe(true);
-    expect(r.segments[1]!.peakFlow.eq(F(450))).toBe(true);
-    expect(r.segments[2]!.peakFlow.eq(R(75, 2))).toBe(true);
+    // Output entryFlow = span load; each break-out belt hands nothing onward.
+    expect(r.segments[0]!.entryFlow.eq(F(450))).toBe(true);
+    expect(r.segments[1]!.entryFlow.eq(F(450))).toBe(true);
+    expect(r.segments[2]!.entryFlow.eq(R(75, 2))).toBe(true);
     expect(r.findings).toEqual([]);
   });
 });
@@ -974,5 +969,91 @@ describe("solveStage — full 20-smelter integration", () => {
     expect(invalidReasons(badOutput.findings)).toEqual(["negative-override"]);
     expect(goodOutput.breakouts).not.toEqual([]);
     expect(goodOutput.findings).toEqual([]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// #151 — cascade math + pipe Level-1 honesty + output collection cascade
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("cascadeFor — ≤3-way junction cascade (c24797)", () => {
+  it.each([
+    [1, null],
+    [2, { ways: 2, junctions: 1, tiers: 1 }],
+    [3, { ways: 3, junctions: 1, tiers: 1 }],
+    [4, { ways: 4, junctions: 2, tiers: 2 }],
+    [9, { ways: 9, junctions: 4, tiers: 2 }], // the Q5 mockup's pinned 9→4-in-2
+    [17, { ways: 17, junctions: 8, tiers: 3 }],
+    [27, { ways: 27, junctions: 13, tiers: 3 }],
+  ])("fans %i ways", (ways, expected) => {
+    expect(cascadeFor(ways)).toEqual(expected);
+  });
+});
+
+describe("solveFeedLane — pipe Level-1 honesty (#151 D4)", () => {
+  it("adequate auto-sized pipe lane: no segments, no hardware, no buffer, no finding", () => {
+    // N=3, d=350, pipe tiers 300/600. k=ceil(1050/600)=2 -> [600, 600] (Σ 1200
+    // >= D 1050). No shortfall, so no lane-undersupplied.
+    const r = solveFeed({ n: 3, rate: F(350), kind: "pipe" });
+    expect(r.belts.map((b) => b.capacity.toString())).toEqual(["600", "600"]);
+    expect(r.segments).toEqual([]);
+    expect(r.hardware).toBeNull();
+    expect(r.standingBufferItems).toBe(0);
+    expect(r.findings).toEqual([]);
+  });
+
+  it("undersized override pipe lane: ONE lane-undersupplied with exact shortfall", () => {
+    // Same lane, override both belts down to 300 each -> Σ 600 < D 1050,
+    // shortfall 450. No belt-ordered starved-machines; one unordered finding.
+    const r = solveFeed({
+      n: 3,
+      rate: F(350),
+      kind: "pipe",
+      overrides: [F(300), F(300)],
+    });
+    expect(r.segments).toEqual([]);
+    expect(r.hardware).toBeNull();
+    expect(r.findings.some((f) => f.type === "starved-machines")).toBe(false);
+    const under = r.findings.filter((f) => f.type === "lane-undersupplied");
+    expect(under).toHaveLength(1);
+    const u = under[0]!;
+    if (u.type !== "lane-undersupplied") throw new Error("type");
+    expect(u.itemId).toBe("iron-ore");
+    expect(u.shortfall.eq(F(450))).toBe(true);
+    expect(u.nominalCeiling).toBe(true);
+  });
+
+  it("d > B_pipe: infeasible-machine-demand unchanged, empty lane", () => {
+    const r = solveFeed({ n: 2, rate: F(700), kind: "pipe" });
+    expect(r.belts).toEqual([]);
+    expect(r.segments).toEqual([]);
+    const inf = r.findings.filter(
+      (f) => f.type === "infeasible-machine-demand",
+    );
+    expect(inf).toHaveLength(1);
+    expect(r.findings.some((f) => f.type === "lane-undersupplied")).toBe(false);
+  });
+});
+
+describe("solveOutputLane — pipe output + collection cascade (#151 D4/D2)", () => {
+  it("pipe output lane: breakouts kept, segments empty, no cascade", () => {
+    // N=3, p=350, pipe 300/600: machinesPerBelt=floor(600/350)=1 -> 3 breakouts.
+    const r = solveOut({ n: 3, rate: F(350), kind: "pipe" });
+    expect(r.breakouts).toHaveLength(3);
+    expect(r.segments).toEqual([]);
+    expect(r.collectionCascade).toBeNull();
+  });
+
+  it("belt output lane with b > 1: collectionCascade ways = breakout count", () => {
+    // N=20, p=30, T=480: machinesPerBelt=16 -> 2 breakouts -> ways 2.
+    const r = solveOut({ n: 20, rate: F(30) });
+    expect(r.breakouts).toHaveLength(2);
+    expect(r.collectionCascade).toEqual({ ways: 2, junctions: 1, tiers: 1 });
+  });
+
+  it("single belt output lane: collectionCascade null (b = 1)", () => {
+    const r = solveOut({ n: 10, rate: F(30) });
+    expect(r.breakouts).toHaveLength(1);
+    expect(r.collectionCascade).toBeNull();
   });
 });
