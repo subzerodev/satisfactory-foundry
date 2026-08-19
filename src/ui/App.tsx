@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useAppStore,
   setBundledDocsProvider,
@@ -6,12 +6,27 @@ import {
   activeSelection,
   activeSolve,
 } from "../state/store.ts";
-import type { Selection, SolveState } from "../state/store.ts";
+import type {
+  Selection,
+  SolveState,
+  StageNode,
+  StageLink,
+} from "../state/store.ts";
 import type { CatalogSource } from "../data/catalog-store.ts";
 import type { Catalog } from "../data/types.ts";
-import type { Finding, StageSolveResult } from "../core/manifold.ts";
-import { stagePowerTextFor, chainPowerText } from "./advice.ts";
-import { computeTransportFindings } from "./graph-flow.ts";
+import type { StageInput, StageSolveResult } from "../core/manifold.ts";
+import type { Finding } from "../core/manifold.ts";
+import { solveStage } from "../core/manifold.ts";
+import { parseClockText } from "../core/clock.ts";
+import { deriveLinkPlan } from "../core/link-plan.ts";
+import type { ReadyLinkPlan } from "../core/link-plan.ts";
+import { packagingStageInputs } from "../core/packaging-stage-input.ts";
+import {
+  deriveExtractionPlan,
+  deriveExtractionPackagingPlan,
+} from "./extraction-plan.ts";
+import { stagePowerTextFor, stagePowerText, chainPowerText } from "./advice.ts";
+import { computeTransportFindings, globalUnlockedTiers } from "./graph-flow.ts";
 import { fileToDocsText, fileFromDrop } from "./decode.ts";
 import { resolveInitialTheme } from "./theme.ts";
 import type { Theme } from "./theme.ts";
@@ -165,6 +180,198 @@ function activeStagePowerText(
   return stagePowerTextFor(catalog, { selection, solve });
 }
 
+/**
+ * A packaging chain the build view can draw as its own subject (#157 A2). `key`
+ * is the App-local subject id (`extraction:<stageId>:<itemId>` or `link:<id>`);
+ * `label` disambiguates in the selector; `plan` is the sized ReadyLinkPlan the
+ * A1 adapter maps; `clockText` is the interstep's raw Packager clock (re-parsed
+ * for the drawing scale — the plan does not surface its parsed value).
+ */
+interface PackagingChain {
+  key: string;
+  label: string;
+  plan: ReadyLinkPlan;
+  clockText: string;
+}
+
+/** The two solved machine groups for a packaging subject (A3 stacked render). */
+interface PackagingSubjectSolve {
+  chain: PackagingChain;
+  packager: { input: StageInput; result: StageSolveResult };
+  unpackager: { input: StageInput; result: StageSolveResult };
+  unlocked: { belt: number; pipe: number };
+}
+
+/**
+ * Enumerate every drawable packaging chain in the plan (#157 A2): each stored
+ * extraction selection with `packaging` set, then each link with an `interstep`.
+ * Both funnel through the SAME `derivePackagingPlan` the panels already size
+ * with — the link case via `deriveLinkPlan`, the extraction case via
+ * `deriveExtractionPackagingPlan` over the derived extractor plan + the raw
+ * feed's demand (the value the graph's rawFeed node carries). Only chains whose
+ * plan is `ready` (sizable — both stages solved) are returned; unresolved ones
+ * are silently skipped (nothing to draw). Deterministic order: stages in
+ * `stageOrder`, then links in array order.
+ */
+function enumeratePackagingChains(
+  catalog: Catalog,
+  stages: Record<string, StageNode>,
+  stageOrder: string[],
+  links: StageLink[],
+): PackagingChain[] {
+  const chains: PackagingChain[] = [];
+  const itemName = (id: string) => catalog.items[id]?.displayName ?? id;
+  const unlockedTiers = globalUnlockedTiers(catalog, stages);
+
+  for (const stageId of stageOrder) {
+    const stage = stages[stageId];
+    if (stage?.extraction === undefined) continue;
+    for (const [itemId, selection] of Object.entries(stage.extraction)) {
+      if (selection.packaging === undefined) continue;
+      // The raw feed's demand at this stage — the same figure the extraction
+      // panel packages against (graph-flow's rawFeed node reads it identically).
+      const demand =
+        stage.solve.status === "solved"
+          ? (stage.solve.result.feeds.find((lane) => lane.itemId === itemId)
+              ?.totalDemand ?? null)
+          : null;
+      if (demand === null) continue;
+      const extractionPlan = deriveExtractionPlan({
+        catalog,
+        itemId,
+        demand,
+        selection,
+        unlockedTiers,
+      });
+      const plan = deriveExtractionPackagingPlan(
+        catalog,
+        extractionPlan,
+        selection.packaging,
+        demand,
+        unlockedTiers,
+        itemId,
+      );
+      if (plan?.status !== "ready") continue;
+      chains.push({
+        key: `extraction:${stageId}:${itemId}`,
+        label: `Packaging: ${itemName(itemId)} — extraction @ ${stage.name}`,
+        plan,
+        clockText: selection.packaging.clockPercentText,
+      });
+    }
+  }
+
+  for (const link of links) {
+    if (link.interstep === undefined) continue;
+    const plan = deriveLinkPlan(catalog, link, stages);
+    if (plan.status !== "ready") continue;
+    const from = stages[link.fromStageId]?.name ?? "(removed)";
+    const to = stages[link.toStageId]?.name ?? "(removed)";
+    chains.push({
+      key: `link:${link.id}`,
+      label: `Packaging: ${itemName(link.itemId)} — ${from} → ${to}`,
+      plan,
+      clockText: link.interstep.clockPercentText,
+    });
+  }
+
+  return chains;
+}
+
+/**
+ * Solve the selected packaging chain's two machine groups through the manifold
+ * (#157 A3). The A1 adapter maps the ReadyLinkPlan to the packager/unpackager
+ * `StageInput`s (using the interstep's parsed clock + the plan-global unlocked
+ * tier capacities); each group solves via the SAME `solveStage` as any stage.
+ * Returns null when no packaging subject is selected, the key is stale, or the
+ * plan carries no machine counts.
+ */
+function solvePackagingSubject(
+  catalog: Catalog,
+  stages: Record<string, StageNode>,
+  chains: PackagingChain[],
+  subjectKey: string | null,
+): PackagingSubjectSolve | null {
+  if (subjectKey === null) return null;
+  const chain = chains.find((c) => c.key === subjectKey);
+  if (chain === undefined) return null;
+  const clock = parseClockText(chain.clockText);
+  if (!clock.ok) return null;
+  const unlocked = globalUnlockedTiers(catalog, stages);
+  const capacities = {
+    belt: catalog.tiers.belt.slice(0, unlocked.belt),
+    pipe: catalog.tiers.pipe.slice(0, unlocked.pipe),
+  };
+  const inputs = packagingStageInputs(chain.plan, clock.value, capacities);
+  if (inputs === null) return null;
+  return {
+    chain,
+    packager: { input: inputs.packager, result: solveStage(inputs.packager) },
+    unpackager: {
+      input: inputs.unpackager,
+      result: solveStage(inputs.unpackager),
+    },
+    unlocked,
+  };
+}
+
+/**
+ * One machine group of a packaging subject (#157 A3): a heading with the count
+ * and per-group power (through the same `machinePowerProjection` path as any
+ * stage, via `stagePowerText` — A5), then the group's manifold rendered in the
+ * active view (Schematic or Machines; Blueprint is handled by the caller). The
+ * group solves as an ordinary stage, so the existing components render it
+ * unchanged.
+ */
+function PackagingGroup({
+  view,
+  groupName,
+  machineId,
+  input,
+  result,
+  unlocked,
+  catalog,
+  itemName,
+}: {
+  view: View;
+  groupName: string;
+  machineId: string;
+  input: StageInput;
+  result: StageSolveResult;
+  unlocked: { belt: number; pipe: number };
+  catalog: Catalog;
+  itemName: (id: string) => string;
+}) {
+  const machine = Object.hasOwn(catalog.machines, machineId)
+    ? catalog.machines[machineId]
+    : undefined;
+  const powerText =
+    machine !== undefined
+      ? stagePowerText(machine.power, input.machineCount, input.clockPercent)
+      : null;
+  return (
+    <section className="packaging-group">
+      <h3 className="packaging-group-heading">
+        {input.machineCount} × {groupName}
+        {powerText !== null && (
+          <span className="packaging-group-power"> · {powerText}</span>
+        )}
+      </h3>
+      {view === "machines" ? (
+        <Machines result={result} machineCount={input.machineCount} />
+      ) : (
+        <Schematic
+          result={result}
+          machineCount={input.machineCount}
+          tiers={catalog.tiers}
+          unlocked={unlocked}
+          itemName={itemName}
+        />
+      )}
+    </section>
+  );
+}
+
 /** THE connected shell — the only file that touches the store. */
 export default function App() {
   const s = useAppStore();
@@ -178,6 +385,11 @@ export default function App() {
   // schematic is the default + first tab again (Michael's correction) — the
   // familiar manifold view he liked; Blueprint stays as the second tab.
   const [view, setView] = useState<View>("schematic");
+
+  // Drawing-subject selection (#157 A2): null = the active stage (today's
+  // behaviour); a chain key = draw that packaging chain instead. App-local
+  // alongside `view` (the same "meaningless headless, no store field" precedent).
+  const [subjectKey, setSubjectKey] = useState<string | null>(null);
 
   // Theme preference (Stage 5 item 3): a UI preference, initialized from the
   // stored choice ⊕ the OS media query, applied as data-theme on the document
@@ -333,6 +545,19 @@ export default function App() {
     s.links,
   );
 
+  // Drawable packaging chains (#157 A2) + the selected subject's two-group solve
+  // (A3). The enumeration re-derives each chain's ReadyLinkPlan; the solve maps
+  // the selected one through the A1 adapter + solveStage. Both memoize over the
+  // store slices they read so a drag/theme toggle does not re-solve.
+  const packagingChains = useMemo(
+    () => enumeratePackagingChains(catalog, s.stages, s.stageOrder, s.links),
+    [catalog, s.stages, s.stageOrder, s.links],
+  );
+  const packagingSubject = useMemo(
+    () => solvePackagingSubject(catalog, s.stages, packagingChains, subjectKey),
+    [catalog, s.stages, packagingChains, subjectKey],
+  );
+
   // Title-block data (Stage 9 / Phase 0) — ordinary selector reads, props down
   // to the pure TitleBlock. TITLE is the active stage's name (the store
   // invariant guarantees activeStageId resolves). SHEET counts stages + links.
@@ -440,6 +665,30 @@ export default function App() {
             itemName={itemName}
             powerText={activePowerText}
           />
+          {/* Drawing-subject selector (#157 A2). Absent when the plan has no
+              packaging chains — the default option is today's active stage, and
+              each chain re-points the tabs below at that packaging manifold.
+              The label floor is disambiguation-only (item name + provenance);
+              refinable under #156. */}
+          {packagingChains.length > 0 && (
+            <label className="drawing-subject">
+              <span className="drawing-subject-label">DRAWING</span>
+              <select
+                aria-label="Drawing subject"
+                value={subjectKey ?? ""}
+                onChange={(e) =>
+                  setSubjectKey(e.target.value === "" ? null : e.target.value)
+                }
+              >
+                <option value="">Stage: {titleName}</option>
+                {packagingChains.map((chain) => (
+                  <option key={chain.key} value={chain.key}>
+                    {chain.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {/* Two tabs naming the CURRENT view (#74) — honest, unlike the old
               cycle button that named its NEXT destination (the grounded mislabel
               confusion, #67). The active tab carries the accent; clicking sets
@@ -473,7 +722,47 @@ export default function App() {
               BLUEPRINT
             </button>
           </div>
-          {view === "schematic" ? (
+          {packagingSubject !== null ? (
+            // Packaging subject (#157 A3): both machine groups stacked —
+            // packager above, unpackager below. Schematic + Machines render the
+            // stacked groups; Blueprint is stage-only for packaging subjects
+            // this ticket (a chain is two machine kinds, but Blueprint takes a
+            // single machineId — per-group Blueprint is #158).
+            view === "blueprint" ? (
+              <p className="empty-state">
+                Blueprint is per-machine; a packaging chain has two machine
+                kinds. Select a stage subject for its blueprint — per-group
+                packaging blueprints are tracked in #158.
+              </p>
+            ) : (
+              <>
+                <PackagingGroup
+                  view={view}
+                  groupName="Packager"
+                  machineId={
+                    packagingSubject.chain.plan.pair.packageRecipe.machineId
+                  }
+                  input={packagingSubject.packager.input}
+                  result={packagingSubject.packager.result}
+                  unlocked={packagingSubject.unlocked}
+                  catalog={catalog}
+                  itemName={itemName}
+                />
+                <PackagingGroup
+                  view={view}
+                  groupName="Unpackager"
+                  machineId={
+                    packagingSubject.chain.plan.pair.unpackageRecipe.machineId
+                  }
+                  input={packagingSubject.unpackager.input}
+                  result={packagingSubject.unpackager.result}
+                  unlocked={packagingSubject.unlocked}
+                  catalog={catalog}
+                  itemName={itemName}
+                />
+              </>
+            )
+          ) : view === "schematic" ? (
             <Schematic
               result={solve.result}
               machineCount={selection.machineCount}
