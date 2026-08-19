@@ -3,6 +3,20 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-19 — The drawing is moveable now, and the ruler explains itself (#154)
+
+> Hey Michael — your two field reports, both fixed. The build view (and the
+> Machines tab) no longer squeezes to fit: it draws at a readable size and
+> you pan it like the flow chart — grab the background and drag, or scroll.
+> Your 106-machine plant gets about 2.7× the width it had, so the crushed
+> right end (the overlapping 840/270/0 and 102-105-106) has real room.
+> Drawings of 38 machines or fewer look exactly as before. And the spikes
+> you asked about now have a legend entry: machine ruler — the tall tick
+> marks where a belt stretch starts or ends, the short tick ties each
+> number to its machine. One side effect: the grey ×N block never appears
+> in any view now (it existed only to survive the old squeeze); the
+> Machines tab shows every machine box with the ×N count always visible.
+
 ## 2026-08-19 — The schematic splits in two: a build view with a ruler, and a Machines tab (P3, the arc's last phase)
 
 > Hey Michael — the 106-machine block no longer fights the belt drawing for
