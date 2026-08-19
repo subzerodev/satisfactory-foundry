@@ -534,8 +534,8 @@ function PipeConnector({
  *
  *  - MAJOR ticks (full rulerH) at `xOf(index)` — the machine's LEFT edge — for
  *    every `significant` index: these ARE the belt-span boundaries (feed entries,
- *    output breakouts, segment bounds, finding refs), solver-derived in both
- *    density modes — never labelStep arithmetic (the r1 blocker's fix).
+ *    output breakouts, segment bounds, finding refs), solver-derived — never a
+ *    pitch-thinning artifact (the r1 blocker's fix).
  *  - MINOR ticks (4px up from the baseline) at `m.x + pitch/2` — the cell CENTRE
  *    — for EVERY machine: the mark that binds each index label to its machine
  *    cell, so a label is never equidistant between two major ticks (the r2
