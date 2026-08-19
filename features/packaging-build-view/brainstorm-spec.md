@@ -258,3 +258,7 @@ change, any solver change to `solveStage` itself.
   subject switch was under-specified — FOLDED: the disabled tab is
   non-interactive, an active blueprint view shows the note in the pane, `view`
   is not reset). Spec FROZEN at this revision.
+- diff-r1 folds — Blueprint tab genuinely disabled per the frozen clause;
+  adapter fixture decorrelated; stage-scoped panels (LaneOverrides/FindingsPanel)
+  hidden under packaging subjects, a scope completion the spec's tab-only wording
+  left silent.
