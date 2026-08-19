@@ -41,9 +41,36 @@ export interface FeedBelt {
 export interface BusSegment {
   fromMachine: number; // 1-based inclusive span
   toMachine: number;
-  peakFlow: Fraction; // span maximum (feed: at head; output: at tail)
+  entryFlow: Fraction; // residue-in + this belt's capacity (the ribbon's reset
+  // thickness, c24769 "entry rate"). Feed: the head flow
+  // just after entry. Output: the span's collected load.
+  handoffResidue: Fraction; // trunk carry past the span's last machine (< d on
+  // auto-sized feed chains; ZERO on every output span,
+  // since a break-out belt hands nothing onward).
   beltIndex: number; // attribution: the belt whose entry/break-out starts this span
-  parallelCount: number; // derived physical bus lines; feed 1|2, output always 1
+}
+
+/**
+ * A ≤3-way junction cascade: how many 3-way nodes (and in how many tiers) a
+ * single upstream point must fan a lane's `ways` lines through so every reported
+ * junction is buildable (fan-in/out ≤ 3, c24797). Pure integer arithmetic.
+ */
+export interface Cascade {
+  ways: number; // lines being joined/split
+  junctions: number; // 3-way nodes: ceil((ways − 1) / 2)
+  tiers: number; // smallest t with 3^t ≥ ways
+}
+
+/**
+ * Belt-only per-feed-lane hardware (c24797): the overflow-splitter and
+ * seam-merger attachments plus the head fan-out cascade. Absent (`null`) on pipe
+ * lanes — a pipe manifold is an equal-split pressure group with no ordered drain,
+ * so per-machine hardware would be fabricated (D4).
+ */
+export interface FeedLaneHardware {
+  splitters: number; // one per machine that drew any trunk flow (partial included)
+  seamMergers: number; // one per stretch whose residue-in is positive
+  headCascade: Cascade | null; // fan-out from the lane head to k belts; null for k = 1
 }
 
 export interface FeedLaneResult {
@@ -53,6 +80,13 @@ export interface FeedLaneResult {
   totalDemand: Fraction; // D = N × d
   belts: FeedBelt[];
   segments: BusSegment[];
+  hardware: FeedLaneHardware | null; // belt-only splitter/merger/cascade counts;
+  // null for pipe lanes (D4) and degenerate lanes.
+  standingBufferItems: number; // 9 × splitters (c24796); belt-only, 0 otherwise.
+  // The c24796 side-table line item, kept flat
+  // (deliberately not nested in hardware — the
+  // simplify-pass split: buffer is the table line,
+  // hardware is the c24797 counts).
   findings: Finding[];
 }
 
@@ -70,6 +104,9 @@ export interface OutputLaneResult {
   totalOutput: Fraction; // N × p
   breakouts: BreakoutBelt[];
   segments: BusSegment[];
+  collectionCascade: Cascade | null; // fan-in from b break-out belts toward the
+  // downstream link; ways = b, null when b ≤ 1
+  // or on pipe lanes (no ordered collection).
   findings: Finding[];
 }
 
@@ -95,7 +132,9 @@ export type Finding =
       itemId: string;
       fromMachine: number;
       toMachine: number;
-      peakFlow: Fraction;
+      flow: Fraction; // the single line's flow (renamed from peakFlow to the
+      // overflow-chain vocabulary); an explicit override > B
+      // is one physically-unbuildable line.
       busCapacity: Fraction;
     }
   | {
@@ -104,6 +143,17 @@ export type Finding =
       partial?: { machine: number; received: Fraction; shortfall: Fraction };
       starvedFrom?: number;
       starvedTo?: number;
+    }
+  | {
+      // Pipe feed lanes stop making belt-ordered per-machine starvation claims
+      // (D4 / c24770): a pipe manifold is an equal-split pressure group, not an
+      // ordered drain. When assigned capacity cannot meet demand, ONE unordered
+      // finding is emitted instead of a per-machine starvation run.
+      type: "lane-undersupplied";
+      itemId: string;
+      shortfall: Fraction; // D − Σ capacity
+      nominalCeiling: true; // pipe ratings are nominal; real steady-state can sit
+      // lower — the caveat marker the copy surfaces.
     }
   | {
       type: "invalid-input";
@@ -320,6 +370,27 @@ function combineFeedBelts(
   return belts;
 }
 
+/**
+ * The ≤3-way junction cascade to fan `ways` lines in or out from a single point
+ * (c24797). Each 3-way node nets +2 lines, so `junctions = ceil((ways − 1) / 2)`;
+ * `tiers` is the smallest t with `3^t ≥ ways`, computed by repeated multiplication
+ * (no `Math.log`, exact integers). Returns null for `ways ≤ 1` (nothing to fan).
+ * The Q5 mockup pins it: ways 9 → junctions 4, tiers 2.
+ */
+export function cascadeFor(ways: number): Cascade | null {
+  if (ways <= 1) {
+    return null;
+  }
+  const junctions = Math.ceil((ways - 1) / 2);
+  let tiers = 0;
+  let reach = 1; // 3^tiers
+  while (reach < ways) {
+    reach *= 3;
+    tiers += 1;
+  }
+  return { ways, junctions, tiers };
+}
+
 export function solveFeedLane(
   input: StageInput,
   lane: LaneInput,
@@ -334,6 +405,8 @@ export function solveFeedLane(
     totalDemand: D,
     belts: [],
     segments: [],
+    hardware: null,
+    standingBufferItems: 0,
     findings: [],
   };
   const negativeOverride = negativeOverrideFinding(lane);
@@ -394,11 +467,36 @@ export function solveFeedLane(
     cumulative = cumulative.add(capacity);
   }
 
-  // Segments partitioned by entry points; drain head-first, carrying survived
-  // flow forward. Empty spans (two belts entering at the same machine) pass
-  // their capacity through without a segment.
+  // Pipe feed lanes (D4 / c24770): a pipe manifold is an equal-split pressure
+  // group with no ordered drain, so it emits NO segments, NO hardware/buffer,
+  // and — when assigned capacity can't meet demand — ONE unordered
+  // `lane-undersupplied` finding in place of the belt-ordered starvation run.
+  // Sizing (`belts[]`) and the override-shape/infeasibility findings above are
+  // kept.
+  if (lane.kind === "pipe") {
+    const assigned = belts.reduce((sum, b) => sum.add(b.capacity), ZERO);
+    if (assigned.lt(D)) {
+      base.findings.push({
+        type: "lane-undersupplied",
+        itemId: lane.itemId,
+        shortfall: D.sub(assigned),
+        nominalCeiling: true,
+      });
+    }
+    base.belts = belts;
+    return base;
+  }
+
+  // Belt feed lanes: the overflow chain. Segments are partitioned by entry
+  // points; the head-first drain carries survived flow forward as the trunk
+  // carry. Empty spans (two belts entering at the same machine) pass their
+  // capacity through without a segment. `entryFlow` is the head flow just after
+  // entry (residue-in + this belt's capacity); `handoffResidue` is the trunk
+  // carry surviving past the span's last machine (< d on auto chains).
   const segments: BusSegment[] = [];
   let survivedIn = ZERO;
+  let servedMachines = 0; // machines that drew any trunk flow → splitter count
+  let seamMergers = 0; // stretches with residue-in > 0 → 2-input seam mergers
   for (let j = 0; j < belts.length; j++) {
     const belt = belts[j]!;
     const start = belt.entersAfterMachine + 1;
@@ -413,36 +511,45 @@ export function solveFeedLane(
       survivedIn = available;
       continue;
     }
+    // A stretch whose residue-in (survivedIn) is positive needs the 2-input seam
+    // merger that completes its seam machine. Counted before the drain resets it.
+    if (survivedIn.gt(ZERO)) {
+      seamMergers += 1;
+    }
     const span = end - start + 1;
-    const peakFlow = available; // feed side: peak at the head, just after entry
-    // A normal incoming slot fits one unlocked line. Head-first drain leaves
-    // survivedIn < d, while d <= B and belt.capacity <= B, so its peak is <2B:
-    // exact ceil division is therefore bounded to 1|2. An oversized explicit
-    // slot remains one invalid line and keeps the capacity finding below.
-    const bundleEligible = belt.capacity.lte(B);
-    const parallelCount = bundleEligible
-      ? Math.max(1, Number(peakFlow.ceilDiv(B)))
-      : 1;
+    const entryFlow = available; // feed side: head flow just after entry
+
+    const drain = drainSpan(available, d, span);
+    // Splitters: one per machine that drew any flow. Fully-served machines each
+    // draw a full d; a partial machine still HAS an overflow-splitter node and is
+    // included (r1 precision fold).
+    servedMachines += drain.fullServed;
+    if (!drain.partialReceived.isZero()) {
+      servedMachines += 1;
+    }
+
     segments.push({
       fromMachine: start,
       toMachine: end,
-      peakFlow,
+      entryFlow,
+      handoffResidue: drain.survived,
       beltIndex: belt.index,
-      parallelCount,
     });
 
-    if (!bundleEligible && peakFlow.gt(B)) {
+    // `segment-over-capacity` now fires ONLY for an explicit override > B — a
+    // single physically-unbuildable line (the #145-shaped path, bundleEligible's
+    // successor). Auto belts are ≤ B by construction, so this is override-only.
+    if (belt.capacity.gt(B)) {
       base.findings.push({
         type: "segment-over-capacity",
         itemId: lane.itemId,
         fromMachine: start,
         toMachine: end,
-        peakFlow,
+        flow: entryFlow,
         busCapacity: B,
       });
     }
 
-    const drain = drainSpan(available, d, span);
     if (drain.fullServed < span) {
       const finding: Extract<Finding, { type: "starved-machines" }> = {
         type: "starved-machines",
@@ -470,6 +577,12 @@ export function solveFeedLane(
 
   base.belts = belts;
   base.segments = segments;
+  base.hardware = {
+    splitters: servedMachines,
+    seamMergers,
+    headCascade: cascadeFor(belts.length),
+  };
+  base.standingBufferItems = 9 * servedMachines;
   return base;
 }
 
@@ -486,6 +599,7 @@ export function solveOutputLane(
     totalOutput: total,
     breakouts: [],
     segments: [],
+    collectionCascade: null,
     findings: [],
   };
   const negativeOverride = negativeOverrideFinding(lane);
@@ -554,15 +668,20 @@ export function solveOutputLane(
       load,
     });
 
-    // Output side: peak flow is at the tail (just before break-out / lane end),
-    // = the full span load, since each belt collects only its own machines.
-    segments.push({
-      fromMachine: start,
-      toMachine: end,
-      peakFlow: load,
-      beltIndex: b,
-      parallelCount: 1,
-    });
+    // Belt output lanes carry the same segment shape: `entryFlow = load` (the
+    // span's collected flow at break-out) and `handoffResidue = ZERO` (a
+    // break-out belt hands nothing onward). Pipe output lanes emit NO segments
+    // (D4) — breakouts alone — mirroring the pipe feed side's no-ordered-drain
+    // honesty.
+    if (lane.kind === "belt") {
+      segments.push({
+        fromMachine: start,
+        toMachine: end,
+        entryFlow: load,
+        handoffResidue: ZERO,
+        beltIndex: b,
+      });
+    }
 
     // Over-capacity iff the (overridden) belt cannot carry its span load. On
     // auto belts capacity ≥ load by construction, so only an undersize override
@@ -573,7 +692,7 @@ export function solveOutputLane(
         itemId: lane.itemId,
         fromMachine: start,
         toMachine: end,
-        peakFlow: load,
+        flow: load,
         busCapacity: capacity,
       });
     }
@@ -581,5 +700,8 @@ export function solveOutputLane(
 
   base.breakouts = breakouts;
   base.segments = segments;
+  // Collection cascade: b break-out belts merge toward the downstream link
+  // through 3-way mergers (c24797). Belt-only ordered collection; null on pipes.
+  base.collectionCascade = lane.kind === "belt" ? cascadeFor(beltCount) : null;
   return base;
 }

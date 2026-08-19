@@ -215,7 +215,8 @@ describe("transport-text — train rows + chip", () => {
   });
 
   it("non-terminating sustained rate renders the honest ≈ form, never n/d", () => {
-    // roundTrip 414.16 s with cargo 6400/car: 6400×60/(10354/25) is
+    // roundTrip 10354/25 s (an arbitrary measured input, not a lockout
+    // derivation) with cargo 6400/car: 6400×60/(10354/25) is
     // non-terminating → the cell must read "≈ …", not a raw fraction.
     const plan = {
       ...trainPlan(300, "measured"),
@@ -351,12 +352,14 @@ describe("transport-text — unsustainable-train finding", () => {
   });
 
   it("finding wording renders a non-terminating ceiling as ≈, never n/d", () => {
-    // Per-platform ceiling 2323/30 (non-terminating); at 4 cars the pair
-    // ceiling 4646/15 stays non-terminating (unlike ×3, which cancels the 3).
+    // #140 P0: with the corrected 27 s lockout, RtD 140 / beltFeed 100 yields a
+    // per-platform ceiling of 565/7 (non-terminating, belt-term binds); at 4
+    // cars the pair ceiling 2260/7 stays non-terminating (denominator 7 does not
+    // cancel), so the ≈-approximation branch is exercised. 2260/7 ≈ 322.9.
     const options = trainOptions(
       Fraction.from(100000),
       Fraction.from(6400),
-      Fraction.from(120),
+      Fraction.from(140),
       { beltFeed: Fraction.from(100), maxCars: 4 },
     );
     const row = unsustainableTrainRow(Fraction.from(100000), options);
@@ -365,7 +368,7 @@ describe("transport-text — unsustainable-train finding", () => {
       Fraction.from(100000),
       row!,
     );
-    expect(text).toContain("max ≈ 309.7/min");
+    expect(text).toContain("max ≈ 322.9/min");
     expect(text).not.toMatch(/max \d+\/\d+/);
   });
 

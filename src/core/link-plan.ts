@@ -92,23 +92,37 @@ export function effectiveLinkCargo(
   };
 }
 
-export function deriveLinkPlan(
+/**
+ * The resolved inputs a packaging plan needs, decoupled from any link. Extracted
+ * so a raw-feed extraction can share the exact packaging math (#133) without
+ * being encoded as a degenerate link. `intent` is non-optional here — the
+ * "is packaging enabled?" gate is the link adapter's job (its early return),
+ * because a caller that reaches this function has already chosen to package.
+ */
+export interface PackagingPlanInput {
+  itemId: string;
+  intent: PackagingInterstep;
+  forwardTransport: LinkTransport | undefined;
+  materialSupply: Fraction | null;
+  materialDemand: Fraction | null;
+  unlockedTiers: { belt: number; pipe: number };
+}
+
+/**
+ * The pure packaging plan over already-resolved supply/demand/tiers. The link
+ * and extraction callers both funnel here; `deriveLinkPlan` is the adapter that
+ * resolves the six fields from a link + its stages.
+ */
+export function derivePackagingPlan(
   catalog: LinkPlanCatalog,
-  link: LinkPlanLink,
-  stages: Record<string, LinkPlanStage>,
+  input: PackagingPlanInput,
 ): DerivedLinkPlan {
-  const intent = link.interstep;
-  if (intent === undefined) {
-    return {
-      status: "unavailable",
-      error: "packaging interstep is not enabled",
-    };
-  }
+  const { intent } = input;
   const pair = resolvePackagingPair(catalog, intent.packageRecipeId);
-  if (pair === null || pair.fluidItemId !== link.itemId) {
+  if (pair === null || pair.fluidItemId !== input.itemId) {
     return {
       status: "unavailable",
-      error: `packaging pair is unavailable for ${JSON.stringify(link.itemId)}`,
+      error: `packaging pair is unavailable for ${JSON.stringify(input.itemId)}`,
     };
   }
   const clockResult = parseClockText(intent.clockPercentText);
@@ -116,7 +130,7 @@ export function deriveLinkPlan(
     return { status: "unavailable", error: clockResult.error };
   }
   if (
-    isIllegalPackagedTransport(link.transport) ||
+    isIllegalPackagedTransport(input.forwardTransport) ||
     isIllegalPackagedTransport(intent.returnTransport)
   ) {
     return {
@@ -136,18 +150,20 @@ export function deriveLinkPlan(
     };
   }
 
-  const materialSupply = linkMaterialSupply(link, stages);
-  const materialDemand = linkMaterialDemand(link, stages);
-  const cargo = effectiveLinkCargo(pair, materialSupply, materialDemand);
+  const cargo = effectiveLinkCargo(
+    pair,
+    input.materialSupply,
+    input.materialDemand,
+  );
   let packageMachines: number | null = null;
   let unpackageMachines: number | null = null;
   let power: MachinePowerProjection | null = null;
-  if (materialDemand !== null) {
+  if (input.materialDemand !== null) {
     const clockScale = clockResult.value.div(Fraction.from(100));
-    const packageCount = materialDemand.ceilDiv(
+    const packageCount = input.materialDemand.ceilDiv(
       pair.packageFluidRate.mul(clockScale),
     );
-    const unpackageCount = materialDemand.ceilDiv(
+    const unpackageCount = input.materialDemand.ceilDiv(
       pair.unpackageFluidRate.mul(clockScale),
     );
     if (
@@ -169,7 +185,6 @@ export function deriveLinkPlan(
     );
   }
 
-  const unlockedTiers = globalUnlockedTiers(catalog, stages);
   return {
     status: "ready",
     pair,
@@ -179,19 +194,49 @@ export function deriveLinkPlan(
     power,
     forwardTransport: computeLinkTransport(
       cargo.cargoDemand,
-      link.transport,
+      input.forwardTransport,
       packagedItem,
       catalog.tiers,
-      unlockedTiers,
+      input.unlockedTiers,
     ),
     returnTransport: computeLinkTransport(
       cargo.containerReturnRate,
       intent.returnTransport,
       containerItem,
       catalog.tiers,
-      unlockedTiers,
+      input.unlockedTiers,
     ),
   };
+}
+
+/**
+ * The link adapter: resolves supply, demand and unlocked tiers from `stages`
+ * exactly as before, then hands off to {@link derivePackagingPlan}. The
+ * `interstep === undefined` early return is preserved here — a link with no
+ * enabled interstep is "not packaging", a case `derivePackagingPlan` never
+ * models (its `intent` is required). Both production call sites already guard on
+ * `interstep !== undefined`, so this string is only reachable defensively.
+ */
+export function deriveLinkPlan(
+  catalog: LinkPlanCatalog,
+  link: LinkPlanLink,
+  stages: Record<string, LinkPlanStage>,
+): DerivedLinkPlan {
+  const intent = link.interstep;
+  if (intent === undefined) {
+    return {
+      status: "unavailable",
+      error: "packaging interstep is not enabled",
+    };
+  }
+  return derivePackagingPlan(catalog, {
+    itemId: link.itemId,
+    intent,
+    forwardTransport: link.transport,
+    materialSupply: linkMaterialSupply(link, stages),
+    materialDemand: linkMaterialDemand(link, stages),
+    unlockedTiers: globalUnlockedTiers(catalog, stages),
+  });
 }
 
 function isIllegalPackagedTransport(

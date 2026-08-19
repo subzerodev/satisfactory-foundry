@@ -1,0 +1,125 @@
+P2 bidirectionality (mutation) verification log — arc #140 / #152
+=================================================================
+
+Method: for each distinct new behaviour — (1) confirm the guarding test PASSES
+on the real implementation; (2) apply a COMPILING mutant that inverts/breaks the
+behaviour (verified to compile via `tsc --noEmit`); (3) confirm the guarding
+test now FAILS, naming the test; (4) restore and confirm green again. A mutant
+that stays GREEN is a finding to investigate, not a pass.
+
+All implementation was committed BEFORE any mutation (never `git checkout` to
+restore uncommitted work). Mutants are applied by content-anchored edit and
+reverted by the inverse edit (capture-then-grep by content, not by line number).
+
+Baseline: `npm test` → 1203 passed (46 files); `npm run check` → clean.
+
+-----------------------------------------------------------------
+Behaviour 1 — TAPER GEOMETRY (D1: right half ∝ carried-onward flow)
+-----------------------------------------------------------------
+Guard: p2-drawing.test.tsx "renders two bus-seg polygons that taper: left >
+right, terminal → RIBBON_MIN".
+PASS (real impl): green.
+Mutant (COMPILING — `tsc --noEmit` clean; grep-confirmed
+  `const rightFlow = terminal ? undefined : seg.entryFlow;`): the interior
+  stretch's right half uses entryFlow, so no taper (right = left).
+FAIL: `× renders two bus-seg polygons that taper …` at
+  `expect(leftHalf1).toBeGreaterThan(rightHalf1)`.
+Restored → green.
+
+-----------------------------------------------------------------
+Behaviour 2 — TERMINAL RULE (D1/D2: RIBBON_MIN ribbon + onward "0")
+-----------------------------------------------------------------
+Guard: p2-drawing.test.tsx "renders terminal onward '0', a RIBBON_MIN terminal
+ribbon, and the spare card line".
+PASS (real impl): green.
+Mutant 2a (COMPILING; grep `const rightFlow = seg.handoffResidue;`): the
+  terminal ribbon uses the surplus thickness, not RIBBON_MIN.
+  FAIL at `expect(busY - pts[1]!.y).toBeCloseTo(1, 5)`.
+Mutant 2b (COMPILING; grep `{formatRate(seg.handoffResidue)}` inside the
+  terminal endpoint): the terminal label reads "30", not "0".
+  FAIL at `expect(endpoints).not.toContain("30")`.
+Both restored → green.
+
+-----------------------------------------------------------------
+Behaviour 3 — ENDPOINT LABELS + COLLISION RULES (D2)
+-----------------------------------------------------------------
+Guards: p2-drawing.test.tsx "pushes the entry label right past a coincident
+group token", "suppresses a hand-off label when a group token takes the LEFT
+candidate at its x2", "drops a hand-off label on a stretch too narrow for both
+glyphs (thinning)".
+PASS (real impl): green.
+Mutant 3a (COMPILING; grep `const entryX = seg.x1 + 3 + (entryCollision ? 0 :
+  0);`): the entry never pushes past a coincident token.
+  FAIL at "pushes the entry label right past a coincident group token".
+Mutant 3b (COMPILING; grep `… && !narrow && !!leftTokenBlocks;`): inverts the
+  left-token suppression, so the blocked hand-off "90" renders.
+  FAIL at "suppresses a hand-off label when a group token takes the LEFT
+  candidate at its x2".
+Mutant 3c (COMPILING; grep `… + ENDPOINT_GAP_PX && false;`): endpointsCollide
+  never returns true, so nothing thins.
+  FAIL at "drops a hand-off label on a stretch too narrow for both glyphs".
+All three restored → green.
+
+-----------------------------------------------------------------
+Behaviour 4 — segTooltip COPY (D3: entry/hand-off vocabulary, no "peak")
+-----------------------------------------------------------------
+Guards: format.test.ts "renders a non-terminal feed stretch's entry → hand-off
+vocabulary" and "keeps the word peak out of every segTooltip shape (caveat 2
+gate)".
+PASS (real impl): green.
+Mutant (COMPILING; grep `${entry} → peak …` in segTooltip's non-terminal
+  return): reintroduces the stale "peak" copy.
+FAIL — TWO tests: the non-terminal shape pin AND the scoped peak-gate pin.
+Restored → green.
+
+-----------------------------------------------------------------
+Behaviour 5 — PIPE CONNECTOR (D4: nominal-ceiling tooltip + lane-scoped error)
+-----------------------------------------------------------------
+Guards: p2-drawing.test.tsx "carries the nominal-pipe-ceiling tooltip copy" and
+"colours the connector via segmentErrored when the lane is under-supplied".
+PASS (real impl): green.
+Mutant 5a (COMPILING; pipeConnectorTooltip return drops "(nominal pipe
+  ceiling)"): FAIL at "carries the nominal-pipe-ceiling tooltip copy".
+Mutant 5b (COMPILING; grep `errored={findings.some((f) => f.type ===
+  "segment-over-capacity")}`): the connector reads the wrong finding, so a
+  lane-undersupplied lane no longer colours.
+  FAIL at "colours the connector via segmentErrored when the lane is
+  under-supplied".
+Both restored → green.
+
+-----------------------------------------------------------------
+Behaviour 6 — CARD LINES (D5: spare belt capacity from the terminal residue)
+-----------------------------------------------------------------
+Guards: p2-drawing.test.tsx "renders terminal onward '0', a RIBBON_MIN terminal
+ribbon, and the spare card line" and "a demand-exact terminal lane reads '0'
+with NO spare line".
+PASS (real impl): green.
+Mutant (COMPILING; grep `if (last !== undefined && last.handoffResidue.isZero())
+  {`): inverts the spare guard — renders "spare … 0/min" on a demand-exact lane
+  and drops the real "30/min" line.
+FAIL — both card tests (missing "30/min"; spurious "spare belt capacity: 0/min").
+Restored → green.
+
+-----------------------------------------------------------------
+Behaviour 7 — JUNCTION KINDS (D7: subtraction residue-in, empty-span-safe)
+-----------------------------------------------------------------
+Guard: layout.test.ts "labels a seam after an EMPTY-SPAN belt seam-merger (kills
+segments[j-1])".
+PASS (real impl): green.
+Mutant (COMPILING; the REJECTED `segments[j-1].handoffResidue` derivation
+  substituted for `seg.entryFlow − belt.capacity`): mislabels the seam that
+  follows an empty-span belt (prior emitted segment's handoff is 0, but the real
+  seam carries capacity through the empty span).
+FAIL at "labels a seam after an EMPTY-SPAN belt seam-merger (kills
+  segments[j-1])" — exactly the regression the counter-case exists to catch.
+  (The N=13 and output-merger pins stayed green under this mutant — only the
+  empty-span counter-case decides it, as designed.)
+Restored → green.
+
+-----------------------------------------------------------------
+Result: all seven new behaviours are guarded by tests that genuinely FAIL when
+the behaviour is broken by a compiling mutant, and pass on the real
+implementation. No green mutant (no untested behaviour) was found. Final
+restore: `npm test` → 1203 passed; `npm run check` → clean; git tree clean apart
+from this log.
+

@@ -1,5 +1,8 @@
 import { Fraction } from "./fraction.ts";
-import { machinePowerProjection } from "./machine-power.ts";
+import {
+  machinePowerProjection,
+  effectiveMachinePower,
+} from "./machine-power.ts";
 import type { MachinePowerInput } from "./machine-power.ts";
 
 const constant: MachinePowerInput = {
@@ -54,5 +57,42 @@ describe("machinePowerProjection", () => {
     expect(variableResult.mw).toBeCloseTo(1750 * factor, 10);
     expect(variableResult.variableBoundsMw?.min).toBeCloseTo(500 * factor, 10);
     expect(variableResult.variableBoundsMw?.max).toBeCloseTo(3000 * factor, 10);
+  });
+});
+
+describe("effectiveMachinePower (#142)", () => {
+  const recipeRange = {
+    constantMw: Fraction.from(250),
+    factorMw: Fraction.from(500),
+  };
+
+  it("variable machine + recipe fields → exact per-recipe range", () => {
+    const got = effectiveMachinePower(variable, recipeRange);
+    expect(got.variable).toBe(true);
+    expect(got.mw.eq(Fraction.from(500))).toBe(true); // 250 + 500/2
+    expect(got.minMw?.eq(Fraction.from(250))).toBe(true);
+    expect(got.maxMw?.eq(Fraction.from(750))).toBe(true);
+    expect(got.exponent.eq(variable.exponent)).toBe(true);
+  });
+
+  it("constant machine + recipe fields → UNCHANGED (the Ballistic Warp Drive pin)", () => {
+    // The building class is the gate: a constant-power Manufacturer's inert
+    // recipe fields must never fire (gating on the fields would report the
+    // 55 MW Ballistic Warp Drive at 500–1500 MW).
+    expect(effectiveMachinePower(constant, recipeRange)).toBe(constant);
+  });
+
+  it("variable machine without recipe fields → the envelope fallback", () => {
+    expect(effectiveMachinePower(variable, undefined)).toBe(variable);
+  });
+
+  it("factor 0 is legal: a degenerate exact range", () => {
+    const got = effectiveMachinePower(variable, {
+      constantMw: Fraction.from(100),
+      factorMw: Fraction.from(0),
+    });
+    expect(got.mw.eq(Fraction.from(100))).toBe(true);
+    expect(got.minMw?.eq(Fraction.from(100))).toBe(true);
+    expect(got.maxMw?.eq(Fraction.from(100))).toBe(true);
   });
 });

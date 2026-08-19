@@ -1,11 +1,17 @@
-import type { CatalogRecipe, CatalogMachine } from "../data/types.ts";
+import type {
+  CatalogRecipe,
+  CatalogMachine,
+  TierTable,
+} from "../data/types.ts";
 import type { Selection } from "../state/store.ts";
-import { TIER_TABLE } from "../data/tiers.ts";
 
 interface ControlsStripProps {
   recipes: CatalogRecipe[];
   machines: Record<string, CatalogMachine>;
   selection: Selection;
+  /** The live catalog's tier table (#140 P0) — its per-kind lengths drive the
+   *  Mk1..MkN toggle count, so a parsed/modded table offers the real tiers. */
+  tiers: TierTable;
   hasOverrides: boolean;
   onSelectRecipe(id: string | null): void;
   onMachineCount(n: number): void;
@@ -20,15 +26,15 @@ function optionLabel(r: CatalogRecipe): string {
 
 /** Toggle-row for one lane kind: buttons Mk1..Mk<max>, active iff k ≤ count. */
 function TierToggles({
-  kind,
   count,
+  max,
   onCount,
 }: {
-  kind: "belt" | "pipe";
   count: number;
+  /** Tier count for this kind, from the live catalog table (#140 P0). */
+  max: number;
   onCount(k: number): void;
 }) {
-  const max = TIER_TABLE[kind].length;
   return (
     <div className="tier-toggles">
       {Array.from({ length: max }, (_, i) => i + 1).map((k) => (
@@ -49,6 +55,7 @@ export function ControlsStrip({
   recipes,
   machines,
   selection,
+  tiers,
   hasOverrides,
   onSelectRecipe,
   onMachineCount,
@@ -111,14 +118,14 @@ export function ControlsStrip({
       <div className="tier-controls">
         <span>Belts</span>
         <TierToggles
-          kind="belt"
           count={selection.unlockedTiers.belt}
+          max={tiers.belt.length}
           onCount={(k) => onTiers({ ...selection.unlockedTiers, belt: k })}
         />
         <span>Pipes</span>
         <TierToggles
-          kind="pipe"
           count={selection.unlockedTiers.pipe}
+          max={tiers.pipe.length}
           onCount={(k) => onTiers({ ...selection.unlockedTiers, pipe: k })}
         />
       </div>

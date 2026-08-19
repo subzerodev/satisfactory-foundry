@@ -12,6 +12,7 @@ import {
   migrateV3,
   migrateV5,
   migrateV7,
+  migrateV8,
   validatePlanFile,
 } from "./plan-store.ts";
 import type {
@@ -23,6 +24,7 @@ import type {
   PlanFileV6,
   PlanFileV7,
   PlanFileV8,
+  PlanFileV9,
 } from "./plan-store.ts";
 
 describe("plan-store — v6 extraction and explicit placement (#112)", () => {
@@ -102,7 +104,7 @@ describe("plan-store — v6 extraction and explicit placement (#112)", () => {
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", plan, "v6");
     const loaded = await loadPlan("v6");
-    expect(loaded?.format_version).toBe(8);
+    expect(loaded?.format_version).toBe(9);
     expect(loaded?.stages[0]!.extraction?.stone).toEqual({
       machineId: "miner_mk3",
       clockPercentText: "bad edit",
@@ -136,7 +138,7 @@ describe("plan-store — v7 purity mix persistence (#124)", () => {
     await db.put("plans", plan, "v7");
 
     const loaded = await loadPlan("v7");
-    expect(loaded?.format_version).toBe(8);
+    expect(loaded?.format_version).toBe(9);
     expect(loaded?.stages[0]!.extraction?.stone).toEqual(
       plan.stages[0]!.extraction?.stone,
     );
@@ -194,7 +196,7 @@ describe("plan-store — v7 purity mix persistence (#124)", () => {
     await db.put("plans", v6, "v6-extra");
 
     const loaded = await loadPlan("v6-extra");
-    expect(loaded?.format_version).toBe(8);
+    expect(loaded?.format_version).toBe(9);
     const migrated = loaded!.stages[0]!.extraction!;
     expect(Object.getPrototypeOf(migrated)).toBeNull();
     expect(Object.hasOwn(migrated, "__proto__")).toBe(true);
@@ -337,6 +339,16 @@ function samplePlanV8(overrides?: Partial<PlanFileV8>): PlanFileV8 {
   };
 }
 
+/** A well-formed v9 file (the current save target). Built from the v8 sample so
+ *  the shared extraction/link content stays in one place; `migrateV8` rebuilds
+ *  it to the canonical v9 shape, then overrides apply. */
+function samplePlanV9(overrides?: Partial<PlanFileV9>): PlanFileV9 {
+  return {
+    ...migrateV8(samplePlanV8()),
+    ...overrides,
+  };
+}
+
 /** A well-formed v1 file (the legacy shape, written via raw db.put). */
 function samplePlanV1(overrides?: Partial<PlanFileV1>): PlanFileV1 {
   return {
@@ -382,8 +394,8 @@ describe("plan-store — v8 packaging interstep persistence (#113)", () => {
     } as PlanFileV8["links"][number];
   }
 
-  it("saves and loads current v8 intent including stale package IDs", async () => {
-    const plan = samplePlanV8({
+  it("saves and loads current intent including stale package IDs", async () => {
+    const plan = samplePlanV9({
       stages,
       links: [
         packagedLink({
@@ -405,7 +417,7 @@ describe("plan-store — v8 packaging interstep persistence (#113)", () => {
 
   it("preserves raw invalid numeric text for derive-time errors", () => {
     for (const deratePercentText of ["", "bad", "0", "101"]) {
-      const plan = samplePlanV8({
+      const plan = samplePlanV9({
         stages,
         links: [
           {
@@ -525,7 +537,7 @@ describe("plan-store — v8 packaging interstep persistence (#113)", () => {
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", legacy, "legacy-v7");
     const migrated = await loadPlan("legacy-v7");
-    expect(migrated?.format_version).toBe(8);
+    expect(migrated?.format_version).toBe(9);
     expect(migrated?.links[0]?.transport).toEqual({
       mode: "train",
       trip: { kind: "estimated", distanceText: "1200" },
@@ -676,11 +688,138 @@ describe("plan-store — v8 packaging interstep persistence (#113)", () => {
     ]);
   });
 
-  it("rejects future v9 while migrating v7 to canonical v8", () => {
+  it("rejects future v10 while migrating v7 to canonical v9", () => {
+    // format_version 10 on a v9 body is unknown-to-this-build → rejected loudly.
+    // (Under v8 this test used version 9 on a v8 body; v9 now makes 9 valid, so
+    // the future-version probe moves up one.)
     expect(
-      validatePlanFile({ ...samplePlanV8(), format_version: 9 }),
+      validatePlanFile({ ...samplePlanV9(), format_version: 10 }),
     ).toBeNull();
-    expect(validatePlanFile(samplePlanV7())?.format_version).toBe(8);
+    expect(validatePlanFile(samplePlanV7())?.format_version).toBe(9);
+  });
+});
+
+describe("plan-store — v9 raw-input extraction packaging (#133)", () => {
+  const stages = [
+    { name: "A", selection: sampleSelection(), userPlaced: false },
+    { name: "B", selection: sampleSelection(), userPlaced: false },
+  ];
+
+  /** A stage whose `water` extraction carries the given packaging value. */
+  function packagedExtractionStage(packaging: unknown) {
+    return {
+      name: "A",
+      selection: sampleSelection(),
+      userPlaced: false,
+      extraction: {
+        water: {
+          machineId: "water_extractor",
+          clockPercentText: "100",
+          packaging,
+        },
+      },
+    };
+  }
+
+  it("round-trips a valid extraction packaging interstep", async () => {
+    const plan = samplePlanV9({
+      stages: [
+        packagedExtractionStage({
+          packageRecipeId: "packaged_water",
+          clockPercentText: "100",
+          returnTransport: { mode: "belt" },
+        }),
+        stages[1]!,
+      ],
+    });
+    const id = crypto.randomUUID();
+    await savePlan(plan, id);
+    const loaded = await loadPlan(id);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.stages[0]!.extraction?.water?.packaging).toEqual({
+      packageRecipeId: "packaged_water",
+      clockPercentText: "100",
+      returnTransport: { mode: "belt" },
+    });
+  });
+
+  it("rejects a malformed extraction packaging blob via isStageV8Shape", async () => {
+    for (const packaging of [
+      // missing returnTransport
+      { packageRecipeId: "packaged_water", clockPercentText: "100" },
+      // non-string recipe id
+      {
+        packageRecipeId: 1,
+        clockPercentText: "100",
+        returnTransport: { mode: "belt" },
+      },
+      // extra key (hasExactKeys refusal)
+      {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "100",
+        returnTransport: { mode: "belt" },
+        extra: true,
+      },
+      // illegal (pipe) return route
+      {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "100",
+        returnTransport: { mode: "pipe" },
+      },
+    ]) {
+      const bad = {
+        ...samplePlanV9({ stages }),
+        stages: [packagedExtractionStage(packaging), stages[1]!],
+      };
+      const db = await (await import("./db.ts")).openDb();
+      await db.put("plans", bad, "bad-v9");
+      expect(await loadPlan("bad-v9")).toBeNull();
+      await deletePlan("bad-v9");
+    }
+  });
+
+  it("strips a garbage packaging blob smuggled through a v8-headered file", async () => {
+    // A hand-edited / imported file with format_version 8 and a garbage
+    // `packaging` blob passes isPlanFileV8 (its stage validator checks named
+    // fields only). migrateV8 MUST rebuild field-by-field and drop the blob, so
+    // the resulting v9 row is one isStageV8Shape accepts — never a row the app
+    // writes but can never read back.
+    const smuggled = {
+      ...samplePlanV8({ stages }),
+      stages: [
+        {
+          name: "A",
+          selection: sampleSelection(),
+          userPlaced: false,
+          extraction: {
+            water: {
+              machineId: "water_extractor",
+              clockPercentText: "100",
+              // Not a PackagingInterstep at all — pure garbage.
+              packaging: { junk: true, returnTransport: { mode: "pipe" } },
+            },
+          },
+        },
+        stages[1]!,
+      ],
+    };
+    const db = await (await import("./db.ts")).openDb();
+    await db.put("plans", smuggled, "smuggled-v8");
+    const loaded = await loadPlan("smuggled-v8");
+    // Loaded (not rejected — the v8 body is structurally valid), migrated to v9,
+    // and the garbage packaging is gone.
+    expect(loaded).not.toBeNull();
+    expect(loaded!.format_version).toBe(9);
+    expect(loaded!.stages[0]!.extraction?.water).toEqual({
+      machineId: "water_extractor",
+      clockPercentText: "100",
+    });
+    expect(loaded!.stages[0]!.extraction?.water).not.toHaveProperty(
+      "packaging",
+    );
+    // And the migrated file is now valid for re-save: validatePlanFile accepts
+    // it verbatim (it is already v9), proving isStageV8Shape passes.
+    expect(validatePlanFile(loaded)).toEqual(loaded);
   });
 });
 
@@ -695,13 +834,13 @@ describe("plan-store — environment", () => {
   });
 });
 
-describe("plan-store — save/load/delete round-trip (v8)", () => {
+describe("plan-store — save/load/delete round-trip (v9)", () => {
   it("save → load returns the exact plan, fractional clock + override strings intact", async () => {
     const id = crypto.randomUUID();
-    await savePlan(samplePlanV8(), id);
+    await savePlan(samplePlanV9(), id);
     const loaded = await loadPlan(id);
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(8);
+    expect(loaded!.format_version).toBe(9);
     expect(loaded!.stages[0]!.selection.clockPercentText).toBe("37.5");
     expect(loaded!.stages[0]!.selection.overrides.feeds.ore_iron).toEqual([
       "480",
@@ -722,7 +861,7 @@ describe("plan-store — save/load/delete round-trip (v8)", () => {
 
   it("round-trips a multi-stage graph with index-encoded links", async () => {
     const id = crypto.randomUUID();
-    const plan = samplePlanV8({
+    const plan = samplePlanV9({
       stages: [
         {
           name: "A",
@@ -755,7 +894,7 @@ describe("plan-store — save/load/delete round-trip (v8)", () => {
 
   it("round-trips per-link transport verbatim (raw user text intact)", async () => {
     const id = crypto.randomUUID();
-    const plan = samplePlanV8({
+    const plan = samplePlanV9({
       stages: [
         { name: "A", selection: sampleSelection(), userPlaced: false },
         { name: "B", selection: sampleSelection(), userPlaced: false },
@@ -814,7 +953,7 @@ describe("plan-store — save/load/delete round-trip (v8)", () => {
 
   it("deletePlan removes the row; a later load → null", async () => {
     const id = crypto.randomUUID();
-    await savePlan(samplePlanV8(), id);
+    await savePlan(samplePlanV9(), id);
     await deletePlan(id);
     expect(await loadPlan(id)).toBeNull();
   });
@@ -823,15 +962,15 @@ describe("plan-store — save/load/delete round-trip (v8)", () => {
 describe("plan-store — listPlans", () => {
   it("sorts by updatedAt descending", async () => {
     await savePlan(
-      samplePlanV8({ name: "old", updatedAt: "2026-01-01T00:00:00.000Z" }),
+      samplePlanV9({ name: "old", updatedAt: "2026-01-01T00:00:00.000Z" }),
       "id-old",
     );
     await savePlan(
-      samplePlanV8({ name: "new", updatedAt: "2026-12-31T00:00:00.000Z" }),
+      samplePlanV9({ name: "new", updatedAt: "2026-12-31T00:00:00.000Z" }),
       "id-new",
     );
     await savePlan(
-      samplePlanV8({ name: "mid", updatedAt: "2026-06-15T00:00:00.000Z" }),
+      samplePlanV9({ name: "mid", updatedAt: "2026-06-15T00:00:00.000Z" }),
       "id-mid",
     );
     const list = await listPlans();
@@ -841,7 +980,7 @@ describe("plan-store — listPlans", () => {
 
   it("lists a legacy v1 row alongside v8 rows (both loadable)", async () => {
     await savePlan(
-      samplePlanV8({ name: "v8", updatedAt: "2026-06-15T00:00:00.000Z" }),
+      samplePlanV9({ name: "v8", updatedAt: "2026-06-15T00:00:00.000Z" }),
       "id-v8",
     );
     const db = await (await import("./db.ts")).openDb();
@@ -855,7 +994,7 @@ describe("plan-store — listPlans", () => {
   });
 
   it("skips a corrupt row (never crashes) but keeps valid ones", async () => {
-    await savePlan(samplePlanV8({ name: "good" }), "id-good");
+    await savePlan(samplePlanV9({ name: "good" }), "id-good");
     // A foreign / corrupt row written directly under the plans store.
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", { garbage: true }, "id-bad");
@@ -895,8 +1034,8 @@ describe("plan-store — isPlanFileV2 accept/reject", () => {
     expect(loaded!.stages[0]!.selection.machineCount).toBeNull();
   });
 
-  it("rejects future format_version 9 on an otherwise valid v8 payload", async () => {
-    await putRaw({ ...samplePlanV8(), format_version: 9 });
+  it("rejects future format_version 10 on an otherwise valid v9 payload", async () => {
+    await putRaw({ ...samplePlanV9(), format_version: 10 });
     expect(await loadPlan("id")).toBeNull();
   });
 
@@ -1050,7 +1189,7 @@ describe("plan-store — migrateV1", () => {
     await db.put("plans", samplePlanV1(), "id");
     const loaded = await loadPlan("id");
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(8);
+    expect(loaded!.format_version).toBe(9);
     expect(loaded!.flowDirection).toBe("LR");
     expect(loaded!.stages[0]!.name).toBe("Stage 1");
     expect(loaded!.stages[0]!.selection.clockPercentText).toBe("37.5");
@@ -1145,7 +1284,7 @@ describe("plan-store — migrateV3 (v3 → v4, canonical links)", () => {
     await db.put("plans", samplePlanV3({ name: "legacy-v3" }), "id");
     const loaded = await loadPlan("id");
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(8);
+    expect(loaded!.format_version).toBe(9);
     expect(loaded!.name).toBe("legacy-v3");
   });
 
@@ -1279,7 +1418,7 @@ describe("plan-store — legacy v4 load path (direction defaults LR)", () => {
     await db.put("plans", samplePlanV4({ name: "legacy-v4" }), "id");
     const loaded = await loadPlan("id");
     expect(loaded).not.toBeNull();
-    expect(loaded!.format_version).toBe(8);
+    expect(loaded!.format_version).toBe(9);
     expect(loaded!.flowDirection).toBe("LR");
     expect(loaded!.name).toBe("legacy-v4");
   });
@@ -1327,7 +1466,7 @@ describe("plan-store — v5 round-trip (flowDirection + userPlaced)", () => {
     const db = await (await import("./db.ts")).openDb();
     await db.put("plans", plan, id);
     const loaded = await loadPlan(id);
-    expect(loaded!.format_version).toBe(8);
+    expect(loaded!.format_version).toBe(9);
     expect(loaded!.flowDirection).toBe("TB");
     expect(loaded!.stages[0]!.userPlaced).toBe(true);
     expect(loaded!.stages[1]!.userPlaced).toBe(false);

@@ -1,0 +1,215 @@
+P1 — overflow-chain solver (#151): bidirectionality verification log
+=====================================================================
+
+Purpose: prove that each distinct NEW production behaviour is genuinely pinned —
+not just green by construction. For every behaviour: (1) the PASS command +
+output, (2) a COMPILING mutant addressed BY CONTENT (capture-then-grep, never
+line numbers), (3) a genuine framework FAIL that names the new test(s), (4) the
+`git checkout` restore + re-run green. A green mutant would be a finding to
+investigate; NONE were green here.
+
+All P1 implementation was committed before mutation (be199ba, f4bf583, 9fe623b,
+7ccd800), so `git checkout <file>` is a safe restore, not a work-losing wipe.
+
+Environment: vitest run from the worktree root
+(/home/subzerodev/workspace/satisfactory-foundry/.worktrees/phase-p1),
+tsc -b clean before each mutant (all mutants COMPILE).
+
+─────────────────────────────────────────────────────────────────────────────
+BEHAVIOUR 1 — endpoint surfacing (entryFlow / handoffResidue)
+─────────────────────────────────────────────────────────────────────────────
+New behaviour: each feed stretch surfaces entryFlow (head flow just after entry)
+and handoffResidue (the trunk carry past its last machine). The scaled-8411 pin
+checks stretch 1 (m1-6) entry 780 / hand-off 60 and stretch 2 (m7-13) entry 840
+/ hand-off 0, and that entry boundaries did not move vs the old model.
+
+PASS:
+  $ npx vitest run src/core/manifold.test.ts -t "trunk-carry endpoints"
+   Test Files  1 passed (1)
+        Tests  2 passed | 61 skipped (63)
+
+MUTANT (by content): the feed-side handoffResidue is `drain.survived`; force it
+to ZERO (both are Fraction — compiles). grep-confirmed the mutated line reads
+`handoffResidue: ZERO,` at the FEED site (the output ZERO site is untouched):
+  perl s/handoffResidue: drain\.survived,/handoffResidue: ZERO,/
+  grep -> feed site now "handoffResidue: ZERO," ; tsc -b clean
+
+FAIL (names the new test):
+  × scaled 8411 shape: entry/hand-off per stretch, entry boundaries unmoved
+  FAIL src/core/manifold.test.ts > solveFeedLane — overflow-chain trunk-carry
+       endpoints (#151) > scaled 8411 shape: entry/hand-off per stretch, ...
+  AssertionError: expected false to be true // Object.is equality
+        Tests  1 failed | 1 passed | 61 skipped (63)
+
+RESTORE + GREEN:
+  $ git checkout src/core/manifold.ts
+  $ npx vitest run src/core/manifold.test.ts -t "trunk-carry endpoints"
+   Test Files  1 passed (1)   Tests  2 passed | 61 skipped (63)
+
+Verdict: LIVE. handoffResidue = drain.survived is pinned, not decorative.
+
+─────────────────────────────────────────────────────────────────────────────
+BEHAVIOUR 2 — seam-merger count (stretches with residue-in > 0)
+─────────────────────────────────────────────────────────────────────────────
+New behaviour: hardware.seamMergers counts stretches whose residue-in is
+positive; the full-8411 pin fixes it at 8.
+
+PASS:
+  $ npx vitest run src/core/manifold.test.ts -t "106 refineries"
+   Test Files  1 passed (1)
+        Tests  1 passed | 62 skipped (63)
+
+MUTANT (by content): neuter the increment `seamMergers += 1` -> `+= 0`
+(compiles; the residues/segments are untouched, so this isolates the COUNT).
+  perl s/seamMergers \+= 1;/seamMergers += 0;/
+  grep -> "seamMergers += 0;" ; compiles
+
+FAIL (names the new test):
+  × 106 refineries: 17 belts, 8 seam mergers, 106 splitters, buffer 954
+  FAIL ... > full 8411 integration (#151) > 106 refineries: ...
+  AssertionError: expected +0 to be 8 // Object.is equality
+        Tests  1 failed | 62 skipped (63)
+
+RESTORE + GREEN:
+  $ git checkout src/core/manifold.ts
+  $ npx vitest run src/core/manifold.test.ts -t "106 refineries"
+   Test Files  1 passed (1)   Tests  1 passed | 62 skipped (63)
+
+Verdict: LIVE. The seamMergers=8 pin catches an under-count independently of the
+residue pattern.
+
+─────────────────────────────────────────────────────────────────────────────
+BEHAVIOUR 3 — cascade formula (junctions = ceil((ways-1)/2))
+─────────────────────────────────────────────────────────────────────────────
+New behaviour: cascadeFor(ways) emits {junctions, tiers}; the pins fix
+1→null, 2/3→{1,1}, 4→{2,2}, 9→{4,2}, 17→{8,3}, 27→{13,3}.
+
+PASS:
+  $ npx vitest run src/core/manifold.test.ts -t "cascadeFor"
+   Test Files  1 passed (1)
+        Tests  7 passed | 56 skipped (63)
+
+MUTANT (by content): drop the −1 from the junctions formula:
+`ceil((ways-1)/2)` -> `ceil(ways/2)` (compiles; off-by-one at even ways).
+  perl s/const junctions = Math\.ceil\(\(ways - 1\) \/ 2\);/const junctions = Math.ceil(ways \/ 2);/
+  grep -> "const junctions = Math.ceil(ways / 2);"
+
+FAIL (names the new tests — the it.each cases):
+  × fans 3 ways   × fans 9 ways   × fans 17 ways   × fans 27 ways
+  FAIL ... > cascadeFor — ≤3-way junction cascade (c24797) > fans 3 ways
+  AssertionError: expected { ways: 3, junctions: 2, tiers: 1 }
+                  to deeply equal { ways: 3, junctions: 1, tiers: 1 }
+
+RESTORE + GREEN:
+  $ git checkout src/core/manifold.ts
+  $ npx vitest run src/core/manifold.test.ts -t "cascadeFor"
+   Test Files  1 passed (1)   Tests  7 passed | 56 skipped (63)
+
+Verdict: LIVE. The junctions formula is pinned at the exact values, not just
+"non-zero".
+
+─────────────────────────────────────────────────────────────────────────────
+BEHAVIOUR 4 — buffer product (standingBufferItems = 9 × splitters)
+─────────────────────────────────────────────────────────────────────────────
+New behaviour: the c24796 side-table line item = 9 × splitters; full-8411 pin
+fixes it at 954 (= 9 × 106).
+
+PASS: (same 106-refineries test as behaviour 2)
+   Tests  1 passed | 62 skipped (63)
+
+MUTANT (by content): change the multiplier 9 -> 8:
+  perl s/base\.standingBufferItems = 9 \* servedMachines;/base.standingBufferItems = 8 * servedMachines;/
+  grep -> "base.standingBufferItems = 8 * servedMachines;"
+
+FAIL (names the new test):
+  × 106 refineries: 17 belts, 8 seam mergers, 106 splitters, buffer 954
+  AssertionError: expected 848 to be 954 // Object.is equality   (8 × 106 = 848)
+        Tests  1 failed | 62 skipped (63)
+
+RESTORE + GREEN:
+  $ git checkout src/core/manifold.ts
+   Tests  1 passed | 62 skipped (63)
+
+Verdict: LIVE. The 9× product is pinned exactly; an 8× regression is caught.
+
+─────────────────────────────────────────────────────────────────────────────
+BEHAVIOUR 5 — pipe lane-undersupplied (Σ capacity < D → one unordered finding)
+─────────────────────────────────────────────────────────────────────────────
+New behaviour: pipe feed lanes emit ONE lane-undersupplied finding (exact
+shortfall, nominalCeiling:true) when assigned capacity < demand, and NONE when
+adequate; belt-ordered starved-machines never fires on a pipe lane.
+
+PASS:
+  $ npx vitest run src/core/manifold.test.ts -t "pipe Level-1 honesty"
+   Test Files  1 passed (1)
+        Tests  3 passed | 60 skipped (63)
+
+MUTANT (by content): invert the trigger `assigned.lt(D)` -> `assigned.gt(D)`
+(compiles; fires on surplus instead of shortfall).
+  perl s/if \(assigned\.lt\(D\)\) \{/if (assigned.gt(D)) {/
+  grep -> "if (assigned.gt(D)) {"
+
+FAIL (names the new tests — both directions caught):
+  × adequate auto-sized pipe lane: no segments, no hardware, no buffer, no finding
+      AssertionError: expected [ Array(1) ] to deeply equal []   (fires on surplus)
+  × undersized override pipe lane: ONE lane-undersupplied with exact shortfall
+      AssertionError: expected [] to have a length of 1 but got +0
+        Tests  2 failed | 1 passed | 60 skipped (63)
+
+RESTORE + GREEN:
+  $ git checkout src/core/manifold.ts
+   Test Files  1 passed (1)   Tests  3 passed | 60 skipped (63)
+
+Verdict: LIVE and BIDIRECTIONAL — the guard is pinned both for firing on
+shortfall AND for staying silent on adequate supply.
+
+─────────────────────────────────────────────────────────────────────────────
+BEHAVIOUR 6 — x2-string absence (the retired vocabulary is gone from the DOM)
+─────────────────────────────────────────────────────────────────────────────
+New behaviour: single-lane-feed-belts.test.tsx renders the very case that used
+to bundle (Michael's 106-refinery Mk5 plan) and asserts NONE of the retired
+strings ("parallel lines", "bus up to 2 parallel", "one bus line", "x2 max",
+parallel-segment/-rail/-run-label, bp-parallel-max) appear in Schematic,
+SummaryCards, or Blueprint. This is a NEGATIVE-assertion test, so the mutant
+RE-INTRODUCES a retired string to prove the guard bites.
+
+PASS:
+  $ npx vitest run src/ui/single-lane-feed-belts.test.tsx
+   Test Files  1 passed (1)
+        Tests  3 passed (3)
+
+MUTANT (by content): re-add the retired copy to SummaryCards' count span
+(compiles; renders "17 × belt · bus up to 2 parallel").
+  perl append " · bus up to 2 parallel" to "{lane.belts.length} × {lane.kind}"
+  grep -> "{lane.belts.length} × {lane.kind} · bus up to 2 parallel" ; tsc -b clean
+
+FAIL (names the new test):
+  × SummaryCards shows a terse count with no bundle copy
+  AssertionError: expected '<div class="summary-cards">…' not to contain
+                  'bus up to 2 parallel'
+  Received: "…<span class="card-count">17 × belt · bus up to 2 parallel</span>…"
+        Tests  1 failed | 2 passed (3)
+
+RESTORE + GREEN:
+  $ git checkout src/ui/SummaryCards.tsx
+  $ npx vitest run src/ui/single-lane-feed-belts.test.tsx
+   Test Files  1 passed (1)   Tests  3 passed (3)
+
+Verdict: LIVE. The absence smoke genuinely catches a re-introduced retired
+string — it is not a vacuous pass.
+
+─────────────────────────────────────────────────────────────────────────────
+SUMMARY
+─────────────────────────────────────────────────────────────────────────────
+All 6 new behaviours are mutation-proven: each mutant COMPILED, produced a
+genuine framework FAIL naming the new test(s), and was restored to green.
+NO green mutants were encountered (none needed investigation).
+
+Final gate (post-restore, tree clean):
+  $ npx vitest run   ->  Test Files 45 passed (45) | Tests 1178 passed (1178)
+  $ npm run check    ->  tsc -b + eslint + prettier all clean
+  sweep grep (parallelCount / peakFlow / maxParallelCount / "parallel lines" /
+  "one bus line" / "x2 max") -> only allowed residues: the finding's renamed
+  `flow` field, and comments explicitly describing the retired model's history,
+  plus the RETIRED-blacklist array in single-lane-feed-belts.test.tsx (whose
+  purpose is asserting those strings are ABSENT).

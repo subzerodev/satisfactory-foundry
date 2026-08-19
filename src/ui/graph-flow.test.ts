@@ -147,6 +147,8 @@ function solvedWith(opts: {
         totalDemand: f.totalDemand,
         belts: [],
         segments: [],
+        hardware: null,
+        standingBufferItems: 0,
         findings: [],
       })),
       outputs: (opts.outputs ?? []).map((o) => ({
@@ -156,6 +158,7 @@ function solvedWith(opts: {
         totalOutput: o.totalOutput,
         breakouts: [],
         segments: [],
+        collectionCascade: null,
         findings: [],
       })),
       findings: [],

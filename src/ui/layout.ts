@@ -3,7 +3,7 @@
  * Coordinates derive ONLY from integer machine indices, counts, and array
  * positions — never from a Fraction (rates appear only as formatted strings,
  * elsewhere). Spans, belt indices, item ids, and each segment's exact
- * `peakFlow` pass through untouched (peakFlow is display data, never a
+ * `entryFlow` pass through untouched (entryFlow is display data, never a
  * coordinate).
  */
 
@@ -22,6 +22,9 @@ export const LAYOUT = {
   maxPitch: 48,
   labelPitch: 20,
   machineH: 40,
+  rulerH: 12, // P3: the build-view axis height — a two-mark ruler replaces the
+  // 40px machine block (Michael's option-A pick, #135 c24913). The machines
+  // view keeps the full machineH block via computeLayout's default.
   laneH: 56,
   busH: 28,
   marginY: 16,
@@ -48,16 +51,19 @@ export interface SchematicLayout {
   machineTop: number; // machine-row top y (consumed, never re-derived)
   machines: { index: number; x: number; labeled: boolean }[];
   /**
-   * In band mode, the machine indices that still carry an individual boundary
-   * tick + index label: feed entries, output breakouts, segment boundaries, and
-   * any machine a finding references (the complete textual reference set —
-   * nothing else references interior indices). One set-union over existing solve
-   * data; empty when `band` is false (the full tick row renders instead).
+   * The machine indices that carry an individual boundary tick: feed entries,
+   * output breakouts, segment boundaries, and any machine a finding references
+   * (the complete textual reference set — nothing else references interior
+   * indices). One set-union over existing solve data. Computed in BOTH density
+   * modes (P3 — the build view's ruler draws MAJOR ticks at these belt-stretch
+   * boundaries whether or not the row is banded; the machines view's band reads
+   * it only when `band`). Never empty on a solved lane.
    */
   significant: number[];
   /**
    * The subset of `significant` that carries an index LABEL (ticks stay on every
-   * significant index — only the text thins). Empty when `band` is false. The
+   * significant index — only the text thins). Empty when `band` is false (label
+   * thinning is a band-density concern — non-band modes label per the pitch). The
    * finding-referenced machines are always labeled (the S12P1 findability
    * invariant: the findings panel names exactly those indices); the remaining
    * significant indices are greedy-filled so no two kept labels sit closer than
@@ -80,8 +86,10 @@ export interface LaneTrack {
     x1: number;
     x2: number;
     beltIndex: number;
-    peakFlow: Fraction; // solver's span maximum, passed through for the title
-    parallelCount: number;
+    entryFlow: Fraction; // solver's entry/head flow, passed through for the title
+    handoffResidue: Fraction; // trunk carry past the span (display data; never a
+    // coordinate — same convention as entryFlow). Feeds the D1 ribbon's right
+    // half-height + the D2/D3 hand-off number; ZERO on every output span.
   }[];
   seams: number[];
 }
@@ -234,8 +242,8 @@ function feedTrack(
       x1: boundaryX(s.fromMachine - 1, pitch),
       x2: boundaryX(s.toMachine, pitch),
       beltIndex: s.beltIndex,
-      peakFlow: s.peakFlow,
-      parallelCount: s.parallelCount,
+      entryFlow: s.entryFlow,
+      handoffResidue: s.handoffResidue,
     })),
     // Interior seams: each segment start boundary except the head (machine 1).
     seams: lane.segments
@@ -263,8 +271,8 @@ function outputTrack(
       x1: boundaryX(s.fromMachine - 1, pitch),
       x2: boundaryX(s.toMachine, pitch),
       beltIndex: s.beltIndex,
-      peakFlow: s.peakFlow,
-      parallelCount: s.parallelCount,
+      entryFlow: s.entryFlow,
+      handoffResidue: s.handoffResidue,
     })),
     seams: lane.segments
       .filter((s) => s.fromMachine > 1)
@@ -275,6 +283,7 @@ function outputTrack(
 export function computeLayout(
   result: StageSolveResult,
   machineCount: number,
+  machineRowH: number = LAYOUT.machineH,
 ): SchematicLayout {
   const N = machineCount;
   const pitch = clamp(
@@ -286,9 +295,12 @@ export function computeLayout(
   const width = scrolled ? LAYOUT.marginX * 2 + pitch * N : LAYOUT.viewW;
 
   const band = bandMode(N);
-  const sig = band
-    ? significantMachines(result, N)
-    : { significant: [], findingReferenced: [] };
+  // P3 (the r2 registration fix): significant computes in BOTH modes — it is a
+  // pure set-union over existing solve data (entries, breakouts, segment bounds,
+  // finding refs), and the build-view ruler draws its MAJOR ticks from it
+  // regardless of density. labeledSignificant stays band-gated (label thinning
+  // is a band-density concern).
+  const sig = significantMachines(result, N);
   const significant = sig.significant;
   const labeledSignificant = band
     ? labeledSignificantOf(significant, sig.findingReferenced, pitch)
@@ -311,9 +323,12 @@ export function computeLayout(
   const feeds = result.feeds.map((lane, i) =>
     feedTrack(lane, LAYOUT.marginY + i * LAYOUT.laneH, pitch),
   );
+  // machineTop carries NO machineRowH term — it registers with the feed lanes
+  // and P2's endpoint rows above, pixel-identical across both row heights (the
+  // structural register guarantee). Only outputTop + height shrink with the row.
   const machineTop =
     LAYOUT.marginY + result.feeds.length * LAYOUT.laneH + LAYOUT.busH;
-  const outputTop = machineTop + LAYOUT.machineH + LAYOUT.busH;
+  const outputTop = machineTop + machineRowH + LAYOUT.busH;
   const outputs = result.outputs.map((lane, j) =>
     outputTrack(lane, outputTop + j * LAYOUT.laneH, pitch),
   );
@@ -322,7 +337,7 @@ export function computeLayout(
     LAYOUT.marginY * 2 +
     result.feeds.length * LAYOUT.laneH +
     LAYOUT.busH * 2 +
-    LAYOUT.machineH +
+    machineRowH +
     result.outputs.length * LAYOUT.laneH;
 
   return {

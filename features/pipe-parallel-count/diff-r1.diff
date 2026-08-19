@@ -1,0 +1,81 @@
+diff --git a/src/core/manifold.test.ts b/src/core/manifold.test.ts
+index 4344946..670c6e2 100644
+--- a/src/core/manifold.test.ts
++++ b/src/core/manifold.test.ts
+@@ -358,7 +358,7 @@ describe("solveFeedLane — bounded parallel feed buses (#120)", () => {
+     );
+   });
+ 
+-  it("applies the same exact bundle rule to a non-divisible pipe lane", () => {
++  it("a pipe lane never bundles - an over-tier peak is a finding (#145)", () => {
+     const r = solveFeed({
+       n: 3,
+       rate: F(350),
+@@ -367,10 +367,15 @@ describe("solveFeedLane — bounded parallel feed buses (#120)", () => {
+     });
+     expect(r.belts.map((b) => b.capacity.toString())).toEqual(["600", "600"]);
+     expect(r.segments[1]!.peakFlow.eq(F(850))).toBe(true);
+-    expect(r.segments[1]!.parallelCount).toBe(2);
+-    expect(r.findings.some((f) => f.type === "segment-over-capacity")).toBe(
+-      false,
+-    );
++    // Parallel pipes share a pressure group and do not add capacity: no
++    // second line exists to bundle onto, so the honest output is a finding.
++    expect(r.segments.every((s) => s.parallelCount === 1)).toBe(true);
++    const over = r.findings.filter((f) => f.type === "segment-over-capacity");
++    expect(over).toHaveLength(1);
++    expect(
++      over[0]!.type === "segment-over-capacity" &&
++        over[0]!.busCapacity.eq(F(600)),
++    ).toBe(true);
+   });
+ 
+   it("keeps starvation authoritative on an otherwise valid x2 segment", () => {
+diff --git a/src/core/manifold.ts b/src/core/manifold.ts
+index 1395359..aa8fae4 100644
+--- a/src/core/manifold.ts
++++ b/src/core/manifold.ts
+@@ -43,7 +43,7 @@ export interface BusSegment {
+   toMachine: number;
+   peakFlow: Fraction; // span maximum (feed: at head; output: at tail)
+   beltIndex: number; // attribution: the belt whose entry/break-out starts this span
+-  parallelCount: number; // derived physical bus lines; feed 1|2, output always 1
++  parallelCount: number; // derived physical bus lines; belt feed 1|2, pipe feed and all output always 1
+ }
+ 
+ export interface FeedLaneResult {
+@@ -419,7 +419,10 @@ export function solveFeedLane(
+     // survivedIn < d, while d <= B and belt.capacity <= B, so its peak is <2B:
+     // exact ceil division is therefore bounded to 1|2. An oversized explicit
+     // slot remains one invalid line and keeps the capacity finding below.
+-    const bundleEligible = belt.capacity.lte(B);
++    // Bundling is BELT-only: parallel pipes share a pressure group and do not
++    // add capacity, so an over-tier pipe peak is a finding, never a second
++    // line (#145).
++    const bundleEligible = lane.kind === "belt" && belt.capacity.lte(B);
+     const parallelCount = bundleEligible
+       ? Math.max(1, Number(peakFlow.ceilDiv(B)))
+       : 1;
+diff --git a/src/ui/parallel-feed-belts.test.tsx b/src/ui/parallel-feed-belts.test.tsx
+index 9941a74..7baf68d 100644
+--- a/src/ui/parallel-feed-belts.test.tsx
++++ b/src/ui/parallel-feed-belts.test.tsx
+@@ -174,7 +174,7 @@ describe("parallel feed-bus schematic", () => {
+     expect(remainderArrow?.getAttribute("stroke")).toBe(TIER_COLORS.belt[2]);
+   });
+ 
+-  it("keeps bundled pipes dashed, starvation red, and short x2 labels suppressed", () => {
++  it("renders an over-tier pipe as a single errored dashed line - pipes never bundle (#145)", () => {
+     const starvingPipe = solveStage({
+       machineCount: 3,
+       clockPercent: F(100),
+@@ -198,7 +198,8 @@ describe("parallel feed-bus schematic", () => {
+         itemName={itemName}
+       />,
+     );
+-    expect(pipeHtml).toContain("parallel-rail seg-error lane-pipe");
++    expect(pipeHtml).toContain("bus-seg seg-error lane-pipe");
++    expect(pipeHtml).not.toContain("parallel-rail");
+ 
+     const shortHtml = renderToStaticMarkup(
+       <Schematic

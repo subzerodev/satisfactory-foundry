@@ -15,7 +15,7 @@
  * solver contract (src/core/manifold.ts) and footprint table (./footprints.ts).
  */
 
-import type { Fraction } from "../core/fraction.ts";
+import { Fraction } from "../core/fraction.ts";
 import type {
   StageSolveResult,
   FeedLaneResult,
@@ -41,6 +41,17 @@ export interface Rect {
   h: number;
 }
 
+/**
+ * The in-game attachment a per-column junction stands for (P2 D7). Feed columns
+ * are `splitter` except a stretch's seam column (`seam-merger`, where a positive
+ * residue-in is merged in); output columns are `merger`. Footprint sizes are
+ * identical in-game (4×4) — this is naming, not new geometry.
+ */
+export type JunctionKind = "splitter" | "seam-merger" | "merger";
+
+/** A per-column junction: geometry (Rect) plus the attachment kind it stands for. */
+export type Junction = Rect & { kind: JunctionKind };
+
 /** A belt-drop (feed) / break-out (output) marker. `load` is output-only. */
 export interface BeltMark {
   index: number;
@@ -56,9 +67,8 @@ export interface BeltMark {
 export interface LaneLayout {
   itemId: string;
   bus: { from: Point; to: Point };
-  junctions: Rect[]; // splitters (feed) / mergers (output), one per machine
+  junctions: Junction[]; // splitter/seam-merger (feed) / merger (output), per machine
   marks: BeltMark[]; // drops (feed) / breakouts (output)
-  maxParallelCount: number; // derived bus cardinality; defaults to one
 }
 
 export type LayoutFinding = { type: "unknown-footprint"; machineId: string };
@@ -78,6 +88,11 @@ const BELT_LANE = 20;
 const LANE_SPACING = 60;
 /** Foundation tile edge (8 m). Bounding box inflates to a multiple of this. */
 const FOUNDATION_TILE = 80;
+
+/** Zero rate, for the seam residue-in comparison (P2 D7). Solver Fractions are
+ *  read only to CLASSIFY a junction kind — never to compute a coordinate, so the
+ *  layout purity contract (Fractions never enter geometry) holds. */
+const ZERO_RATE = Fraction.from(0);
 
 /** Snap up to the next multiple of 10 (the 1 m build grid). */
 function ceilTo10(n: number): number {
@@ -132,7 +147,6 @@ export function layoutStage(
       bus: { from: { x: 0, y: 0 }, to: { x: 0, y: 0 } },
       junctions: [],
       marks: [],
-      maxParallelCount: 1,
     });
     return {
       units: "dm",
@@ -188,6 +202,22 @@ function layoutFeedLane(
   machineWidth: number,
 ): LaneLayout {
   const y = -(BELT_LANE + f * LANE_SPACING);
+  // Seam columns (P2 D7): a stretch whose residue-in is positive completes its
+  // seam machine with a 2-input seam-merger at that machine's column. residue-in
+  // is `seg.entryFlow − belt.capacity` (post-override; the solver's
+  // `entryFlow = survivedIn + capacity`, so this recovers survivedIn exactly)
+  // — NOT segments[j-1].handoffResidue, which mislabels a seam after an
+  // empty-span belt (the segments array is sparse relative to belts). The seam
+  // column is the stretch's 1-based fromMachine → 0-based junction col (−1).
+  const seamColumns = new Set<number>();
+  for (const seg of lane.segments) {
+    const belt = lane.belts[seg.beltIndex];
+    if (belt === undefined) continue;
+    const residueIn = seg.entryFlow.sub(belt.capacity);
+    if (residueIn.gt(ZERO_RATE)) {
+      seamColumns.add(seg.fromMachine - 1);
+    }
+  }
   return {
     itemId: lane.itemId,
     bus: { from: { x: 0, y }, to: { x: machineCount * pitch, y } },
@@ -197,16 +227,13 @@ function layoutFeedLane(
       y,
       SPLITTER_FOOTPRINT,
       machineWidth,
+      (col) => (seamColumns.has(col) ? "seam-merger" : "splitter"),
     ),
     marks: lane.belts.map((belt) => ({
       index: belt.index,
       at: { x: boundaryX(belt.entersAfterMachine, pitch), y },
       capacity: belt.capacity,
     })),
-    maxParallelCount: lane.segments.reduce(
-      (max, segment) => Math.max(max, segment.parallelCount),
-      1,
-    ),
   };
 }
 
@@ -233,6 +260,7 @@ function layoutOutputLane(
       y,
       MERGER_FOOTPRINT,
       machineWidth,
+      () => "merger", // output columns are all mergers (collection bus)
     ),
     marks: lane.breakouts.map((belt) => ({
       index: belt.index,
@@ -240,7 +268,6 @@ function layoutOutputLane(
       capacity: belt.capacity,
       load: belt.load,
     })),
-    maxParallelCount: 1,
   };
 }
 
@@ -257,8 +284,9 @@ function buildJunctions(
   busY: number,
   size: Footprint,
   machineWidth: number,
-): Rect[] {
-  const junctions: Rect[] = [];
+  kindOf: (col: number) => JunctionKind,
+): Junction[] {
+  const junctions: Junction[] = [];
   for (let col = 0; col < machineCount; col++) {
     const centreX = col * pitch + Math.floor(machineWidth / 2);
     junctions.push({
@@ -266,6 +294,7 @@ function buildJunctions(
       y: busY - size.length / 2,
       w: size.width,
       h: size.length,
+      kind: kindOf(col),
     });
   }
   return junctions;

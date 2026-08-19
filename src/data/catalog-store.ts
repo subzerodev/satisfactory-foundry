@@ -6,7 +6,6 @@ import type {
   MachinePower,
   RecipeIO,
 } from "./types.ts";
-import { TIER_TABLE } from "./tiers.ts";
 import { parseRational } from "./stage-input.ts";
 import { openDb } from "./db.ts";
 
@@ -46,8 +45,20 @@ const CATALOG_KEY = "current";
  *
  * 5 -> 6 (#112): catalogs now include structured extractor rates, topology,
  * and raw-resource applicability. Older caches cannot reconstruct this data.
+ *
+ * 6 -> 7 (#142): recipes carry the optional variablePower range
+ * (mVariablePowerConsumptionConstant/Factor). Without the bump a cached
+ * catalog never regains the field and the per-recipe power correction
+ * silently no-ops for existing users — the isRawResource scar class.
+ *
+ * 7 -> 8 (#140 P0): tiers are now PARSED from the file (belt mSpeed÷2, pipe
+ * mFlowLimit×60) instead of re-stamped as the curated constant on every revive.
+ * They therefore MUST round-trip — a v7 cache holds no serialized tier table,
+ * so reviving it would silently revert to the curated values (the isRawResource
+ * scar again). The bump discards every v7 row so cached users re-parse once and
+ * regain the file-derived table.
  */
-export const CATALOG_PARSER_VERSION = 6;
+export const CATALOG_PARSER_VERSION = 8;
 
 /**
  * JSON-safe CatalogItem: `stackSize` is a toString() string or null. Items
@@ -80,6 +91,10 @@ interface StoredRecipe {
   inputs: StoredRecipeIO[];
   outputs: StoredRecipeIO[];
   primaryOutputId: string;
+  /** #142: recipe-level variable-power range, Fraction.toString round-trip.
+   *  Optional like isRawResource (truthiness-safe reads) — the v6→7 parser
+   *  bump is what carries it to cached users (the isRawResource scar). */
+  variablePower?: { constant: string; factor: string };
 }
 /** JSON-safe machine power: every Fraction is a toString() string; optional
  *  bounds stay optional. */
@@ -103,13 +118,29 @@ interface StoredCatalogExtractor {
   normalRate: string;
   itemIds: string[];
 }
-/** JSON-safe catalog: every Fraction is a toString() string. Tiers are NOT
- *  stored — they are always TIER_TABLE, rebuilt on revive. */
+/** JSON-safe tier table: each Fraction is a toString() string, per kind (#140
+ *  P0). Tiers are now PARSED from the file, so — unlike the old curated constant
+ *  — they must round-trip; each kind's list preserves ascending order. */
+interface StoredTierTable {
+  belt: string[];
+  pipe: string[];
+}
+/** JSON-safe catalog: every Fraction is a toString() string. */
 interface StoredCatalogData {
   items: Record<string, StoredCatalogItem>;
   machines: Record<string, StoredCatalogMachine>;
   recipes: Record<string, StoredRecipe>;
   extractors: Record<string, StoredCatalogExtractor>;
+  /**
+   * Parsed tier throughputs per kind (#140 P0). MUST appear in all three
+   * enumerating functions (StoredCatalogData / serializeCatalog /
+   * reviveCatalog): tiers were re-attachable on revive only while they were a
+   * CONSTANT, which they no longer are. Omitting it from the serializer would
+   * revive the curated fallback on every boot after the first — a cached
+   * bundled/modded catalog silently reverting to the curated values (the
+   * isRawResource scar recorded above).
+   */
+  tiers: StoredTierTable;
   /**
    * Mirrors Catalog.recipeUnlocks (S20 P3, #102) — plain numbers, so it stores
    * verbatim. It MUST appear in all three enumerating functions
@@ -226,6 +257,14 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
       inputs: r.inputs.map(serializeIO),
       outputs: r.outputs.map(serializeIO),
       primaryOutputId: r.primaryOutputId,
+      ...(r.variablePower
+        ? {
+            variablePower: {
+              constant: r.variablePower.constantMw.toString(),
+              factor: r.variablePower.factorMw.toString(),
+            },
+          }
+        : {}),
     };
   }
   const machines: Record<string, StoredCatalogMachine> = Object.create(null);
@@ -258,6 +297,12 @@ function serializeCatalog(catalog: Catalog): StoredCatalogData {
     machines,
     recipes,
     extractors,
+    // #140 P0: each tier Fraction stringifies exactly (the StoredRecipe / rate
+    // precedent), reviving value-equal via parseRational.
+    tiers: {
+      belt: catalog.tiers.belt.map((f) => f.toString()),
+      pipe: catalog.tiers.pipe.map((f) => f.toString()),
+    },
     recipeUnlocks: { ...catalog.recipeUnlocks },
   };
 }
@@ -298,7 +343,11 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
     typeof data.machines !== "object" ||
     typeof data.recipes !== "object" ||
     typeof data.extractors !== "object" ||
-    typeof data.recipeUnlocks !== "object"
+    typeof data.recipeUnlocks !== "object" ||
+    typeof data.tiers !== "object" ||
+    data.tiers === null ||
+    !Array.isArray(data.tiers.belt) ||
+    !Array.isArray(data.tiers.pipe)
   ) {
     throw new Error("catalog-store: corrupted stored catalog shape.");
   }
@@ -316,6 +365,14 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
       inputs: r.inputs.map(reviveIO),
       outputs: r.outputs.map(reviveIO),
       primaryOutputId: r.primaryOutputId,
+      ...(r.variablePower
+        ? {
+            variablePower: {
+              constantMw: parseRational(r.variablePower.constant),
+              factorMw: parseRational(r.variablePower.factor),
+            },
+          }
+        : {}),
     };
   }
   const machines: Catalog["machines"] = Object.create(null);
@@ -345,14 +402,20 @@ function reviveCatalog(data: StoredCatalogData): Catalog {
   for (const [id, tier] of Object.entries(data.recipeUnlocks)) {
     recipeUnlocks[id] = tier;
   }
-  // Tiers are always the curated table, never round-tripped through storage.
-  // recipeUnlocks is NOT such a constant — it is parsed data, so it round-trips.
+  // #140 P0: tiers are PARSED data now, so they round-trip — rebuilt from the
+  // stored row via parseRational (value-equal, not reference-identical to the
+  // curated constant). A malformed stored rational throws → the caller maps it
+  // to 'stale', matching the recipe-IO reviver's corruption posture.
+  const tiers: Catalog["tiers"] = {
+    belt: data.tiers.belt.map(parseRational),
+    pipe: data.tiers.pipe.map(parseRational),
+  };
   return {
     items,
     machines,
     recipes,
     extractors,
-    tiers: TIER_TABLE,
+    tiers,
     recipeUnlocks,
   };
 }

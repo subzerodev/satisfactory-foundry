@@ -20,6 +20,7 @@ import type { StageSolveResult } from "../core/manifold.ts";
 import { reconcileLinks } from "../core/reconcile.ts";
 import type { LinkInput, LinkFinding } from "../core/reconcile.ts";
 import { deriveLinkPlan } from "../core/link-plan.ts";
+import { parseClockText } from "../core/clock.ts";
 import type { ChainProposal } from "../core/chain-builder.ts";
 import {
   canonicalizeLinkTransport,
@@ -27,7 +28,7 @@ import {
   type LinkTransport,
   type PackagingInterstep,
 } from "../core/link-transport.ts";
-import type { Catalog } from "../data/types.ts";
+import type { Catalog, TierTable } from "../data/types.ts";
 import { TIER_TABLE } from "../data/tiers.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
 import { loadCatalog, saveCatalog } from "../data/catalog-store.ts";
@@ -42,8 +43,8 @@ import {
   validatePlanFile,
 } from "../data/plan-store.ts";
 import type {
-  PlanFileV8,
-  PlanStageV7,
+  PlanFileV9,
+  PlanStageV8,
   PlanListEntry,
 } from "../data/plan-store.ts";
 
@@ -102,6 +103,13 @@ export interface ExtractionSelection {
   machineId: string;
   clockPercentText: string;
   purityMix?: PurityMixText;
+  /**
+   * Raw-input packaging (#133): the same interstep the link path carries,
+   * reused verbatim. Optional — absent ⇒ the extractor plan reports supply only.
+   * Written through `canonicalizePackagingInterstep`, exactly as the link path,
+   * so an illegal return route drops the write rather than persisting.
+   */
+  packaging?: PackagingInterstep;
 }
 
 export interface PurityMixText {
@@ -116,6 +124,17 @@ function copyExtractionSelection(
   return {
     ...selection,
     ...(selection.purityMix ? { purityMix: { ...selection.purityMix } } : {}),
+    // Deep-copy the interstep so the nested returnTransport object is not
+    // aliased across copies (matching the purityMix idiom one level deeper —
+    // returnTransport is the interstep's nested object).
+    ...(selection.packaging
+      ? {
+          packaging: {
+            ...selection.packaging,
+            returnTransport: { ...selection.packaging.returnTransport },
+          },
+        }
+      : {}),
   };
 }
 
@@ -356,7 +375,7 @@ export interface Actions {
   loadPlan(id: string): Promise<void>;
   renamePlan(id: string, name: string): Promise<void>;
   deletePlan(id: string): Promise<void>;
-  /** Serialize a stored plan (migrated to v8) as pretty JSON, or null if the
+  /** Serialize a stored plan (migrated to v9) as pretty JSON, or null if the
    *  row is missing/corrupt. Headless — App owns the Blob/anchor download. */
   exportPlan(id: string): Promise<string | null>;
   /** Validate + save an exported plan file's text under the save-over model.
@@ -384,7 +403,7 @@ export interface PlanBundle {
   kind: "foundry-plan-bundle";
   format_version: 1;
   exportedAt: string; // ISO
-  plans: PlanFileV8[];
+  plans: PlanFileV9[];
 }
 
 /** The sniff constant (Axis 3): import branches to the bundle arm iff a parsed
@@ -497,24 +516,18 @@ function derive(catalog: CatalogState, selection: Selection): SolveState {
     return { status: "idle" };
   }
 
-  // Clock text → positive Fraction, or 'bad-clock'.
-  let clockPercent: Fraction;
-  try {
-    clockPercent = Fraction.parse(selection.clockPercentText);
-  } catch {
+  // Clock text → Fraction in [1, 250], or 'bad-clock'. parseClockText is the
+  // single owner of the clock range (ticket #143) — the derive must accept and
+  // reject exactly what the chain builder and extraction panel do.
+  const clockResult = parseClockText(selection.clockPercentText);
+  if (!clockResult.ok) {
     return {
       status: "invalid",
       reason: "bad-clock",
-      detail: `clock percent must be a positive number; got ${JSON.stringify(selection.clockPercentText)}.`,
+      detail: `${clockResult.error}; got ${JSON.stringify(selection.clockPercentText)}.`,
     };
   }
-  if (clockPercent.lte(Fraction.from(0))) {
-    return {
-      status: "invalid",
-      reason: "bad-clock",
-      detail: `clock percent must be > 0; got ${JSON.stringify(selection.clockPercentText)}.`,
-    };
-  }
+  const clockPercent = clockResult.value;
 
   // machineCount: non-negative safe integer. 0 is VALID (solver-degenerate).
   if (
@@ -544,7 +557,9 @@ function derive(catalog: CatalogState, selection: Selection): SolveState {
   }
 
   // Build opts → toStageInput. Its SHAPE throws (unknown override key,
-  // duplicate lane; tier-range is unreachable — clamped at the setter) →
+  // duplicate lane; tier-range is unreachable — clamped against the live
+  // catalog.tiers at every catalog→ready transition and at setUnlockedTiers,
+  // #140 P0, so no count reaching here exceeds the current table) →
   // 'bad-override'. Then solveStage: count-excess overrides surface as a
   // solver VALUE finding INSIDE result, i.e. 'solved' — the routing split.
   try {
@@ -695,7 +710,7 @@ function deriveAllStages(
 }
 
 /**
- * Whole-graph replacement from a loaded `PlanFileV8` (Stage 3 / Phase 3, frozen
+ * Whole-graph replacement from a loaded `PlanFileV9` (Stage 3 / Phase 3, frozen
  * Axis 4; Stage 10 / Phase 1 adds direction + userPlaced). Builds a fresh graph —
  * new stage/link uuids — and applies the frozen load treatments per stage:
  *
@@ -711,7 +726,7 @@ function deriveAllStages(
  *   the FILE's direction — a v1-migrated positionless stage must slot per the
  *   orientation the file was saved in);
  * - flowDirection restored from the file (v1-v4 migration defaults to "LR"); userPlaced
- *   read directly from v8's required boolean. Legacy migration materializes the
+ *   read directly from the persisted stage's required boolean. Legacy migration materializes the
  *   conservative original-position rule before this rebuild, so no transient
  *   source-version flag is needed;
  * - stageOrder = array order; links rebuilt from indices; placementSeq =
@@ -724,7 +739,7 @@ function deriveAllStages(
  */
 function rebuildFromPlan(
   slice: GraphSlice,
-  plan: PlanFileV8,
+  plan: PlanFileV9,
 ): GraphSlice & { placementSeq: number } {
   const { catalog } = slice;
   // Current global tiers (the active mirror holds the canonical global value).
@@ -768,7 +783,7 @@ function rebuildFromPlan(
     // Positionless entries (v1-migrated) auto-slot in the FILE's direction; a
     // saved position restores exactly. The fallback direction is plan-level.
     positions[id] = entry.position ?? placementSlot(i, plan.flowDirection);
-    // Validation always returns v8; legacy migration has already materialized
+    // Validation always returns v9; legacy migration has already materialized
     // placement origin into this required boolean.
     if (entry.userPlaced) userPlaced[id] = true;
   });
@@ -1139,16 +1154,61 @@ function validTier(value: unknown): number | null {
     : null;
 }
 
-/** Clamp a tier count to `[1, TIER_TABLE.<kind>.length]`, defaulting a corrupt
- *  or missing value to the full table length. */
-function clampTier(kind: "belt" | "pipe", value: unknown): number {
-  const max = TIER_TABLE[kind].length;
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    return max;
+/**
+ * Sanitize ONE persisted tier count at the persist-`merge` boundary (#140 P0).
+ * The merge runs synchronously during `createAppStore`, BEFORE any catalog
+ * exists, so it CANNOT bound above against the live table — it keeps only the
+ * validity floor. Three branches (the trichotomy the P0 spec pins):
+ *   - `undefined` (a MISSING field on a valid-JSON row) → the full fallback
+ *     length (today's default-seed disposition; the ready clamp re-adjusts it
+ *     if the live table differs). A whole-row corrupt-JSON persist never reaches
+ *     the merge — `JSON.parse` throws inside the storage getItem and zustand
+ *     short-circuits to the hydration catch, so the seed default survives.
+ *   - a present positive integer → kept AS-IS, NO upper bound (a legitimate
+ *     modded 7-tier count must survive the reboot; the ready clamp is the sole
+ *     upper bound, loss-free against the live table).
+ *   - a present-but-corrupt value ("x", 3.5, -5, 0, null, array) → the minimal
+ *     1 (fail-minimal: "corrupt" ≠ "missing", so it does NOT map to max).
+ * An out-of-range positive count parked here is inert: nothing consumes the
+ * count pre-ready (no solve without a catalog, no tier strip on the pre-ready
+ * screens), and the ready transition clamps it before the first solve.
+ */
+function sanitizeMergeTier(value: unknown, fallbackLength: number): number {
+  if (value === undefined) return fallbackLength;
+  if (typeof value === "number" && Number.isInteger(value) && value >= 1) {
+    return value;
   }
-  if (value < 1) return 1;
-  if (value > max) return max;
-  return value;
+  return 1;
+}
+
+/**
+ * Clamp a tier count to `[1, tableLength]` against a LIVE table length (#140 P0).
+ * The authoritative upper clamp: applied at every catalog→ready transition and
+ * by `setUnlockedTiers`, both of which can see the parsed `catalog.tiers`. A
+ * non-integer / below-1 value floors to 1; above the table length clamps down.
+ * This is what keeps `sliceTier`'s RangeError unreachable once the parsed table
+ * can diverge in length from the curated fallback.
+ */
+function clampTierToTable(count: number, tableLength: number): number {
+  if (!Number.isInteger(count) || count < 1) return 1;
+  if (count > tableLength) return tableLength;
+  return count;
+}
+
+/**
+ * Re-clamp a stage's `unlockedTiers` against a catalog's live tier table. Used
+ * inside the same `set()` that installs a ready catalog (composed into
+ * mapSelection at the install-and-derive sites, or as a plain pre-clamp before
+ * the shared derive) so no stale persisted/modded count reaches the solve.
+ */
+function clampSelectionTiers(sel: Selection, tiers: TierTable): Selection {
+  return {
+    ...sel,
+    unlockedTiers: {
+      belt: clampTierToTable(sel.unlockedTiers.belt, tiers.belt.length),
+      pipe: clampTierToTable(sel.unlockedTiers.pipe, tiers.pipe.length),
+    },
+  };
 }
 
 /** Normalize a caught plan-op failure to a string for `planError`. */
@@ -1194,6 +1254,64 @@ export function setBundledDocsProvider(
   provider: () => Promise<{ text: string; provenance: Provenance } | null>,
 ): void {
   bundledDocsProvider = provider;
+}
+
+/**
+ * Provenance-only seam (#144): the bundled-staleness comparison needs the
+ * ~200-byte provenance sidecar, never the 5.3 MB docs text — routing the check
+ * through bundledDocsProvider would re-download the catalog on every bundled
+ * boot, which is exactly what the cache exists to avoid. Default resolves null
+ * (unwired = no comparison, today's behaviour).
+ */
+let bundledProvenanceProvider: () => Promise<Provenance | null> = async () =>
+  null;
+
+export function setBundledProvenanceProvider(
+  provider: () => Promise<Provenance | null>,
+): void {
+  bundledProvenanceProvider = provider;
+}
+
+/**
+ * The detached bundled-refresh continuation, retained for the harness (#144):
+ * production never awaits it; tests await it to observe the refresh
+ * deterministically instead of polling. Null when no refresh was detached.
+ */
+let pendingRefresh: Promise<void> | null = null;
+
+export function pendingBundledRefresh(): Promise<void> | null {
+  return pendingRefresh;
+}
+
+/**
+ * Catalog-save serialization (#144): one last-writer-wins IDB row, three async
+ * writers (init's non-hit load, the detached refresh, user uploads). The queue
+ * makes row-write order equal set order, so the last set on any interleaving —
+ * always the user's — wins the row (never-evict). The chain itself never
+ * poisons (both outcomes settle it); the returned promise carries the op's
+ * real outcome so each caller keeps its own error handling. The planOpChain
+ * totality discipline, applied module-wide.
+ */
+let catalogSaveQueue: Promise<void> = Promise.resolve();
+
+function enqueueCatalogSave<T>(op: () => Promise<T>): Promise<T> {
+  const result = catalogSaveQueue.then(op);
+  catalogSaveQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+/**
+ * Test-only reset of the three #144 module-level bindings (leak hygiene, spec
+ * D1b): per-link totality already rules out queue poisoning and every enqueue
+ * is awaited before its action returns, so this is hygiene, not correctness.
+ */
+export function resetBundledRefreshSeams(): void {
+  bundledProvenanceProvider = async () => null;
+  pendingRefresh = null;
+  catalogSaveQueue = Promise.resolve();
 }
 
 // ---------------------------------------------------------------------------
@@ -1257,7 +1375,7 @@ export function createAppStore(storage?: StateStorage) {
         // savePlanAs). Returns "empty-name" for a whitespace name (caller shapes
         // the message) or "saved" once the row is committed.
         const savePlanFromFile = async (
-          file: PlanFileV8,
+          file: PlanFileV9,
         ): Promise<"saved" | "empty-name"> => {
           const trimmed = file.name.trim();
           if (trimmed === "") return "empty-name";
@@ -1266,7 +1384,7 @@ export function createAppStore(storage?: StateStorage) {
           const now = new Date().toISOString();
           if (match) {
             const prior = await loadPlanFile(match.id);
-            const plan: PlanFileV8 = {
+            const plan: PlanFileV9 = {
               ...file,
               name: trimmed,
               createdAt: prior?.createdAt ?? now,
@@ -1274,7 +1392,7 @@ export function createAppStore(storage?: StateStorage) {
             };
             await savePlanFile(plan, match.id);
           } else {
-            const plan: PlanFileV8 = {
+            const plan: PlanFileV9 = {
               ...file,
               name: trimmed,
               createdAt: now,
@@ -1319,10 +1437,71 @@ export function createAppStore(storage?: StateStorage) {
           proposePrefs: defaultProposePrefs(),
 
           async init() {
+            // The bundled load+parse+save sequence, shared by the non-hit
+            // fallback and the #144 staleness refresh. Parameterized by its
+            // APPLY (each caller decides how — and whether — a parsed catalog
+            // enters the store; returning false declines it) with the FAILURE
+            // fallback left to the caller. `unavailable` keeps the boundary-r1
+            // no-save carve-out: an unreadable row must not be clobbered, so
+            // that caller applies WITHOUT saving. Saves go through
+            // enqueueCatalogSave — the #144 row-write serialization.
+            const loadBundled = async (opts: {
+              unavailable: boolean;
+              apply: (catalog: Catalog, source: CatalogSource) => boolean;
+            }): Promise<boolean> => {
+              let bundled: { text: string; provenance: Provenance } | null;
+              try {
+                bundled = await bundledDocsProvider();
+              } catch {
+                bundled = null;
+              }
+              if (bundled === null) return false;
+              try {
+                const catalog = parseCatalogFromText(bundled.text);
+                const source: CatalogSource = {
+                  kind: "bundled",
+                  steamBuild: bundled.provenance.steamBuild,
+                  extractedAt: bundled.provenance.extractedAt,
+                };
+                if (!opts.apply(catalog, source)) return false;
+                if (opts.unavailable) {
+                  // Do NOT save: the unreadable row stays intact for a later
+                  // boot that can read it again (proven by the data-
+                  // preservation test).
+                  set({
+                    uploadError:
+                      "cached data couldn't be read this session — using bundled data",
+                  });
+                } else {
+                  // Cache the bundled catalog so later boots hit the fast
+                  // path (and keep the banner). Never-block save: a failure
+                  // leaves it usable this session, merely uncached, with an
+                  // uploadError note — same semantics as the upload path.
+                  try {
+                    await enqueueCatalogSave(() =>
+                      saveCatalog(bundled.text, catalog, source),
+                    );
+                  } catch (err) {
+                    const message =
+                      err instanceof Error ? err.message : String(err);
+                    set({
+                      uploadError: `bundled catalog loaded but could not be cached: ${message}`,
+                    });
+                  }
+                }
+                return true;
+              } catch {
+                // A corrupt bundled asset: the caller's failure fallback runs.
+                return false;
+              }
+            };
+
             const result = await loadCatalog();
             if (result.status === "hit") {
               // Cache wins: a user upload or a previously-cached bundled catalog
               // never regresses. The persisted row's source drives the banner.
+              // #144 set-first ordering: this fires before ANY network — the
+              // staleness check below is a detached continuation.
               set({
                 catalog: { status: "ready", catalog: result.catalog },
                 catalogSource: result.source,
@@ -1342,55 +1521,16 @@ export function createAppStore(storage?: StateStorage) {
               // we run bundled WITHOUT saving (usable this session, cache
               // untouched) and note it distinctly.
               const unavailable = result.status === "unavailable";
-              let bundled: { text: string; provenance: Provenance } | null;
-              try {
-                bundled = await bundledDocsProvider();
-              } catch {
-                bundled = null;
-              }
-
-              let ready = false;
-              if (bundled !== null) {
-                try {
-                  const catalog = parseCatalogFromText(bundled.text);
-                  const source: CatalogSource = {
-                    kind: "bundled",
-                    steamBuild: bundled.provenance.steamBuild,
-                    extractedAt: bundled.provenance.extractedAt,
-                  };
+              const ready = await loadBundled({
+                unavailable,
+                apply: (catalog, source) => {
                   set({
                     catalog: { status: "ready", catalog },
                     catalogSource: source,
                   });
-                  ready = true;
-                  if (unavailable) {
-                    // Do NOT save: the unreadable row stays intact for a later
-                    // boot that can read it again (proven by the data-
-                    // preservation test).
-                    set({
-                      uploadError:
-                        "cached data couldn't be read this session — using bundled data",
-                    });
-                  } else {
-                    // empty / stale: cache the bundled catalog so later boots hit
-                    // the fast path (and keep the banner). Never-block save: a
-                    // failure leaves it usable this session, merely uncached,
-                    // with an uploadError note — same semantics as the upload path.
-                    try {
-                      await saveCatalog(bundled.text, catalog, source);
-                    } catch (err) {
-                      const message =
-                        err instanceof Error ? err.message : String(err);
-                      set({
-                        uploadError: `bundled catalog loaded but could not be cached: ${message}`,
-                      });
-                    }
-                  }
-                } catch {
-                  // A corrupt bundled asset degrades to needs-upload below.
-                  ready = false;
-                }
-              }
+                  return true;
+                },
+              });
 
               if (!ready) {
                 // 'unavailable' is not a UI reason (the frozen union has only
@@ -1404,8 +1544,84 @@ export function createAppStore(storage?: StateStorage) {
             }
             // First derive, after hydration + the catalog resolves. Re-derive
             // ALL stages (cadence table): hydration is tiers-only and every
-            // stage boots default, so no #5 override-clear is needed — identity.
-            set((s) => deriveAllStages(s, (sel) => sel));
+            // stage boots default, so no #5 override-clear is needed. #140 P0:
+            // the ready clamp for BOTH bare-install sites (the hit branch and
+            // the loadBundled fallback) lives HERE — a plain pre-clamp before
+            // this shared derive, re-clamping each stage's unlockedTiers against
+            // the now-live table. When the catalog resolved to needs-upload the
+            // mapper is identity (no table to clamp against).
+            set((s) =>
+              deriveAllStages(s, (sel) =>
+                s.catalog.status === "ready"
+                  ? clampSelectionTiers(sel, s.catalog.catalog.tiers)
+                  : sel,
+              ),
+            );
+
+            // #144 bundled-staleness self-heal: DETACHED continuation — init()
+            // resolves here; production never awaits this chain (tests do, via
+            // pendingBundledRefresh). It swallows every error. A user row never
+            // enters (never-evict by construction); a legacy backfilled row
+            // reads {kind:"user"} and correctly never auto-refreshes.
+            if (result.status === "hit" && result.source.kind === "bundled") {
+              const cachedBuild = result.source.steamBuild;
+              pendingRefresh = (async () => {
+                try {
+                  let prov: Provenance | null;
+                  try {
+                    prov = await bundledProvenanceProvider();
+                  } catch {
+                    prov = null;
+                  }
+                  // Fetch failed / unwired / equal build → keep the hit.
+                  if (prov === null || prov.steamBuild === cachedBuild) return;
+                  await loadBundled({
+                    unavailable: false,
+                    apply: (catalog, source) => {
+                      // Never-evict guard (spec D1b): a user upload may have
+                      // landed during the refresh window — apply only if the
+                      // live source is still bundled. Check and set share one
+                      // microtask; the save-vs-save race is closed separately
+                      // by enqueueCatalogSave (row-write order = set order).
+                      if (get().catalogSource?.kind !== "bundled") return false;
+                      // Apply like a live upload (the replace-while-ready
+                      // precedent): one set carrying the new catalog AND the
+                      // full re-derive, else stages stay solved against the
+                      // old catalog. Bundled swaps are same-schema, so unlike
+                      // an upload no recipeId re-validation is needed — but
+                      // the #5 treatment is kept identical to the upload path
+                      // for the same reason it exists there.
+                      set((s) => {
+                        const withCatalog: GraphSlice = {
+                          ...s,
+                          catalog: { status: "ready", catalog },
+                        };
+                        return {
+                          // #140 P0: clamp each stage's tiers against the new
+                          // table BEFORE the derive (composed into mapSelection),
+                          // else a persisted/modded count could exceed a
+                          // shorter parsed table and crash sliceTier.
+                          ...deriveAllStages(withCatalog, (sel) => ({
+                            ...clampSelectionTiers(sel, catalog.tiers),
+                            recipeId:
+                              sel.recipeId !== null &&
+                              catalog.recipes[sel.recipeId] !== undefined
+                                ? sel.recipeId
+                                : null,
+                            overrides: { feeds: {}, outputs: {} },
+                          })),
+                          catalogSource: source,
+                        };
+                      });
+                      return true;
+                    },
+                  });
+                } catch {
+                  // Detached chain: nothing may escape to an unhandled
+                  // rejection (spec D1b promise boundary).
+                }
+              })();
+            }
           },
 
           async uploadDocsText(text: string) {
@@ -1452,8 +1668,12 @@ export function createAppStore(storage?: StateStorage) {
                 catalog: { status: "ready", catalog },
               };
               return {
+                // #140 P0: clamp each stage's tiers against the uploaded table
+                // BEFORE the derive (composed into mapSelection), else a
+                // persisted/modded count could exceed a shorter parsed table
+                // and crash sliceTier on the first solve.
                 ...deriveAllStages(withCatalog, (sel) => ({
-                  ...sel,
+                  ...clampSelectionTiers(sel, catalog.tiers),
                   recipeId:
                     sel.recipeId !== null &&
                     catalog.recipes[sel.recipeId] !== undefined
@@ -1470,7 +1690,9 @@ export function createAppStore(storage?: StateStorage) {
             // catalog is usable this session, merely uncached — with uploadError
             // noting the cache miss (frozen Axis 4 wide catch).
             try {
-              await saveCatalog(text, catalog, { kind: "user" });
+              await enqueueCatalogSave(() =>
+                saveCatalog(text, catalog, { kind: "user" }),
+              );
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err);
               set({
@@ -1548,11 +1770,18 @@ export function createAppStore(storage?: StateStorage) {
           setUnlockedTiers(t: { belt: number; pipe: number }) {
             // Tiers are GLOBAL (game progression, not per-stage config): a tier
             // change writes ALL stages and re-derives every one (cadence table).
-            // Clamp at the action boundary so toStageInput's tier-range throw is
-            // unreachable from store-driven flows (derive still catches).
+            // Clamp at the action boundary against the LIVE catalog table (#140
+            // P0) so toStageInput's tier-range throw is unreachable from
+            // store-driven flows (derive still catches). A tier control only
+            // renders on a ready catalog; guard defensively — with no ready
+            // catalog fall back to the curated table lengths.
+            const tiers =
+              get().catalog.status === "ready"
+                ? (get().catalog as { catalog: Catalog }).catalog.tiers
+                : TIER_TABLE;
             const clamped = {
-              belt: clampTier("belt", t.belt),
-              pipe: clampTier("pipe", t.pipe),
+              belt: clampTierToTable(t.belt, tiers.belt.length),
+              pipe: clampTierToTable(t.pipe, tiers.pipe.length),
             };
             set((s) =>
               deriveAllStages(s, (sel) => ({
@@ -1613,6 +1842,22 @@ export function createAppStore(storage?: StateStorage) {
             set((s) => {
               const stage = s.stages[stageId];
               if (stage === undefined || itemId === "") return {};
+              // The write boundary must canonicalize the packaging interstep,
+              // exactly as setLinkInterstep does: savePlan is a bare db.put with
+              // no validation, so a stale returnTransport key or an illegal
+              // (pipe / fluid-truck) route would otherwise reach IndexedDB
+              // unvalidated and surface as a refusal of the ENTIRE plan on the
+              // next load. canonicalizePackagingInterstep rebuilds the object and
+              // returns null on an illegal route → drop the whole write, so the
+              // enabling edit never persists an unreadable interstep.
+              let normalized = selection;
+              if (selection !== null && selection.packaging !== undefined) {
+                const canonical = canonicalizePackagingInterstep(
+                  selection.packaging,
+                );
+                if (canonical === null) return {};
+                normalized = { ...selection, packaging: canonical };
+              }
               const extraction: Record<string, ExtractionSelection> =
                 Object.create(null);
               for (const [key, value] of Object.entries(
@@ -1620,8 +1865,8 @@ export function createAppStore(storage?: StateStorage) {
               )) {
                 extraction[key] = value;
               }
-              if (selection === null) delete extraction[itemId];
-              else extraction[itemId] = copyExtractionSelection(selection);
+              if (normalized === null) delete extraction[itemId];
+              else extraction[itemId] = copyExtractionSelection(normalized);
               const nextStage: StageNode = {
                 ...stage,
                 ...(Object.keys(extraction).length > 0
@@ -1775,7 +2020,7 @@ export function createAppStore(storage?: StateStorage) {
           setLinkTransport(linkId: string, transport: LinkTransport) {
             // Numeric text remains raw until derive, but the public action
             // rebuilds the structural shape so wider/type-erased callers cannot
-            // create a plan that strict v8 persistence later refuses.
+            // create a plan that strict v9 persistence later refuses.
             set((s) => {
               const canonical = canonicalizeLinkTransport(transport);
               if (canonical === null) return {};
@@ -1966,7 +2211,7 @@ export function createAppStore(storage?: StateStorage) {
                 // presence alone cannot distinguish auto from user placement.
                 const s = get();
                 const indexOf = new Map(s.stageOrder.map((id, i) => [id, i]));
-                const stages: PlanStageV7[] = s.stageOrder.map((id) => {
+                const stages: PlanStageV8[] = s.stageOrder.map((id) => {
                   const node = s.stages[id]!;
                   return {
                     name: node.name,
@@ -1994,8 +2239,8 @@ export function createAppStore(storage?: StateStorage) {
                 }));
                 if (match) {
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV8 = {
-                    format_version: 8,
+                  const plan: PlanFileV9 = {
+                    format_version: 9,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
@@ -2005,8 +2250,8 @@ export function createAppStore(storage?: StateStorage) {
                   };
                   await savePlanFile(plan, match.id);
                 } else {
-                  const plan: PlanFileV8 = {
-                    format_version: 8,
+                  const plan: PlanFileV9 = {
+                    format_version: 9,
                     name: trimmed,
                     createdAt: now,
                     updatedAt: now,
@@ -2027,7 +2272,7 @@ export function createAppStore(storage?: StateStorage) {
             return enqueue(async () => {
               set({ planError: null });
               try {
-                // Load with origin: validation returns v8, whose required
+                // Load with origin: validation returns v9, whose required
                 // userPlaced flag already materializes native or migrated origin.
                 const file = await loadPlanFile(id);
                 if (file === null) {
@@ -2071,9 +2316,9 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                // loadPlanFile returns v8 (migrating older rows), so renaming an
-                // older row rewrites it as v8 under the save-over model.
-                const renamed: PlanFileV8 = {
+                // loadPlanFile returns v9 (migrating older rows), so renaming an
+                // older row rewrites it as v9 under the save-over model.
+                const renamed: PlanFileV9 = {
                   ...plan,
                   name: trimmed,
                   updatedAt: new Date().toISOString(),
@@ -2124,7 +2369,7 @@ export function createAppStore(storage?: StateStorage) {
             await enqueue(async () => {
               const metas = await listPlanFiles();
               if (metas.length === 0) return; // result stays null
-              const plans: PlanFileV8[] = [];
+              const plans: PlanFileV9[] = [];
               for (const meta of metas) {
                 const file = await loadPlanFile(meta.id);
                 // A row that fails to load (corrupt/foreign) is skipped rather
@@ -2238,15 +2483,22 @@ export function createAppStore(storage?: StateStorage) {
           proposePrefs: s.proposePrefs,
         }),
         // Validating merge (runs synchronously during createAppStore, before
-        // init): write the persisted tiers, clamped/defaulted, into EVERY stage
+        // init): write the persisted tiers, sanitized, into EVERY stage
         // (tiers-global) + the top-level mirror. At merge time only the default
         // stage exists, but writing all stages keeps the invariant honest.
+        //
+        // #140 P0: the merge is FLOOR-ONLY — no catalog exists yet, so it cannot
+        // bound above. `undefined` (a missing field) defaults to the full
+        // fallback length; a present positive integer is KEPT (a modded 7-tier
+        // count must survive the reboot — down-bounding here was a silent-loss
+        // defect); anything present-but-corrupt fails minimal to 1. The
+        // authoritative upper clamp fires at the catalog→ready transition.
         merge: (persisted, current): Store => {
           const p = persisted as Partial<PersistedShape> | undefined;
           const tiers = p?.unlockedTiers;
           const unlockedTiers = {
-            belt: clampTier("belt", tiers?.belt),
-            pipe: clampTier("pipe", tiers?.pipe),
+            belt: sanitizeMergeTier(tiers?.belt, TIER_TABLE.belt.length),
+            pipe: sanitizeMergeTier(tiers?.pipe, TIER_TABLE.pipe.length),
           };
           const stages: Record<string, StageNode> = {};
           for (const id of Object.keys(current.stages)) {

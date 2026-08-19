@@ -74,24 +74,25 @@ describe("computeLayout — worked example (N=20)", () => {
     );
   });
 
-  it("passes each segment's exact peakFlow through", () => {
+  it("passes each segment's exact entryFlow through", () => {
     const feed = layout.feeds[0]!;
-    // Head segment peaks at belt 1's 480 entry (exact-drain worked example).
-    expect(feed.segments[0]!.peakFlow.eq(Fraction.from(480))).toBe(true);
-    expect(feed.segments[1]!.peakFlow.eq(Fraction.from(120))).toBe(true);
+    // Head segment entry flow is belt 1's 480 (exact-drain worked example);
+    // feed entryFlow = residue-in + capacity = the old peakFlow, unchanged.
+    expect(feed.segments[0]!.entryFlow.eq(Fraction.from(480))).toBe(true);
+    expect(feed.segments[1]!.entryFlow.eq(Fraction.from(120))).toBe(true);
   });
 });
 
-describe("computeLayout — peakFlow ≠ belt capacity (N=17 under-filled span)", () => {
-  it("keeps the honest span peak when the breakout's tier exceeds its load", () => {
+describe("computeLayout — entryFlow ≠ belt capacity (N=17 under-filled span)", () => {
+  it("keeps the honest span entry flow when the breakout's tier exceeds its load", () => {
     // Output side, N=17: the second breakout spans machine 17 only — load
-    // 30/min but assigned tier Mk1 (60/min). peakFlow must stay 30, not the
-    // belt's capacity — the divergence the boundary review r1 caught.
+    // 30/min but assigned tier Mk1 (60/min). entryFlow = load must stay 30, not
+    // the belt's capacity — the divergence the boundary review r1 caught.
     const result = solveStage(stage(17));
     const out = computeLayout(result, 17).outputs[0]!;
     const last = out.segments[out.segments.length - 1]!;
     expect(last.fromMachine).toBe(17);
-    expect(last.peakFlow.eq(Fraction.from(30))).toBe(true);
+    expect(last.entryFlow.eq(Fraction.from(30))).toBe(true);
     expect(
       result.outputs[0]!.breakouts[last.beltIndex]!.capacity.eq(
         Fraction.from(60),
@@ -117,6 +118,63 @@ describe("computeLayout — compression", () => {
   });
 });
 
+describe("computeLayout — machineRowH parameter (P3 build-view ruler)", () => {
+  it("shrinks the view by exactly 28px at rulerH 12 vs the default 40", () => {
+    // The build view passes LAYOUT.rulerH (12); the machines view keeps the
+    // default machineH (40). The whole difference is the 28px the machine block
+    // shed — height and the output lanes drop by exactly that.
+    const result = workedResult();
+    const ruler = computeLayout(result, 20, LAYOUT.rulerH);
+    const block = computeLayout(result, 20);
+    expect(block.height - ruler.height).toBe(28);
+    expect(LAYOUT.machineH - LAYOUT.rulerH).toBe(28);
+    // The output lane's top drops by the same 28 (the risen outputTop).
+    expect(block.outputs[0]!.y - ruler.outputs[0]!.y).toBe(28);
+  });
+
+  it("keeps machineTop IDENTICAL across both row heights (the register pin)", () => {
+    // machineTop carries no machineRowH term — it registers with the feed lanes
+    // + P2 rows ABOVE the machine row, so shrinking the row must not move it.
+    const result = workedResult();
+    const ruler = computeLayout(result, 20, LAYOUT.rulerH);
+    const block = computeLayout(result, 20);
+    expect(ruler.machineTop).toBe(block.machineTop);
+    // And every feed-lane pixel is untouched (the P2 register guarantee).
+    expect(ruler.feeds[0]!.y).toBe(block.feeds[0]!.y);
+    expect(ruler.feeds[0]!.busY).toBe(block.feeds[0]!.busY);
+  });
+
+  it("defaults the third argument to machineH 40 (the ~21 call sites stay valid)", () => {
+    // A call WITHOUT the third argument type-checks (npm run check is the real
+    // gate) and equals the explicit machineRowH-40 result — so the existing call
+    // sites keep the block layout unchanged.
+    const result = workedResult();
+    const bare = computeLayout(result, 20);
+    const explicit = computeLayout(result, 20, LAYOUT.machineH);
+    expect(bare).toEqual(explicit);
+  });
+
+  it("computes significant non-empty at N=106, on the 17-stretch boundaries", () => {
+    // N=106 is BELOW the band threshold (114), so the old gate would leave
+    // significant empty. Post-P3 it is the solver-derived union — non-empty, its
+    // MAJOR ticks landing on the 17-machine feed-stretch boundaries (16/17,
+    // 32/33, …), never labelStep arithmetic.
+    const layout = computeLayout(solveStage(stage(106)), 106);
+    expect(layout.band).toBe(false);
+    expect(layout.significant.length).toBeGreaterThan(0);
+    expect(layout.significant).toEqual([
+      1, 16, 17, 32, 33, 48, 49, 64, 65, 80, 81, 96, 97, 106,
+    ]);
+    // Each MAJOR tick x = the machine's left edge = a feed segment boundary x.
+    const feed = layout.feeds[0]!;
+    const boundaryXs = new Set(feed.segments.flatMap((s) => [s.x1, s.x2]));
+    // The interior stretch boundaries (indices 16,17,32,… map to seg x's).
+    const xOf = (index: number) => layout.machines[index - 1]!.x;
+    // machine 17's left edge is the head segment's x2 (a real boundary).
+    expect(boundaryXs.has(xOf(17))).toBe(true);
+  });
+});
+
 describe("bandMode — the LOD threshold (Stage 12 P1 Axis 1)", () => {
   it("is the pitch clamp's own floor: false at N=114, true at N=115", () => {
     // USABLE/minPitch = 912/8 = 114. floor(912/114)=8 (not floored) → readable
@@ -128,9 +186,20 @@ describe("bandMode — the LOD threshold (Stage 12 P1 Axis 1)", () => {
     expect(computeLayout(solveStage(stage(115)), 115).band).toBe(true);
   });
 
-  it("leaves the significant set empty below the threshold", () => {
-    // Off = the full per-machine tick row renders, so no significant subset.
-    expect(computeLayout(solveStage(stage(114)), 114).significant).toEqual([]);
+  it("computes the significant set BELOW the threshold too (P3 un-gating)", () => {
+    // P3: significant no longer gates on band — the build-view ruler draws MAJOR
+    // ticks from it in both density modes, so at N=114 (band=false) it is the
+    // same solver-derived set-union, NON-EMPTY. labeledSignificant stays gated
+    // (the sibling test below holds it empty here).
+    const layout = computeLayout(solveStage(stage(114)), 114);
+    expect(layout.band).toBe(false);
+    expect(layout.significant.length).toBeGreaterThan(0);
+    // The stretch boundaries the WORKED fixture emits (16-machine feed spans):
+    // machine 1 (head), then the (16k, 16k+1) segment-boundary pairs, ending at
+    // 114. Pinned exactly so the un-gated union can't silently drift.
+    expect(layout.significant).toEqual([
+      1, 16, 17, 32, 33, 48, 49, 64, 65, 80, 81, 96, 97, 112, 113, 114,
+    ]);
   });
 });
 
@@ -253,7 +322,9 @@ describe("computeLayout — band significant set (N=161)", () => {
   });
 
   it("labeledSignificant is empty below the band threshold", () => {
-    // band=false ⇒ no significant subset, no labels.
+    // band=false ⇒ label thinning is a band-only concern, so no labeled subset.
+    // (significant itself is NON-empty here post-P3 — the sibling flip pin above;
+    // only the label-thinning stays band-gated.)
     expect(
       computeLayout(solveStage(stage(114)), 114).labeledSignificant,
     ).toEqual([]);

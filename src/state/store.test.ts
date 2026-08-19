@@ -7,8 +7,15 @@ import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
 import type { Catalog } from "../data/types.ts";
-import type { PlanFileV1, PlanFileV2, PlanFileV8 } from "../data/plan-store.ts";
-import { createAppStore, setBundledDocsProvider, canLink } from "./store.ts";
+import type { PlanFileV1, PlanFileV2, PlanFileV9 } from "../data/plan-store.ts";
+import {
+  createAppStore,
+  setBundledDocsProvider,
+  setBundledProvenanceProvider,
+  pendingBundledRefresh,
+  resetBundledRefreshSeams,
+  canLink,
+} from "./store.ts";
 import type {
   StageLink,
   NewStageLink,
@@ -135,6 +142,38 @@ const BUNDLED_DOCS_TEXT = readFileSync(
   "utf8",
 );
 
+// #140 P0: a Docs.json text carrying the `ingot_iron` spine PLUS an explicit
+// belt/pipe tier count, so a parsed catalog has a KNOWN-length tier table (the
+// ready clamp / selector-max reroute pins). `beltTiers` belt classes derive to
+// ascending tiers (mSpeed = 2 × items/min); `pipeTiers` pipe classes likewise
+// (mFlowLimit = m³/min ÷ 60). Both must be ≥ 1.
+function docsTextWithTierCount(beltTiers: number, pipeTiers: number): string {
+  const belts = Array.from({ length: beltTiers }, (_, i) => ({
+    ClassName: `Build_ConveyorBeltMk${i + 1}_C`,
+    // Distinct ascending speeds: 120, 240, 360, … → items/min 60, 120, 180, …
+    mSpeed: `${(i + 1) * 120}.000000`,
+  }));
+  const pipes = Array.from({ length: pipeTiers }, (_, i) => ({
+    ClassName: `Build_PipelineMk${i + 1}_C`,
+    // Distinct ascending flow limits: 5, 10, 15, … → m³/min 300, 600, 900, …
+    mFlowLimit: `${(i + 1) * 5}.000000`,
+  }));
+  const parsed = JSON.parse(DOCS_TEXT) as unknown[];
+  return JSON.stringify([
+    ...parsed,
+    {
+      NativeClass:
+        "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableConveyorBelt'",
+      Classes: belts,
+    },
+    {
+      NativeClass:
+        "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildablePipeline'",
+      Classes: pipes,
+    },
+  ]);
+}
+
 function compileTimeNewLinkConstraint(): void {
   const wider = {} as StageLink;
   // @ts-expect-error A wider StageLink may carry guarded interstep intent.
@@ -224,6 +263,10 @@ beforeEach(async () => {
   // Reset the module-level bundled-docs seam so a test that installs a provider
   // never leaks into the next; the default degrades (resolves null).
   setBundledDocsProvider(async () => null);
+  // #144: reset all three refresh bindings in the same place (provenance
+  // provider, retained refresh promise, save queue) — leak hygiene; a
+  // never-resolving provenance stub would otherwise dangle across tests.
+  resetBundledRefreshSeams();
 });
 
 // ---------------------------------------------------------------------------
@@ -275,6 +318,165 @@ describe("catalog lifecycle (spec row 1)", () => {
     if (s.catalog.status === "needs-upload") {
       expect(s.catalog.reason).toBe("stale");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #144 — bundled-staleness self-heal (spec: features/catalog-staleness)
+// ---------------------------------------------------------------------------
+
+describe("bundled staleness self-heal (#144)", () => {
+  const NEW_PROVENANCE = { steamBuild: "99999999", extractedAt: "2026-08-18" };
+
+  /** Seed the IDB row as a BUNDLED catalog at the fixture build. */
+  async function seedBundledRow(): Promise<void> {
+    await saveCatalog(DOCS_TEXT, parseCatalogFromText(DOCS_TEXT), {
+      kind: "bundled",
+      ...BUNDLED_PROVENANCE,
+    });
+  }
+
+  async function readRowSource(): Promise<unknown> {
+    const { openDb } = await import("../data/db.ts");
+    const db = await openDb();
+    const row = await db.get<{ source?: unknown }>("catalog", "current");
+    return row?.source;
+  }
+
+  it("equal build → ready from cache, docs provider never called", async () => {
+    await seedBundledRow();
+    let docsCalls = 0;
+    setBundledDocsProvider(async () => {
+      docsCalls++;
+      return null;
+    });
+    setBundledProvenanceProvider(async () => ({ ...BUNDLED_PROVENANCE }));
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    await pendingBundledRefresh();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    expect(s.catalogSource).toEqual({ kind: "bundled", ...BUNDLED_PROVENANCE });
+    expect(docsCalls).toBe(0);
+  });
+
+  it("differing build → refresh applies + row re-saved on the new build", async () => {
+    await seedBundledRow();
+    setBundledProvenanceProvider(async () => ({ ...NEW_PROVENANCE }));
+    setBundledDocsProvider(async () => ({
+      text: DOCS_TEXT,
+      provenance: { ...NEW_PROVENANCE },
+    }));
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    await pendingBundledRefresh();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    expect(s.catalogSource).toEqual({ kind: "bundled", ...NEW_PROVENANCE });
+    expect(await readRowSource()).toEqual({
+      kind: "bundled",
+      ...NEW_PROVENANCE,
+    });
+  });
+
+  it("provenance fetch fails → cached hit kept, no eviction", async () => {
+    await seedBundledRow();
+    let docsCalls = 0;
+    setBundledDocsProvider(async () => {
+      docsCalls++;
+      return null;
+    });
+    setBundledProvenanceProvider(async () => {
+      throw new Error("offline");
+    });
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    await pendingBundledRefresh();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    expect(s.catalogSource).toEqual({ kind: "bundled", ...BUNDLED_PROVENANCE });
+    expect(docsCalls).toBe(0);
+  });
+
+  it("differing build + docs provider fails → ready stays on the CACHED catalog", async () => {
+    await seedBundledRow();
+    setBundledProvenanceProvider(async () => ({ ...NEW_PROVENANCE }));
+    setBundledDocsProvider(async () => null);
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    await pendingBundledRefresh();
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    expect(s.catalogSource).toEqual({ kind: "bundled", ...BUNDLED_PROVENANCE });
+    expect(await readRowSource()).toEqual({
+      kind: "bundled",
+      ...BUNDLED_PROVENANCE,
+    });
+  });
+
+  it("user hit → provenance provider never consulted, no refresh detached", async () => {
+    await saveCatalog(DOCS_TEXT, parseCatalogFromText(DOCS_TEXT)); // {kind:"user"}
+    let provCalls = 0;
+    setBundledProvenanceProvider(async () => {
+      provCalls++;
+      return { ...NEW_PROVENANCE };
+    });
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    expect(provCalls).toBe(0);
+    expect(pendingBundledRefresh()).toBeNull();
+    expect(store.getState().catalogSource).toEqual({ kind: "user" });
+  });
+
+  it("ordering pin: a never-resolving provenance fetch does not block ready", async () => {
+    await seedBundledRow();
+    setBundledProvenanceProvider(() => new Promise(() => {}));
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init(); // must RETURN — the refresh is detached
+    const s = store.getState();
+    expect(s.catalog.status).toBe("ready");
+    expect(s.catalogSource).toEqual({ kind: "bundled", ...BUNDLED_PROVENANCE });
+  });
+
+  it("upload-race pin: an upload landing mid-window wins memory AND the row", async () => {
+    await seedBundledRow();
+    setBundledProvenanceProvider(async () => ({ ...NEW_PROVENANCE }));
+    // Gate the docs fetch so the refresh can only complete after the upload.
+    let releaseDocs: () => void = () => {};
+    const docsGate = new Promise<void>((r) => {
+      releaseDocs = r;
+    });
+    setBundledDocsProvider(async () => {
+      await docsGate;
+      return { text: DOCS_TEXT, provenance: { ...NEW_PROVENANCE } };
+    });
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    // The refresh is now parked on the gate; land a user upload first.
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    releaseDocs();
+    await pendingBundledRefresh();
+    // The guard must have discarded the refresh: user survives everywhere.
+    expect(store.getState().catalogSource).toEqual({ kind: "user" });
+    expect(await readRowSource()).toEqual({ kind: "user" });
+  });
+
+  it("save-serialization pin: a race between refresh and upload always ends user", async () => {
+    await seedBundledRow();
+    setBundledProvenanceProvider(async () => ({ ...NEW_PROVENANCE }));
+    setBundledDocsProvider(async () => ({
+      text: DOCS_TEXT,
+      provenance: { ...NEW_PROVENANCE },
+    }));
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().init();
+    // Fire the upload WITHOUT awaiting the refresh first: the two async
+    // chains genuinely race; the save queue must make the user's row-write
+    // land last on every interleaving.
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    await pendingBundledRefresh();
+    expect(store.getState().catalogSource).toEqual({ kind: "user" });
+    expect(await readRowSource()).toEqual({ kind: "user" });
   });
 });
 
@@ -369,13 +571,23 @@ describe("invalid-input routing (spec row 5)", () => {
     return store;
   }
 
-  it("clock '0' / 'abc' / '-5' → invalid bad-clock", async () => {
+  it("clock '0' / 'abc' / '-5' / '0.5' / '1000' → invalid bad-clock", async () => {
+    // '0.5' and '1000' pin ticket #143: the derive now shares parseClockText's
+    // [1, 250] range, so an out-of-range clock can no longer reach the solver.
     const store = await readyWithRecipe();
-    for (const bad of ["0", "abc", "-5"]) {
+    for (const bad of ["0", "abc", "-5", "0.5", "1000"]) {
       store.getState().setClockPercentText(bad);
       const s = store.getState().solve;
       expect(s.status, `clock ${bad}`).toBe("invalid");
       if (s.status === "invalid") expect(s.reason).toBe("bad-clock");
+    }
+  });
+
+  it("clock '1' (the floor) and '250' (the cap) solve", async () => {
+    const store = await readyWithRecipe();
+    for (const ok of ["1", "250"]) {
+      store.getState().setClockPercentText(ok);
+      expect(store.getState().solve.status, `clock ${ok}`).toBe("solved");
     }
   });
 
@@ -679,7 +891,12 @@ describe("persistence (spec row 7)", () => {
     });
   });
 
-  it("out-of-range persisted tiers are clamped on hydration", async () => {
+  it("out-of-range persisted tiers survive the merge, then clamp at the READY transition (#140 P0 deferred semantics)", async () => {
+    // #140 P0: the merge no longer bounds above (it runs pre-catalog and can't
+    // see the live table). A too-high belt PERSISTS through hydration — inert,
+    // since nothing consumes the count pre-ready — and the AUTHORITATIVE clamp
+    // fires when a catalog goes ready. pipe 0 is present-but-corrupt → floors
+    // to 1 at the merge already.
     const { storage } = makeStorageStub({
       "satis_foundry:tiers": JSON.stringify({
         state: { unlockedTiers: { belt: 99, pipe: 0 } },
@@ -687,7 +904,103 @@ describe("persistence (spec row 7)", () => {
       }),
     });
     const store = createAppStore(storage);
-    // belt clamps to the table length (6); pipe clamps up to the floor (1).
+    // Pre-ready: belt 99 kept verbatim; pipe floored to 1 by the merge.
+    expect(store.getState().selection.unlockedTiers).toEqual({
+      belt: 99,
+      pipe: 1,
+    });
+    expect(store.getState().catalog.status).not.toBe("ready");
+
+    // Drive a ready transition via a real upload (a 6-belt / 2-pipe table).
+    await store.getState().uploadDocsText(docsTextWithTierCount(6, 2));
+    expect(store.getState().catalog.status).toBe("ready");
+    // Now the live table's lengths bind: belt 99 → 6, pipe stays 1.
+    expect(store.getState().selection.unlockedTiers).toEqual({
+      belt: 6,
+      pipe: 1,
+    });
+  });
+
+  it("NON-VACUOUS clamp-at-ready: a persisted 6 clamps to a SHORTER parsed 3-belt table and solves, not throws (#140 P0)", async () => {
+    // The pin that would pass vacuously against the 6-tier fallback: a persisted
+    // belt of 6 loading a PARSED table of only 3 belt tiers must clamp to 3 at
+    // the ready transition, else sliceTier throws its RangeError into the first
+    // solve. Pinning against the fallback-length table would miss exactly this.
+    const { storage } = makeStorageStub({
+      "satis_foundry:tiers": JSON.stringify({
+        state: { unlockedTiers: { belt: 6, pipe: 2 } },
+        version: 0,
+      }),
+    });
+    const store = createAppStore(storage);
+    expect(store.getState().selection.unlockedTiers.belt).toBe(6);
+
+    // Upload a catalog whose parsed belt table has only 3 tiers.
+    await store.getState().uploadDocsText(docsTextWithTierCount(3, 1));
+    expect(store.getState().catalog.status).toBe("ready");
+    // Clamped to the shorter table: belt 3, pipe 1.
+    expect(store.getState().selection.unlockedTiers).toEqual({
+      belt: 3,
+      pipe: 1,
+    });
+    // And a solve against that clamp does NOT throw sliceTier's RangeError: pick
+    // the recipe, then confirm the stage solves (not an invalid bad-override).
+    store.getState().selectRecipe("ingot_iron");
+    expect(store.getState().solve.status).toBe("solved");
+  });
+
+  it("loss-free reboot: persisted belt 7 + a 7-tier parsed catalog stays 7 (no constant-bound merge clamp) (#140 P0)", async () => {
+    // The regression killer: a legitimate modded 7-belt count must survive the
+    // reboot. The merge keeps it (no upper bound); the ready clamp sees max 7,
+    // so it stays 7 — a down-bounding merge clamp would have destroyed it.
+    const { storage } = makeStorageStub({
+      "satis_foundry:tiers": JSON.stringify({
+        state: { unlockedTiers: { belt: 7, pipe: 2 } },
+        version: 0,
+      }),
+    });
+    const store = createAppStore(storage);
+    expect(store.getState().selection.unlockedTiers.belt).toBe(7);
+
+    await store.getState().uploadDocsText(docsTextWithTierCount(7, 2));
+    expect(store.getState().catalog.status).toBe("ready");
+    expect(store.getState().selection.unlockedTiers).toEqual({
+      belt: 7,
+      pipe: 2,
+    });
+  });
+
+  it("junk sanitization: a present-but-corrupt persisted belt (-5 / 'x' / 3.5) floors to 1 at the merge (#140 P0)", () => {
+    // Present-but-corrupt ≠ missing: fail-minimal to 1, NOT to max. Exercised
+    // pre-ready so the merge floor is what's asserted (each drives the bucket-3
+    // branch of sanitizeMergeTier).
+    for (const bad of [-5, "x", 3.5] as const) {
+      const { storage } = makeStorageStub({
+        "satis_foundry:tiers": JSON.stringify({
+          state: { unlockedTiers: { belt: bad, pipe: 2 } },
+          version: 0,
+        }),
+      });
+      const store = createAppStore(storage);
+      expect(store.getState().selection.unlockedTiers.belt).toBe(1);
+      // pipe 2 is a valid present integer → kept as-is (no upper bound pre-ready).
+      expect(store.getState().selection.unlockedTiers.pipe).toBe(2);
+    }
+  });
+
+  it("missing-field sanitization: an absent belt field → the full fallback length (6) VIA THE MERGE, pipe kept (#140 P0)", () => {
+    // Bucket 1 (undefined → max). Every other persistence fixture supplies BOTH
+    // fields, so this is the only pin that drives the merge's `undefined` branch
+    // through a valid-JSON row — a sanitizer routing undefined → 1 would pass
+    // every other test while silently regressing a full unlock to 1.
+    const { storage } = makeStorageStub({
+      "satis_foundry:tiers": JSON.stringify({
+        state: { unlockedTiers: { pipe: 1 } },
+        version: 0,
+      }),
+    });
+    const store = createAppStore(storage);
+    // belt absent → full fallback length (6); pipe 1 kept.
     expect(store.getState().selection.unlockedTiers).toEqual({
       belt: 6,
       pipe: 1,
@@ -1752,8 +2065,8 @@ describe("extraction selection state (#112)", () => {
     await store.getState().savePlanAs("Extraction");
     const planId = store.getState().plans![0]!.id;
     const db = await (await import("../data/db.ts")).openDb();
-    const written = (await db.get<PlanFileV8>("plans", planId))!;
-    expect(written.format_version).toBe(8);
+    const written = (await db.get<PlanFileV9>("plans", planId))!;
+    expect(written.format_version).toBe(9);
     expect(written.stages[0]!.extraction?.__proto__?.purityMix).toEqual({
       impure: "01",
       normal: "bad",
@@ -1770,6 +2083,99 @@ describe("extraction selection state (#112)", () => {
       purityMix: { impure: "01", normal: "bad", pure: "3" },
     });
     expect(Object.getPrototypeOf(extraction)).toBeNull();
+  });
+
+  it("canonicalizes an extraction packaging write and drops an illegal route", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    const id = store.getState().activeStageId;
+    // A pipe return route is illegal for solid packaged cargo:
+    // canonicalizePackagingInterstep returns null, so the whole write is dropped
+    // (the extraction path has no self-heal — an illegal seed must never land).
+    store.getState().setExtractionSelection(id, "water", {
+      machineId: "water_extractor",
+      clockPercentText: "100",
+      packaging: {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "100",
+        returnTransport: { mode: "pipe" },
+      },
+    });
+    expect(store.getState().stages[id]!.extraction?.water).toBeUndefined();
+
+    // A legal (belt) route is canonicalized and persisted.
+    store.getState().setExtractionSelection(id, "water", {
+      machineId: "water_extractor",
+      clockPercentText: "100",
+      packaging: {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "100",
+        returnTransport: { mode: "belt" },
+      },
+    });
+    expect(store.getState().stages[id]!.extraction?.water?.packaging).toEqual({
+      packageRecipeId: "packaged_water",
+      clockPercentText: "100",
+      returnTransport: { mode: "belt" },
+    });
+  });
+
+  it("deep-copies the packaging interstep at the action boundary", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    const id = store.getState().activeStageId;
+    const returnTransport = { mode: "belt" as const };
+    const packaging = {
+      packageRecipeId: "packaged_water",
+      clockPercentText: "100",
+      returnTransport,
+    };
+    store.getState().setExtractionSelection(id, "water", {
+      machineId: "water_extractor",
+      clockPercentText: "100",
+      packaging,
+    });
+    // Mutating the caller's object must not reach the stored interstep
+    // (canonicalize rebuilds + copyExtractionSelection deep-copies).
+    const stored = store.getState().stages[id]!.extraction?.water?.packaging;
+    expect(stored).not.toBe(packaging);
+    expect(stored?.returnTransport).not.toBe(returnTransport);
+  });
+
+  it("round-trips extraction packaging through a v9 save/load", async () => {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    const id = store.getState().activeStageId;
+    store.getState().setExtractionSelection(id, "water", {
+      machineId: "water_extractor",
+      clockPercentText: "150",
+      packaging: {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "100",
+        returnTransport: { mode: "belt" },
+      },
+    });
+    await store.getState().savePlanAs("Packaged Water");
+    const planId = store.getState().plans![0]!.id;
+    const db = await (await import("../data/db.ts")).openDb();
+    const written = (await db.get<PlanFileV9>("plans", planId))!;
+    // A freshly saved plan is v9, and the extraction packaging survives it.
+    expect(written.format_version).toBe(9);
+    expect(written.stages[0]!.extraction?.water?.packaging).toEqual({
+      packageRecipeId: "packaged_water",
+      clockPercentText: "100",
+      returnTransport: { mode: "belt" },
+    });
+
+    // Load it back and confirm the interstep is intact.
+    store.getState().setExtractionSelection(id, "water", null);
+    await store.getState().loadPlan(planId);
+    const loadedId = store.getState().activeStageId;
+    expect(
+      store.getState().stages[loadedId]!.extraction?.water?.packaging,
+    ).toEqual({
+      packageRecipeId: "packaged_water",
+      clockPercentText: "100",
+      returnTransport: { mode: "belt" },
+    });
   });
 });
 
@@ -2061,7 +2467,7 @@ describe("stage graph — packaging interstep persistence actions (#113)", () =>
     await store.getState().savePlanAs("Packaging");
     const id = store.getState().plans![0]!.id;
     const exported = JSON.parse((await store.getState().exportPlan(id))!);
-    expect(exported.format_version).toBe(8);
+    expect(exported.format_version).toBe(9);
     expect(exported.links[0].interstep.clockPercentText).toBe("bad edit");
 
     setInterstep(store, linkId, null);
@@ -3174,9 +3580,9 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     await db.put("plans", v1, "v1-id");
 
     await store.getState().renamePlan("v1-id", "NewName");
-    // The stored row is now v8, renamed, single "Stage 1" stage.
-    const raw = (await db.get<PlanFileV8>("plans", "v1-id"))!;
-    expect(raw.format_version).toBe(8);
+    // The stored row is now v9, renamed, single "Stage 1" stage.
+    const raw = (await db.get<PlanFileV9>("plans", "v1-id"))!;
+    expect(raw.format_version).toBe(9);
     expect(raw.name).toBe("NewName");
     expect(raw.stages[0]!.name).toBe("Stage 1");
     // createdAt carried verbatim through the migration + rename.
@@ -3211,8 +3617,8 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
 
     const json = await store.getState().exportPlan(id);
     expect(json).not.toBeNull();
-    const parsed = JSON.parse(json!) as PlanFileV8;
-    expect(parsed.format_version).toBe(8);
+    const parsed = JSON.parse(json!) as PlanFileV9;
+    expect(parsed.format_version).toBe(9);
     expect(parsed.name).toBe("Exported");
     expect(parsed.stages[0]!.selection.recipeId).toBe("ingot_iron");
     expect(parsed.stages[0]!.selection.clockPercentText).toBe("37.5");
@@ -3222,7 +3628,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
       pure: "3e0",
     });
     // Pretty-printed (2-space indent), matching JSON.stringify(plan, null, 2).
-    expect(json).toContain('\n  "format_version": 8');
+    expect(json).toContain('\n  "format_version": 9');
   });
 
   it("exportPlan on a missing id returns null (no throw)", async () => {
@@ -3254,9 +3660,9 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     await db.put("plans", v1, "legacy-id");
 
     const json = await store.getState().exportPlan("legacy-id");
-    const parsed = JSON.parse(json!) as PlanFileV8;
-    // The export is what a load sees: v8, one "Stage 1" stage, createdAt kept.
-    expect(parsed.format_version).toBe(8);
+    const parsed = JSON.parse(json!) as PlanFileV9;
+    // The export is what a load sees: v9, one "Stage 1" stage, createdAt kept.
+    expect(parsed.format_version).toBe(9);
     expect(parsed.name).toBe("LegacyPlan");
     expect(parsed.stages[0]!.name).toBe("Stage 1");
     expect(parsed.createdAt).toBe("2026-01-01T00:00:00.000Z");
@@ -3278,7 +3684,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     const json = (await store.getState().exportPlan(srcId))!;
 
     // Rename the payload so it lands as a new row (not an overwrite).
-    const payload = JSON.parse(json) as PlanFileV8;
+    const payload = JSON.parse(json) as PlanFileV9;
     payload.name = "Imported";
     payload.createdAt = "1999-12-31T00:00:00.000Z"; // untrusted foreign stamp
     const before = new Date().toISOString();
@@ -3290,7 +3696,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     expect(imported.id).not.toBe(srcId); // fresh id
     // createdAt is NOW (not the foreign 1999 stamp).
     const db = await (await import("../data/db.ts")).openDb();
-    const stored = (await db.get<PlanFileV8>("plans", imported.id))!;
+    const stored = (await db.get<PlanFileV9>("plans", imported.id))!;
     expect(stored.createdAt >= before).toBe(true);
     expect(stored.stages[0]!.selection.clockPercentText).toBe("42");
     expect(stored.stages[0]!.selection.recipeId).toBe("ingot_iron");
@@ -3478,10 +3884,10 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     return store;
   }
 
-  /** A minimal valid v8 plan file with a chosen name + recipe (content marker). */
-  function planFile(name: string, recipeId: string | null): PlanFileV8 {
+  /** A minimal valid v9 plan file with a chosen name + recipe (content marker). */
+  function planFile(name: string, recipeId: string | null): PlanFileV9 {
     return {
-      format_version: 8,
+      format_version: 9,
       name,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -3504,7 +3910,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
   }
 
   /** Wrap per-plan file objects in the bundle envelope (the export shape). */
-  function bundle(plans: PlanFileV8[]): PlanBundle {
+  function bundle(plans: PlanFileV9[]): PlanBundle {
     return {
       kind: "foundry-plan-bundle",
       format_version: 1,
@@ -3543,8 +3949,8 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     expect(names).toEqual(["Alpha", "Beta"]);
     const alpha = store.getState().plans!.find((p) => p.name === "Alpha")!;
     const beta = store.getState().plans!.find((p) => p.name === "Beta")!;
-    const storedAlpha = (await db.get<PlanFileV8>("plans", alpha.id))!;
-    const storedBeta = (await db.get<PlanFileV8>("plans", beta.id))!;
+    const storedAlpha = (await db.get<PlanFileV9>("plans", alpha.id))!;
+    const storedBeta = (await db.get<PlanFileV9>("plans", beta.id))!;
     expect(storedAlpha.stages[0]!.selection.clockPercentText).toBe("42");
     expect(storedBeta.stages[0]!.selection.clockPercentText).toBe("75");
     // NO auto-load: the live graph is untouched by a bundle import.
@@ -3572,8 +3978,8 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     expect(typeof env.exportedAt).toBe("string");
     expect(env.exportedAt >= before).toBe(true); // stamped at the export moment
     expect(env.plans).toHaveLength(2);
-    // Each entry is a per-plan v8 file object (validatePlanFile-shaped).
-    expect(env.plans.every((p) => p.format_version === 8)).toBe(true);
+    // Each entry is a per-plan v9 file object (validatePlanFile-shaped).
+    expect(env.plans.every((p) => p.format_version === 9)).toBe(true);
     expect(env.plans.map((p) => p.name).sort()).toEqual(["One", "Two"]);
     // Pretty-printed, matching JSON.stringify(bundle, null, 2).
     expect(json).toContain('\n  "kind": "foundry-plan-bundle"');
@@ -3585,7 +3991,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     await store.getState().savePlanAs("Target");
     const targetId = store.getState().plans![0]!.id;
     const db = await (await import("../data/db.ts")).openDb();
-    const originalCreatedAt = (await db.get<PlanFileV8>("plans", targetId))!
+    const originalCreatedAt = (await db.get<PlanFileV9>("plans", targetId))!
       .createdAt;
 
     // A bundle entry named "Target" with a foreign stamp + different content.
@@ -3598,7 +4004,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     expect(
       store.getState().plans!.filter((p) => p.name === "Target"),
     ).toHaveLength(1);
-    const stored = (await db.get<PlanFileV8>("plans", targetId))!;
+    const stored = (await db.get<PlanFileV9>("plans", targetId))!;
     expect(stored.createdAt).toBe(originalCreatedAt); // NOT the foreign 1999 stamp
     expect(stored.stages[0]!.selection.machineCount).toBe(7);
   });
@@ -3625,7 +4031,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     // The surviving row carries the LAST entry's content (machineCount 99).
     const dupId = store.getState().plans![0]!.id;
     const db = await (await import("../data/db.ts")).openDb();
-    const stored = (await db.get<PlanFileV8>("plans", dupId))!;
+    const stored = (await db.get<PlanFileV9>("plans", dupId))!;
     expect(stored.name).toBe("Dup"); // trimmed form
     expect(stored.stages[0]!.selection.machineCount).toBe(99);
     expect(stored.stages[0]!.selection.recipeId).toBe("ingot_iron");

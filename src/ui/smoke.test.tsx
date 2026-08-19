@@ -30,6 +30,7 @@ import { PlansBar } from "./PlansBar.tsx";
 import { ControlsStrip } from "./ControlsStrip.tsx";
 import { SummaryCards } from "./SummaryCards.tsx";
 import { Schematic } from "./Schematic.tsx";
+import { Machines } from "./Machines.tsx";
 import { computeLayout } from "./layout.ts";
 import { Blueprint } from "./Blueprint.tsx";
 import App from "./App.tsx";
@@ -126,6 +127,7 @@ describe("ControlsStrip", () => {
           ...defaultSelection(),
           unlockedTiers: { belt: 2, pipe: 1 },
         }}
+        tiers={TIER_TABLE}
         hasOverrides={false}
         onSelectRecipe={noop}
         onMachineCount={noop}
@@ -141,6 +143,35 @@ describe("ControlsStrip", () => {
     expect(html).toContain("Iron Ingot (alt)");
     expect(html).toContain("— pick a recipe —");
   });
+
+  it("offers Mk1..MkN belt toggles from the CATALOG tier table, not the constant (#140 P0)", () => {
+    // The selector-max reroute: a modded/parsed 7-belt table must offer 7 belt
+    // toggles (the curated constant has 6). Drives the tiers prop cascade.
+    const sevenBeltTiers = {
+      belt: [60, 120, 180, 270, 480, 780, 1200].map((n) => Fraction.from(n)),
+      pipe: [300, 600].map((n) => Fraction.from(n)),
+    };
+    const html = renderToStaticMarkup(
+      <ControlsStrip
+        recipes={recipes}
+        machines={machines}
+        selection={{
+          ...defaultSelection(),
+          unlockedTiers: { belt: 7, pipe: 2 },
+        }}
+        tiers={sevenBeltTiers}
+        hasOverrides={false}
+        onSelectRecipe={noop}
+        onMachineCount={noop}
+        onClockText={noop}
+        onTiers={noop}
+        onClearOverrides={noop}
+      />,
+    );
+    // Mk7 belt toggle exists (the curated 6-tier constant would stop at Mk6).
+    expect(html).toContain(">Mk7<");
+    expect(html).not.toContain(">Mk8<");
+  });
 });
 
 describe("SummaryCards", () => {
@@ -150,8 +181,6 @@ describe("SummaryCards", () => {
         result={workedResult()}
         itemName={itemName}
         powerText={null}
-        tiers={TIER_TABLE}
-        unlocked={{ belt: 4, pipe: 2 }}
       />,
     );
     expect(html).toContain("600/min in");
@@ -167,8 +196,6 @@ describe("SummaryCards", () => {
         result={workedResult()}
         itemName={itemName}
         powerText="80 MW"
-        tiers={TIER_TABLE}
-        unlocked={{ belt: 4, pipe: 2 }}
       />,
     );
     expect(html).toContain("summary-card-power");
@@ -182,8 +209,6 @@ describe("SummaryCards", () => {
         result={workedResult()}
         itemName={itemName}
         powerText={null}
-        tiers={TIER_TABLE}
-        unlocked={{ belt: 4, pipe: 2 }}
       />,
     );
     expect(html).not.toContain("summary-card-power");
@@ -191,7 +216,10 @@ describe("SummaryCards", () => {
 });
 
 describe("Schematic", () => {
-  it("renders the worked example: enough rects, no native <title> tooltips", () => {
+  it("renders the build view: the ruler, no machine block, no native <title>", () => {
+    // P3: the build view draws the 12px ruler, NOT the 40px machine block. So no
+    // per-machine <rect class="machine">, no band rect — but the feed/output lane
+    // <rect>s (seam/arrow geometry) and the ruler are present.
     const html = renderToStaticMarkup(
       <Schematic
         result={workedResult()}
@@ -201,22 +229,18 @@ describe("Schematic", () => {
         itemName={itemName}
       />,
     );
-    expect((html.match(/<rect/g) ?? []).length).toBeGreaterThanOrEqual(20);
+    expect(html).toContain('class="machine-ruler"');
+    expect(html).not.toContain('class="machine"'); // the block moved out
+    expect(html).not.toContain("machine-band");
     // Stage 5 item 1: the native <title> tooltips are gone — the styled hover
     // div carries the text now, so no <title> element remains in the markup.
-    // (The tooltip text itself is pinned at the segTooltip/beltLabel level: the
-    // beltLabel "Feed 2 …" string at format.test.ts:54-56, and the segTooltip
-    // strings in the describe below.)
     expect(html).not.toContain("<title>");
   });
 
-  it("centers non-band machine labels under the cell (m.x + pitch/2) (#86)", () => {
-    // The label names the machine, so it centers under the cell, not on the
-    // boundary line at the cell's left edge. Worked N=20 fixture: machine 1's
-    // cell starts at marginX (its x from computeLayout), so its label x is that
-    // + pitch/2. Pinned against computeLayout so the exact pixel can't drift.
-    const layout = computeLayout(workedResult(), 20);
-    const machine1CenterX = layout.machines[0]!.x + layout.pitch / 2;
+  it("registers the ruler at N=20: major ticks on boundaries, minor at cell centres (P3)", () => {
+    // The build view passes LAYOUT.rulerH — so the layout the test asserts
+    // against MUST too, or machineTop/pitch diverge from the render.
+    const layout = computeLayout(workedResult(), 20, 12);
     const html = renderToStaticMarkup(
       <Schematic
         result={workedResult()}
@@ -226,23 +250,115 @@ describe("Schematic", () => {
         itemName={itemName}
       />,
     );
-    // Machine 1's label sits at its cell start + pitch/2 (mid-cell), not at m.x.
-    expect(html).toContain(
-      `<text class="machine-label" x="${machine1CenterX}" y=`,
+    const top = layout.machineTop;
+    const rulerH = 12;
+    const baseline = top + rulerH;
+    const xOf = (index: number) => layout.machines[index - 1]!.x;
+
+    // MAJOR tick — every significant index draws a full-rulerH tick at xOf(index),
+    // and that x EQUALS a real feed-segment boundary x (solver-derived, the r1
+    // blocker's fix: never labelStep arithmetic).
+    const boundaryXs = new Set(
+      layout.feeds.flatMap((t) => t.segments.flatMap((s) => [s.x1, s.x2])),
     );
-    // Every rendered machine-label x is a cell-CENTER (m.x + pitch/2), never a
-    // bare cell-start m.x — the whole row shifted, so no boundary label survives.
-    const labelXs = new Set(
-      [...html.matchAll(/class="machine-label" x="([\d.]+)"/g)].map((m) =>
-        Number(m[1]),
-      ),
-    );
-    expect(labelXs.size).toBeGreaterThan(0);
+    for (const index of layout.significant) {
+      const x = xOf(index);
+      expect(html).toContain(
+        `class="ruler-major" x1="${x}" x2="${x}" y1="${top}" y2="${baseline}"`,
+      );
+    }
+    // At least one major tick lands on an interior segment boundary (index 17 →
+    // the head feed stretch's x2), proving the tick registers with the solver.
+    expect(boundaryXs.has(xOf(17))).toBe(true);
+    expect(layout.significant).toContain(17);
+
+    // MINOR tick — at the cell CENTRE (m.x + pitch/2), 4px up from the baseline,
+    // for every labeled machine; the label sits directly under it (same x).
     for (const m of layout.machines) {
       if (!m.labeled) continue;
-      expect(labelXs.has(m.x + layout.pitch / 2)).toBe(true);
-      expect(labelXs.has(m.x)).toBe(false); // never on the boundary
+      const cx = m.x + layout.pitch / 2;
+      expect(html).toContain(
+        `x1="${cx}" x2="${cx}" y1="${baseline - 4}" y2="${baseline}"`,
+      );
+      // The label is centred under its minor tick (same x), one row below the
+      // baseline (machineTop + rulerH + 12 = machineTop + 24).
+      expect(html).toContain(
+        `<text class="machine-label" x="${cx}" y="${baseline + 12}"`,
+      );
+      // Never a bare cell-start label (the whole row centres on the cell).
+      expect(html).not.toContain(
+        `<text class="machine-label" x="${m.x}" y="${baseline + 12}"`,
+      );
     }
+    expect(baseline + 12).toBe(top + 24);
+  });
+
+  it("draws the ruler in band mode from labeledSignificant, no band rect (N=161)", () => {
+    // Band mode (N=161): the ruler's MAJOR ticks still come from significant, but
+    // its LABELS/minor ticks come from labeledSignificant (thinning). The band
+    // rect + ×N do NOT live in the build view — they moved to the machines view.
+    const result = solveStage({ ...WORKED_INPUT, machineCount: 161 });
+    const layout = computeLayout(result, 161, 12);
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={result}
+        machineCount={161}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    expect(layout.band).toBe(true);
+    expect(html).toContain('class="machine-ruler"');
+    // The band's build-view extras are GONE.
+    expect(html).not.toContain("machine-band");
+    expect(html).not.toContain("×161");
+    // MAJOR ticks from significant; labels only for labeledSignificant.
+    const top = layout.machineTop;
+    const baseline = top + 12;
+    for (const index of layout.significant) {
+      const x = layout.machines[index - 1]!.x;
+      expect(html).toContain(
+        `class="ruler-major" x1="${x}" x2="${x}" y1="${top}" y2="${baseline}"`,
+      );
+    }
+    const labelCount = (html.match(/class="machine-label"/g) ?? []).length;
+    expect(labelCount).toBe(layout.labeledSignificant.length);
+    expect(labelCount).toBeLessThan(layout.significant.length);
+  });
+
+  it("anchors output belt-arrows at machineTop + rulerH, not the old + 40 (P3 register pin)", () => {
+    // The r1 HIGH: the output break-out arrows' TOP endpoint is the machine
+    // row's BOTTOM edge. Post-P3 that is machineTop + rulerH (12), NOT the old
+    // + 40 literal — which, because the risen outputTop EQUALS machineTop + 40,
+    // would leave the arrows floating inside the output lane, detached from the
+    // row. This pin FAILS against that coincidence: it demands rulerH (12).
+    const layout = computeLayout(workedResult(), 20, 12);
+    const html = renderToStaticMarkup(
+      <Schematic
+        result={workedResult()}
+        machineCount={20}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    const expectedY1 = layout.machineTop + 12; // machineTop + rulerH
+    // The output belt-arrow (class="belt-arrow", no lane-pipe) starts at y1.
+    expect(html).toContain(`class="belt-arrow" x1=`);
+    // Every output-side belt-arrow's y1 is the row's new bottom, not machineTop
+    // + 40 (which would equal the output lane top — the coincidence trap).
+    const outArrowY1s = [
+      ...html.matchAll(
+        /class="belt-arrow" x1="[\d.]+" x2="[\d.]+" y1="([\d.]+)"/g,
+      ),
+    ].map((m) => Number(m[1]));
+    expect(outArrowY1s.length).toBeGreaterThan(0);
+    for (const y1 of outArrowY1s) {
+      expect(y1).toBe(expectedY1);
+    }
+    // Falsifiability: the old + 40 literal is a DIFFERENT y than rulerH.
+    expect(layout.machineTop + 40).not.toBe(expectedY1);
   });
 
   it("marks a segment implicated by an over-capacity finding", () => {
@@ -259,7 +375,7 @@ describe("Schematic", () => {
                   itemId: lane.itemId,
                   fromMachine: 1,
                   toMachine: 16,
-                  peakFlow: Fraction.from(480),
+                  flow: Fraction.from(480),
                   busCapacity: Fraction.from(480),
                 },
               ],
@@ -314,16 +430,97 @@ describe("Schematic", () => {
     expect(html).toContain("lane-pipe");
   });
 
-  it("band mode (N=161): ONE band + ×161, and NOT 161 machine ticks (Axis 1)", () => {
-    const result = solveStage({ ...WORKED_INPUT, machineCount: 161 });
+  // Output lane names sit BELOW their bus, feed names above theirs (#76). The
+  // output name baseline lifts to busY + 18 so its bbox band clears the seam
+  // band busY ± 6; feed names stay at track.y + 12. Pinned against the restored
+  // layout's known track geometry so the ~1px seam clearance can't silently
+  // regress (the geometry pin the contract mandates for Axis C).
+  it("puts output lane names below the bus, clear of the seams (#76)", () => {
+    // The worked example: feed lane ore_iron, output lane iron_ingot. The BUILD
+    // VIEW renders with rulerH 12, so the layout the test asserts against MUST
+    // too — the output row rose 28px when the machine block became the ruler.
+    // feed track.y = marginY 16 → name y = 28; the output row now sits below the
+    // feed lane + bus + RULER + bus (16 + 56 + 28 + 12 + 28) → track.y = 140,
+    // busY = track.y + 8 = 148, so the lifted output name baseline is
+    // busY + 18 = 166 (was 194 under the 40px block — the −28 shift this re-pins).
+    const layout = computeLayout(workedResult(), 20, 12);
+    const feedTrack = layout.feeds[0]!;
+    const outTrack = layout.outputs[0]!;
+
+    // The bus/name model this asserts against (mirrors Schematic.tsx):
+    const feedNameY = feedTrack.y + 12;
+    const outNameY = outTrack.busY + 18;
+
+    // Literal layout pins — fail if the build-view track geometry ever shifts.
+    expect(feedNameY).toBe(28);
+    expect(outNameY).toBe(166);
+
+    // Output name model — lifted to busY + 18 (= track.y + 26, busY = y + 8).
+    expect(outTrack.busY).toBe(outTrack.y + 8);
+    expect(outNameY).toBe(outTrack.y + 26);
+
+    // The geometry gate: the output name's bbox band [baseline−11, baseline]
+    // (11px ascender) must clear the seam band [busY−6, busY+6]. The name band
+    // is [busY+7, busY+18]; its top (busY+7) sits 1px below the seam bottom
+    // (busY+6) — the ~1px clearance the contract protects.
+    const nameBandTop = outNameY - 11;
+    const seamBandBottom = outTrack.busY + 6;
+    expect(nameBandTop).toBeGreaterThan(seamBandBottom);
+
+    // The lifted name renders at the pinned baseline in the actual SVG.
     const html = renderToStaticMarkup(
       <Schematic
-        result={result}
-        machineCount={161}
+        result={workedResult()}
+        machineCount={20}
         tiers={FIXTURE_TIERS}
         unlocked={{ belt: 4, pipe: 2 }}
         itemName={itemName}
       />,
+    );
+    expect(html).toContain(`class="lane-name" x="4" y="${outNameY}"`);
+    expect(html).toContain(`class="lane-name" x="4" y="${feedNameY}"`);
+  });
+});
+
+describe("Machines view (P3 / #135 — the block the build view shed)", () => {
+  it("renders one rect per machine at N=20 (the relocated ≥20-rect pin)", () => {
+    const html = renderToStaticMarkup(
+      <Machines result={workedResult()} machineCount={20} />,
+    );
+    // 20 per-machine rects (the block, verbatim); it has no lanes, so no
+    // lane/seam rects inflate the count — exactly 20 <rect>s.
+    expect((html.match(/<rect/g) ?? []).length).toBe(20);
+    expect((html.match(/class="machine"/g) ?? []).length).toBe(20);
+    // No lane geometry leaks into this view.
+    expect(html).not.toContain("lane-name");
+    expect(html).not.toContain("belt-arrow");
+    expect(html).not.toContain("machine-ruler");
+  });
+
+  it("centers non-band machine labels under the cell (m.x + pitch/2) (#86)", () => {
+    // The label names the machine, so it centers under the cell, not on the
+    // boundary line at the cell's left edge (the block's own layout, machineH 40).
+    const layout = computeLayout(workedResult(), 20);
+    const html = renderToStaticMarkup(
+      <Machines result={workedResult()} machineCount={20} />,
+    );
+    const labelXs = new Set(
+      [...html.matchAll(/class="machine-label" x="([\d.]+)"/g)].map((m) =>
+        Number(m[1]),
+      ),
+    );
+    expect(labelXs.size).toBeGreaterThan(0);
+    for (const m of layout.machines) {
+      if (!m.labeled) continue;
+      expect(labelXs.has(m.x + layout.pitch / 2)).toBe(true);
+      expect(labelXs.has(m.x)).toBe(false); // never on the boundary
+    }
+  });
+
+  it("band mode (N=161): ONE band + ×161, and NOT 161 machine ticks (Axis 1)", () => {
+    const result = solveStage({ ...WORKED_INPUT, machineCount: 161 });
+    const html = renderToStaticMarkup(
+      <Machines result={result} machineCount={161} />,
     );
     // The break convention: one band group carrying the count, no per-machine
     // tick groups (the noise the band replaces).
@@ -359,13 +556,7 @@ describe("Schematic", () => {
       ],
     });
     const html = renderToStaticMarkup(
-      <Schematic
-        result={result}
-        machineCount={161}
-        tiers={FIXTURE_TIERS}
-        unlocked={{ belt: 4, pipe: 2 }}
-        itemName={itemName}
-      />,
+      <Machines result={result} machineCount={161} />,
     );
     // Count boundary-tick groups vs index-label texts within the band.
     const ticks = (html.match(/class="machine-band-mark"/g) ?? []).length;
@@ -378,9 +569,7 @@ describe("Schematic", () => {
   it("band mode: label centers at xOf + pitch/2 while the tick stays at xOf (#86)", () => {
     // Same dense starving-161 fixture. Each significant machine's boundary tick
     // stays at the cell's left edge (xOf = machines[index-1].x); the surviving
-    // label centers under the cell (xOf + pitch/2). Pinned against computeLayout:
-    // the FIRST labeled significant index's tick x1 == its m.x, and its label x
-    // == m.x + pitch/2 — the tick and label no longer coincide.
+    // label centers under the cell (xOf + pitch/2).
     const result = solveStage({
       machineCount: 161,
       clockPercent: Fraction.from(100),
@@ -406,13 +595,7 @@ describe("Schematic", () => {
     const firstLabeled = layout.labeledSignificant[0]!;
     const cellX = layout.machines[firstLabeled - 1]!.x; // xOf(firstLabeled)
     const html = renderToStaticMarkup(
-      <Schematic
-        result={result}
-        machineCount={161}
-        tiers={FIXTURE_TIERS}
-        unlocked={{ belt: 4, pipe: 2 }}
-        itemName={itemName}
-      />,
+      <Machines result={result} machineCount={161} />,
     );
     // The boundary tick is UNCHANGED at the cell's left edge.
     expect(html).toContain(`<line x1="${cellX}" x2="${cellX}"`);
@@ -430,71 +613,15 @@ describe("Schematic", () => {
     }
   });
 
-  it("below the threshold (N=114): the full tick row, no band (Axis 1)", () => {
+  it("below the threshold (N=114): the full rect row, no band (Axis 1)", () => {
     const result = solveStage({ ...WORKED_INPUT, machineCount: 114 });
     const html = renderToStaticMarkup(
-      <Schematic
-        result={result}
-        machineCount={114}
-        tiers={FIXTURE_TIERS}
-        unlocked={{ belt: 4, pipe: 2 }}
-        itemName={itemName}
-      />,
+      <Machines result={result} machineCount={114} />,
     );
-    // At/below N=114 today's rendering is unchanged: per-machine tick groups, no
-    // band, no count glyph.
+    // At/below N=114 the block is the full per-machine rect row, no band/count.
     expect(html).not.toContain("machine-band");
     expect(html).not.toContain("×114");
     expect((html.match(/class="machine"/g) ?? []).length).toBe(114);
-  });
-
-  // Output lane names sit BELOW their bus, feed names above theirs (#76). The
-  // output name baseline lifts to busY + 18 so its bbox band clears the seam
-  // band busY ± 6; feed names stay at track.y + 12. Pinned against the restored
-  // layout's known track geometry so the ~1px seam clearance can't silently
-  // regress (the geometry pin the contract mandates for Axis C).
-  it("puts output lane names below the bus, clear of the seams (#76)", () => {
-    // The worked example: feed lane ore_iron, output lane iron_ingot. From the
-    // restored layout: feed track.y = marginY 16 → name y = 28; the output row
-    // sits below the feed lane + bus + machine row + bus (16 + 56 + 28 + 40 +
-    // 28) → track.y = 168, busY = track.y + 8 = 176, so the lifted output
-    // name baseline is busY + 18 = 194.
-    const layout = computeLayout(workedResult(), 20);
-    const feedTrack = layout.feeds[0]!;
-    const outTrack = layout.outputs[0]!;
-
-    // The bus/name model this asserts against (mirrors Schematic.tsx):
-    const feedNameY = feedTrack.y + 12;
-    const outNameY = outTrack.busY + 18;
-
-    // Literal layout pins — fail if the restored track geometry ever shifts.
-    expect(feedNameY).toBe(28);
-    expect(outNameY).toBe(194);
-
-    // Output name model — lifted to busY + 18 (= track.y + 26, busY = y + 8).
-    expect(outTrack.busY).toBe(outTrack.y + 8);
-    expect(outNameY).toBe(outTrack.y + 26);
-
-    // The geometry gate: the output name's bbox band [baseline−11, baseline]
-    // (11px ascender) must clear the seam band [busY−6, busY+6]. The name band
-    // is [busY+7, busY+18]; its top (busY+7) sits 1px below the seam bottom
-    // (busY+6) — the ~1px clearance the contract protects.
-    const nameBandTop = outNameY - 11;
-    const seamBandBottom = outTrack.busY + 6;
-    expect(nameBandTop).toBeGreaterThan(seamBandBottom);
-
-    // The lifted name renders at the pinned baseline in the actual SVG.
-    const html = renderToStaticMarkup(
-      <Schematic
-        result={workedResult()}
-        machineCount={20}
-        tiers={FIXTURE_TIERS}
-        unlocked={{ belt: 4, pipe: 2 }}
-        itemName={itemName}
-      />,
-    );
-    expect(html).toContain(`class="lane-name" x="4" y="${outNameY}"`);
-    expect(html).toContain(`class="lane-name" x="4" y="${feedNameY}"`);
   });
 });
 
@@ -502,27 +629,31 @@ describe("segTooltip (bus-segment hover string, Stage 5 item 1)", () => {
   // The segTooltip helper survives the schematic removal (#68) — it is a pure
   // formatter for the bus-segment hover string, still fed real solves here so
   // the pinned strings gate against a live solver, not a hand-built fixture.
-  it("carries the worked example's honest bus-segment string", () => {
-    // The feed lane's head segment carries the full 480/min peak at N=20.
+  it("carries the worked example's honest feed entry → hand-off string", () => {
+    // The feed lane's head segment (non-terminal) resets to the full 480/min
+    // entry at N=20 and hands 0 onward (16×30 exactly drains it). P2 D3 copy.
     const result = workedResult();
-    const feedSeg = result.feeds[0]!.segments[0]!;
+    const feedSegs = result.feeds[0]!.segments;
+    const feedSeg = feedSegs[0]!;
     const busCap = formatRate(FIXTURE_TIERS.belt[3]!); // Mk4 = 480
-    expect(segTooltip(feedSeg, busCap)).toBe(
-      "machines 1–16 · peak 480/min of 480/min",
+    const terminal = feedSegs.length === 1;
+    expect(segTooltip(feedSeg, busCap, "feed", terminal)).toBe(
+      "machines 1–16 · entry 480/min → hand-off 0/min · bus 480/min",
     );
   });
 
-  it("shows a segment's honest peakFlow, not the belt's capacity", () => {
-    // N=17: the last output breakout carries 30/min on a Mk1 (60/min) belt —
-    // the tooltip must say peak 30, not 60 (boundary review r1 catch).
+  it("shows an output segment's honest collected load, not the belt's capacity", () => {
+    // N=17: the last output breakout collects 30/min on a Mk1 (60/min) belt —
+    // the tooltip must say collects 30, not 60 (boundary review r1 catch). An
+    // output segment is never terminal-feed; side="output" selects the copy.
     const result = solveStage({ ...WORKED_INPUT, machineCount: 17 });
     const outSegs = result.outputs[0]!.segments;
     const tailSeg = outSegs[outSegs.length - 1]!;
     expect(tailSeg.fromMachine).toBe(17);
     expect(tailSeg.toMachine).toBe(17);
     const busCap = formatRate(FIXTURE_TIERS.belt[3]!); // 480
-    expect(segTooltip(tailSeg, busCap)).toBe(
-      "machines 17–17 · peak 30/min of 480/min",
+    expect(segTooltip(tailSeg, busCap, "output", false)).toBe(
+      "machines 17–17 · collects 30/min of 480/min",
     );
   });
 });
@@ -827,6 +958,35 @@ describe("App view tabs (#74 — schematic default)", () => {
     expect(html).not.toContain("chain-bp");
     expect(html).not.toContain("COMBINED");
   });
+
+  it("mounts/unmounts the Machines leaf (P3 third tab smoke)", () => {
+    // The tab wiring itself sits behind the "solved" gate, unreachable via SSR
+    // (the browser walk owns the click path). What IS pinnable headless: the
+    // Machines leaf the MACHINES tab mounts renders its block when selected and
+    // contributes nothing when it is not on the surface — the mount/unmount
+    // contract. Mounted → the block's rects; "unmounted" (the tab not chosen) →
+    // App's unsolved SSR path never emits the block.
+    const mounted = renderToStaticMarkup(
+      <Machines result={workedResult()} machineCount={20} />,
+    );
+    expect(mounted).toContain('class="machine"');
+    const appHtml = renderToStaticMarkup(<App />);
+    expect(appHtml).not.toContain('class="machine"');
+    // The build view (schematic) and the machines view are distinct leaves — the
+    // schematic never renders the block, the machines view never the ruler.
+    const schematic = renderToStaticMarkup(
+      <Schematic
+        result={workedResult()}
+        machineCount={20}
+        tiers={FIXTURE_TIERS}
+        unlocked={{ belt: 4, pipe: 2 }}
+        itemName={itemName}
+      />,
+    );
+    expect(schematic).not.toContain('class="machine"');
+    expect(schematic).toContain('class="machine-ruler"');
+    expect(mounted).not.toContain("machine-ruler");
+  });
 });
 
 describe("LaneOverrides", () => {
@@ -912,7 +1072,8 @@ describe("FindingsPanel", () => {
     const solve: SolveState = {
       status: "invalid",
       reason: "bad-clock",
-      detail: "clock percent must be a positive number.",
+      detail:
+        'clock % must be at least 1 (the game\'s minimum clock); got "0.5".',
     };
     const html = renderToStaticMarkup(
       <FindingsPanel
@@ -924,7 +1085,7 @@ describe("FindingsPanel", () => {
       />,
     );
     expect(html).toContain("Clock %");
-    expect(html).toContain("clock percent must be a positive number.");
+    expect(html).toContain("clock % must be at least 1");
   });
 
   it("renders each finding sentence", () => {
@@ -935,7 +1096,7 @@ describe("FindingsPanel", () => {
         itemId: "ore_iron",
         fromMachine: 9,
         toMachine: 16,
-        peakFlow: Fraction.from(540),
+        flow: Fraction.from(540),
         busCapacity: Fraction.from(480),
       },
     ];
@@ -963,7 +1124,7 @@ describe("FindingsPanel", () => {
       itemId: "ore_iron",
       fromMachine: 1,
       toMachine: 8,
-      peakFlow: Fraction.from(200),
+      flow: Fraction.from(200),
       busCapacity: Fraction.from(120),
     };
     const base = workedResult();
@@ -997,7 +1158,7 @@ describe("FindingsPanel", () => {
       itemId: "iron_ingot",
       fromMachine: 1,
       toMachine: 1,
-      peakFlow: Fraction.from(100),
+      flow: Fraction.from(100),
       busCapacity: Fraction.from(90),
     };
     const base = workedResult();

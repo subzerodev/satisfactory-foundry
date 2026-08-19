@@ -41,8 +41,6 @@ const FOUNDATION_TILE = 80;
 /** Belt bus visual width — a stated RENDER convention (P1); belts have no
  *  gameplay footprint, so the bus is drawn as a 20 dm ribbon on its centre line. */
 const BELT_LANE = 20;
-/** Fixed extent reserved for the bounded `x2 max` bus marker. */
-const PARALLEL_MAX_LABEL_WIDTH = 80;
 /** SVG padding around the foundation bbox (Axis 2: origin − 20 dm, extent + 40 dm). */
 const PAD = 20;
 
@@ -247,7 +245,6 @@ export function Blueprint({
  *  with App. */
 function BusAndJunctions({ lane, kind }: { lane: LaneLayout; kind: LaneKind }) {
   const busY = lane.bus.from.y;
-  const busWidth = lane.bus.to.x - lane.bus.from.x;
   return (
     <g className="bp-lane">
       <rect
@@ -261,21 +258,17 @@ function BusAndJunctions({ lane, kind }: { lane: LaneLayout; kind: LaneKind }) {
         <rect
           key={`j-${i}`}
           className="bp-junction"
+          data-kind={j.kind}
           x={j.x}
           y={j.y}
           width={j.w}
           height={j.h}
-        />
-      ))}
-      {lane.maxParallelCount === 2 && busWidth >= PARALLEL_MAX_LABEL_WIDTH && (
-        <text
-          className="bp-parallel-max"
-          x={lane.bus.from.x + busWidth / 2}
-          y={busY}
         >
-          x2 max
-        </text>
-      )}
+          {/* The attachment kind as the rect's tooltip word (P2 D7). Footprint
+              sizes are identical (4×4) — this is naming, not new geometry. */}
+          <title>{j.kind}</title>
+        </rect>
+      ))}
     </g>
   );
 }

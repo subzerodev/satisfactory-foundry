@@ -11,6 +11,7 @@
  */
 
 import { proposeChain } from "../core/chain-builder.ts";
+import { effectiveMachinePower } from "../core/machine-power.ts";
 import type {
   ChainProposal,
   ItemRate,
@@ -791,10 +792,16 @@ export function proposalMetrics(
   let powerAtClockMw = 0;
   for (const stage of proposal.stages) {
     machineCount += stage.machineCount;
-    const machineId = catalog.recipes[stage.recipeId]?.machineId;
+    const recipe = catalog.recipes[stage.recipeId];
+    const machineId = recipe?.machineId;
     if (machineId === undefined) continue;
-    const power = catalog.machines[machineId]?.power;
-    if (power === undefined) continue;
+    const rawPower = catalog.machines[machineId]?.power;
+    if (rawPower === undefined) continue;
+    // #142: per-recipe correction BEFORE summing — the projection only runs
+    // later over the aggregated totals, after recipe identity is gone, so
+    // this loop is the one place the recipe range can enter. Identity for
+    // constant-power machines and field-less recipes.
+    const power = effectiveMachinePower(rawPower, recipe?.variablePower);
     const count = Fraction.from(stage.machineCount);
     powerMw = powerMw.add(count.mul(power.mw));
     if (power.variable) powerVaries = true;

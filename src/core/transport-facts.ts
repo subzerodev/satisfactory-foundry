@@ -65,11 +65,13 @@ export const TRUCK_DOCK_SECONDS = Fraction.from(8);
  */
 export const FLUID_TRUCK_DOCK_SECONDS = Fraction.from(9);
 /**
- * Train platform docking lockout: 27.08 s (0.4513 min) per docking — all cars
- * dock in parallel within this one window. Fact table "Stations & platforms" →
- * Docking lockout. Encoded exactly as 2708/100.
+ * Train platform docking lockout: 27 s (27/60 = 0.45 min exactly) per docking —
+ * all cars dock in parallel within this one window. Cited to the GAME FIELD
+ * `Build_TrainDockingStation_C.mTimeToCompleteLoad = 27.000000` (headers/Docs
+ * ground truth). The wiki's 27.08 s was RETIRED (#140 decision 24796): the extra
+ * 0.08 s has no support in the headers or Docs.json — it was a wiki artifact.
  */
-export const TRAIN_LOCKOUT_SECONDS = Fraction.of(2708, 100);
+export const TRAIN_LOCKOUT_SECONDS = Fraction.from(27);
 /**
  * Drone landing/take-off animation: 51 s per port visit. A round trip touches
  * both ports → 2 × 51 s = 102 s stationary even at zero distance. Fact table

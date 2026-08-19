@@ -166,7 +166,7 @@ figure cross-checks it.
 | Fact | Value | Source |
 |---|---|---|
 | One platform per car | each Freight Car docks at its own (Fluid) Freight Platform; platforms line up behind the Train Station in consist order and all transfer during the same docking | https://satisfactory.wiki.gg/wiki/Freight_Platform ; https://satisfactory.wiki.gg/wiki/Freight_Car |
-| Docking lockout | **27.08 s (0.4513 min)** per docking — during it, all belts/pipes on the platform stop; transfer happens within this window | https://satisfactory.wiki.gg/wiki/Tutorial:Train_throughput ; https://satisfactory.wiki.gg/wiki/Freight_Platform |
+| Docking lockout | **27 s (0.45 min)** per docking — during it, all belts/pipes on the platform stop; transfer happens within this window. Cited to the game field `mTimeToCompleteLoad = 27.000000`; the wiki's 27.08 s was retired (#140 decision 24796). | Docs.json / headers (`Build_TrainDockingStation_C.mTimeToCompleteLoad`) |
 | Platform buffer (solid) | 48 slots; belts fill/drain the buffer between dockings | Docs.json (parser: 8×6 storage) — wiki agrees: https://satisfactory.wiki.gg/wiki/Freight_Platform |
 | Platform buffer (fluid) | **3200 m³** **[1.2 change: raised in patch 1.2.0.0]** | https://satisfactory.wiki.gg/wiki/Freight_Platform |
 | Platform power | 50 MW during transfer; 0.1 MW at rest | Docs.json (parser: 50 MW) — wiki adds the idle figure: https://satisfactory.wiki.gg/wiki/Freight_Platform |
@@ -175,19 +175,17 @@ figure cross-checks it.
 
 **Docs.json precision:** `mDockForDuration = 0` in the export (placeholder),
 but both platform classes carry `mTimeToCompleteLoad = mTimeToCompleteUnload
-= 27.0` — consistent with, and slightly under, the wiki's 27.08 s full lockout.
-Neither cited page decomposes the 27.08 s, so what the 0.08 s gap represents is
-**unconfirmed** (candidates: crane return-to-rest, rounding, or another of the
-class's timers such as `mTimeToSwapLoadVisibility` — inference, not sourced).
-Use the wiki's 27.08 s for the lockout window; the parser's 27.0 corroborates
-its magnitude.
+= 27.0` — the authoritative game value. The wiki's 27.08 s was RETIRED (#140
+decision 24796): the extra 0.08 s has no support in the headers or Docs.json,
+so it was a wiki artifact, not a real timer. **Use the game field's 27 s exactly
+(= 27/60 = 0.45 min).**
 
 ### Sustained throughput per platform (wiki-computed ceilings, dual Mk.6 feed, optimal round-trip duration)
 
 | Fact | Value | Source |
 |---|---|---|
-| Time-to-Fill formula | `TtF = (stackSize × 32) / beltSpeed + 0.4513 min` (solid car; fluid car: 2400 m³ in place of stackSize × 32) | https://satisfactory.wiki.gg/wiki/Tutorial:Train_throughput |
-| Throughput, TtF ≥ RtD | `(RtD − 0.4513) / RtD × beltSpeed` | https://satisfactory.wiki.gg/wiki/Tutorial:Train_throughput |
+| Time-to-Fill formula | `TtF = (stackSize × 32) / beltSpeed + 0.45 min` (solid car; fluid car: 2400 m³ in place of stackSize × 32) | https://satisfactory.wiki.gg/wiki/Tutorial:Train_throughput |
+| Throughput, TtF ≥ RtD | `(RtD − 0.45) / RtD × beltSpeed` | https://satisfactory.wiki.gg/wiki/Tutorial:Train_throughput |
 | Throughput, TtF < RtD | `(TtF / RtD) × beltSpeed` — wait-limited (see note below) | https://satisfactory.wiki.gg/wiki/Tutorial:Train_throughput |
 | Max sustained, stack 50 | 1431.17 items/min per platform | https://satisfactory.wiki.gg/wiki/Tutorial:Train_throughput |
 | Max sustained, stack 100 | 1793.08 items/min per platform | https://satisfactory.wiki.gg/wiki/Tutorial:Train_throughput |
@@ -200,7 +198,7 @@ Note on the TtF < RtD branch: the wiki's formula expresses that when the train
 returns before the platform can possibly have refilled, throughput is capacity-
 limited to one carload per round trip — `(TtF/RtD) × beltSpeed` with the wiki's
 TtF is its published form; the planner's cleaner equivalent is
-`min(carCapacity/RtD, (RtD − 0.4513)/RtD × beltSpeed)` per platform.
+`min(carCapacity/RtD, (RtD − 0.45)/RtD × beltSpeed)` per platform.
 
 ### Signals / same-track train count
 
@@ -276,14 +274,14 @@ number.
 Two coupled decisions the planner can now model exactly:
 - **Cars per train** scales `cargoPerTrip = nCars × 32 × stackSize` (or
   `nCars × 2400 m³`) at zero time cost — all cars dock in parallel in the same
-  27.08 s lockout, but each car permanently occupies one 50 MW platform at each
+  27 s lockout, but each car permanently occupies one 50 MW platform at each
   end. Grade feasibility: warn beyond ~13 loaded cars per locomotive (flat) and
   ~2–3 on steep ramps.
 - **Number of trains** divides the effective `RtD` a single consist provides:
   `nTrains = ceil(rate × T_round / cargoPerTrip)` with
-  `T_round = T_travel + 2 × 27.08 s`.
+  `T_round = T_travel + 2 × 27 s`.
 - **Per-platform belt ceiling** (binding at short RtD / big stacks):
-  `platformRate ≤ min(carCapacity / RtD, (RtD − 27.08 s) / RtD × beltFeed)`
+  `platformRate ≤ min(carCapacity / RtD, (RtD − 27 s) / RtD × beltFeed)`
   with `beltFeed ≤ 2400/min` (dual Mk.6). The wiki's precomputed ceilings
   (1431/1793/2053/2248 per stack tier; 979.06 m³/min fluid) are good validation
   targets for the exact math.

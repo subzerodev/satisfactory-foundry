@@ -608,7 +608,7 @@ describe("RawFeedNode", () => {
         />,
       );
     });
-    expect(host.textContent).toContain("clock % must be a number in (0, 250]");
+    expect(host.textContent).toContain("clock % must be a number in [1, 250]");
     expect(host.textContent).not.toContain("53 ×");
 
     await act(async () => {
@@ -626,5 +626,201 @@ describe("RawFeedNode", () => {
     expect(host.querySelector("select")).toBeNull();
     expect(host.textContent).toContain("Resource Well Pressurizer");
     expect(host.textContent).not.toContain("Miner");
+  });
+
+  // --- Raw-input packaging (#133) ------------------------------------------
+
+  /** The extraction catalog plus a resolvable Package/Unpackage Water pair, so
+   *  discoverPackagingPairs is non-empty for water (the hidden harness base has
+   *  recipes: {}). */
+  function packagingCatalog(): Catalog {
+    const power = (mw: number) => ({
+      mw: F(mw),
+      variable: false as const,
+      exponent: Fraction.of(1321929, 1000000),
+    });
+    const base = extractionCatalog();
+    return {
+      ...base,
+      items: {
+        ...base.items,
+        packaged_water: {
+          id: "packaged_water",
+          displayName: "Packaged Water",
+          isFluid: false,
+          stackSize: F(100),
+          isRawResource: false,
+        },
+        empty_canister: {
+          id: "empty_canister",
+          displayName: "Empty Canister",
+          isFluid: false,
+          stackSize: F(100),
+          isRawResource: false,
+        },
+      },
+      machines: {
+        ...base.machines,
+        packager: {
+          id: "packager",
+          displayName: "Packager",
+          power: power(10),
+        },
+      },
+      recipes: {
+        pkg_water: {
+          id: "pkg_water",
+          displayName: "Packaged Water",
+          machineId: "packager",
+          isAlternate: false,
+          primaryOutputId: "packaged_water",
+          inputs: [
+            { itemId: "water", perMinute: F(60) },
+            { itemId: "empty_canister", perMinute: F(60) },
+          ],
+          outputs: [{ itemId: "packaged_water", perMinute: F(60) }],
+        },
+        unpkg_water: {
+          id: "unpkg_water",
+          displayName: "Unpackage Water",
+          machineId: "packager",
+          isAlternate: false,
+          primaryOutputId: "water",
+          inputs: [{ itemId: "packaged_water", perMinute: F(120) }],
+          outputs: [
+            { itemId: "water", perMinute: F(120) },
+            { itemId: "empty_canister", perMinute: F(120) },
+          ],
+        },
+      },
+    };
+  }
+
+  const packagingIntent = {
+    packageRecipeId: "pkg_water",
+    clockPercentText: "100",
+    returnTransport: { mode: "belt" as const },
+  };
+
+  it("hides the packaging control when no pair resolves and none is saved", async () => {
+    await act(async () => {
+      root.render(
+        <ExtractionPanel
+          catalog={extractionCatalog()}
+          rawNode={rawNode("water", "Water", 600)}
+          stage={stage}
+          selection={{ machineId: "water_pump", clockPercentText: "100" }}
+          onSetSelection={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      );
+    });
+    expect(host.textContent).not.toContain("Package for transport");
+  });
+
+  it("shows a saved packaging config even when the pair no longer resolves", async () => {
+    await act(async () => {
+      root.render(
+        <ExtractionPanel
+          catalog={extractionCatalog()} // recipes: {} → pair unresolvable
+          rawNode={rawNode("water", "Water", 600)}
+          stage={stage}
+          selection={{
+            machineId: "water_pump",
+            clockPercentText: "100",
+            packaging: packagingIntent,
+          }}
+          onSetSelection={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      );
+    });
+    const toggle = host.querySelector<HTMLInputElement>(
+      'input[aria-label="Package for transport"]',
+    )!;
+    expect(toggle).not.toBeNull();
+    expect(toggle.checked).toBe(true);
+  });
+
+  it("offers the packaging toggle and reports figures on enable (water)", async () => {
+    const onSelection = vi.fn();
+    function Harness() {
+      const [selection, setSelection] = useState<
+        ComponentProps<typeof ExtractionPanel>["selection"]
+      >({ machineId: "water_pump", clockPercentText: "100" });
+      return (
+        <ExtractionPanel
+          catalog={packagingCatalog()}
+          rawNode={rawNode("water", "Water", 120)}
+          stage={stage}
+          selection={selection}
+          onSetSelection={(next) => {
+            onSelection(next);
+            setSelection(next);
+          }}
+          onClose={vi.fn()}
+        />
+      );
+    }
+    await act(async () => root.render(<Harness />));
+    const toggle = host.querySelector<HTMLInputElement>(
+      'input[aria-label="Package for transport"]',
+    )!;
+    expect(toggle).not.toBeNull();
+    expect(toggle.checked).toBe(false);
+    await act(async () => toggle.click());
+    // Enable seeds a belt return route (the mandatory initial shape).
+    expect(onSelection).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        packaging: expect.objectContaining({
+          packageRecipeId: "pkg_water",
+          returnTransport: { mode: "belt" },
+        }),
+      }),
+    );
+    // 120/min water at 60/min per Packager → 2 Packagers, 1 Unpackager.
+    expect(host.textContent).toContain("2 Packager");
+    expect(host.textContent).toContain("1 Unpackager");
+    expect(host.textContent).toContain("/min packaged");
+    expect(host.textContent).toContain("/min empty containers");
+  });
+
+  it("preserves the packaging config across an extractor change (setMachine)", async () => {
+    const onSelection = vi.fn();
+    function Harness() {
+      const [selection, setSelection] = useState<
+        ComponentProps<typeof ExtractionPanel>["selection"]
+      >({
+        machineId: "miner_mk1",
+        clockPercentText: "100",
+        packaging: packagingIntent,
+      });
+      return (
+        <ExtractionPanel
+          catalog={packagingCatalog()}
+          rawNode={rawNode("stone", "Limestone", 60)}
+          stage={stage}
+          selection={selection}
+          onSetSelection={(next) => {
+            onSelection(next);
+            setSelection(next);
+          }}
+          onClose={vi.fn()}
+        />
+      );
+    }
+    await act(async () => root.render(<Harness />));
+    const select = host.querySelector("select")!; // the extractor select
+    select.value = "miner_mk3";
+    await act(async () =>
+      select.dispatchEvent(new Event("change", { bubbles: true })),
+    );
+    // The extractor changed but the packaging config rode along (setMachine's
+    // explicit arm — the setter has no ...selection spread).
+    expect(onSelection).toHaveBeenLastCalledWith({
+      machineId: "miner_mk3",
+      clockPercentText: "100",
+      packaging: packagingIntent,
+    });
   });
 });

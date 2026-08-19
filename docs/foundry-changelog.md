@@ -3,6 +3,88 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-19 — The schematic splits in two: a build view with a ruler, and a Machines tab (P3, the arc's last phase)
+
+> Hey Michael — the 106-machine block no longer fights the belt drawing for
+> space. The schematic is now the BUILD view: ribbons, belts, seams, and in
+> place of the old block a thin ruler — tall ticks exactly where belt
+> stretches start and end (they're taken from the solve, so they always
+> line up with the drawing), short ticks tying each number to its machine.
+> That's the option A you picked from the mockups, and the drawing got
+> about 28 pixels of breathing room back. The block itself lives in a new
+> Machines tab next to the Schematic tab — same boxes, same ×106 count at
+> high machine counts, just its own room. What that tab should GROW into
+> is your open #138 ticket; this phase only gave it a home. Everything
+> else — ribbons, numbers, cards, legend — is untouched.
+
+## 2026-08-19 — You can finally click to package the water (P4 of the rework arc)
+
+> Hey Michael — the thing you couldn't find a button for now has one, where
+> you said it should be: directly under the extractor plan. Open a raw
+> input's Extraction panel (your 10,600 water is the case this was built
+> for) and there's a "Package for transport" control. Turn it on and it
+> reports the Packagers, Unpackagers, power, packaged cargo rate, and the
+> empty-container return route — same numbers the link version gives, no
+> extra machines added to your factory graph. It's remembered with the
+> plan, survives changing the extractor, and refuses illegal return routes
+> (you can't send empty canisters back through a pipe). One consequence
+> worth knowing: saved plan files step up a version internally, so a plan
+> saved by this build won't open in an older build — old plans open fine
+> here.
+
+## 2026-08-19 — The drawing now shows the overflow chains: tapering ribbons and endpoint numbers (P2 of the rework arc)
+
+> Hey Michael — the pictures caught up with the solver. Feed buses now draw
+> as tapering ribbons: thick where a belt enters, thinning as each machine
+> draws its share, exactly the D+F style you picked from the mockups. Numbers
+> sit at the span endpoints only — what enters each stretch, what hands off
+> at each seam (your 8411 case shows its eight 60s), and a 0 at the end of
+> the lane, because nothing actually leaves it. If the last belt is bigger
+> than the tail needs, the spare shows up as "spare belt capacity" on the
+> summary card, never as flow on the drawing. The cards also now list the
+> hardware each lane needs — splitters, seam mergers, cascade counts (in
+> threes, so every junction is buildable), and the standing buffer. The
+> legend explains the new conventions, tooltips say "entry → hand-off"
+> instead of "peak", pipe lanes draw as a neutral dashed connector that
+> makes no ordering claims, and the site plan labels each junction as a
+> splitter, seam merger, or merger.
+
+## 2026-08-19 — The x2 belt marks are gone: the solver now plans overflow chains (P1 of the rework arc)
+
+> Hey Michael — this is the big one from your 8411 Concrete complaint. The
+> solver no longer pretends leftover flow has to ride a second belt alongside
+> the bus: it now plans the build you'd actually make — a Smart Splitter set
+> to Overflow at each machine, with the leftover riding the trunk onward and a
+> small merger completing the machine at each belt seam. All eight of the
+> "x2" runs in your 8411 case turn out to be exactly those seams. Every "x2"
+> mark, the "2 parallel lines" text, and the confusing "bus up to 2 parallel ·
+> Mk6 supports one bus line" card wording are gone. In their place the solver
+> now knows, per feed lane: what enters and what hands off at each belt's
+> stretch, how many splitters and seam mergers the build needs (with splitter
+> cascades counted in threes, so every junction is buildable), and the
+> standing buffer (about 9 items sat in each splitter). Pipes are honest now
+> too: instead of pretending machines starve in order along a pipe, the app
+> just tells you a pipe lane is under-supplied by X per minute, with the
+> caveat that pipe ratings are nominal. The pictures don't change yet — the
+> new tapering-ribbon drawing is the next phase; this phase changed what the
+> solver knows.
+
+## 2026-08-19 — Belt and pipe speeds now come from the game's own data (P0 of the rework arc)
+
+> Hey Michael — until now the app carried its own hardcoded list of belt and
+> pipe speeds. It happened to match the game, but only because someone kept it
+> matched by hand — a game patch changing a belt speed would have slipped
+> through silently. Now the speeds are read straight out of the game's Docs
+> file (the bundled one, or whatever file you upload), so a modded or patched
+> file with different speeds — even an extra belt tier — genuinely works end
+> to end. If a file is missing or malformed the app quietly falls back to the
+> known-good table, never an error. There's also a tripwire test that fails
+> loudly if a future game build changes any speed. One number fix rode along:
+> the train loading lockout is now exactly 27 seconds (the game's own value)
+> instead of the wiki's 27.08, so train throughput figures shift by a hair.
+> You shouldn't notice anything else — this phase is the foundation the
+> splitter-aware solver rework builds on.
+
 ## 2026-08-18 — The extraction panel no longer hides its own controls
 
 > Hey Michael — you said you didn't like having to scroll the little panel. You

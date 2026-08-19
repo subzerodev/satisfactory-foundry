@@ -20,6 +20,38 @@ export type MachinePowerProjection =
       variableBoundsMw?: { min: number; max: number };
     };
 
+/** A recipe's variable-power range: draw spans [constantMw, constantMw +
+ *  factorMw]. Mirrors CatalogRecipe.variablePower structurally (#142). */
+export interface RecipeVariablePower {
+  constantMw: Fraction;
+  factorMw: Fraction;
+}
+
+/**
+ * The recipe-level power correction (#142), single owner of the gating rule:
+ * the building class is the gate — `power.variable` is set exclusively for
+ * the three FGBuildableManufacturerVariablePower classes — so a
+ * constant-power machine's inert recipe fields (the Ballistic Warp Drive
+ * trap) can never fire. A variable machine with a field-carrying recipe gets
+ * the exact per-recipe range in place of the all-recipes envelope; without
+ * fields it keeps the envelope (honest fallback).
+ */
+export function effectiveMachinePower(
+  power: MachinePowerInput,
+  recipeVariable?: RecipeVariablePower,
+): MachinePowerInput {
+  if (!power.variable || recipeVariable === undefined) return power;
+  const min = recipeVariable.constantMw;
+  const max = recipeVariable.constantMw.add(recipeVariable.factorMw);
+  return {
+    variable: true,
+    mw: min.add(max).div(Fraction.from(2)),
+    minMw: min,
+    maxMw: max,
+    exponent: power.exponent,
+  };
+}
+
 export function machinePowerProjection(
   power: MachinePowerInput,
   machineCount: number,

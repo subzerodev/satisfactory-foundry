@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { Fraction } from "../core/fraction.ts";
 import { parseDocsJson, DocsParseError } from "./docs-loader.ts";
@@ -153,9 +154,13 @@ describe("parseDocsJson — items + machines + shape (spec row 1)", () => {
     expect(cat.machines["oil_refinery"]!.displayName).toBe("Refinery");
   });
 
-  it("attaches the shared TIER_TABLE to the catalog", () => {
+  it("falls back to the curated TIER_TABLE per kind when a fragment carries no tier classes (#140 P0)", () => {
+    // DOCS_FRAGMENT has no FGBuildableConveyorBelt / FGBuildablePipeline groups,
+    // so BOTH kinds fall back to the curated table (value-equal, parse-else-
+    // curated). The derivation itself is exercised by the fixtures below.
     const cat = parseDocsJson(DOCS_FRAGMENT);
-    expect(cat.tiers).toBe(TIER_TABLE);
+    expect(cat.tiers.belt).toEqual(TIER_TABLE.belt);
+    expect(cat.tiers.pipe).toEqual(TIER_TABLE.pipe);
   });
 
   it("items lacking mStackSize (DOCS_FRAGMENT) parse stackSize null", () => {
@@ -1089,5 +1094,226 @@ describe("parseDocsJson — FGSchematic unlock tiers (S20 P3, spec row 8)", () =
     expect(Object.getPrototypeOf(cat.recipeUnlocks)).toBeNull();
     // A prototype-member id misses cleanly (#28).
     expect(cat.recipeUnlocks["constructor"]).toBeUndefined();
+  });
+});
+
+describe("recipe variable-power parse (#142)", () => {
+  const docsWith = (extra: Record<string, string>) => [
+    {
+      NativeClass:
+        "/Script/CoreUObject.Class'/Script/FactoryGame.FGItemDescriptor'",
+      Classes: [
+        { ClassName: "Desc_A_C", mDisplayName: "A", mForm: "RF_SOLID" },
+        { ClassName: "Desc_B_C", mDisplayName: "B", mForm: "RF_SOLID" },
+      ],
+    },
+    {
+      NativeClass:
+        "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'",
+      Classes: [{ ClassName: "Build_M_C", mDisplayName: "M" }],
+    },
+    {
+      NativeClass: "/Script/CoreUObject.Class'/Script/FactoryGame.FGRecipe'",
+      Classes: [
+        {
+          ClassName: "Recipe_X_C",
+          mDisplayName: "X",
+          mIngredients:
+            "((ItemClass=BlueprintGeneratedClass'\"/Game/P/Desc_A_C\"',Amount=1))",
+          mProduct:
+            "((ItemClass=BlueprintGeneratedClass'\"/Game/P/Desc_B_C\"',Amount=1))",
+          mManufactoringDuration: "1",
+          mProducedIn: "/Game/P/Build_M_C",
+          ...extra,
+        },
+      ],
+    },
+  ];
+
+  it("both fields present → attached exactly", () => {
+    const cat = parseDocsJson(
+      docsWith({
+        mVariablePowerConsumptionConstant: "250.000000",
+        mVariablePowerConsumptionFactor: "500.000000",
+      }),
+    );
+    const vp = cat.recipes["x"]!.variablePower;
+    expect(vp).toBeDefined();
+    expect(vp!.constantMw.eq(Fraction.from(250))).toBe(true);
+    expect(vp!.factorMw.eq(Fraction.from(500))).toBe(true);
+  });
+
+  it("one field missing → absent", () => {
+    const cat = parseDocsJson(
+      docsWith({ mVariablePowerConsumptionConstant: "250.000000" }),
+    );
+    expect(cat.recipes["x"]!.variablePower).toBeUndefined();
+  });
+
+  it("malformed field → absent (lenient, never a rejection)", () => {
+    const cat = parseDocsJson(
+      docsWith({
+        mVariablePowerConsumptionConstant: "nope",
+        mVariablePowerConsumptionFactor: "500.000000",
+      }),
+    );
+    expect(cat.recipes["x"]!.variablePower).toBeUndefined();
+  });
+
+  it("factor 0 → attached", () => {
+    const cat = parseDocsJson(
+      docsWith({
+        mVariablePowerConsumptionConstant: "100.000000",
+        mVariablePowerConsumptionFactor: "0.000000",
+      }),
+    );
+    const vp = cat.recipes["x"]!.variablePower;
+    expect(vp).toBeDefined();
+    expect(vp!.factorMw.eq(Fraction.from(0))).toBe(true);
+  });
+});
+
+describe("parseDocsJson — parsed tier table (#140 P0)", () => {
+  // Build a Docs.json fragment carrying belt (mSpeed) and pipe (mFlowLimit)
+  // classes, plus the minimal item/recipe/machine spine so parseDocsJson runs.
+  function docsWithTiers(
+    belts: { className: string; mSpeed?: string }[],
+    pipes: { className: string; mFlowLimit?: string }[],
+  ): unknown[] {
+    return [
+      ...DOCS_FRAGMENT,
+      {
+        NativeClass:
+          "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableConveyorBelt'",
+        Classes: belts.map((b) => ({
+          ClassName: b.className,
+          ...(b.mSpeed !== undefined ? { mSpeed: b.mSpeed } : {}),
+        })),
+      },
+      {
+        NativeClass:
+          "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildablePipeline'",
+        Classes: pipes.map((p) => ({
+          ClassName: p.className,
+          ...(p.mFlowLimit !== undefined ? { mFlowLimit: p.mFlowLimit } : {}),
+        })),
+      },
+    ];
+  }
+
+  const nums = (fs: Fraction[]) => fs.map((f) => f.toString());
+
+  it("derives belt = mSpeed × 1/2, pipe = mFlowLimit × 60, sorted ascending from a scrambled fragment", () => {
+    // Deliberately scrambled (the real Classes array is Mk1,Mk5,Mk6,Mk4,Mk3,Mk2).
+    const cat = parseDocsJson(
+      docsWithTiers(
+        [
+          { className: "Build_ConveyorBeltMk1_C", mSpeed: "120.000000" }, // 60
+          { className: "Build_ConveyorBeltMk5_C", mSpeed: "1560.000000" }, // 780
+          { className: "Build_ConveyorBeltMk3_C", mSpeed: "540.000000" }, // 270
+          { className: "Build_ConveyorBeltMk2_C", mSpeed: "240.000000" }, // 120
+        ],
+        [
+          { className: "Build_PipelineMK2_C", mFlowLimit: "10.000000" }, // 600
+          { className: "Build_Pipeline_C", mFlowLimit: "5.000000" }, // 300
+        ],
+      ),
+    );
+    expect(nums(cat.tiers.belt)).toEqual(["60", "120", "270", "780"]);
+    expect(nums(cat.tiers.pipe)).toEqual(["300", "600"]);
+  });
+
+  it("dedupes by value — the cosmetic _NoIndicator_ pipe variants collapse", () => {
+    const cat = parseDocsJson(
+      docsWithTiers(
+        [{ className: "Build_ConveyorBeltMk1_C", mSpeed: "120.000000" }],
+        [
+          { className: "Build_Pipeline_C", mFlowLimit: "5.000000" }, // 300
+          { className: "Build_PipelineMK2_C", mFlowLimit: "10.000000" }, // 600
+          {
+            className: "Build_PipelineMK2_NoIndicator_C",
+            mFlowLimit: "10.000000",
+          },
+          { className: "Build_Pipeline_NoIndicator_C", mFlowLimit: "5.000000" },
+        ],
+      ),
+    );
+    // Four pipe classes, two distinct flow limits → two tiers.
+    expect(nums(cat.tiers.pipe)).toEqual(["300", "600"]);
+  });
+
+  it("per-kind fallback: a belts-only file keeps the curated pipe table (and vice versa)", () => {
+    const beltsOnly = parseDocsJson(
+      docsWithTiers(
+        [{ className: "Build_ConveyorBeltMk1_C", mSpeed: "120.000000" }],
+        [],
+      ),
+    );
+    expect(nums(beltsOnly.tiers.belt)).toEqual(["60"]);
+    expect(beltsOnly.tiers.pipe).toEqual(TIER_TABLE.pipe);
+
+    const pipesOnly = parseDocsJson(
+      docsWithTiers(
+        [],
+        [{ className: "Build_Pipeline_C", mFlowLimit: "5.000000" }],
+      ),
+    );
+    expect(pipesOnly.tiers.belt).toEqual(TIER_TABLE.belt);
+    expect(nums(pipesOnly.tiers.pipe)).toEqual(["300"]);
+  });
+
+  it("skips a malformed individual entry leniently — the rest of the kind still parses", () => {
+    const cat = parseDocsJson(
+      docsWithTiers(
+        [
+          { className: "Build_ConveyorBeltMk1_C", mSpeed: "120.000000" }, // 60
+          { className: "Build_ConveyorBeltBad_C", mSpeed: "not-a-number" }, // skipped
+          { className: "Build_ConveyorBeltMk2_C" }, // mSpeed absent → skipped
+          { className: "Build_ConveyorBeltMk3_C", mSpeed: "540.000000" }, // 270
+        ],
+        [{ className: "Build_Pipeline_C", mFlowLimit: "5.000000" }],
+      ),
+    );
+    expect(nums(cat.tiers.belt)).toEqual(["60", "270"]);
+    expect(nums(cat.tiers.pipe)).toEqual(["300"]);
+  });
+
+  it("ignores the sibling FGBuildablePipelinePump / Junction families (no mFlowLimit tiers)", () => {
+    const cat = parseDocsJson([
+      ...DOCS_FRAGMENT,
+      {
+        NativeClass:
+          "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildablePipelinePump'",
+        Classes: [{ ClassName: "Build_PipelinePump_C" }],
+      },
+      {
+        NativeClass:
+          "/Script/CoreUObject.Class'/Script/FactoryGame.FGBuildablePipeline'",
+        Classes: [{ ClassName: "Build_Pipeline_C", mFlowLimit: "5.000000" }],
+      },
+    ]);
+    // Only the real FGBuildablePipeline group contributes a tier; the Pump group
+    // is not admitted (it would otherwise have to be skipped for absent flow).
+    expect(nums(cat.tiers.pipe)).toEqual(["300"]);
+  });
+});
+
+describe("parseDocsJson — real bundled file tier guard (#140 P0, spec D3)", () => {
+  it("the derived table EQUALS the curated TIER_TABLE value-for-value", () => {
+    // The audit-demanded drift detector: parse the real shipped Docs.json (a
+    // unit-scope read is precedented — packaging.test.ts:12, store.test.ts:140)
+    // and prove the derived tiers reproduce the curated table exactly. A future
+    // game patch changing a belt speed / pipe flow limit fails HERE, loudly,
+    // instead of silently desyncing the curated fallback from live data.
+    const text = readFileSync("public/bundled-docs/en-US.json", "utf8");
+    const cat = parseDocsJson(JSON.parse(text));
+    expect(cat.tiers.belt.length).toBe(TIER_TABLE.belt.length);
+    expect(cat.tiers.pipe.length).toBe(TIER_TABLE.pipe.length);
+    for (let i = 0; i < TIER_TABLE.belt.length; i++) {
+      expect(cat.tiers.belt[i]!.eq(TIER_TABLE.belt[i]!)).toBe(true);
+    }
+    for (let i = 0; i < TIER_TABLE.pipe.length; i++) {
+      expect(cat.tiers.pipe[i]!.eq(TIER_TABLE.pipe[i]!)).toBe(true);
+    }
   });
 });

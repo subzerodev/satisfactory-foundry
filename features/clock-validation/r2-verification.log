@@ -1,0 +1,65 @@
+# #143 bidirectionality verification — 2026-08-18T19:13:58Z
+
+## 1. PASS with production code present
+$ npx vitest run src/ui/ChainBuilder.test.tsx src/ui/extraction-plan.test.ts src/state/store.test.ts 2>&1 | tail -4
+      Tests  228 passed (228)
+   Start at  20:13:58
+   Duration  482ms (transform 287ms, setup 0ms, import 416ms, tests 254ms, environment 0ms)
+
+
+## 2. Revert production code (clock.ts floor + store.ts derive swap)
+$ git stash push src/core/clock.ts src/state/store.ts
+Saved working directory and index state WIP on feature/clock-validation: 1b58e11 spec(143): clock validation unification - design frozen at r2
+
+## 3. FAIL with production code reverted
+$ npx vitest run src/ui/ChainBuilder.test.tsx src/ui/extraction-plan.test.ts src/state/store.test.ts 2>&1 | grep -E "^ *(FAIL|×|✕)|Tests " | head -20
+     × uses the shared clock error for  4ms
+     × uses the shared clock error for nope 1ms
+     × uses the shared clock error for 0 0ms
+     × uses the shared clock error for -1 0ms
+     × uses the shared clock error for 0.5 1ms
+     × rejects garbage with the labeled error 3ms
+     × rejects zero (below the 1% floor) 1ms
+     × rejects a negative clock (below the 1% floor) 0ms
+     × rejects a sub-1% clock (game mMinPotential is 1%) 1ms
+     × clock '0' / 'abc' / '-5' / '0.5' / '1000' → invalid bad-clock 5ms
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > invalid-input routing (spec row 5) > clock '0' / 'abc' / '-5' / '0.5' / '1000' → invalid bad-clock
+ FAIL  src/ui/ChainBuilder.test.tsx > parseClockText (S20 P2, [1, 250]) > rejects garbage with the labeled error
+ FAIL  src/ui/ChainBuilder.test.tsx > parseClockText (S20 P2, [1, 250]) > rejects zero (below the 1% floor)
+ FAIL  src/ui/ChainBuilder.test.tsx > parseClockText (S20 P2, [1, 250]) > rejects a negative clock (below the 1% floor)
+ FAIL  src/ui/ChainBuilder.test.tsx > parseClockText (S20 P2, [1, 250]) > rejects a sub-1% clock (game mMinPotential is 1%)
+ FAIL  src/ui/extraction-plan.test.ts > deriveExtractionPlan > uses the shared clock error for 
+ FAIL  src/ui/extraction-plan.test.ts > deriveExtractionPlan > uses the shared clock error for nope
+ FAIL  src/ui/extraction-plan.test.ts > deriveExtractionPlan > uses the shared clock error for 0
+ FAIL  src/ui/extraction-plan.test.ts > deriveExtractionPlan > uses the shared clock error for -1
+
+## 4. Restore
+$ git stash pop
+On branch feature/clock-validation
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   src/core/clock.ts
+	modified:   src/state/store.test.ts
+	modified:   src/state/store.ts
+	modified:   src/ui/ChainBuilder.test.tsx
+	modified:   src/ui/GraphCanvas.dom.test.tsx
+	modified:   src/ui/extraction-plan.test.ts
+	modified:   src/ui/smoke.test.tsx
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	features/clock-validation/r2-verification.log
+
+no changes added to commit (use "git add" and/or "git commit -a")
+Dropped refs/stash@{0} (81679d0917eaf33c9a57cd1333db4f4ed8589212)
+
+## 5. Green again
+   Start at  20:13:59
+   Duration  484ms (transform 265ms, setup 0ms, import 424ms, tests 255ms, environment 0ms)
+
+
+## 5b. Green confirmation (full counts, post-restore)
+ Test Files  3 passed (3)
+      Tests  228 passed (228)

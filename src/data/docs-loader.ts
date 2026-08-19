@@ -9,6 +9,7 @@ import type {
   RecipeIO,
 } from "./types.ts";
 import { TIER_TABLE } from "./tiers.ts";
+import type { TierTable } from "./types.ts";
 
 /**
  * A human-readable parse failure. The Phase 4 upload UI shows `.message`
@@ -33,6 +34,13 @@ const NATIVE_BUILDING_REGEX =
 const NATIVE_ITEM_REGEX =
   /FG(ItemDescriptor|ResourceDescriptor|ConsumableDescriptor|EquipmentDescriptor|PowerShardDescriptor|ChainsawFuelDescriptor|AmmoType)/;
 const NATIVE_RECIPE = "FGRecipe";
+// Transport-tier buildings (#140 P0). Matched with a trailing apostrophe (the
+// NativeClass string ends in `'`) so `FGBuildableConveyorBelt` and
+// `FGBuildablePipeline` are admitted EXACTLY — the anchor excludes the sibling
+// `FGBuildablePipelinePump`/`FGBuildablePipelineJunction` families (they share
+// the "Pipeline" prefix but carry no mFlowLimit, and their rates are not tiers).
+const NATIVE_BELT_REGEX = /FGBuildableConveyorBelt'$/;
+const NATIVE_PIPE_REGEX = /FGBuildablePipeline'$/;
 // Progression data (S20 P3, ticket #102). FGSchematic is its own native class:
 // it matches none of the filters above (no "FGRecipe" substring, no descriptor
 // or buildable prefix), so it gets its own branch below.
@@ -47,6 +55,9 @@ interface RawRecipe {
   product: string;
   duration: string;
   producedIn: string;
+  /** Raw mVariablePowerConsumption* strings (#142); empty = absent. */
+  variablePowerConstant: string;
+  variablePowerFactor: string;
 }
 
 /**
@@ -82,6 +93,11 @@ export function parseDocsJson(raw: unknown): Catalog {
   const recipesRaw: RawRecipe[] = [];
   const schematicsRaw: RawSchematic[] = [];
   const extractorsRaw: RawExtractor[] = [];
+  // Per-kind tier throughputs derived from the belt/pipe buildings (#140 P0):
+  // belt = mSpeed × 1/2 (items/min), pipe = mFlowLimit × 60 (m³/min). Collected
+  // raw here (order/duplicates preserved) and deduped+sorted after the loop.
+  const beltTiersRaw: Fraction[] = [];
+  const pipeTiersRaw: Fraction[] = [];
 
   for (const group of raw) {
     if (typeof group !== "object" || group === null) continue;
@@ -145,6 +161,14 @@ export function parseDocsJson(raw: unknown): Catalog {
               ? c.mManufactoringDuration
               : "",
           producedIn: (c.mProducedIn as string | undefined) ?? "",
+          variablePowerConstant:
+            typeof c.mVariablePowerConsumptionConstant === "string"
+              ? c.mVariablePowerConsumptionConstant
+              : "",
+          variablePowerFactor:
+            typeof c.mVariablePowerConsumptionFactor === "string"
+              ? c.mVariablePowerConsumptionFactor
+              : "",
         });
       }
     } else if (nativeClass.includes(NATIVE_SCHEMATIC)) {
@@ -174,8 +198,38 @@ export function parseDocsJson(raw: unknown): Catalog {
           recipeClassNames,
         });
       }
+    } else if (NATIVE_BELT_REGEX.test(nativeClass)) {
+      // Belt tier throughput = mSpeed × 1/2 (the game's mSpeed is 2× items/min,
+      // ITEM_SPACING = 120 → items/min = mSpeed/120×60 = mSpeed/2). A malformed
+      // or absent mSpeed is skipped leniently (never a rejection).
+      for (const cls of classes) {
+        const rate = parseTierField(
+          (cls as Record<string, unknown>).mSpeed,
+          BELT_RATE_FACTOR,
+        );
+        if (rate !== null) beltTiersRaw.push(rate);
+      }
+    } else if (NATIVE_PIPE_REGEX.test(nativeClass)) {
+      // Pipe tier throughput = mFlowLimit × 60 (m³/s → m³/min). Same lenient
+      // skip; the cosmetic `_NoIndicator_` variants carry duplicate flow limits
+      // and collapse in the value-dedupe below.
+      for (const cls of classes) {
+        const rate = parseTierField(
+          (cls as Record<string, unknown>).mFlowLimit,
+          PIPE_RATE_FACTOR,
+        );
+        if (rate !== null) pipeTiersRaw.push(rate);
+      }
     }
   }
+
+  // Parse-else-curated per kind (the parseMachinePower posture): a file that
+  // yields NO belt (or NO pipe) tiers keeps the curated fallback for that kind
+  // only — never a whole-catalog rejection. A partial-but-non-empty parse wins.
+  const tiers: TierTable = {
+    belt: dedupeAscending(beltTiersRaw) ?? TIER_TABLE.belt,
+    pipe: dedupeAscending(pipeTiersRaw) ?? TIER_TABLE.pipe,
+  };
 
   // Null-prototype container (#28) — see the items/machines seeds above.
   const recipes: Record<string, CatalogRecipe> = Object.create(null);
@@ -200,6 +254,11 @@ export function parseDocsJson(raw: unknown): Catalog {
     const isAlternate =
       id.includes("alternate_") || r.displayName.startsWith("Alternate:");
 
+    // #142: attach the recipe-level variable-power range only when BOTH
+    // fields parse as decimals (the parseMachinePower posture — malformed or
+    // missing is silently absent, never a rejection). factor 0 is legal.
+    const vpConstant = parsePowerField(r.variablePowerConstant);
+    const vpFactor = parsePowerField(r.variablePowerFactor);
     recipes[id] = {
       id,
       displayName: r.displayName.replace(/^Alternate:\s*/, ""),
@@ -208,6 +267,9 @@ export function parseDocsJson(raw: unknown): Catalog {
       inputs,
       outputs,
       primaryOutputId: outputs[0]!.itemId,
+      ...(vpConstant !== null && vpFactor !== null
+        ? { variablePower: { constantMw: vpConstant, factorMw: vpFactor } }
+        : {}),
     };
   }
 
@@ -264,10 +326,49 @@ export function parseDocsJson(raw: unknown): Catalog {
     items,
     machines,
     recipes,
-    tiers: TIER_TABLE,
+    tiers,
     recipeUnlocks,
     extractors,
   };
+}
+
+/** Belt speed → items/min: the game exports mSpeed as 2× items/min. */
+const BELT_RATE_FACTOR = Fraction.of(1, 2);
+/** Pipe flow limit (m³/s) → m³/min. */
+const PIPE_RATE_FACTOR = Fraction.from(60);
+
+/**
+ * Derive one tier throughput from a raw `mSpeed`/`mFlowLimit` field, or `null`
+ * when the field is absent or not a decimal string. Never throws — a malformed
+ * tier entry is skipped leniently (the parseMachinePower / parsePowerField
+ * posture), so one bad building can't reject the whole catalog.
+ */
+function parseTierField(raw: unknown, factor: Fraction): Fraction | null {
+  if (typeof raw !== "string") return null;
+  let value: Fraction;
+  try {
+    value = Fraction.parse(raw);
+  } catch {
+    return null;
+  }
+  return value.mul(factor);
+}
+
+/**
+ * Dedupe a raw tier list by VALUE and sort ascending, returning `null` when the
+ * list is empty (the caller then falls back to the curated table for that kind).
+ * The `Classes` array is not in Mk order, and the cosmetic `_NoIndicator_` pipe
+ * variants repeat flow limits — both are resolved here. Fractions are compared
+ * exactly (`eq`), so `10/1` and `20/2` collapse to one entry.
+ */
+function dedupeAscending(raw: Fraction[]): Fraction[] | null {
+  if (raw.length === 0) return null;
+  const sorted = [...raw].sort((a, b) => a.compare(b));
+  const out: Fraction[] = [];
+  for (const value of sorted) {
+    if (out.length === 0 || !out[out.length - 1]!.eq(value)) out.push(value);
+  }
+  return out;
 }
 
 function isExtractorNativeClass(nativeClass: string): boolean {

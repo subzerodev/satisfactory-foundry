@@ -124,6 +124,8 @@ function solvedStage(
                   totalDemand: rate,
                   belts: [],
                   segments: [],
+                  hardware: null,
+                  standingBufferItems: 0,
                   findings: [],
                 },
               ]
@@ -138,6 +140,7 @@ function solvedStage(
                   totalOutput: rate,
                   breakouts: [],
                   segments: [],
+                  collectionCascade: null,
                   findings: [],
                 },
               ]

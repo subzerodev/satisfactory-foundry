@@ -52,6 +52,12 @@ function sampleCatalog(): Catalog {
         inputs: [{ itemId: "ore_iron", perMinute: Fraction.of(75, 2) }],
         outputs: [{ itemId: "iron_ingot", perMinute: Fraction.from(30) }],
         primaryOutputId: "iron_ingot",
+        // #142: the round-trip test asserts this survives serialize/revive
+        // (the isRawResource scar class — a field that silently vanished).
+        variablePower: {
+          constantMw: Fraction.from(250),
+          factorMw: Fraction.of(1, 2),
+        },
       },
     },
     extractors: {
@@ -93,15 +99,29 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     expect(rate.eq(Fraction.of(75, 2))).toBe(true);
     const out = result.catalog.recipes["ingot_iron"]!.outputs[0]!.perMinute;
     expect(out.eq(Fraction.from(30))).toBe(true);
+    // #142: recipe-level variable power survives the round-trip as Fractions.
+    const vp = result.catalog.recipes["ingot_iron"]!.variablePower;
+    expect(vp).toBeDefined();
+    expect(vp!.constantMw.eq(Fraction.from(250))).toBe(true);
+    expect(vp!.factorMw.eq(Fraction.of(1, 2))).toBe(true);
     // Machine power Fractions survive the serialize/revive round-trip as real
     // Fractions (structured-clone would otherwise strip the prototype).
     const power = result.catalog.machines["smelter_mk1"]!.power;
     expect(power.mw.eq(Fraction.from(4))).toBe(true);
     expect(power.variable).toBe(false);
     expect(power.exponent.eq(Fraction.of(1321929, 1000000))).toBe(true);
-    // Non-Fraction fields survive too; tiers are the curated table.
+    // Non-Fraction fields survive too. #140 P0: tiers now ROUND-TRIP (rebuilt
+    // from the stored row via parseRational), so they are value-equal — NOT
+    // reference-identical to the curated constant as before the parse shipped.
     expect(result.catalog.items["ore_iron"]!.displayName).toBe("Iron Ore");
-    expect(result.catalog.tiers).toBe(TIER_TABLE);
+    expect(result.catalog.tiers.belt.length).toBe(TIER_TABLE.belt.length);
+    expect(result.catalog.tiers.pipe.length).toBe(TIER_TABLE.pipe.length);
+    for (let i = 0; i < TIER_TABLE.belt.length; i++) {
+      expect(result.catalog.tiers.belt[i]!.eq(TIER_TABLE.belt[i]!)).toBe(true);
+    }
+    for (let i = 0; i < TIER_TABLE.pipe.length; i++) {
+      expect(result.catalog.tiers.pipe[i]!.eq(TIER_TABLE.pipe[i]!)).toBe(true);
+    }
     // Item stackSize survives the serialize/revive round-trip as a real Fraction
     // (structured-clone would otherwise strip the prototype — the reason items
     // no longer round-trip raw, Stage 7 / Phase 2).
@@ -130,6 +150,26 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     expect(stored!.parser_version).toBe(CATALOG_PARSER_VERSION);
   });
 
+  it("tiers round-trip exactly — a NON-curated table survives serialize → revive (#140 P0)", async () => {
+    // Non-vacuous by construction: a 3-belt / 1-pipe table distinct from the
+    // curated fallback. If the serializer dropped tiers, revive would re-stamp
+    // the curated 6/2 table and this would fail on length alone — the drift the
+    // isRawResource scar class warns against.
+    const cat = sampleCatalog();
+    cat.tiers = {
+      belt: [Fraction.from(60), Fraction.from(120), Fraction.of(555, 2)],
+      pipe: [Fraction.from(300)],
+    };
+    await saveCatalog("raw", cat);
+
+    const result = await loadCatalog();
+    expect(result.status).toBe("hit");
+    if (result.status !== "hit") return;
+    const t = result.catalog.tiers;
+    expect(t.belt.map((f) => f.toString())).toEqual(["60", "120", "555/2"]);
+    expect(t.pipe.map((f) => f.toString())).toEqual(["300"]);
+  });
+
   it("returns empty when nothing is stored", async () => {
     expect((await loadCatalog()).status).toBe("empty");
   });
@@ -141,7 +181,7 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     const db = await openDb();
     const stored = await db.get<Record<string, unknown>>("catalog", "current");
     await db.put("catalog", { ...stored, parser_version: 2 }, "current");
-    expect(CATALOG_PARSER_VERSION).toBe(6);
+    expect(CATALOG_PARSER_VERSION).toBe(8);
     expect((await loadCatalog()).status).toBe("stale");
   });
 
@@ -158,12 +198,15 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     expect((await loadCatalog()).status).toBe("stale");
   });
 
-  it("treats a parser-version-5 cache as stale under version 6", async () => {
+  it("treats a parser-version-7 cache as stale under version 8 (#140 P0 AC3)", async () => {
+    // The #140 P0 schema widening (parsed tiers now round-trip) must reach
+    // cached users; a v7 row holds no serialized tier table, so it re-parses
+    // rather than reviving with the curated fallback silently re-stamped.
     await saveCatalog("raw", sampleCatalog());
     const db = await openDb();
     const stored = await db.get<Record<string, unknown>>("catalog", "current");
-    await db.put("catalog", { ...stored, parser_version: 5 }, "current");
-    expect(CATALOG_PARSER_VERSION).toBe(6);
+    await db.put("catalog", { ...stored, parser_version: 7 }, "current");
+    expect(CATALOG_PARSER_VERSION).toBe(8);
     expect((await loadCatalog()).status).toBe("stale");
   });
 
@@ -174,17 +217,18 @@ describe("catalog cache — round-trip (spec row 7)", () => {
     await db.put(
       "catalog",
       {
-        // recipeUnlocks is present and WELL-FORMED on purpose (S20 P3): the
-        // reviver's shape guard now checks it, so omitting it would make this
-        // row throw at the GUARD before `recipes` is ever walked — the test
-        // would stay green (it asserts only "stale") while the corrupt-recipe
-        // path it exists to cover silently stopped being exercised.
+        // recipeUnlocks AND tiers are present and WELL-FORMED on purpose (S20
+        // P3 / #140 P0): the reviver's shape guard now checks BOTH, so omitting
+        // either would make this row throw at the GUARD before `recipes` is ever
+        // walked — the test would stay green (it asserts only "stale") while the
+        // corrupt-recipe path it exists to cover silently stopped being run.
         catalog: {
           items: {},
           machines: {},
           recipes: { bad: null },
           extractors: {},
           recipeUnlocks: {},
+          tiers: { belt: ["60"], pipe: ["300"] },
         },
         source_hash: "x",
         cached_at: new Date().toISOString(),
@@ -413,5 +457,11 @@ function serializedSample() {
     // the reviver tolerant (`data.recipeUnlocks ?? {}`) would re-open the very
     // empty-map path the required field exists to close.
     recipeUnlocks: { ingot_iron: 3 },
+    // #140 P0: tiers now round-trip, so the reviver's shape guard requires a
+    // serialized table here too (same rationale as recipeUnlocks above).
+    tiers: {
+      belt: ["60", "120", "270", "480", "780", "1200"],
+      pipe: ["300", "600"],
+    },
   };
 }
