@@ -16,6 +16,8 @@ import { Fraction } from "../core/fraction.ts";
 import { BATTERY_ENERGY_MJ } from "../core/transport-facts.ts";
 import type { TrainOption } from "../core/transport.ts";
 import { formatRate } from "./format.ts";
+import type { LinkTransport, TransportMode } from "../core/link-transport.ts";
+import type { DerivedLinkPlan } from "../core/link-plan.ts";
 import type {
   TransportPlan,
   TransportContinuous,
@@ -355,4 +357,26 @@ export function unsustainableTrainText(
   return row.ceilingBound
     ? base + " A faster belt feed would raise the station ceiling."
     : base;
+}
+
+/** The default LinkTransport shape for a freshly selected mode — shared by the
+ *  link inspector and the extraction packaging panel (P4 dedup). */
+export function defaultTransportFor(mode: TransportMode): LinkTransport {
+  if (mode === "belt" || mode === "pipe") return { mode };
+  if (mode === "drone") {
+    return {
+      mode: "drone",
+      fuel: "battery",
+      trip: { kind: "estimated", flightMetersText: "" },
+    };
+  }
+  return { mode, trip: { kind: "estimated", distanceText: "" } };
+}
+
+/** Exact vs approximate MW rendering for a ready packaging plan's power. */
+export function packagingPowerText(
+  power: NonNullable<Extract<DerivedLinkPlan, { status: "ready" }>["power"]>,
+): string {
+  if (power.kind === "exact") return `${formatRate(power.mw)} MW`;
+  return `≈ ${Number(power.mw.toFixed(1))} MW`;
 }

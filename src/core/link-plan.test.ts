@@ -1,10 +1,11 @@
 import type { LinkTransport, PackagingInterstep } from "./link-transport.ts";
 import { Fraction } from "./fraction.ts";
-import { deriveLinkPlan } from "./link-plan.ts";
+import { deriveLinkPlan, derivePackagingPlan } from "./link-plan.ts";
 import type {
   LinkPlanCatalog,
   LinkPlanLink,
   LinkPlanStage,
+  PackagingPlanInput,
 } from "./link-plan.ts";
 
 const bundled = fixtureCatalog();
@@ -173,6 +174,111 @@ describe("deriveLinkPlan", () => {
       });
     },
   );
+
+  it("reads unlockedTiers from stages, not the catalog fallback", () => {
+    // The bundled catalog exposes 6 belt tiers; the stage's own unlockedTiers is
+    // {belt: 2, pipe: 1} (decorrelated from the 6-tier fallback the empty-stages
+    // path returns). The forward route must size against the tier-2 belt (120/min
+    // lane → tierIndex 2), NOT the tier-6 fallback (1200/min → tierIndex 6): an
+    // adapter that ignored `stages` would report 6 here and 1 run instead of 7.
+    const result = deriveLinkPlan(
+      bundled,
+      link("water", "packaged_water"),
+      stagesWithTiers("water", 780, 780, { belt: 2, pipe: 1 }),
+    );
+    if (result.status !== "ready") throw new Error(result.error);
+    if (result.forwardTransport.kind !== "continuous") {
+      throw new Error("expected a continuous forward route");
+    }
+    expect(result.forwardTransport.tierIndex).toBe(2);
+    expect(result.forwardTransport.result.runs).toBe(7n);
+  });
+
+  it("resolves the null-demand branch for an unsolved consumer endpoint", () => {
+    // The `to` stage is idle, so linkMaterialDemand returns null: the adapter
+    // must produce a "ready" plan with null machines/power (the branch every
+    // existing test skips by solving both endpoints).
+    const result = deriveLinkPlan(bundled, link("water", "packaged_water"), {
+      from: stageSolved({
+        outputs: [
+          {
+            itemId: "water",
+            totalOutput: Fraction.from(600),
+            perMachineOutput: Fraction.from(1),
+          },
+        ],
+        feeds: [],
+      }),
+      to: {
+        selection: { unlockedTiers: idleTiers },
+        solve: { status: "idle" },
+      },
+    });
+    if (result.status !== "ready") throw new Error(result.error);
+    expect(result.materialSupply?.eq(Fraction.from(600))).toBe(true);
+    expect(result.materialDemand).toBeNull();
+    expect(result.packageMachines).toBeNull();
+    expect(result.unpackageMachines).toBeNull();
+    expect(result.power).toBeNull();
+  });
+
+  it("pins the packaging-not-enabled early return for an interstep-less link", () => {
+    const result = deriveLinkPlan(
+      bundled,
+      { fromStageId: "from", toStageId: "to", itemId: "water" },
+      stages("water", 60, 60),
+    );
+    expect(result).toEqual({
+      status: "unavailable",
+      error: "packaging interstep is not enabled",
+    });
+  });
+});
+
+describe("derivePackagingPlan", () => {
+  it("matches the adapter on identical resolved inputs (direct/adapter parity)", () => {
+    const linkResult = deriveLinkPlan(
+      bundled,
+      link("water", "packaged_water"),
+      stages("water", 10600, 10600),
+    );
+    const directInput: PackagingPlanInput = {
+      itemId: "water",
+      intent: {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "100",
+        returnTransport: { mode: "belt" },
+      },
+      forwardTransport: { mode: "belt" },
+      materialSupply: Fraction.from(10600),
+      materialDemand: Fraction.from(10600),
+      unlockedTiers: {
+        belt: bundled.tiers.belt.length,
+        pipe: bundled.tiers.pipe.length,
+      },
+    };
+    const directResult = derivePackagingPlan(bundled, directInput);
+    expect(directResult).toEqual(linkResult);
+  });
+
+  it("carries an undefined forwardTransport as the belt-by-tier default", () => {
+    // The extraction path passes forwardTransport: undefined — computeLinkTransport
+    // must fall to belt, matching the link path's absent-transport behaviour.
+    const result = derivePackagingPlan(bundled, {
+      itemId: "water",
+      intent: {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "100",
+        returnTransport: { mode: "belt" },
+      },
+      forwardTransport: undefined,
+      materialSupply: Fraction.from(60),
+      materialDemand: Fraction.from(60),
+      unlockedTiers: { belt: 6, pipe: 2 },
+    });
+    if (result.status !== "ready") throw new Error(result.error);
+    expect(result.forwardTransport.kind).toBe("continuous");
+  });
 });
 
 function link(
@@ -229,21 +335,69 @@ function asFraction(value: number | Fraction): Fraction {
   return value instanceof Fraction ? value : Fraction.from(value);
 }
 
+/** The full-fallback tier stamp the empty-stages path also returns — the value a
+ *  tiers-ignoring adapter would degenerately match. */
+const idleTiers = {
+  belt: bundled.tiers.belt.length,
+  pipe: bundled.tiers.pipe.length,
+};
+
 function stage(result: {
   outputs: unknown[];
   feeds: unknown[];
 }): LinkPlanStage {
+  return stageSolved(result, idleTiers);
+}
+
+/** A solved stage carrying an explicit unlockedTiers (decorrelated fixtures). */
+function stageSolved(
+  result: { outputs: unknown[]; feeds: unknown[] },
+  unlockedTiers: { belt: number; pipe: number } = idleTiers,
+): LinkPlanStage {
   return {
-    selection: {
-      unlockedTiers: {
-        belt: bundled.tiers.belt.length,
-        pipe: bundled.tiers.pipe.length,
-      },
-    },
+    selection: { unlockedTiers },
     solve: {
       status: "solved",
       result: result as never,
     },
+  };
+}
+
+/** Like {@link stages} but stamps both stages' selection.unlockedTiers with the
+ *  given value, so the adapter's stages-read is observable (not the fallback). */
+function stagesWithTiers(
+  itemId: string,
+  supply: number | Fraction,
+  demand: number | Fraction,
+  unlockedTiers: { belt: number; pipe: number },
+): Record<string, LinkPlanStage> {
+  return {
+    from: stageSolved(
+      {
+        outputs: [
+          {
+            itemId,
+            totalOutput: asFraction(supply),
+            perMachineOutput: Fraction.from(1),
+          },
+        ],
+        feeds: [],
+      },
+      unlockedTiers,
+    ),
+    to: stageSolved(
+      {
+        outputs: [],
+        feeds: [
+          {
+            itemId,
+            totalDemand: asFraction(demand),
+            perMachineDemand: Fraction.from(1),
+          },
+        ],
+      },
+      unlockedTiers,
+    ),
   };
 }
 

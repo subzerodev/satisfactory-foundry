@@ -16,8 +16,10 @@
  * top-level `flowDirection` ("LR"|"TB") and an optional per-stage `userPlaced?:
  * true` flag. Extraction planning adds `PlanFileV6`, with required placement
  * origin and optional per-resource extractor intent. Purity mixes add
- * `PlanFileV7`. Packaging intersteps add the closed-world `PlanFileV8`; save
- * always writes v8, while reads accept v1-v8 and migrate older files in memory.
+ * `PlanFileV7`. Link packaging intersteps add the closed-world `PlanFileV8`.
+ * Raw-input packaging (#133) adds `PlanFileV9`, whose per-resource extraction
+ * selections may carry a packaging interstep; save always writes v9, while reads
+ * accept v1-v9 and migrate older files in memory.
  *
  * WHY a v5 bump and not v4-in-place (both new fields are optional-shaped): a
  * pre-Stage-10 build's v4 validator IGNORES the top-level `flowDirection` and the
@@ -39,6 +41,7 @@ import type {
   Selection,
   FlowDirection,
   ExtractionSelection,
+  PurityMixText,
 } from "../state/store.ts";
 import {
   canonicalizeLinkTransport,
@@ -199,9 +202,22 @@ export interface PlanFileV6 {
   links: PlanLinkV4[];
 }
 
+/**
+ * The frozen v7 extraction selection: machine + clock + optional purity mix, but
+ * NO `packaging`. Kept as its own alias (mirroring `ExtractionSelectionV6`) so a
+ * v7-headered stage means exactly this shape, retroactively — the live
+ * `ExtractionSelection` gained `packaging` at v8, and a frozen alias is what
+ * stops a later field silently widening what a v7 file is understood to hold.
+ */
+interface ExtractionSelectionV7 {
+  machineId: string;
+  clockPercentText: string;
+  purityMix?: PurityMixText;
+}
+
 export interface PlanStageV7 extends PlanStageV2 {
   userPlaced: boolean;
-  extraction?: Record<string, ExtractionSelection>;
+  extraction?: Record<string, ExtractionSelectionV7>;
 }
 
 export interface PlanFileV7 {
@@ -226,6 +242,39 @@ export interface PlanFileV8 {
   updatedAt: string;
   flowDirection: FlowDirection;
   stages: PlanStageV7[];
+  links: PlanLinkV8[];
+}
+
+/**
+ * Stage 23 (#133): a v8 stage entry — a v2 stage plus the required `userPlaced`
+ * and the LIVE `extraction` record, whose selections may now carry `packaging`.
+ * The only shape difference from `PlanStageV7` is that per-selection field.
+ */
+export interface PlanStageV8 extends PlanStageV2 {
+  userPlaced: boolean;
+  extraction?: Record<string, ExtractionSelection>;
+}
+
+/**
+ * Stage 23 (#133): the whole-graph file whose extraction selections may carry a
+ * packaging interstep. Same header + links as v8; `stages` are `PlanStageV8`.
+ *
+ * WHY a v9 bump and not v8-in-place (the new field is optional-shaped): the v7/v8
+ * stage validators check NAMED fields only, so a v8 build reading a file that
+ * carries `packaging` accepts it, DROPS the field, and re-saves without it —
+ * silently losing the user's packaging config, exactly the silent-drop failure
+ * every prior bump was recorded to prevent. A v9 header makes the v8 build reject
+ * the file loudly (load → null) instead. The app ships as a PWA with
+ * `registerType: 'prompt'`, so older builds persist on devices and the deployed
+ * Pages build is a second, older reader — the old reader is real.
+ */
+export interface PlanFileV9 {
+  format_version: 9;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  flowDirection: FlowDirection;
+  stages: PlanStageV8[];
   links: PlanLinkV8[];
 }
 
@@ -257,8 +306,8 @@ export interface PlanListEntry {
   updatedAt: string;
 }
 
-/** Persist a plan file under `id` (create or overwrite). Always v8. */
-export async function savePlan(plan: PlanFileV8, id: string): Promise<void> {
+/** Persist a plan file under `id` (create or overwrite). Always v9. */
+export async function savePlan(plan: PlanFileV9, id: string): Promise<void> {
   const db = await openDb();
   await db.put(PLANS_STORE, plan, id);
 }
@@ -274,8 +323,9 @@ export async function listPlans(): Promise<PlanListEntry[]> {
   const entries: PlanListEntry[] = [];
   for (const { key, value } of rows) {
     // Any loadable format renders a row. Header fields co-locate across all
-    // eight versions.
+    // nine versions.
     if (
+      isPlanFileV9(value) ||
       isPlanFileV8(value) ||
       isPlanFileV7(value) ||
       isPlanFileV6(value) ||
@@ -294,40 +344,47 @@ export async function listPlans(): Promise<PlanListEntry[]> {
 
 /**
  * Validate an arbitrary value as a plan file THIS build can use, returning a
- * `PlanFileV8` (migrating a valid v7/v6/v5/v4/v3/v2/v1 in memory) or null on
+ * `PlanFileV9` (migrating a valid v8/v7/v6/v5/v4/v3/v2/v1 in memory) or null on
  * corrupt/foreign. The single acceptance rule shared by `loadPlan` (IDB rows)
- * and `importPlan` (uploaded exports): v8 first, then each older format through
+ * and `importPlan` (uploaded exports): v9 first, then each older format through
  * its migration chain.
  */
-export function validatePlanFile(value: unknown): PlanFileV8 | null {
-  if (isPlanFileV8(value)) return value;
-  if (isPlanFileV7(value)) return migrateV7(value);
-  if (isPlanFileV6(value)) return migrateV7(migrateV6(value));
-  if (isPlanFileV5(value)) return migrateV7(migrateV6(migrateV5(value)));
+export function validatePlanFile(value: unknown): PlanFileV9 | null {
+  if (isPlanFileV9(value)) return value;
+  if (isPlanFileV8(value)) return migrateV8(value);
+  if (isPlanFileV7(value)) return migrateV8(migrateV7(value));
+  if (isPlanFileV6(value)) return migrateV8(migrateV7(migrateV6(value)));
+  if (isPlanFileV5(value)) {
+    return migrateV8(migrateV7(migrateV6(migrateV5(value))));
+  }
   if (isPlanFileV4(value)) {
-    return migrateV7(migrateV6(migrateLegacyV4(value)));
+    return migrateV8(migrateV7(migrateV6(migrateLegacyV4(value))));
   }
   if (isPlanFileV3(value)) {
-    return migrateV7(migrateV6(migrateLegacyV4(migrateV3(value))));
+    return migrateV8(migrateV7(migrateV6(migrateLegacyV4(migrateV3(value)))));
   }
   if (isPlanFileV2(value)) {
-    return migrateV7(migrateV6(migrateLegacyV4(migrateV3(migrateV2(value)))));
+    return migrateV8(
+      migrateV7(migrateV6(migrateLegacyV4(migrateV3(migrateV2(value))))),
+    );
   }
   if (isPlanFileV1(value)) {
-    return migrateV7(
-      migrateV6(migrateLegacyV4(migrateV3(migrateV2(migrateV1(value))))),
+    return migrateV8(
+      migrateV7(
+        migrateV6(migrateLegacyV4(migrateV3(migrateV2(migrateV1(value))))),
+      ),
     );
   }
   return null;
 }
 
 /**
- * Load + validate one plan, returning a `PlanFileV8` (migrating v7 and older
- * files in memory). Returns null on missing OR corrupt-for-this-build. V8 is
+ * Load + validate one plan, returning a `PlanFileV9` (migrating v8 and older
+ * files in memory). Returns null on missing OR corrupt-for-this-build. V9 is
  * tried first; older files follow their migration chain. Migration is read-side
- * only — the stored row is untouched until the next save-over (v8).
+ * only — the stored row is untouched until the next save-over (v9).
  */
-export async function loadPlan(id: string): Promise<PlanFileV8 | null> {
+export async function loadPlan(id: string): Promise<PlanFileV9 | null> {
   const db = await openDb();
   const value = await db.get<unknown>(PLANS_STORE, id);
   return validatePlanFile(value);
@@ -432,7 +489,13 @@ export function migrateV7(plan: PlanFileV7): PlanFileV8 {
     createdAt: plan.createdAt,
     updatedAt: plan.updatedAt,
     flowDirection: plan.flowDirection,
-    stages: plan.stages,
+    // Rebuild each stage's extraction field-by-field, NOT `plan.stages`
+    // verbatim: the v7 stage validator checks named fields only, so a
+    // v7-headered file can smuggle a `packaging` blob through. A passthrough
+    // would carry it into a v8 row that `isStageV8Shape` (reachable only from
+    // the v9 arm after migrateV8) never validated — the app would write a row
+    // it can never read back. Stripping to the frozen v7 shape closes that.
+    stages: plan.stages.map(rebuildFrozenV7Stage),
     links: plan.links.map((link) => ({
       from: link.from,
       to: link.to,
@@ -441,6 +504,79 @@ export function migrateV7(plan: PlanFileV7): PlanFileV8 {
         ? { transport: canonicalLegacyTransport(link.transport) }
         : {}),
     })),
+  };
+}
+
+/**
+ * Stage 23 (#133): migrate a validated v8 file to v9 in memory. Like `migrateV7`
+ * (and every rebuilding sibling), it rebuilds each extraction selection
+ * field-by-field rather than passing `plan.stages` through. A v8-headered file
+ * passes `isPlanFileV8`, whose stage validator (`isStageV7Shape`) checks named
+ * fields only — so a hand-edited or imported JSON can carry a garbage
+ * `packaging` blob that NO validator on the v8 arm inspected. A passthrough bump
+ * would deliver that blob into a `PlanFileV9`, then into live state and back out
+ * as a v9 row `isStageV8Shape` will REJECT: the app writes a row it can never
+ * read back. Rebuilding field-by-field strips any such blob, so the migrated
+ * file is exactly what `isStageV8Shape` accepts.
+ */
+export function migrateV8(plan: PlanFileV8): PlanFileV9 {
+  return {
+    format_version: 9,
+    name: plan.name,
+    createdAt: plan.createdAt,
+    updatedAt: plan.updatedAt,
+    flowDirection: plan.flowDirection,
+    stages: plan.stages.map(rebuildFrozenV7Stage),
+    links: plan.links.map(rebuildLinkV8),
+  };
+}
+
+/**
+ * Rebuild a stage to the frozen v7 extraction shape (machine + clock + optional
+ * purity), dropping any field a named-only validator would have admitted (a
+ * smuggled `packaging`). Shared by `migrateV7` and `migrateV8` — both need the
+ * same strip, in opposite directions of the version chain. The result is a
+ * `PlanStageV8`-assignable shape (its extraction values are a subset of the live
+ * `ExtractionSelection`), so a subsequent field-preserving migration is a no-op.
+ */
+function rebuildFrozenV7Stage(stage: PlanStageV7): PlanStageV8 {
+  return {
+    name: stage.name,
+    selection: stage.selection,
+    ...(stage.position !== undefined ? { position: stage.position } : {}),
+    userPlaced: stage.userPlaced,
+    ...(stage.extraction !== undefined
+      ? { extraction: rebuildFrozenV7Extraction(stage.extraction) }
+      : {}),
+  };
+}
+
+/** Rebuild each extraction selection to the frozen v7 shape (no `packaging`). */
+function rebuildFrozenV7Extraction(
+  extraction: Record<string, ExtractionSelectionV7>,
+): Record<string, ExtractionSelection> {
+  const copied: Record<string, ExtractionSelection> = Object.create(null);
+  for (const [itemId, selection] of Object.entries(extraction)) {
+    copied[itemId] = {
+      machineId: selection.machineId,
+      clockPercentText: selection.clockPercentText,
+      ...(selection.purityMix !== undefined
+        ? { purityMix: { ...selection.purityMix } }
+        : {}),
+    };
+  }
+  return copied;
+}
+
+/** Rebuild a v8 link field-by-field (dropping any smuggled extra key), carrying
+ *  the optional transport + interstep through verbatim. */
+function rebuildLinkV8(link: PlanLinkV8): PlanLinkV8 {
+  return {
+    from: link.from,
+    to: link.to,
+    itemId: link.itemId,
+    ...(link.transport !== undefined ? { transport: link.transport } : {}),
+    ...(link.interstep !== undefined ? { interstep: link.interstep } : {}),
   };
 }
 
@@ -493,9 +629,9 @@ function createNormalizationView(
 
 function copyHistoricalExtraction(
   extraction: Record<string, ExtractionSelectionV6> | undefined,
-): Record<string, ExtractionSelection> | undefined {
+): Record<string, ExtractionSelectionV7> | undefined {
   if (extraction === undefined) return undefined;
-  const copied: Record<string, ExtractionSelection> = Object.create(null);
+  const copied: Record<string, ExtractionSelectionV7> = Object.create(null);
   for (const [itemId, selection] of Object.entries(extraction)) {
     copied[itemId] = {
       machineId: selection.machineId,
@@ -716,6 +852,19 @@ function isPlanFileV8(value: unknown): value is PlanFileV8 {
     v,
     isRawTransportShapeV8,
     isStageV7Shape,
+    isPlanLinkV8Shape,
+  );
+}
+
+function isPlanFileV9(value: unknown): value is PlanFileV9 {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (v.format_version !== 9) return false;
+  if (v.flowDirection !== "LR" && v.flowDirection !== "TB") return false;
+  return isGraphFileBody(
+    v,
+    isRawTransportShapeV8,
+    isStageV8Shape,
     isPlanLinkV8Shape,
   );
 }
@@ -1113,6 +1262,29 @@ function isStageV7Shape(stage: unknown): boolean {
     ) {
       return false;
     }
+  }
+  return true;
+}
+
+/**
+ * Stage 23 (#133): a v8 stage entry — everything `isStageV7Shape` enforces, PLUS
+ * a per-selection optional `packaging` that, when present, must be a well-formed
+ * `PackagingInterstep` (`isPackagingInterstepShape` — the exact `hasExactKeys` +
+ * raw-transport + illegal-route refusal the link path already uses). A malformed
+ * `packaging` FAILS validation (the strictness posture — no silent drop, and no
+ * writing a row that can't be read back). Reused verbatim from the link
+ * interstep validator: the payload is byte-identical.
+ */
+function isStageV8Shape(stage: unknown): boolean {
+  if (!isStageV7Shape(stage)) return false;
+  const extraction = (stage as Record<string, unknown>).extraction;
+  if (extraction === undefined) return true;
+  for (const rawSelection of Object.values(
+    extraction as Record<string, unknown>,
+  )) {
+    const selection = rawSelection as Record<string, unknown>;
+    if (selection.packaging === undefined) continue;
+    if (!isPackagingInterstepShape(selection.packaging)) return false;
   }
   return true;
 }

@@ -7,7 +7,7 @@ import { saveCatalog } from "../data/catalog-store.ts";
 import { CATALOG_PARSER_VERSION } from "../data/catalog-store.ts";
 import { parseCatalogFromText } from "../data/catalog.ts";
 import type { Catalog } from "../data/types.ts";
-import type { PlanFileV1, PlanFileV2, PlanFileV8 } from "../data/plan-store.ts";
+import type { PlanFileV1, PlanFileV2, PlanFileV9 } from "../data/plan-store.ts";
 import {
   createAppStore,
   setBundledDocsProvider,
@@ -2065,8 +2065,8 @@ describe("extraction selection state (#112)", () => {
     await store.getState().savePlanAs("Extraction");
     const planId = store.getState().plans![0]!.id;
     const db = await (await import("../data/db.ts")).openDb();
-    const written = (await db.get<PlanFileV8>("plans", planId))!;
-    expect(written.format_version).toBe(8);
+    const written = (await db.get<PlanFileV9>("plans", planId))!;
+    expect(written.format_version).toBe(9);
     expect(written.stages[0]!.extraction?.__proto__?.purityMix).toEqual({
       impure: "01",
       normal: "bad",
@@ -2083,6 +2083,99 @@ describe("extraction selection state (#112)", () => {
       purityMix: { impure: "01", normal: "bad", pure: "3" },
     });
     expect(Object.getPrototypeOf(extraction)).toBeNull();
+  });
+
+  it("canonicalizes an extraction packaging write and drops an illegal route", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    const id = store.getState().activeStageId;
+    // A pipe return route is illegal for solid packaged cargo:
+    // canonicalizePackagingInterstep returns null, so the whole write is dropped
+    // (the extraction path has no self-heal — an illegal seed must never land).
+    store.getState().setExtractionSelection(id, "water", {
+      machineId: "water_extractor",
+      clockPercentText: "100",
+      packaging: {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "100",
+        returnTransport: { mode: "pipe" },
+      },
+    });
+    expect(store.getState().stages[id]!.extraction?.water).toBeUndefined();
+
+    // A legal (belt) route is canonicalized and persisted.
+    store.getState().setExtractionSelection(id, "water", {
+      machineId: "water_extractor",
+      clockPercentText: "100",
+      packaging: {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "100",
+        returnTransport: { mode: "belt" },
+      },
+    });
+    expect(store.getState().stages[id]!.extraction?.water?.packaging).toEqual({
+      packageRecipeId: "packaged_water",
+      clockPercentText: "100",
+      returnTransport: { mode: "belt" },
+    });
+  });
+
+  it("deep-copies the packaging interstep at the action boundary", () => {
+    const store = createAppStore(makeStorageStub().storage);
+    const id = store.getState().activeStageId;
+    const returnTransport = { mode: "belt" as const };
+    const packaging = {
+      packageRecipeId: "packaged_water",
+      clockPercentText: "100",
+      returnTransport,
+    };
+    store.getState().setExtractionSelection(id, "water", {
+      machineId: "water_extractor",
+      clockPercentText: "100",
+      packaging,
+    });
+    // Mutating the caller's object must not reach the stored interstep
+    // (canonicalize rebuilds + copyExtractionSelection deep-copies).
+    const stored = store.getState().stages[id]!.extraction?.water?.packaging;
+    expect(stored).not.toBe(packaging);
+    expect(stored?.returnTransport).not.toBe(returnTransport);
+  });
+
+  it("round-trips extraction packaging through a v9 save/load", async () => {
+    const store = createAppStore(makeStorageStub().storage);
+    await store.getState().uploadDocsText(DOCS_TEXT);
+    const id = store.getState().activeStageId;
+    store.getState().setExtractionSelection(id, "water", {
+      machineId: "water_extractor",
+      clockPercentText: "150",
+      packaging: {
+        packageRecipeId: "packaged_water",
+        clockPercentText: "100",
+        returnTransport: { mode: "belt" },
+      },
+    });
+    await store.getState().savePlanAs("Packaged Water");
+    const planId = store.getState().plans![0]!.id;
+    const db = await (await import("../data/db.ts")).openDb();
+    const written = (await db.get<PlanFileV9>("plans", planId))!;
+    // A freshly saved plan is v9, and the extraction packaging survives it.
+    expect(written.format_version).toBe(9);
+    expect(written.stages[0]!.extraction?.water?.packaging).toEqual({
+      packageRecipeId: "packaged_water",
+      clockPercentText: "100",
+      returnTransport: { mode: "belt" },
+    });
+
+    // Load it back and confirm the interstep is intact.
+    store.getState().setExtractionSelection(id, "water", null);
+    await store.getState().loadPlan(planId);
+    const loadedId = store.getState().activeStageId;
+    expect(
+      store.getState().stages[loadedId]!.extraction?.water?.packaging,
+    ).toEqual({
+      packageRecipeId: "packaged_water",
+      clockPercentText: "100",
+      returnTransport: { mode: "belt" },
+    });
   });
 });
 
@@ -2374,7 +2467,7 @@ describe("stage graph — packaging interstep persistence actions (#113)", () =>
     await store.getState().savePlanAs("Packaging");
     const id = store.getState().plans![0]!.id;
     const exported = JSON.parse((await store.getState().exportPlan(id))!);
-    expect(exported.format_version).toBe(8);
+    expect(exported.format_version).toBe(9);
     expect(exported.links[0].interstep.clockPercentText).toBe("bad edit");
 
     setInterstep(store, linkId, null);
@@ -3487,9 +3580,9 @@ describe("plans carry the graph (Stage 3 P3)", () => {
     await db.put("plans", v1, "v1-id");
 
     await store.getState().renamePlan("v1-id", "NewName");
-    // The stored row is now v8, renamed, single "Stage 1" stage.
-    const raw = (await db.get<PlanFileV8>("plans", "v1-id"))!;
-    expect(raw.format_version).toBe(8);
+    // The stored row is now v9, renamed, single "Stage 1" stage.
+    const raw = (await db.get<PlanFileV9>("plans", "v1-id"))!;
+    expect(raw.format_version).toBe(9);
     expect(raw.name).toBe("NewName");
     expect(raw.stages[0]!.name).toBe("Stage 1");
     // createdAt carried verbatim through the migration + rename.
@@ -3524,8 +3617,8 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
 
     const json = await store.getState().exportPlan(id);
     expect(json).not.toBeNull();
-    const parsed = JSON.parse(json!) as PlanFileV8;
-    expect(parsed.format_version).toBe(8);
+    const parsed = JSON.parse(json!) as PlanFileV9;
+    expect(parsed.format_version).toBe(9);
     expect(parsed.name).toBe("Exported");
     expect(parsed.stages[0]!.selection.recipeId).toBe("ingot_iron");
     expect(parsed.stages[0]!.selection.clockPercentText).toBe("37.5");
@@ -3535,7 +3628,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
       pure: "3e0",
     });
     // Pretty-printed (2-space indent), matching JSON.stringify(plan, null, 2).
-    expect(json).toContain('\n  "format_version": 8');
+    expect(json).toContain('\n  "format_version": 9');
   });
 
   it("exportPlan on a missing id returns null (no throw)", async () => {
@@ -3567,9 +3660,9 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     await db.put("plans", v1, "legacy-id");
 
     const json = await store.getState().exportPlan("legacy-id");
-    const parsed = JSON.parse(json!) as PlanFileV8;
-    // The export is what a load sees: v8, one "Stage 1" stage, createdAt kept.
-    expect(parsed.format_version).toBe(8);
+    const parsed = JSON.parse(json!) as PlanFileV9;
+    // The export is what a load sees: v9, one "Stage 1" stage, createdAt kept.
+    expect(parsed.format_version).toBe(9);
     expect(parsed.name).toBe("LegacyPlan");
     expect(parsed.stages[0]!.name).toBe("Stage 1");
     expect(parsed.createdAt).toBe("2026-01-01T00:00:00.000Z");
@@ -3591,7 +3684,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     const json = (await store.getState().exportPlan(srcId))!;
 
     // Rename the payload so it lands as a new row (not an overwrite).
-    const payload = JSON.parse(json) as PlanFileV8;
+    const payload = JSON.parse(json) as PlanFileV9;
     payload.name = "Imported";
     payload.createdAt = "1999-12-31T00:00:00.000Z"; // untrusted foreign stamp
     const before = new Date().toISOString();
@@ -3603,7 +3696,7 @@ describe("plan export/import (Stage 6 / Phase 1)", () => {
     expect(imported.id).not.toBe(srcId); // fresh id
     // createdAt is NOW (not the foreign 1999 stamp).
     const db = await (await import("../data/db.ts")).openDb();
-    const stored = (await db.get<PlanFileV8>("plans", imported.id))!;
+    const stored = (await db.get<PlanFileV9>("plans", imported.id))!;
     expect(stored.createdAt >= before).toBe(true);
     expect(stored.stages[0]!.selection.clockPercentText).toBe("42");
     expect(stored.stages[0]!.selection.recipeId).toBe("ingot_iron");
@@ -3791,10 +3884,10 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     return store;
   }
 
-  /** A minimal valid v8 plan file with a chosen name + recipe (content marker). */
-  function planFile(name: string, recipeId: string | null): PlanFileV8 {
+  /** A minimal valid v9 plan file with a chosen name + recipe (content marker). */
+  function planFile(name: string, recipeId: string | null): PlanFileV9 {
     return {
-      format_version: 8,
+      format_version: 9,
       name,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -3817,7 +3910,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
   }
 
   /** Wrap per-plan file objects in the bundle envelope (the export shape). */
-  function bundle(plans: PlanFileV8[]): PlanBundle {
+  function bundle(plans: PlanFileV9[]): PlanBundle {
     return {
       kind: "foundry-plan-bundle",
       format_version: 1,
@@ -3856,8 +3949,8 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     expect(names).toEqual(["Alpha", "Beta"]);
     const alpha = store.getState().plans!.find((p) => p.name === "Alpha")!;
     const beta = store.getState().plans!.find((p) => p.name === "Beta")!;
-    const storedAlpha = (await db.get<PlanFileV8>("plans", alpha.id))!;
-    const storedBeta = (await db.get<PlanFileV8>("plans", beta.id))!;
+    const storedAlpha = (await db.get<PlanFileV9>("plans", alpha.id))!;
+    const storedBeta = (await db.get<PlanFileV9>("plans", beta.id))!;
     expect(storedAlpha.stages[0]!.selection.clockPercentText).toBe("42");
     expect(storedBeta.stages[0]!.selection.clockPercentText).toBe("75");
     // NO auto-load: the live graph is untouched by a bundle import.
@@ -3885,8 +3978,8 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     expect(typeof env.exportedAt).toBe("string");
     expect(env.exportedAt >= before).toBe(true); // stamped at the export moment
     expect(env.plans).toHaveLength(2);
-    // Each entry is a per-plan v8 file object (validatePlanFile-shaped).
-    expect(env.plans.every((p) => p.format_version === 8)).toBe(true);
+    // Each entry is a per-plan v9 file object (validatePlanFile-shaped).
+    expect(env.plans.every((p) => p.format_version === 9)).toBe(true);
     expect(env.plans.map((p) => p.name).sort()).toEqual(["One", "Two"]);
     // Pretty-printed, matching JSON.stringify(bundle, null, 2).
     expect(json).toContain('\n  "kind": "foundry-plan-bundle"');
@@ -3898,7 +3991,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     await store.getState().savePlanAs("Target");
     const targetId = store.getState().plans![0]!.id;
     const db = await (await import("../data/db.ts")).openDb();
-    const originalCreatedAt = (await db.get<PlanFileV8>("plans", targetId))!
+    const originalCreatedAt = (await db.get<PlanFileV9>("plans", targetId))!
       .createdAt;
 
     // A bundle entry named "Target" with a foreign stamp + different content.
@@ -3911,7 +4004,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     expect(
       store.getState().plans!.filter((p) => p.name === "Target"),
     ).toHaveLength(1);
-    const stored = (await db.get<PlanFileV8>("plans", targetId))!;
+    const stored = (await db.get<PlanFileV9>("plans", targetId))!;
     expect(stored.createdAt).toBe(originalCreatedAt); // NOT the foreign 1999 stamp
     expect(stored.stages[0]!.selection.machineCount).toBe(7);
   });
@@ -3938,7 +4031,7 @@ describe("plan durability: export-all + bundle import (Stage 19 / #92)", () => {
     // The surviving row carries the LAST entry's content (machineCount 99).
     const dupId = store.getState().plans![0]!.id;
     const db = await (await import("../data/db.ts")).openDb();
-    const stored = (await db.get<PlanFileV8>("plans", dupId))!;
+    const stored = (await db.get<PlanFileV9>("plans", dupId))!;
     expect(stored.name).toBe("Dup"); // trimmed form
     expect(stored.stages[0]!.selection.machineCount).toBe(99);
     expect(stored.stages[0]!.selection.recipeId).toBe("ingot_iron");

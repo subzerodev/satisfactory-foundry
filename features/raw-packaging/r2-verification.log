@@ -1,0 +1,140 @@
+# P4 (#133) bidirectionality verification log
+# Generated 2026-08-19T11:00:59Z
+# Discipline: commit-before-mutate (HEAD 08c9e6d, clean tree); COMPILING mutant;
+#   capture-then-grep by content; genuine FAIL naming the new test(s); restore-green.
+# A green mutant is a FINDING to investigate, not a pass.
+
+Baseline (all green, pre-mutation):
+ Test Files  4 passed (4)
+      Tests  311 passed (311)
+
+=== Mutation 1: adapter split + early return (core/link-plan.ts) ===
+--- 1a: break the early-return string ---
+grep (content confirmation of applied mutant):
+229:      error: "MUTANT interstep string",
+ ❯ src/core/link-plan.test.ts (17 tests | 1 failed) 8ms
+     × pins the packaging-not-enabled early return for an interstep-less link 3ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/link-plan.test.ts > deriveLinkPlan > pins the packaging-not-enabled early return for an interstep-less link
+ Test Files  1 failed (1)
+      Tests  1 failed | 16 passed (17)
+restored:
+1
+--- 1b: adapter ignores stages tiers (return the catalog fallback) ---
+grep (content confirmation):
+277:  void stage;
+     × reads unlockedTiers from stages, not the catalog fallback 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/link-plan.test.ts > deriveLinkPlan > reads unlockedTiers from stages, not the catalog fallback
+      Tests  1 failed | 16 passed (17)
+restored:
+0
+
+=== Mutation 2: v9 rebuild migration (data/plan-store.ts migrateV8) ===
+--- 2a: migrateV8 passes stages through verbatim (the r2/r3 anti-pattern) ---
+grep (content confirmation):
+      Tests  85 passed (85)
+restored:
+3
+--- 2a (retry, correct indentation): migrateV8 stages passthrough ---
+grep (content confirmation of applied mutant):
+529:    stages: plan.stages as unknown as PlanStageV8[],
+     × strips a garbage packaging blob smuggled through a v8-headered file 5ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/plan-store.test.ts > plan-store — v9 raw-input extraction packaging (#133) > strips a garbage packaging blob smuggled through a v8-headered file
+      Tests  1 failed | 84 passed (85)
+restored:
+3
+--- 2b: isPlanFileV9 skips the packaging validator (uses isStageV7Shape) ---
+grep (content confirmation — isPlanFileV9 now delegates to isStageV7Shape):
+isStageV7Shape
+867:     isStageV7Shape,
+     × rejects a malformed extraction packaging blob via isStageV8Shape 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/data/plan-store.test.ts > plan-store — v9 raw-input extraction packaging (#133) > rejects a malformed extraction packaging blob via isStageV8Shape
+      Tests  1 failed | 84 passed (85)
+restored (isStageV8Shape count):
+1
+
+=== Mutation 3: canonicalized extraction write (state/store.ts setExtractionSelection) ===
+--- 3a: skip canonicalization — write the raw (possibly illegal) packaging ---
+grep (content confirmation of applied mutant):
+1855:                normalized = selection; /* MUTANT: no canonicalization */
+     × canonicalizes an extraction packaging write and drops an illegal route 5ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > extraction selection state (#112) > canonicalizes an extraction packaging write and drops an illegal route
+      Tests  1 failed | 194 passed (195)
+restored (canonicalize call count):
+2
+
+=== Mutation 4: setMachine packaging arm (ui/GraphCanvas.tsx) ===
+--- 4a: drop the explicit packaging carry in setMachine ---
+grep (content confirmation of applied mutant — packaging arm gone from setMachine):
+383:        /* MUTANT: packaging arm removed */
+     × preserves the packaging config across an extractor change (setMachine) 6ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > preserves the packaging config across an extractor change (setMachine)
+      Tests  1 failed | 13 passed (14)
+restored (setMachine packaging arm present):
+1
+
+=== Mutation 5: packaging panel gate (ui/GraphCanvas.tsx) ===
+--- 5a: gate ignores a saved config (drop the packaging arm of packagingVisible) ---
+grep (content confirmation of applied mutant):
+426:  const packagingVisible = packagingPairs.length > 0; /* MUTANT: dropped saved-config arm */
+     × shows a saved packaging config even when the pair no longer resolves 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/ui/GraphCanvas.dom.test.tsx > RawFeedNode > shows a saved packaging config even when the pair no longer resolves
+      Tests  1 failed | 13 passed (14)
+restored (gate saved-config arm present):
+1
+
+=== Mutation 6: fresh save writes v9 (state/store.ts format_version literal) ===
+--- 6a: revert one save literal to 8 ---
+grep (content confirmation — a format_version: 8 reappeared):
+2254:                    format_version: 8,
+src/state/store.ts(2254,21): error TS2322: Type '8' is not assignable to type '9'.
+     × round-trips extraction packaging through a v9 save/load 2ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/state/store.test.ts > extraction selection state (#112) > retains a prototype-like purity mix across recipe swaps and plan v8
+    2069|     expect(written.format_version).toBe(9);
+ FAIL  src/state/store.test.ts > extraction selection state (#112) > round-trips extraction packaging through a v9 save/load
+    2161|     expect(written.format_version).toBe(9);
+      Tests  2 failed | 193 passed (195)
+restored (format_version: 8 count in store.ts):
+0
+
+=== Mutation 7: null-demand branch (core/link-plan.ts linkMaterialDemand) ===
+--- 7a: unsolved consumer returns 0 instead of null ---
+grep (content confirmation):
+265:  if (stage?.solve.status !== "solved") return Fraction.from(0); /* MUTANT */
+     × resolves the null-demand branch for an unsolved consumer endpoint 3ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/core/link-plan.test.ts > deriveLinkPlan > resolves the null-demand branch for an unsolved consumer endpoint
+      Tests  1 failed | 16 passed (17)
+restored:
+0
+
+=== Restore-green confirmation (tree clean, all suites) ===
+?? features/raw-packaging/r2-verification.log
+ Test Files  4 passed (4)
+      Tests  311 passed (311)
+
+=== Summary ===
+7 mutations across the 5 distinct new behaviours (plus fresh-save-v9 and the
+null-demand branch), each: COMPILING mutant, grep-confirmed live by content,
+genuine FAIL naming the specific new test, restore-green. No green mutant
+(no coverage gap). One initial FALSE-GREEN (2a first attempt) was an UNAPPLIED
+mutant — grep found nothing, tests all passed — corrected by fixing indentation
+before trusting the result (mutation-harness-guilty-until-live discipline).
+
+Behaviour -> pinning test:
+ 1a adapter early-return string  -> 'pins the packaging-not-enabled early return'
+ 1b adapter reads stages tiers   -> 'reads unlockedTiers from stages, not the catalog fallback'
+ 2a migrateV8 rebuild (v9 gate)  -> 'strips a garbage packaging blob smuggled through a v8-headered file'
+ 2b isPlanFileV9 packaging gate  -> 'rejects a malformed extraction packaging blob via isStageV8Shape'
+ 3a canonicalized write          -> 'canonicalizes an extraction packaging write and drops an illegal route'
+ 4a setMachine packaging arm     -> 'preserves the packaging config across an extractor change (setMachine)'
+ 5a panel gate saved-config arm  -> 'shows a saved packaging config even when the pair no longer resolves'
+ 6a fresh save writes v9         -> 'round-trips extraction packaging through a v9 save/load' (also type-pinned)
+ 7a null-demand branch           -> 'resolves the null-demand branch for an unsolved consumer endpoint'
