@@ -733,7 +733,6 @@ body {
    The baseline + major ticks read as the drawing's registration marks (surface
    stroke); the minor ticks bind each label to its cell (quieter, 1px). */
 .ruler-baseline,
-.machine-ruler .ruler-major line,
 .machine-ruler .ruler-major {
   stroke: var(--surface-stroke);
   stroke-width: 1;
