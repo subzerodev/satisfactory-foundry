@@ -3,6 +3,23 @@
 One section per merge to `develop`, most recent first. Each entry is written
 to you, the app's user, in plain language — copy-paste friendly.
 
+## 2026-08-19 — The drawing now shows the overflow chains: tapering ribbons and endpoint numbers (P2 of the rework arc)
+
+> Hey Michael — the pictures caught up with the solver. Feed buses now draw
+> as tapering ribbons: thick where a belt enters, thinning as each machine
+> draws its share, exactly the D+F style you picked from the mockups. Numbers
+> sit at the span endpoints only — what enters each stretch, what hands off
+> at each seam (your 8411 case shows its eight 60s), and a 0 at the end of
+> the lane, because nothing actually leaves it. If the last belt is bigger
+> than the tail needs, the spare shows up as "spare belt capacity" on the
+> summary card, never as flow on the drawing. The cards also now list the
+> hardware each lane needs — splitters, seam mergers, cascade counts (in
+> threes, so every junction is buildable), and the standing buffer. The
+> legend explains the new conventions, tooltips say "entry → hand-off"
+> instead of "peak", pipe lanes draw as a neutral dashed connector that
+> makes no ordering claims, and the site plan labels each junction as a
+> splitter, seam merger, or merger.
+
 ## 2026-08-19 — The x2 belt marks are gone: the solver now plans overflow chains (P1 of the rework arc)
 
 > Hey Michael — this is the big one from your 8411 Concrete complaint. The
