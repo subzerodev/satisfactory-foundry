@@ -231,7 +231,6 @@ describe("Schematic", () => {
     );
     expect(html).toContain('class="machine-ruler"');
     expect(html).not.toContain('class="machine"'); // the block moved out
-    expect(html).not.toContain("machine-band");
     // Stage 5 item 1: the native <title> tooltips are gone — the styled hover
     // div carries the text now, so no <title> element remains in the markup.
     expect(html).not.toContain("<title>");
@@ -256,8 +255,8 @@ describe("Schematic", () => {
     const xOf = (index: number) => layout.machines[index - 1]!.x;
 
     // MAJOR tick — every significant index draws a full-rulerH tick at xOf(index),
-    // and that x EQUALS a real feed-segment boundary x (solver-derived, the r1
-    // blocker's fix: never labelStep arithmetic).
+    // and that x EQUALS a real feed-segment boundary x (solver-derived, never a
+    // pitch-thinning artifact).
     const boundaryXs = new Set(
       layout.feeds.flatMap((t) => t.segments.flatMap((s) => [s.x1, s.x2])),
     );
@@ -273,9 +272,9 @@ describe("Schematic", () => {
     expect(layout.significant).toContain(17);
 
     // MINOR tick — at the cell CENTRE (m.x + pitch/2), 4px up from the baseline,
-    // for every labeled machine; the label sits directly under it (same x).
+    // for EVERY machine (the readable pitch floor labels them all); the label
+    // sits directly under it (same x).
     for (const m of layout.machines) {
-      if (!m.labeled) continue;
       const cx = m.x + layout.pitch / 2;
       expect(html).toContain(
         `x1="${cx}" x2="${cx}" y1="${baseline - 4}" y2="${baseline}"`,
@@ -293,38 +292,49 @@ describe("Schematic", () => {
     expect(baseline + 12).toBe(top + 24);
   });
 
-  it("draws the ruler in band mode from labeledSignificant, no band rect (N=161)", () => {
-    // Band mode (N=161): the ruler's MAJOR ticks still come from significant, but
-    // its LABELS/minor ticks come from labeledSignificant (thinning). The band
-    // rect + ×N do NOT live in the build view — they moved to the machines view.
-    const result = solveStage({ ...WORKED_INPUT, machineCount: 161 });
-    const layout = computeLayout(result, 161, 12);
+  it("pans the ruler at Michael's N=106: labels every machine, none within 24px, major ticks on boundaries (#154)", () => {
+    // At the 24px floor the build view scrolls and every machine gets a legible
+    // number — no label thinning, no band. The uncrushed right end is the AC1
+    // fix. MAJOR ticks stay on the solver-derived significant boundaries.
+    const result = solveStage({ ...WORKED_INPUT, machineCount: 106 });
+    const layout = computeLayout(result, 106, 12);
     const html = renderToStaticMarkup(
       <Schematic
         result={result}
-        machineCount={161}
+        machineCount={106}
         tiers={FIXTURE_TIERS}
         unlocked={{ belt: 4, pipe: 2 }}
         itemName={itemName}
       />,
     );
-    expect(layout.band).toBe(true);
+    expect(layout.pitch).toBe(24);
+    expect(layout.scrolled).toBe(true);
     expect(html).toContain('class="machine-ruler"');
-    // The band's build-view extras are GONE.
-    expect(html).not.toContain("machine-band");
-    expect(html).not.toContain("×161");
-    // MAJOR ticks from significant; labels only for labeledSignificant.
+
     const top = layout.machineTop;
     const baseline = top + 12;
+    // MAJOR ticks from significant, on real feed-stretch boundaries.
+    const boundaryXs = new Set(
+      layout.feeds.flatMap((t) => t.segments.flatMap((s) => [s.x1, s.x2])),
+    );
     for (const index of layout.significant) {
       const x = layout.machines[index - 1]!.x;
       expect(html).toContain(
         `class="ruler-major" x1="${x}" x2="${x}" y1="${top}" y2="${baseline}"`,
       );
     }
-    const labelCount = (html.match(/class="machine-label"/g) ?? []).length;
-    expect(labelCount).toBe(layout.labeledSignificant.length);
-    expect(labelCount).toBeLessThan(layout.significant.length);
+    expect(boundaryXs.has(layout.machines[16]!.x)).toBe(true); // machine 17
+
+    // EVERY machine carries a label — one per machine, no thinning.
+    const labelXs = [
+      ...html.matchAll(/class="machine-label" x="([\d.]+)"/g),
+    ].map((m) => Number(m[1]));
+    expect(labelXs.length).toBe(106);
+    // No two ruler labels sit within 24px (the AC1 no-overlap guarantee).
+    const sorted = [...labelXs].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i++) {
+      expect(sorted[i]! - sorted[i - 1]!).toBeGreaterThanOrEqual(24);
+    }
   });
 
   it("anchors output belt-arrows at machineTop + rulerH, not the old + 40 (P3 register pin)", () => {
@@ -497,9 +507,10 @@ describe("Machines view (P3 / #135 — the block the build view shed)", () => {
     expect(html).not.toContain("machine-ruler");
   });
 
-  it("centers non-band machine labels under the cell (m.x + pitch/2) (#86)", () => {
+  it("centers every machine label under the cell (m.x + pitch/2) (#86)", () => {
     // The label names the machine, so it centers under the cell, not on the
     // boundary line at the cell's left edge (the block's own layout, machineH 40).
+    // Every machine is labeled at the readable pitch floor.
     const layout = computeLayout(workedResult(), 20);
     const html = renderToStaticMarkup(
       <Machines result={workedResult()} machineCount={20} />,
@@ -511,117 +522,22 @@ describe("Machines view (P3 / #135 — the block the build view shed)", () => {
     );
     expect(labelXs.size).toBeGreaterThan(0);
     for (const m of layout.machines) {
-      if (!m.labeled) continue;
       expect(labelXs.has(m.x + layout.pitch / 2)).toBe(true);
       expect(labelXs.has(m.x)).toBe(false); // never on the boundary
     }
   });
 
-  it("band mode (N=161): ONE band + ×161, and NOT 161 machine ticks (Axis 1)", () => {
+  it("draws a rect per machine + the ×161 caption at N=161, no band (#154)", () => {
+    // Band mode retired: at the 24px floor the machines view pans and draws a
+    // rect per machine, with the ×N caption always shown as a static header.
     const result = solveStage({ ...WORKED_INPUT, machineCount: 161 });
     const html = renderToStaticMarkup(
       <Machines result={result} machineCount={161} />,
     );
-    // The break convention: one band group carrying the count, no per-machine
-    // tick groups (the noise the band replaces).
-    expect((html.match(/class="machine-band"/g) ?? []).length).toBe(1);
+    // One rect per machine — 161 machine rects (no thinning, no band collapse).
+    expect((html.match(/class="machine"/g) ?? []).length).toBe(161);
+    // The ×N caption is the band's one useful datum, now always visible.
     expect(html).toContain("×161");
-    expect(html).not.toContain('class="machine"');
-  });
-
-  it("band mode (#78): renders MORE ticks than index labels on the dense fixture", () => {
-    // A starving 161-machine feed (belt 0 under-capped to 50/min) — the same
-    // fixture the layout unit tests pin: its significant set is dense (33
-    // members incl. the {148,149} finding pair), so label thinning must drop
-    // some. Every significant index keeps its boundary tick; only the thinned
-    // subset carries a label ⇒ ticks strictly outnumber labels in the band.
-    const result = solveStage({
-      machineCount: 161,
-      clockPercent: Fraction.from(100),
-      capacities: FIXTURE_TIERS,
-      feeds: [
-        {
-          itemId: "ore_iron",
-          kind: "belt" as const,
-          perMachineRate: Fraction.from(30),
-          overrides: [Fraction.from(50)],
-        },
-      ],
-      outputs: [
-        {
-          itemId: "iron_ingot",
-          kind: "belt" as const,
-          perMachineRate: Fraction.from(30),
-        },
-      ],
-    });
-    const html = renderToStaticMarkup(
-      <Machines result={result} machineCount={161} />,
-    );
-    // Count boundary-tick groups vs index-label texts within the band.
-    const ticks = (html.match(/class="machine-band-mark"/g) ?? []).length;
-    const labels = (html.match(/class="machine-label"/g) ?? []).length;
-    expect(ticks).toBeGreaterThan(0);
-    expect(labels).toBeGreaterThan(0);
-    expect(ticks).toBeGreaterThan(labels);
-  });
-
-  it("band mode: label centers at xOf + pitch/2 while the tick stays at xOf (#86)", () => {
-    // Same dense starving-161 fixture. Each significant machine's boundary tick
-    // stays at the cell's left edge (xOf = machines[index-1].x); the surviving
-    // label centers under the cell (xOf + pitch/2).
-    const result = solveStage({
-      machineCount: 161,
-      clockPercent: Fraction.from(100),
-      capacities: FIXTURE_TIERS,
-      feeds: [
-        {
-          itemId: "ore_iron",
-          kind: "belt" as const,
-          perMachineRate: Fraction.from(30),
-          overrides: [Fraction.from(50)],
-        },
-      ],
-      outputs: [
-        {
-          itemId: "iron_ingot",
-          kind: "belt" as const,
-          perMachineRate: Fraction.from(30),
-        },
-      ],
-    });
-    const layout = computeLayout(result, 161);
-    expect(layout.band).toBe(true);
-    const firstLabeled = layout.labeledSignificant[0]!;
-    const cellX = layout.machines[firstLabeled - 1]!.x; // xOf(firstLabeled)
-    const html = renderToStaticMarkup(
-      <Machines result={result} machineCount={161} />,
-    );
-    // The boundary tick is UNCHANGED at the cell's left edge.
-    expect(html).toContain(`<line x1="${cellX}" x2="${cellX}"`);
-    // The band label centers at xOf + pitch/2 — distinct from the tick.
-    expect(html).toContain(
-      `<text class="machine-label" x="${cellX + layout.pitch / 2}" y=`,
-    );
-    // No band label sits AT a bare xOf (all labels shifted by +pitch/2).
-    for (const idx of layout.labeledSignificant) {
-      const x = layout.machines[idx - 1]!.x;
-      expect(html).not.toContain(`<text class="machine-label" x="${x}" y=`);
-      expect(html).toContain(
-        `<text class="machine-label" x="${x + layout.pitch / 2}" y=`,
-      );
-    }
-  });
-
-  it("below the threshold (N=114): the full rect row, no band (Axis 1)", () => {
-    const result = solveStage({ ...WORKED_INPUT, machineCount: 114 });
-    const html = renderToStaticMarkup(
-      <Machines result={result} machineCount={114} />,
-    );
-    // At/below N=114 the block is the full per-machine rect row, no band/count.
-    expect(html).not.toContain("machine-band");
-    expect(html).not.toContain("×114");
-    expect((html.match(/class="machine"/g) ?? []).length).toBe(114);
   });
 });
 
@@ -1237,6 +1153,20 @@ describe("Legend", () => {
   it("renders 6 belt + 2 pipe + override + problem swatches (spec §5 pin)", () => {
     // The app passes the full catalog TIER_TABLE (6 belt + 2 pipe).
     const html = renderToStaticMarkup(<Legend tiers={TIER_TABLE} />);
+    expect((html.match(/legend-swatch/g) ?? []).length).toBe(6 + 2 + 2);
+  });
+
+  it("names the ruler's two tick kinds (#154, AC3)", () => {
+    // The ruler entry uses the ConventionEntry idiom (NOT a Swatch), so it does
+    // not inflate the legend-swatch count above.
+    const html = renderToStaticMarkup(<Legend tiers={TIER_TABLE} />);
+    expect(html).toContain("legend-ruler");
+    // The apostrophe in "number's" renders as the &#x27; entity in static markup
+    // (node env, no DOM), so match the escaped form.
+    expect(html).toContain(
+      "machine ruler — tall tick: a belt stretch starts/ends · short tick: this number&#x27;s machine",
+    );
+    // Idiom guard: the ruler entry did not add a legend-swatch.
     expect((html.match(/legend-swatch/g) ?? []).length).toBe(6 + 2 + 2);
   });
 });
