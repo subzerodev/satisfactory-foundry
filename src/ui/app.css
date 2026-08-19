@@ -904,6 +904,15 @@ polygon.bus-seg {
   border-color: var(--accent);
 }
 
+/* A disabled view tab (#157 A3: Blueprint under a packaging subject) — muted,
+   non-active, no hover/pointer affordance. */
+.view-tab:disabled {
+  color: var(--fg-muted);
+  border-color: var(--border-soft);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Drawing-subject selector (#157 A2) — a quiet mono select above the view tabs
    that re-points the drawing at a packaging chain. Same mono idiom as the tabs;
    absent entirely when the plan has no packaging chains. */

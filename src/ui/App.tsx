@@ -717,6 +717,13 @@ export default function App() {
               type="button"
               className={view === "blueprint" ? "view-tab active" : "view-tab"}
               aria-pressed={view === "blueprint"}
+              // Blueprint is stage-only for a packaging subject (#157 A3): the
+              // tab is genuinely non-interactive while a chain is drawn, not
+              // just a pane note. A blueprint that was already active stays
+              // selected (view is not reset) and shows the #158 note in the
+              // pane — switching back to a stage subject restores it.
+              disabled={packagingSubject !== null}
+              aria-disabled={packagingSubject !== null}
               onClick={() => setView("blueprint")}
             >
               BLUEPRINT
@@ -790,20 +797,28 @@ export default function App() {
               )}
             />
           )}
-          <LaneOverrides
-            result={solve.result}
-            overrides={selection.overrides}
-            itemName={itemName}
-            onOverride={s.setOverride}
-          />
-          <FindingsPanel
-            solve={solve}
-            findings={allFindings(solve.result)}
-            itemName={itemName}
-            tiers={catalog.tiers}
-            unlocked={selection.unlockedTiers}
-            transportFindings={transportFindings}
-          />
+          {/* LaneOverrides + FindingsPanel read the active STAGE's
+              solve/selection, so they are meaningless (and misleading) under a
+              packaging subject — hide them until a stage subject is active
+              again (#157 diff-r1). */}
+          {packagingSubject === null && (
+            <>
+              <LaneOverrides
+                result={solve.result}
+                overrides={selection.overrides}
+                itemName={itemName}
+                onOverride={s.setOverride}
+              />
+              <FindingsPanel
+                solve={solve}
+                findings={allFindings(solve.result)}
+                itemName={itemName}
+                tiers={catalog.tiers}
+                unlocked={selection.unlockedTiers}
+                transportFindings={transportFindings}
+              />
+            </>
+          )}
         </>
       )}
       {/* The sheet footer (S9P0) — always rendered on the ready surface, below

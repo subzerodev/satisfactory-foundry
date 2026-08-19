@@ -276,6 +276,23 @@ describe("App drawing-subject selector (#157 A2/A3)", () => {
     );
   }
 
+  function blueprintTabEl(): HTMLButtonElement {
+    return [...host.querySelectorAll("button.view-tab")].find(
+      (b) => b.textContent === "BLUEPRINT",
+    ) as HTMLButtonElement;
+  }
+
+  /** Set the native select value + fire the change event React listens for. */
+  async function setSelect(select: HTMLSelectElement, value: string) {
+    Object.getOwnPropertyDescriptor(
+      HTMLSelectElement.prototype,
+      "value",
+    )!.set!.call(select, value);
+    await act(async () =>
+      select.dispatchEvent(new Event("change", { bubbles: true })),
+    );
+  }
+
   it("is ABSENT when the plan has no packaging chains", async () => {
     seed(false);
     await render();
@@ -303,14 +320,7 @@ describe("App drawing-subject selector (#157 A2/A3)", () => {
     const chainValue = [...select.options].find((o) =>
       o.value.startsWith("link:"),
     )!.value;
-
-    Object.getOwnPropertyDescriptor(
-      HTMLSelectElement.prototype,
-      "value",
-    )!.set!.call(select, chainValue);
-    await act(async () =>
-      select.dispatchEvent(new Event("change", { bubbles: true })),
-    );
+    await setSelect(select, chainValue);
 
     // Both group headings render with their counts: 600/min water over 60/min
     // per packager → 10 packagers; over 120/min per unpackager → 5 unpackagers.
@@ -322,40 +332,59 @@ describe("App drawing-subject selector (#157 A2/A3)", () => {
     expect(headings[1]).toContain("5 × Unpackager");
     // The stacked groups each render a manifold (the default schematic view).
     expect(host.querySelectorAll(".packaging-group").length).toBe(2);
+    // The stage-scoped panels (LaneOverrides + FindingsPanel) read the active
+    // STAGE, so they are hidden under a packaging subject (#157 diff-r1).
+    expect(host.querySelector(".lane-overrides")).toBeNull();
+    expect(host.querySelector(".findings-panel")).toBeNull();
   });
 
-  it("shows the #158 note (not a blueprint) for a packaging subject on the Blueprint tab", async () => {
+  it("DISABLES the Blueprint tab while a packaging subject is drawn — a click does not activate it", async () => {
     seed(true);
     await render();
     const select = subjectSelect()!;
     const chainValue = [...select.options].find((o) =>
       o.value.startsWith("link:"),
     )!.value;
-    Object.getOwnPropertyDescriptor(
-      HTMLSelectElement.prototype,
-      "value",
-    )!.set!.call(select, chainValue);
-    await act(async () =>
-      select.dispatchEvent(new Event("change", { bubbles: true })),
-    );
+    await setSelect(select, chainValue);
 
-    // Click the Blueprint tab.
-    const blueprintTab = [...host.querySelectorAll("button.view-tab")].find(
-      (b) => b.textContent === "BLUEPRINT",
-    ) as HTMLButtonElement;
+    const blueprintTab = blueprintTabEl();
+    // The frozen A3 clause: the tab is genuinely non-interactive, not merely a
+    // pane note. It carries the disabled + aria-disabled state.
+    expect(blueprintTab.disabled).toBe(true);
+    expect(blueprintTab.getAttribute("aria-disabled")).toBe("true");
+
+    // Clicking a disabled tab does NOT switch the view: the stacked packaging
+    // groups stay drawn, blueprint never activates, no note appears.
     await act(async () => blueprintTab.click());
+    expect(blueprintTab.classList.contains("active")).toBe(false);
+    expect(host.querySelectorAll(".packaging-group").length).toBe(2);
+    expect(host.textContent).not.toContain("#158");
+  });
 
+  it("shows the #158 note via the carryover path (blueprint active THEN switch to a packaging subject), view not reset", async () => {
+    seed(true);
+    await render();
+    const select = subjectSelect()!;
+
+    // (1) Select the blueprint view FIRST, on the default stage subject — the
+    // tab is enabled here, so the blueprint renders.
+    await act(async () => blueprintTabEl().click());
+    expect(blueprintTabEl().classList.contains("active")).toBe(true);
+    expect(host.querySelector(".bp-svg")).not.toBeNull();
+
+    // (2) Switch to the packaging subject. The active blueprint view is NOT
+    // reset — the pane shows the #158 note instead of a blueprint.
+    const chainValue = [...select.options].find((o) =>
+      o.value.startsWith("link:"),
+    )!.value;
+    await setSelect(select, chainValue);
     expect(host.textContent).toContain("#158");
     expect(host.querySelector(".bp-svg")).toBeNull();
-    // The view state is NOT reset — switching back to the stage subject restores
-    // the blueprint pane (the frozen non-interactive-disable clause).
-    Object.getOwnPropertyDescriptor(
-      HTMLSelectElement.prototype,
-      "value",
-    )!.set!.call(select, "");
-    await act(async () =>
-      select.dispatchEvent(new Event("change", { bubbles: true })),
-    );
+    // view is still "blueprint" (the tab keeps its active marker even disabled).
+    expect(blueprintTabEl().classList.contains("active")).toBe(true);
+
+    // (3) Switch back to the stage subject — the blueprint pane is restored.
+    await setSelect(select, "");
     expect(host.querySelector(".bp-svg")).not.toBeNull();
   });
 });
