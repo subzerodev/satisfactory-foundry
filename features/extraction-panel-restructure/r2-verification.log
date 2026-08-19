@@ -1,0 +1,98 @@
+# #156 — bidirectionality / mutation-coverage log
+
+Each new behaviour of #156 is pinned by at least one DOM assertion. This log
+records real mutation runs: a compiling mutant applied to the SOURCE, the
+targeted test run, and the FAIL that proves the pin is live (not a no-op).
+Every mutant was reverted via `git checkout` after capture; the trunk is clean.
+
+Test command: `npx vitest run <file>` in the worktree.
+All mutants COMPILED (tsc clean) before running — a green mutant here would mean
+a coverage gap, never a broken check.
+
+---
+
+## M1 — strip: `countText` unsized branch invents a number
+
+- Site: `src/ui/PackagingChainStrip.tsx` `countText` — `null ? "—"` → `null ? "0"`.
+- Target: `PackagingChainStrip.dom.test.tsx` ("renders '—' … when unsized").
+- Result: FAIL (killed).
+  ```
+   FAIL  src/ui/PackagingChainStrip.dom.test.tsx > PackagingChainStrip > renders '—' for every figure when the plan is unsized
+  AssertionError: expected 'Water Extractor ×5Delivery— Water0 ×P…' to contain '— ×'
+  Expected: "— ×"
+  ```
+  → the "never invents numbers" contract is pinned.
+
+## M2 — strip: forward-edge label composition
+
+- Site: `PackagingChainStrip.tsx` `forwardLabel` — the ` · ` separator between
+  packaged name and route text → ` XX `.
+- Target: strip + GraphCanvas + LinkInspector dom tests.
+- Result: 4 FAIL (killed) — the forward edge label
+  "N/min <packaged> · <route>" is pinned at BOTH call sites AND the strip.
+
+## M3 — strip: return-loop path direction
+
+- Site: `PackagingChainStrip.tsx` return `<path d>` — the leftward leg endpoint
+  `L64 108` → `L99 108`.
+- Target: `PackagingChainStrip.dom.test.tsx` ("draws the dashed return-loop
+  under-path").
+- Result: FAIL (killed) — the right→left return path is drawn, not decorative.
+
+## M4 — the lift: `routeSummary` chip strip (transport-text.ts)
+
+- Site: `src/ui/transport-text.ts` `routeSummary` — the belt-chip branch
+  `return chipText.replace(/^· /, "")` → `return ""`.
+- Target: GraphCanvas + LinkInspector dom + transport-text unit tests.
+- Result: 2 FAIL (killed) — the lifted function feeds BOTH call sites' edge
+  labels ("· 1 belt"); a broken lift is caught downstream, not just in unit.
+
+## M5 — Total line: exact/float branch
+
+- Site: `src/ui/GraphCanvas.tsx` Total sum — force the float branch
+  (`baseline.kind === "exact" && pkg.kind === "exact"` → prefixed `false &&`).
+- Target: `GraphCanvas.dom.test.tsx` (water "Total power: 50 MW", oil "70 MW").
+- Result: 2 FAIL (killed) — both exact totals turn to "≈ …"; the two-branch
+  discipline is pinned exact-side.
+
+## M6 — Total line: the purity-hide guard
+
+- Site: `GraphCanvas.tsx` Total guard — `selection.purityMix !== undefined ||`
+  → `false ||` (never hides).
+- Target: `GraphCanvas.dom.test.tsx` (oil purity-mix case).
+- Result: FAIL (killed) — the mix-active hide is a real branch: a Total leaks
+  under a purity mix without the guard.
+
+## M7 — A1 sectioning: the "Extraction" label text
+
+- Site: `GraphCanvas.tsx` — `>Extraction<` → `>Mining<`.
+- Target: `GraphCanvas.dom.test.tsx` (section-label query).
+- Result: FAIL (killed) — the new section label is asserted by text, not just
+  present-by-class.
+
+## M8 — A1 sectioning: the packaging checkbox as section head
+
+- Site: `GraphCanvas.tsx` — drop `extraction-section-label` from the packaging
+  toggle `<label>`.
+- Target: `GraphCanvas.dom.test.tsx`
+  (`label.extraction-packaging-toggle.extraction-section-label` query).
+- Result: FAIL (killed) — the "checkbox IS the section head" A1 rule (no
+  duplicate text element) is pinned.
+
+## M9 — strip: node counts not swapped
+
+- Site: `PackagingChainStrip.tsx` — Unpackager box count
+  `countText(plan.unpackageMachines)` → `countText(plan.packageMachines)`.
+- Target: `PackagingChainStrip.dom.test.tsx` (10 × / 5 × decorrelated fixture).
+- Result: FAIL (killed) — the two boxes carry DISTINCT counts; the fixture is
+  decorrelated (10 packagers vs 5 unpackagers) so a swap cannot survive.
+
+---
+
+## Summary
+
+9 compiling mutants across the four new-behaviour surfaces (strip rendering,
+the routeSummary lift, the Total line incl. its exact/float split and
+purity-hide, the sectioning). All 9 produced a genuine FAIL — zero survivors.
+Trunk verified clean after every revert; full suite 1247 pass, `npm run check`
+green.

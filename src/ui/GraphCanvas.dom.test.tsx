@@ -826,6 +826,18 @@ describe("RawFeedNode", () => {
     );
     // The extraction-only Total (baseline 20 MW + packaging 30 MW, both exact).
     expect(host.textContent).toContain("Total power: 50 MW");
+    // A1: the new "Extraction" section label sits on the baseline result.
+    const sectionLabels = [
+      ...host.querySelectorAll(".extraction-section-label"),
+    ].map((el) => el.textContent);
+    expect(sectionLabels).toContain("Extraction");
+    // A1: the "Package for transport" checkbox <label> IS the packaging section
+    // head (styled, same element — no duplicate text element).
+    expect(
+      host.querySelector(
+        "label.extraction-packaging-toggle.extraction-section-label",
+      ),
+    ).not.toBeNull();
   });
 
   it("hides the Total-power line while a purity mix is active (oil)", async () => {
