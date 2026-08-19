@@ -4,16 +4,19 @@ import type { LinkPlanCatalog, ReadyLinkPlan } from "./link-plan.ts";
 import { packagingStageInputs } from "./packaging-stage-input.ts";
 import { solveStage } from "./manifold.ts";
 
-// A DECORRELATED packaging pair: every one of the six per-machine rates is a
-// distinct value, so a mis-mapped field (fluid↔container, package↔unpackage,
-// feed↔output) is caught by the exact assertions below rather than hiding
-// behind an accidental equality. Fluid = water (pipe), container = canister
-// (belt), packaged = packaged water (belt).
+// A DECORRELATED packaging pair: all SIX per-machine rates are distinct
+// values, so a mis-mapped field (fluid↔container, package↔unpackage, feed↔
+// output) is caught by the exact assertions below rather than hiding behind an
+// accidental equality. Fluid = water (pipe), container = canister (belt),
+// packaged = packaged water (belt).
 //   package:   240 water + 30 canister → 60 packaged
-//   unpackage: 60 packaged → 240 water + 30 canister   (physical reverse)
-// The unpackage side deliberately mirrors the package rates so the pair is a
-// legal reverse (resolvePackagingPair enforces the ratio), but the assertions
-// still pin WHICH field feeds WHICH lane.
+//   unpackage: 180 packaged → 720 water + 90 canister   (physical reverse)
+// The unpackage side is the package side scaled ×3 — resolvePackagingPair
+// enforces only the fluid/packaged and container/packaged RATIOS (both hold:
+// 720/180 = 240/60 = 4; 90/180 = 30/60 = 1/2), so the reverse stays legal while
+// every unpackage rate DIFFERS from its package counterpart. This decorrelates
+// the six {240,30,60,180,720,90}: no package↔unpackage rate-source swap in the
+// adapter can pass silently.
 const catalog: LinkPlanCatalog = {
   items: {
     water: { isFluid: true, stackSize: null },
@@ -33,10 +36,10 @@ const catalog: LinkPlanCatalog = {
     unpackage_water: {
       id: "unpackage_water",
       machineId: "packager",
-      inputs: [{ itemId: "packaged_water", perMinute: Fraction.from(60) }],
+      inputs: [{ itemId: "packaged_water", perMinute: Fraction.from(180) }],
       outputs: [
-        { itemId: "water", perMinute: Fraction.from(240) },
-        { itemId: "fluid_canister", perMinute: Fraction.from(30) },
+        { itemId: "water", perMinute: Fraction.from(720) },
+        { itemId: "fluid_canister", perMinute: Fraction.from(90) },
       ],
     },
   },
@@ -117,27 +120,28 @@ describe("packagingStageInputs", () => {
       capacities,
     )!;
 
-    // 2400 water / (240 unpackageFluidRate × 1.00) = 10 unpackagers.
-    expect(unpackager.machineCount).toBe(10);
+    // 2400 water / (720 unpackageFluidRate × 1.00) = 4 unpackagers (ceil 3.33).
+    expect(unpackager.machineCount).toBe(4);
 
     // One feed lane: packaged, belt (the unpackager's single input).
     expect(unpackager.feeds).toHaveLength(1);
     expect(unpackager.feeds[0]!.itemId).toBe("packaged_water");
     expect(unpackager.feeds[0]!.kind).toBe("belt");
-    expect(unpackager.feeds[0]!.perMachineRate.eq(Fraction.from(60))).toBe(
+    expect(unpackager.feeds[0]!.perMachineRate.eq(Fraction.from(180))).toBe(
       true,
     );
 
-    // Two output lanes: fluid (pipe), then container (belt).
+    // Two output lanes: fluid (pipe), then container (belt) — the unpackage
+    // rates, DISTINCT from the package side (720 ≠ 240, 90 ≠ 30).
     expect(unpackager.outputs).toHaveLength(2);
     expect(unpackager.outputs[0]!.itemId).toBe("water");
     expect(unpackager.outputs[0]!.kind).toBe("pipe");
-    expect(unpackager.outputs[0]!.perMachineRate.eq(Fraction.from(240))).toBe(
+    expect(unpackager.outputs[0]!.perMachineRate.eq(Fraction.from(720))).toBe(
       true,
     );
     expect(unpackager.outputs[1]!.itemId).toBe("fluid_canister");
     expect(unpackager.outputs[1]!.kind).toBe("belt");
-    expect(unpackager.outputs[1]!.perMachineRate.eq(Fraction.from(30))).toBe(
+    expect(unpackager.outputs[1]!.perMachineRate.eq(Fraction.from(90))).toBe(
       true,
     );
   });
@@ -166,11 +170,11 @@ describe("packagingStageInputs", () => {
 
     const unpackagerSolve = solveStage(unpackager);
     expect(unpackagerSolve.findings).toEqual([]);
-    // 10 unpackagers × 60 packaged/min = 600/min packaged feed.
+    // 4 unpackagers × 180 packaged/min = 720/min packaged feed.
     const packagedFeed = unpackagerSolve.feeds.find(
       (l) => l.itemId === "packaged_water",
     );
-    expect(packagedFeed?.totalDemand.eq(Fraction.from(600))).toBe(true);
+    expect(packagedFeed?.totalDemand.eq(Fraction.from(720))).toBe(true);
   });
 
   it("returns null when the plan carries no machine counts (demand unresolved)", () => {
