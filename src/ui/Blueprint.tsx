@@ -1,7 +1,7 @@
 import { Fragment, useMemo } from "react";
 import type { StageSolveResult, LaneKind, FeedBelt } from "../core/manifold.ts";
 import { layoutStage } from "../layout/layout.ts";
-import type { LaneLayout, BeltMark } from "../layout/layout.ts";
+import type { LaneLayout, BeltMark, JunctionKind } from "../layout/layout.ts";
 import { FOOTPRINTS } from "../layout/footprints.ts";
 import {
   feedCountToken,
@@ -46,6 +46,14 @@ const PAD = 20;
 
 /** Height cap so a very deep stage (e.g. a Refinery row) never runs off-screen. */
 const MAX_SVG_HEIGHT = 520;
+
+/** The junction-kind tooltip word (P2 D7) — the in-game attachment each per-
+ *  column junction stands for. */
+const JUNCTION_WORD: Record<JunctionKind, string> = {
+  splitter: "splitter",
+  "seam-merger": "seam-merger",
+  merger: "merger",
+};
 
 export function Blueprint({
   solve,
@@ -258,11 +266,16 @@ function BusAndJunctions({ lane, kind }: { lane: LaneLayout; kind: LaneKind }) {
         <rect
           key={`j-${i}`}
           className="bp-junction"
+          data-kind={j.kind}
           x={j.x}
           y={j.y}
           width={j.w}
           height={j.h}
-        />
+        >
+          {/* The attachment kind as the rect's tooltip word (P2 D7). Footprint
+              sizes are identical (4×4) — this is naming, not new geometry. */}
+          <title>{JUNCTION_WORD[j.kind]}</title>
+        </rect>
       ))}
     </g>
   );

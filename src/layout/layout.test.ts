@@ -161,7 +161,9 @@ describe("layoutStage — lane geometry", () => {
       3,
     );
     const j = layout.feedLanes[0]!.junctions[1]!;
-    expect(j).toEqual({ x: 65, y: -40, w: 40, h: 40 });
+    // A feed column with no seam residue-in is a splitter (P2 D7); this fixture
+    // has no segments, so every feed junction is a plain splitter.
+    expect(j).toEqual({ x: 65, y: -40, w: 40, h: 40, kind: "splitter" });
     expect(j.w).toBe(SPLITTER_FOOTPRINT.width);
     expect(j.h).toBe(SPLITTER_FOOTPRINT.length);
   });
