@@ -3,11 +3,16 @@ import type { LaneKind } from "../core/manifold.ts";
 import type { Catalog, CatalogExtractor } from "../data/types.ts";
 import { stagePowerText, suggestSupply } from "./advice.ts";
 import { parseClockText } from "../core/clock.ts";
+import type { PackagingInterstep } from "../core/link-transport.ts";
+import { derivePackagingPlan } from "../core/link-plan.ts";
+import type { DerivedLinkPlan, LinkPlanCatalog } from "../core/link-plan.ts";
 
 export interface ExtractionSelection {
   machineId: string;
   clockPercentText: string;
   purityMix?: PurityMixText;
+  /** Raw-input packaging (#133): the same interstep the link path carries. */
+  packaging?: PackagingInterstep;
 }
 
 export interface PurityMixText {
@@ -165,6 +170,42 @@ export function deriveExtractionPlan({
     transport,
     purity,
   };
+}
+
+/**
+ * The packaging plan for a raw input (#133), surfaced alongside the extractor
+ * plan. Reuses the shared `derivePackagingPlan` with:
+ *
+ * - `materialSupply` = the extraction plan's TOP-LEVEL `totalSupply` (not the
+ *   purity.totalSupply, which diverges when a node mix is configured — supply is
+ *   reported only, never consumed, but the top-level figure is the buildable
+ *   supply the panel already shows);
+ * - `materialDemand` = the raw feed's demand (always a real Fraction on this
+ *   path);
+ * - `forwardTransport: undefined` — the extraction side auto-picks by tier
+ *   (`computeLinkTransport` accepts an absent transport).
+ *
+ * `plan` is the extractor plan; a packaging plan only exists when it is
+ * "planned" (there is a buildable supply to package). Returns null otherwise —
+ * the panel shows the enable control but no computed figures.
+ */
+export function deriveExtractionPackagingPlan(
+  catalog: LinkPlanCatalog,
+  plan: ExtractionPlan,
+  packaging: PackagingInterstep,
+  demand: Fraction,
+  unlockedTiers: { belt: number; pipe: number },
+  itemId: string,
+): DerivedLinkPlan | null {
+  if (plan.status !== "planned") return null;
+  return derivePackagingPlan(catalog, {
+    itemId,
+    intent: packaging,
+    forwardTransport: undefined,
+    materialSupply: plan.totalSupply,
+    materialDemand: demand,
+    unlockedTiers,
+  });
 }
 
 const MAX_SAFE_NODE_COUNT = BigInt(Number.MAX_SAFE_INTEGER);

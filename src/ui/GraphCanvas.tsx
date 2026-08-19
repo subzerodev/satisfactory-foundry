@@ -55,9 +55,21 @@ import type { StageNodeData, EdgeState, RawFlowNode } from "./graph-flow.ts";
 import { chainPowerText } from "./advice.ts";
 import {
   deriveExtractionPlan,
+  deriveExtractionPackagingPlan,
   standaloneExtractors,
 } from "./extraction-plan.ts";
 import { formatRate, tierLabel } from "./format.ts";
+import { discoverPackagingPairs } from "../core/packaging-pair.ts";
+import type { PackagingPair } from "../core/packaging-pair.ts";
+import type {
+  PackagingInterstep,
+  LinkTransport,
+  TransportMode,
+} from "../core/link-transport.ts";
+import type { DerivedLinkPlan } from "../core/link-plan.ts";
+import { legalModesFor } from "../core/transport-plan.ts";
+import type { TransportPlan } from "../core/transport-plan.ts";
+import { MODE_LABEL, edgeChip } from "./transport-text.ts";
 
 /**
  * The card's `data`: the pure StageNodeData plus the per-node callbacks the
@@ -368,6 +380,10 @@ export function ExtractionPanel({
         ...(selection?.purityMix
           ? { purityMix: { ...selection.purityMix } }
           : {}),
+        // This setter rebuilds the selection field-by-field (no ...selection),
+        // so packaging must be carried explicitly or changing the extractor
+        // would silently discard it.
+        ...(selection?.packaging ? { packaging: selection.packaging } : {}),
       });
   };
 
@@ -396,6 +412,55 @@ export function ExtractionPanel({
   const purityFieldHasError = (field: PurityField) =>
     purityError !== null &&
     (purityError.field === null || purityError.field === field);
+
+  // Raw-input packaging (#133). The gate mirrors packagingOptionsFor: show the
+  // control when a pair resolves OR a config is already saved (so it stays
+  // visible + clearable when a user catalog no longer resolves its pair). The
+  // panel is gated below on `selection !== null` (there must be an extractor
+  // plan to sit under — a Resource Well item has no standalone extractor, so
+  // selection stays null and no control shows).
+  const packagingPairs = useMemo(
+    () => discoverPackagingPairs(catalog, rawNode.data.itemId),
+    [catalog, rawNode.data.itemId],
+  );
+  const packagingVisible =
+    packagingPairs.length > 0 || selection?.packaging !== undefined;
+  const packagingPlan: DerivedLinkPlan | null =
+    selection?.packaging !== undefined
+      ? deriveExtractionPackagingPlan(
+          catalog,
+          result,
+          selection.packaging,
+          rawNode.data.demand,
+          stage.selection.unlockedTiers,
+          rawNode.data.itemId,
+        )
+      : null;
+
+  const setPackagingEnabled = (enabled: boolean) => {
+    if (selection === null) return;
+    if (!enabled) {
+      onSetSelection({ ...selection, packaging: undefined });
+      return;
+    }
+    const pair = packagingPairs[0];
+    if (pair === undefined) return;
+    onSetSelection({
+      ...selection,
+      packaging: {
+        packageRecipeId: pair.packageRecipe.id,
+        clockPercentText: "100",
+        // MUST be belt: the extraction write has no self-heal — an illegal
+        // seed is dropped by canonicalizePackagingInterstep, forever.
+        returnTransport: { mode: "belt" },
+      },
+    });
+  };
+
+  const setPackagingIntent = (intent: PackagingInterstep) => {
+    if (selection === null) return;
+    onSetSelection({ ...selection, packaging: intent });
+  };
 
   return (
     <section
@@ -576,6 +641,16 @@ export function ExtractionPanel({
               )}
             </>
           )}
+          {packagingVisible && selection !== null && (
+            <PackagingControls
+              catalog={catalog}
+              pairs={packagingPairs}
+              packaging={selection.packaging}
+              plan={packagingPlan}
+              onSetEnabled={setPackagingEnabled}
+              onSetIntent={setPackagingIntent}
+            />
+          )}
         </div>
       )}
       {hasResourceWell && rawNode.data.itemId !== "nitrogen_gas" && (
@@ -586,6 +661,207 @@ export function ExtractionPanel({
       )}
     </section>
   );
+}
+
+/**
+ * The raw-input packaging control (#133), mirroring LinkInspector's interstep
+ * editor but for the extraction panel: an enable toggle, then (when enabled) a
+ * packager-recipe select for a >1-pair item, a Packager clock field, a
+ * return-transport mode select, and the computed figures. `packaging === undefined`
+ * ⇒ the interstep is off; the toggle is still shown (so a resolved pair invites
+ * enabling, and a saved config stays clearable when its pair no longer resolves).
+ */
+function PackagingControls({
+  catalog,
+  pairs,
+  packaging,
+  plan,
+  onSetEnabled,
+  onSetIntent,
+}: {
+  catalog: Catalog;
+  pairs: PackagingPair[];
+  packaging: PackagingInterstep | undefined;
+  plan: DerivedLinkPlan | null;
+  onSetEnabled: (enabled: boolean) => void;
+  onSetIntent: (intent: PackagingInterstep) => void;
+}) {
+  return (
+    <div className="extraction-packaging">
+      <label className="extraction-packaging-toggle">
+        <input
+          type="checkbox"
+          aria-label="Package for transport"
+          checked={packaging !== undefined}
+          onChange={(event) => onSetEnabled(event.target.checked)}
+        />
+        <span>Package for transport</span>
+      </label>
+
+      {packaging !== undefined && (
+        <PackagingEditor
+          catalog={catalog}
+          pairs={pairs}
+          intent={packaging}
+          plan={plan}
+          onSetIntent={onSetIntent}
+        />
+      )}
+    </div>
+  );
+}
+
+/** A fresh transport config for a mode (belt/pipe trip-less; others start with
+ *  an empty estimated trip). Illegal packaged modes (pipe/fluid-truck) are never
+ *  offered, so they need no arm here. */
+function defaultReturnTransport(mode: TransportMode): LinkTransport {
+  if (mode === "belt" || mode === "pipe") return { mode };
+  if (mode === "drone") {
+    return {
+      mode: "drone",
+      fuel: "battery",
+      trip: { kind: "estimated", flightMetersText: "" },
+    };
+  }
+  return { mode, trip: { kind: "estimated", distanceText: "" } };
+}
+
+function PackagingEditor({
+  catalog,
+  pairs,
+  intent,
+  plan,
+  onSetIntent,
+}: {
+  catalog: Catalog;
+  pairs: PackagingPair[];
+  intent: PackagingInterstep;
+  plan: DerivedLinkPlan | null;
+  onSetIntent: (intent: PackagingInterstep) => void;
+}) {
+  const selectedPairKnown = pairs.some(
+    (pair) => pair.packageRecipe.id === intent.packageRecipeId,
+  );
+  // Legal return modes for the empty container, minus the illegal packaged
+  // routes (pipe / fluid-truck) that canonicalize would drop. `plan` names the
+  // container item only when it resolved "ready"; else offer belt alone.
+  const containerItem =
+    plan?.status === "ready" ? catalog.items[plan.containerItemId] : undefined;
+  const returnModes: readonly TransportMode[] =
+    containerItem === undefined
+      ? (["belt"] as const)
+      : legalModesFor(containerItem).filter(
+          (mode) => mode !== "pipe" && mode !== "fluid-truck",
+        );
+
+  return (
+    <div className="extraction-packaging-editor">
+      {pairs.length > 1 && (
+        <label>
+          <span>Packaging pair</span>
+          <select
+            value={intent.packageRecipeId}
+            onChange={(event) =>
+              onSetIntent({ ...intent, packageRecipeId: event.target.value })
+            }
+          >
+            {!selectedPairKnown && (
+              <option value={intent.packageRecipeId}>
+                {intent.packageRecipeId} (unavailable)
+              </option>
+            )}
+            {pairs.map((pair) => (
+              <option key={pair.packageRecipe.id} value={pair.packageRecipe.id}>
+                {catalog.recipes[pair.packageRecipe.id]?.displayName ??
+                  pair.packageRecipe.id}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <label>
+        <span>Packager clock %</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={intent.clockPercentText}
+          onChange={(event) =>
+            onSetIntent({ ...intent, clockPercentText: event.target.value })
+          }
+        />
+      </label>
+
+      <label>
+        <span>Empty return</span>
+        <select
+          value={intent.returnTransport.mode}
+          onChange={(event) =>
+            onSetIntent({
+              ...intent,
+              returnTransport: defaultReturnTransport(
+                event.target.value as TransportMode,
+              ),
+            })
+          }
+        >
+          {returnModes.map((mode) => (
+            <option key={mode} value={mode}>
+              {MODE_LABEL[mode] ?? mode}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {plan === null ? (
+        <p className="extraction-muted">
+          Plan the extractor to size the packaging.
+        </p>
+      ) : plan.status === "unavailable" ? (
+        <p className="extraction-error">{plan.error}</p>
+      ) : (
+        <div className="extraction-packaging-result">
+          {plan.packageMachines !== null &&
+            plan.unpackageMachines !== null &&
+            plan.power !== null && (
+              <p>
+                {plan.packageMachines} Packager · {plan.unpackageMachines}{" "}
+                Unpackager · {packagingPowerText(plan.power)}
+              </p>
+            )}
+          {plan.cargoDemand !== null && plan.containerReturnRate !== null && (
+            <p>
+              {formatRate(plan.cargoDemand)}/min packaged ·{" "}
+              {formatRate(plan.containerReturnRate)}/min empty containers
+            </p>
+          )}
+          <p>
+            Forward: {routeSummary(plan.forwardTransport)} · Return:{" "}
+            {routeSummary(plan.returnTransport)}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A compact one-line summary of a route's transport plan for the panel. The
+ *  edgeChip count (drops its leading "· " separator here) when there is one;
+ *  else the mode label (belt) or the error/unsolved note. */
+function routeSummary(plan: TransportPlan): string {
+  const chip = edgeChip(plan);
+  if (chip !== null) return chip.replace(/^· /, "");
+  if (plan.kind === "continuous") return MODE_LABEL[plan.mode] ?? plan.mode;
+  if (plan.kind === "error") return plan.message;
+  if (plan.kind === "unsolved") return "solve to size";
+  return "";
+}
+
+function packagingPowerText(
+  power: NonNullable<Extract<DerivedLinkPlan, { status: "ready" }>["power"]>,
+): string {
+  if (power.kind === "exact") return `${formatRate(power.mw)} MW`;
+  return `≈ ${Number(power.mw.toFixed(1))} MW`;
 }
 
 function transportText(
