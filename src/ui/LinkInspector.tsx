@@ -51,6 +51,8 @@ import {
   trainEstimatedNote,
   trainSharedEndsFootnote,
   TRAIN_PLATFORM_FOOTNOTE,
+  defaultTransportFor,
+  packagingPowerText,
 } from "./transport-text.ts";
 
 const DRONE_FUELS: DroneFuel[] = [
@@ -78,17 +80,6 @@ const FUEL_LABEL: Record<DroneFuel, string> = {
  * honest default — the user fills in a distance). Drones default to battery
  * fuel (the P1 default). belt/pipe are trip-less.
  */
-function defaultTransportFor(mode: TransportMode): LinkTransport {
-  if (mode === "belt" || mode === "pipe") return { mode };
-  if (mode === "drone") {
-    return {
-      mode: "drone",
-      fuel: "battery",
-      trip: { kind: "estimated", flightMetersText: "" },
-    };
-  }
-  return { mode, trip: { kind: "estimated", distanceText: "" } };
-}
 
 /** The current mode of a link (absent transport ⇒ belt default). */
 function currentMode(link: StageLink): TransportMode {
@@ -340,7 +331,7 @@ function InterstepEditor({
               plan.power !== null && (
                 <p>
                   {plan.packageMachines} package · {plan.unpackageMachines}{" "}
-                  unpackage · {powerText(plan.power)}
+                  unpackage · {packagingPowerText(plan.power)}
                 </p>
               )}
             {plan.cargoDemand !== null && plan.containerReturnRate !== null && (
@@ -469,13 +460,6 @@ function RouteEditor({
       )}
     </section>
   );
-}
-
-function powerText(
-  power: NonNullable<Extract<DerivedLinkPlan, { status: "ready" }>["power"]>,
-): string {
-  if (power.kind === "exact") return `${formatRate(power.mw)} MW`;
-  return `≈ ${Number(power.mw.toFixed(1))} MW`;
 }
 
 /**

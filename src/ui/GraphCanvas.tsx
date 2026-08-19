@@ -63,13 +63,17 @@ import { discoverPackagingPairs } from "../core/packaging-pair.ts";
 import type { PackagingPair } from "../core/packaging-pair.ts";
 import type {
   PackagingInterstep,
-  LinkTransport,
   TransportMode,
 } from "../core/link-transport.ts";
 import type { DerivedLinkPlan } from "../core/link-plan.ts";
 import { legalModesFor } from "../core/transport-plan.ts";
 import type { TransportPlan } from "../core/transport-plan.ts";
-import { MODE_LABEL, edgeChip } from "./transport-text.ts";
+import {
+  MODE_LABEL,
+  edgeChip,
+  defaultTransportFor,
+  packagingPowerText,
+} from "./transport-text.ts";
 
 /**
  * The card's `data`: the pure StageNodeData plus the per-node callbacks the
@@ -711,21 +715,6 @@ function PackagingControls({
   );
 }
 
-/** A fresh transport config for a mode (belt/pipe trip-less; others start with
- *  an empty estimated trip). Illegal packaged modes (pipe/fluid-truck) are never
- *  offered, so they need no arm here. */
-function defaultReturnTransport(mode: TransportMode): LinkTransport {
-  if (mode === "belt" || mode === "pipe") return { mode };
-  if (mode === "drone") {
-    return {
-      mode: "drone",
-      fuel: "battery",
-      trip: { kind: "estimated", flightMetersText: "" },
-    };
-  }
-  return { mode, trip: { kind: "estimated", distanceText: "" } };
-}
-
 function PackagingEditor({
   catalog,
   pairs,
@@ -799,7 +788,7 @@ function PackagingEditor({
           onChange={(event) =>
             onSetIntent({
               ...intent,
-              returnTransport: defaultReturnTransport(
+              returnTransport: defaultTransportFor(
                 event.target.value as TransportMode,
               ),
             })
@@ -855,13 +844,6 @@ function routeSummary(plan: TransportPlan): string {
   if (plan.kind === "error") return plan.message;
   if (plan.kind === "unsolved") return "solve to size";
   return "";
-}
-
-function packagingPowerText(
-  power: NonNullable<Extract<DerivedLinkPlan, { status: "ready" }>["power"]>,
-): string {
-  if (power.kind === "exact") return `${formatRate(power.mw)} MW`;
-  return `≈ ${Number(power.mw.toFixed(1))} MW`;
 }
 
 function transportText(
