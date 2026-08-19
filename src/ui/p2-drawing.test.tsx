@@ -274,13 +274,18 @@ describe("P2 D2 — endpoint numbers", () => {
     expect(doc.querySelector(".feed-group-count")).not.toBeNull();
   });
 
-  it("suppresses a hand-off label when a group token takes the LEFT candidate at its x2 (r3)", () => {
+  it("suppresses a hand-off label when a group token takes the LEFT candidate at its x2 (r3, re-derived at pitch 24)", () => {
     // The r3 left-fallback: a coincident group at a non-terminal stretch's END
-    // boundary, near the scrolled lane edge, takes the LEFT token candidate
-    // (coordinate−32) — the same end-anchored territory the hand-off occupies.
+    // boundary, hard against the scrolled lane edge, takes the LEFT token
+    // candidate — the same end-anchored territory the hand-off occupies.
     // Dropping beats pushing (pushing detaches the label from its endpoint); the
-    // segment tooltip keeps the hand-off findable. Synthetic so the geometry is
-    // exact: the group's boundary EQUALS stretch [1-113]'s x2.
+    // segment tooltip keeps the hand-off findable. Re-derived for the #154 24px
+    // floor (the old pitch-8 literals inverted — at a wider lane the RIGHT
+    // candidate fit again). At N=115 the pitch floors to 24, width = 48 + 24·115
+    // = 2808, laneEnd = 2784. The group enters after machine 114 (= stretch
+    // [1-114]'s x2), coordinate = 24 + 24·114 = 2760. RIGHT (2760+4, end 2792) >
+    // laneEnd → rejected; LEFT (2760−32 = 2728) fits. Its glyphs sit on the end-
+    // anchored boundary, so stretch [1-114]'s hand-off is suppressed.
     const result: StageSolveResult = {
       feeds: [
         {
@@ -299,31 +304,31 @@ describe("P2 D2 — endpoint numbers", () => {
               index: 1,
               capacity: F(0),
               overridden: true,
-              entersAfterMachine: 113,
+              entersAfterMachine: 114,
             },
             {
               index: 2,
               capacity: F(780),
               overridden: false,
-              entersAfterMachine: 113,
+              entersAfterMachine: 114,
             },
             {
               index: 3,
               capacity: F(120),
               overridden: false,
-              entersAfterMachine: 113,
+              entersAfterMachine: 114,
             },
           ],
           segments: [
             {
               fromMachine: 1,
-              toMachine: 113,
+              toMachine: 114,
               entryFlow: F(780),
               handoffResidue: F(90),
               beltIndex: 0,
             },
             {
-              fromMachine: 114,
+              fromMachine: 115,
               toMachine: 115,
               entryFlow: F(990),
               handoffResidue: F(0),
@@ -339,10 +344,10 @@ describe("P2 D2 — endpoint numbers", () => {
       findings: [],
     };
     const doc = schematicDoc(result, 115);
-    // The group token took the LEFT candidate (coordinate 928 − 32 = 896).
+    // The group token took the LEFT candidate (coordinate 2760 − 32 = 2728).
     const token = doc.querySelector(".feed-group-count")!;
-    expect(Number(token.getAttribute("x"))).toBe(896);
-    // Stretch [1-113]'s hand-off "90" is SUPPRESSED — only the terminal "0"
+    expect(Number(token.getAttribute("x"))).toBe(2728);
+    // Stretch [1-114]'s hand-off "90" is SUPPRESSED — only the terminal "0"
     // remains among the end-anchored endpoints.
     const endLabels = [...doc.querySelectorAll(".ribbon-endpoint")]
       .filter((e) => e.getAttribute("text-anchor") === "end")
@@ -352,9 +357,10 @@ describe("P2 D2 — endpoint numbers", () => {
   });
 
   it("drops a hand-off label on a stretch too narrow for both glyphs (thinning)", () => {
-    // A dense synthetic lane: a 1-machine non-terminal stretch (8px at band
-    // pitch) with a positive hand-off cannot hold both "780" and "660" glyphs,
-    // so the hand-off drops (entry wins). The tooltip keeps it findable.
+    // A dense synthetic lane: a 1-machine non-terminal stretch (24px at the #154
+    // readable pitch floor) with a positive hand-off still cannot hold both
+    // "780" and "660" glyphs (24 − 6 < 18 + 18 + 6), so the hand-off drops
+    // (entry wins). The tooltip keeps it findable.
     const result: StageSolveResult = {
       feeds: [
         {

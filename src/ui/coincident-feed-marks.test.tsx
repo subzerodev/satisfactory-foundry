@@ -289,14 +289,23 @@ describe("coincident feed rendering", () => {
     expect(group?.getAttribute("aria-label")).toBe(
       "Feeds 1-2 - 2 slots - 480/min total capacity - enter at head",
     );
-    expect(adjacent?.getAttribute("x1")).toBe("32");
+    // Belt 2 enters at machine 1 → boundaryX(1) = marginX + 1·pitch. Re-derived
+    // for the #154 24px floor: 24 + 24 = 48 (was 32 at the old 8px pitch).
+    expect(adjacent?.getAttribute("x1")).toBe("48");
   });
 
   it("prevents inward-facing Schematic group tokens from overlapping", () => {
+    // Re-derived for the #154 24px floor: the old fixture put the two groups at
+    // machines 110 and 115 — 40px apart at the retired 8px pitch, so their
+    // inward-facing tokens collided. At 24px that gap widens to 120px and both
+    // fit, dissolving the collision the test exists to pin. This fixture places
+    // the groups at machines 113 and 115 (48px at pitch 24), so the inward
+    // tokens overlap again and the near-edge group is suppressed — the same
+    // behaviour, re-forced under the new pitch (not a blind literal swap).
     const result = solveFeed(115, 30, [
-      F(3300),
+      F(3390),
       F(0),
-      F(300),
+      null,
       null,
       null,
       null,
@@ -305,7 +314,7 @@ describe("coincident feed rendering", () => {
     ]);
     expect(
       result.feeds[0]!.belts.map((belt) => belt.entersAfterMachine),
-    ).toEqual([0, 110, 110, 115, 115, 115, 115, 115]);
+    ).toEqual([0, 113, 113, 115, 115, 115, 115, 115]);
 
     const schematic = schematicDocument(result, 115);
     const groups = [...schematic.querySelectorAll(".feed-mark-group")];
@@ -314,7 +323,9 @@ describe("coincident feed rendering", () => {
       .filter((token): token is Element => token !== null);
     expect(groups).toHaveLength(2);
     expect(visibleTokens).toHaveLength(1);
-    expect(visibleTokens[0]?.getAttribute("x")).toBe("908");
+    // The surviving token is group [1,2]'s, right-anchored at boundaryX(113)+4 =
+    // 24 + 113·24 + 4 = 2740.
+    expect(visibleTokens[0]?.getAttribute("x")).toBe("2740");
     expect(visibleTokens[0]?.textContent).toBe("x2");
     expect(groups[1]?.querySelector(".feed-group-count")).toBeNull();
   });

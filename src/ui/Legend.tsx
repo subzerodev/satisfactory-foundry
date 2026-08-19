@@ -78,6 +78,10 @@ export function Legend({ tiers }: LegendProps) {
         sampleClass="legend-pipe-manifold"
         label="pipe manifold (unordered)"
       />
+      <ConventionEntry
+        sampleClass="legend-ruler"
+        label="machine ruler — tall tick: a belt stretch starts/ends · short tick: this number's machine"
+      />
     </div>
   );
 }
