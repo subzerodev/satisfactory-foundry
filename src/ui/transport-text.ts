@@ -292,6 +292,20 @@ function chip(body: string, estimated: boolean): string {
   return estimated ? `· ≈ ${body}` : `· ${body}`;
 }
 
+/** A compact one-line summary of a route's transport plan for a panel/strip. The
+ *  edgeChip count (drops its leading "· " separator here) when there is one;
+ *  else the mode label (belt) or the error/unsolved note. Lifted from
+ *  GraphCanvas so both the extraction panel and the LinkInspector strip derive
+ *  their route-text props from the one function (#156). */
+export function routeSummary(plan: TransportPlan): string {
+  const chipText = edgeChip(plan);
+  if (chipText !== null) return chipText.replace(/^· /, "");
+  if (plan.kind === "continuous") return MODE_LABEL[plan.mode] ?? plan.mode;
+  if (plan.kind === "error") return plan.message;
+  if (plan.kind === "unsolved") return "solve to size";
+  return "";
+}
+
 // ---------------------------------------------------------------------------
 // Mode nouns.
 // ---------------------------------------------------------------------------

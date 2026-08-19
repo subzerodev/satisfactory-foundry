@@ -67,10 +67,9 @@ import type {
 } from "../core/link-transport.ts";
 import type { DerivedLinkPlan } from "../core/link-plan.ts";
 import { legalModesFor } from "../core/transport-plan.ts";
-import type { TransportPlan } from "../core/transport-plan.ts";
 import {
   MODE_LABEL,
-  edgeChip,
+  routeSummary,
   defaultTransportFor,
   packagingPowerText,
 } from "./transport-text.ts";
@@ -832,18 +831,6 @@ function PackagingEditor({
       )}
     </div>
   );
-}
-
-/** A compact one-line summary of a route's transport plan for the panel. The
- *  edgeChip count (drops its leading "· " separator here) when there is one;
- *  else the mode label (belt) or the error/unsolved note. */
-function routeSummary(plan: TransportPlan): string {
-  const chip = edgeChip(plan);
-  if (chip !== null) return chip.replace(/^· /, "");
-  if (plan.kind === "continuous") return MODE_LABEL[plan.mode] ?? plan.mode;
-  if (plan.kind === "error") return plan.message;
-  if (plan.kind === "unsolved") return "solve to size";
-  return "";
 }
 
 function transportText(
