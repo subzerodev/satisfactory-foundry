@@ -1532,6 +1532,88 @@ polygon.bus-seg {
   color: var(--fg-muted);
 }
 
+/* Panel section head (#156 A1) — a muted 11px label with a top hairline, the
+   drafting idiom that separates the Extraction / Package-for-transport sections
+   without tabs. Applied to the NEW "Extraction" label AND (as a modifier) to the
+   existing packaging checkbox <label>, so the checkbox keeps its visible text
+   while reading as the section head — no duplicate text. */
+.extraction-section-label {
+  margin: 10px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The packaging chain strip (#156 A2) — shared by the extraction panel and the
+   LinkInspector interstep. The SVG designs to a 320-unit viewBox and scales to
+   the container via width:100%; all colour is the panel's own vars, no new
+   system. Text sizes track the strip's ~11px design at panel width. */
+.packaging-chain-strip {
+  margin: 8px 0 0;
+}
+
+.packaging-chain-strip-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.packaging-chain-strip .pcs-node {
+  fill: var(--bg-panel);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.packaging-chain-strip .pcs-node-count {
+  fill: var(--fg);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.packaging-chain-strip .pcs-node-role {
+  fill: var(--fg);
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.packaging-chain-strip .pcs-endpoint {
+  fill: var(--fg-muted);
+  font-size: 9px;
+}
+
+.packaging-chain-strip .pcs-feed,
+.packaging-chain-strip .pcs-delivered,
+.packaging-chain-strip .pcs-edge-label,
+.packaging-chain-strip .pcs-return-label {
+  fill: var(--fg);
+  font-size: 9px;
+}
+
+.packaging-chain-strip .pcs-return-label {
+  fill: var(--fg-muted);
+}
+
+.packaging-chain-strip .pcs-edge {
+  stroke: var(--fg);
+  stroke-width: 1;
+}
+
+.packaging-chain-strip .pcs-arrow {
+  fill: var(--fg);
+}
+
+/* The return loop is dashed — a return path reads as the loop it is. */
+.packaging-chain-strip .pcs-return {
+  stroke: var(--fg-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+
 /* Machine plate (Stage 9 P1 Axis 1). The stage card reads as a bordered ink
    plate: square corners (no radius), a 2px ink border, --bg-panel fill. CSS
    re-clothes the existing markup — zero DOM change, so the smoke/label pins are
