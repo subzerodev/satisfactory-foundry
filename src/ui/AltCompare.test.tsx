@@ -113,6 +113,7 @@ function solvedWith(itemId: string, total: number): SolveState {
     totalOutput: F(total),
     breakouts: [],
     segments: [],
+    collectionCascade: null,
     findings: [],
   };
   return {

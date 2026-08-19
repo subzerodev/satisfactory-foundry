@@ -75,7 +75,7 @@ describe("toStageInput — live-solver integration proof (spec row 5)", () => {
       feed.segments.map((s) => [
         s.fromMachine,
         s.toMachine,
-        s.peakFlow.toString(),
+        s.entryFlow.toString(),
       ]),
     ).toEqual([
       [1, 16, "480"],

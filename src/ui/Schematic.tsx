@@ -9,13 +9,7 @@ import type {
 import type { TierTable } from "../data/types.ts";
 import { computeLayout, LAYOUT } from "./layout.ts";
 import type { LaneTrack, SchematicLayout } from "./layout.ts";
-import {
-  beltLabel,
-  feedGroupLabel,
-  firstLockedTierForOneLine,
-  formatRate,
-  segTooltip,
-} from "./format.ts";
+import { beltLabel, feedGroupLabel, formatRate, segTooltip } from "./format.ts";
 import { colorForCapacity, ERROR_COLOR } from "./colors.ts";
 import {
   feedCountToken,
@@ -46,8 +40,6 @@ interface TooltipState {
 const TIP_OFFSET = 12;
 const TIP_CLAMP = 8;
 const TIP_MAX_WIDTH = 280;
-const PARALLEL_RAIL_OFFSET = 4;
-const PARALLEL_LABEL_MIN_WIDTH = 20;
 
 /**
  * A segment is in error when a finding implicates it: `segment-over-capacity`
@@ -75,20 +67,6 @@ function segmentErrored(
   });
 }
 
-function parallelRuns(track: LaneTrack): { x1: number; x2: number }[] {
-  const runs: { x1: number; x2: number }[] = [];
-  for (const segment of track.segments) {
-    if (segment.parallelCount !== 2) continue;
-    const previous = runs[runs.length - 1];
-    if (previous !== undefined && previous.x2 === segment.x1) {
-      previous.x2 = segment.x2;
-    } else {
-      runs.push({ x1: segment.x1, x2: segment.x2 });
-    }
-  }
-  return runs;
-}
-
 /** One lane's SVG group: bus segments, seams, entry/break-out arrows.
  *  `onTip`/`offTip` wire each hoverable line into the schematic-level tooltip;
  *  `<title>` markup is gone (Stage 5 item 1) — the tooltip text is carried by
@@ -100,7 +78,6 @@ function LaneG({
   belts,
   side,
   busCapacity,
-  unlockedCount,
   tiers,
   itemName,
   machineTopY,
@@ -116,7 +93,6 @@ function LaneG({
   belts: (FeedBelt | BreakoutBelt)[];
   side: "feed" | "output";
   busCapacity: FeedBelt["capacity"];
-  unlockedCount: number;
   tiers: TierTable;
   itemName: (id: string) => string;
   machineTopY: number;
@@ -130,7 +106,6 @@ function LaneG({
   // 4); belt lanes keep the plain track. Schematic already knows the lane kind.
   const pipeClass = kind === "pipe" ? " lane-pipe" : "";
   const busCapString = formatRate(busCapacity);
-  const runs = side === "feed" ? parallelRuns(track) : [];
   const feedGroups =
     side === "feed"
       ? groupCoincidentMarks(track.belts, (arrow) => arrow.x)
@@ -160,61 +135,8 @@ function LaneG({
         );
         const stroke = errored
           ? ERROR_COLOR
-          : colorForCapacity(
-              kind,
-              seg.parallelCount === 2 ? busCapacity : belt.capacity,
-              tiers,
-            );
-        const oneLineTier =
-          seg.parallelCount === 2
-            ? firstLockedTierForOneLine(
-                kind,
-                seg.peakFlow,
-                tiers,
-                unlockedCount,
-              )
-            : null;
-        const tip = segTooltip(
-          seg,
-          busCapString,
-          seg.parallelCount,
-          oneLineTier,
-        );
-        if (seg.parallelCount === 2) {
-          const railClass = `parallel-rail${errored ? " seg-error" : ""}${pipeClass}`;
-          return (
-            <g
-              key={`seg-${seg.beltIndex}`}
-              className="parallel-segment"
-              data-parallel-segment={`${seg.fromMachine}-${seg.toMachine}`}
-              role="img"
-              tabIndex={0}
-              aria-label={tip}
-              onMouseEnter={(e) => onTip(tip, e)}
-              onMouseMove={(e) => onTip(tip, e)}
-              onMouseLeave={offTip}
-              onFocus={(e) => onFocusTip(tip, e)}
-              onBlur={offTip}
-            >
-              <line
-                className={railClass}
-                x1={seg.x1}
-                x2={seg.x2}
-                y1={track.busY - PARALLEL_RAIL_OFFSET}
-                y2={track.busY - PARALLEL_RAIL_OFFSET}
-                stroke={stroke}
-              />
-              <line
-                className={railClass}
-                x1={seg.x1}
-                x2={seg.x2}
-                y1={track.busY + PARALLEL_RAIL_OFFSET}
-                y2={track.busY + PARALLEL_RAIL_OFFSET}
-                stroke={stroke}
-              />
-            </g>
-          );
-        }
+          : colorForCapacity(kind, belt.capacity, tiers);
+        const tip = segTooltip(seg, busCapString);
         return (
           <line
             key={`seg-${seg.beltIndex}`}
@@ -230,18 +152,6 @@ function LaneG({
           />
         );
       })}
-      {runs.map((run, index) =>
-        run.x2 - run.x1 >= PARALLEL_LABEL_MIN_WIDTH ? (
-          <text
-            key={`parallel-run-${index}`}
-            className="parallel-run-label"
-            x={(run.x1 + run.x2) / 2}
-            y={track.busY - 9}
-          >
-            x2
-          </text>
-        ) : null,
-      )}
       {track.seams.map((x, i) => (
         <line
           key={`seam-${i}`}
@@ -492,7 +402,6 @@ export function Schematic({
               belts={lane.belts}
               side="feed"
               busCapacity={busCap}
-              unlockedCount={unlocked[lane.kind]}
               tiers={tiers}
               itemName={itemName}
               machineTopY={machineTopY}
@@ -547,7 +456,6 @@ export function Schematic({
               belts={lane.breakouts}
               side="output"
               busCapacity={busCap}
-              unlockedCount={unlocked[lane.kind]}
               tiers={tiers}
               itemName={itemName}
               machineTopY={machineTopY + 40}

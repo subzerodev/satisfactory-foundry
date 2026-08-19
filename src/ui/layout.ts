@@ -3,7 +3,7 @@
  * Coordinates derive ONLY from integer machine indices, counts, and array
  * positions — never from a Fraction (rates appear only as formatted strings,
  * elsewhere). Spans, belt indices, item ids, and each segment's exact
- * `peakFlow` pass through untouched (peakFlow is display data, never a
+ * `entryFlow` pass through untouched (entryFlow is display data, never a
  * coordinate).
  */
 
@@ -80,8 +80,7 @@ export interface LaneTrack {
     x1: number;
     x2: number;
     beltIndex: number;
-    peakFlow: Fraction; // solver's span maximum, passed through for the title
-    parallelCount: number;
+    entryFlow: Fraction; // solver's entry/head flow, passed through for the title
   }[];
   seams: number[];
 }
@@ -234,8 +233,7 @@ function feedTrack(
       x1: boundaryX(s.fromMachine - 1, pitch),
       x2: boundaryX(s.toMachine, pitch),
       beltIndex: s.beltIndex,
-      peakFlow: s.peakFlow,
-      parallelCount: s.parallelCount,
+      entryFlow: s.entryFlow,
     })),
     // Interior seams: each segment start boundary except the head (machine 1).
     seams: lane.segments
@@ -263,8 +261,7 @@ function outputTrack(
       x1: boundaryX(s.fromMachine - 1, pitch),
       x2: boundaryX(s.toMachine, pitch),
       beltIndex: s.beltIndex,
-      peakFlow: s.peakFlow,
-      parallelCount: s.parallelCount,
+      entryFlow: s.entryFlow,
     })),
     seams: lane.segments
       .filter((s) => s.fromMachine > 1)
