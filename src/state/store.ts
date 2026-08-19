@@ -43,8 +43,8 @@ import {
   validatePlanFile,
 } from "../data/plan-store.ts";
 import type {
-  PlanFileV8,
-  PlanStageV7,
+  PlanFileV9,
+  PlanStageV8,
   PlanListEntry,
 } from "../data/plan-store.ts";
 
@@ -103,6 +103,13 @@ export interface ExtractionSelection {
   machineId: string;
   clockPercentText: string;
   purityMix?: PurityMixText;
+  /**
+   * Raw-input packaging (#133): the same interstep the link path carries,
+   * reused verbatim. Optional — absent ⇒ the extractor plan reports supply only.
+   * Written through `canonicalizePackagingInterstep`, exactly as the link path,
+   * so an illegal return route drops the write rather than persisting.
+   */
+  packaging?: PackagingInterstep;
 }
 
 export interface PurityMixText {
@@ -117,6 +124,17 @@ function copyExtractionSelection(
   return {
     ...selection,
     ...(selection.purityMix ? { purityMix: { ...selection.purityMix } } : {}),
+    // Deep-copy the interstep so the nested returnTransport object is not
+    // aliased across copies (matching the purityMix idiom one level deeper —
+    // returnTransport is the interstep's nested object).
+    ...(selection.packaging
+      ? {
+          packaging: {
+            ...selection.packaging,
+            returnTransport: { ...selection.packaging.returnTransport },
+          },
+        }
+      : {}),
   };
 }
 
@@ -385,7 +403,7 @@ export interface PlanBundle {
   kind: "foundry-plan-bundle";
   format_version: 1;
   exportedAt: string; // ISO
-  plans: PlanFileV8[];
+  plans: PlanFileV9[];
 }
 
 /** The sniff constant (Axis 3): import branches to the bundle arm iff a parsed
@@ -692,7 +710,7 @@ function deriveAllStages(
 }
 
 /**
- * Whole-graph replacement from a loaded `PlanFileV8` (Stage 3 / Phase 3, frozen
+ * Whole-graph replacement from a loaded `PlanFileV9` (Stage 3 / Phase 3, frozen
  * Axis 4; Stage 10 / Phase 1 adds direction + userPlaced). Builds a fresh graph —
  * new stage/link uuids — and applies the frozen load treatments per stage:
  *
@@ -721,7 +739,7 @@ function deriveAllStages(
  */
 function rebuildFromPlan(
   slice: GraphSlice,
-  plan: PlanFileV8,
+  plan: PlanFileV9,
 ): GraphSlice & { placementSeq: number } {
   const { catalog } = slice;
   // Current global tiers (the active mirror holds the canonical global value).
@@ -1357,7 +1375,7 @@ export function createAppStore(storage?: StateStorage) {
         // savePlanAs). Returns "empty-name" for a whitespace name (caller shapes
         // the message) or "saved" once the row is committed.
         const savePlanFromFile = async (
-          file: PlanFileV8,
+          file: PlanFileV9,
         ): Promise<"saved" | "empty-name"> => {
           const trimmed = file.name.trim();
           if (trimmed === "") return "empty-name";
@@ -1366,7 +1384,7 @@ export function createAppStore(storage?: StateStorage) {
           const now = new Date().toISOString();
           if (match) {
             const prior = await loadPlanFile(match.id);
-            const plan: PlanFileV8 = {
+            const plan: PlanFileV9 = {
               ...file,
               name: trimmed,
               createdAt: prior?.createdAt ?? now,
@@ -1374,7 +1392,7 @@ export function createAppStore(storage?: StateStorage) {
             };
             await savePlanFile(plan, match.id);
           } else {
-            const plan: PlanFileV8 = {
+            const plan: PlanFileV9 = {
               ...file,
               name: trimmed,
               createdAt: now,
@@ -1824,6 +1842,22 @@ export function createAppStore(storage?: StateStorage) {
             set((s) => {
               const stage = s.stages[stageId];
               if (stage === undefined || itemId === "") return {};
+              // The write boundary must canonicalize the packaging interstep,
+              // exactly as setLinkInterstep does: savePlan is a bare db.put with
+              // no validation, so a stale returnTransport key or an illegal
+              // (pipe / fluid-truck) route would otherwise reach IndexedDB
+              // unvalidated and surface as a refusal of the ENTIRE plan on the
+              // next load. canonicalizePackagingInterstep rebuilds the object and
+              // returns null on an illegal route → drop the whole write, so the
+              // enabling edit never persists an unreadable interstep.
+              let normalized = selection;
+              if (selection !== null && selection.packaging !== undefined) {
+                const canonical = canonicalizePackagingInterstep(
+                  selection.packaging,
+                );
+                if (canonical === null) return {};
+                normalized = { ...selection, packaging: canonical };
+              }
               const extraction: Record<string, ExtractionSelection> =
                 Object.create(null);
               for (const [key, value] of Object.entries(
@@ -1831,8 +1865,8 @@ export function createAppStore(storage?: StateStorage) {
               )) {
                 extraction[key] = value;
               }
-              if (selection === null) delete extraction[itemId];
-              else extraction[itemId] = copyExtractionSelection(selection);
+              if (normalized === null) delete extraction[itemId];
+              else extraction[itemId] = copyExtractionSelection(normalized);
               const nextStage: StageNode = {
                 ...stage,
                 ...(Object.keys(extraction).length > 0
@@ -2177,7 +2211,7 @@ export function createAppStore(storage?: StateStorage) {
                 // presence alone cannot distinguish auto from user placement.
                 const s = get();
                 const indexOf = new Map(s.stageOrder.map((id, i) => [id, i]));
-                const stages: PlanStageV7[] = s.stageOrder.map((id) => {
+                const stages: PlanStageV8[] = s.stageOrder.map((id) => {
                   const node = s.stages[id]!;
                   return {
                     name: node.name,
@@ -2205,8 +2239,8 @@ export function createAppStore(storage?: StateStorage) {
                 }));
                 if (match) {
                   const prior = await loadPlanFile(match.id);
-                  const plan: PlanFileV8 = {
-                    format_version: 8,
+                  const plan: PlanFileV9 = {
+                    format_version: 9,
                     name: trimmed,
                     createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
@@ -2216,8 +2250,8 @@ export function createAppStore(storage?: StateStorage) {
                   };
                   await savePlanFile(plan, match.id);
                 } else {
-                  const plan: PlanFileV8 = {
-                    format_version: 8,
+                  const plan: PlanFileV9 = {
+                    format_version: 9,
                     name: trimmed,
                     createdAt: now,
                     updatedAt: now,
@@ -2284,7 +2318,7 @@ export function createAppStore(storage?: StateStorage) {
                 }
                 // loadPlanFile returns v8 (migrating older rows), so renaming an
                 // older row rewrites it as v8 under the save-over model.
-                const renamed: PlanFileV8 = {
+                const renamed: PlanFileV9 = {
                   ...plan,
                   name: trimmed,
                   updatedAt: new Date().toISOString(),
@@ -2335,7 +2369,7 @@ export function createAppStore(storage?: StateStorage) {
             await enqueue(async () => {
               const metas = await listPlanFiles();
               if (metas.length === 0) return; // result stays null
-              const plans: PlanFileV8[] = [];
+              const plans: PlanFileV9[] = [];
               for (const meta of metas) {
                 const file = await loadPlanFile(meta.id);
                 // A row that fails to load (corrupt/foreign) is skipped rather
