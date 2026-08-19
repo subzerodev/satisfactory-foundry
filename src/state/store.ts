@@ -375,7 +375,7 @@ export interface Actions {
   loadPlan(id: string): Promise<void>;
   renamePlan(id: string, name: string): Promise<void>;
   deletePlan(id: string): Promise<void>;
-  /** Serialize a stored plan (migrated to v8) as pretty JSON, or null if the
+  /** Serialize a stored plan (migrated to v9) as pretty JSON, or null if the
    *  row is missing/corrupt. Headless — App owns the Blob/anchor download. */
   exportPlan(id: string): Promise<string | null>;
   /** Validate + save an exported plan file's text under the save-over model.
@@ -726,7 +726,7 @@ function deriveAllStages(
  *   the FILE's direction — a v1-migrated positionless stage must slot per the
  *   orientation the file was saved in);
  * - flowDirection restored from the file (v1-v4 migration defaults to "LR"); userPlaced
- *   read directly from v8's required boolean. Legacy migration materializes the
+ *   read directly from the persisted stage's required boolean. Legacy migration materializes the
  *   conservative original-position rule before this rebuild, so no transient
  *   source-version flag is needed;
  * - stageOrder = array order; links rebuilt from indices; placementSeq =
@@ -783,7 +783,7 @@ function rebuildFromPlan(
     // Positionless entries (v1-migrated) auto-slot in the FILE's direction; a
     // saved position restores exactly. The fallback direction is plan-level.
     positions[id] = entry.position ?? placementSlot(i, plan.flowDirection);
-    // Validation always returns v8; legacy migration has already materialized
+    // Validation always returns v9; legacy migration has already materialized
     // placement origin into this required boolean.
     if (entry.userPlaced) userPlaced[id] = true;
   });
@@ -2020,7 +2020,7 @@ export function createAppStore(storage?: StateStorage) {
           setLinkTransport(linkId: string, transport: LinkTransport) {
             // Numeric text remains raw until derive, but the public action
             // rebuilds the structural shape so wider/type-erased callers cannot
-            // create a plan that strict v8 persistence later refuses.
+            // create a plan that strict v9 persistence later refuses.
             set((s) => {
               const canonical = canonicalizeLinkTransport(transport);
               if (canonical === null) return {};
@@ -2272,7 +2272,7 @@ export function createAppStore(storage?: StateStorage) {
             return enqueue(async () => {
               set({ planError: null });
               try {
-                // Load with origin: validation returns v8, whose required
+                // Load with origin: validation returns v9, whose required
                 // userPlaced flag already materializes native or migrated origin.
                 const file = await loadPlanFile(id);
                 if (file === null) {
@@ -2316,8 +2316,8 @@ export function createAppStore(storage?: StateStorage) {
                   set({ planError: "plan could not be loaded" });
                   return;
                 }
-                // loadPlanFile returns v8 (migrating older rows), so renaming an
-                // older row rewrites it as v8 under the save-over model.
+                // loadPlanFile returns v9 (migrating older rows), so renaming an
+                // older row rewrites it as v9 under the save-over model.
                 const renamed: PlanFileV9 = {
                   ...plan,
                   name: trimmed,
