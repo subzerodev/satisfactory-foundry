@@ -526,68 +526,92 @@ function PipeConnector({
 }
 
 /**
- * The level-of-detail machine band (Stage 12 P1 Axis 1). Above N=114 the pitch
- * floors to 6px ticks that read as dash-noise, so a real drawing draws a break
- * convention + a count instead of 161 identical ticks: ONE continuous band rect
- * spanning the machine row, a centered `×N` in the display face, and individual
- * boundary ticks + index labels kept ONLY at the significant machines (feed
- * entries, output breakouts, segment bounds, finding-referenced machines — the
- * complete set the textual layer can name). Everything else is elided by the
- * break convention.
+ * The build-view axis (P3 — Michael's option-A pick, #135 c24913). A 12px
+ * two-mark ruler replaces BOTH machine-row arms: it registers the drawing to the
+ * solver-derived belt-stretch boundaries WITHOUT drawing 106+ machine rects (the
+ * block moves to the machines view). Two mark kinds:
+ *
+ *  - MAJOR ticks (full rulerH) at `xOf(index)` — the machine's LEFT edge — for
+ *    every `significant` index: these ARE the belt-span boundaries (feed entries,
+ *    output breakouts, segment bounds, finding refs), solver-derived in both
+ *    density modes — never labelStep arithmetic (the r1 blocker's fix).
+ *  - MINOR ticks (4px up from the baseline) at `m.x + pitch/2` — the cell CENTRE
+ *    — for every labeled machine: the mark that binds each index label to its
+ *    machine cell, so a label is never equidistant between two major ticks (the
+ *    r2 registration defect's fix).
+ *
+ * Labeled machines are `m.labeled` in non-band mode (per the pitch) and
+ * `labeledSignificant` in band mode (label thinning). The band rect + ×N count
+ * do NOT live here — they moved to the machines view.
  */
-function MachineBand({
+function Ruler({
   machines,
   significant,
   labeledSignificant,
+  band,
   pitch,
   top,
+  rulerH,
 }: {
   machines: SchematicLayout["machines"];
   significant: number[];
   labeledSignificant: number[];
+  band: boolean;
   pitch: number;
   top: number;
+  rulerH: number;
 }) {
   const first = machines[0]!;
   const last = machines[machines.length - 1]!;
-  const bandX = first.x;
-  // The row spans every machine's footprint: last machine's left edge + its own
-  // (pitch − 2) rect width, mirroring the per-tick rendering it replaces.
-  const bandW = last.x + Math.max(pitch - 2, 1) - bandX;
-  const marks = new Set(significant);
-  // Every significant index keeps its tick; only the thinned subset carries a
-  // label (labels crowd at the band's 8px pitch, ticks do not).
-  const labeled = new Set(labeledSignificant);
+  const baseline = top + rulerH;
   const xOf = (index: number) => machines[index - 1]!.x;
+  // The machines that carry an index label + minor tick: the pitch-thinned row
+  // in non-band mode, the label-thinned significant subset in band mode.
+  const labeled = band
+    ? labeledSignificant.map((index) => ({ index, x: xOf(index) }))
+    : machines.filter((m) => m.labeled);
+  const MINOR_H = 4;
   return (
-    <g className="machine-band">
-      <rect x={bandX} y={top} width={bandW} height={40} />
-      <text className="machine-band-count" x={bandX + bandW / 2} y={top + 24}>
-        ×{machines.length}
-      </text>
-      {[...marks]
-        .sort((a, b) => a - b)
-        .map((index) => (
-          <g key={`sig-${index}`} className="machine-band-mark">
-            {/* A boundary tick at every significant machine's left edge; the
-                index label only when it survives thinning, so referenced
-                machines stay locatable without the labels colliding. */}
-            <line x1={xOf(index)} x2={xOf(index)} y1={top} y2={top + 40} />
-            {labeled.has(index) ? (
-              // Center the label under the cell (#86), same as non-band mode; the
-              // boundary tick above stays at xOf(index). A constant +pitch/2 shift
-              // preserves every label-to-label distance, so the S15 thinning
-              // spacing guarantee (≥3-index / 24px) is unaffected.
-              <text
-                className="machine-label"
-                x={xOf(index) + pitch / 2}
-                y={top + 52}
-              >
-                {index}
-              </text>
-            ) : null}
-          </g>
-        ))}
+    <g className="machine-ruler">
+      {/* The baseline spans the whole machine row (first cell's left edge to the
+          last cell's left edge). */}
+      <line
+        className="ruler-baseline"
+        x1={first.x}
+        x2={last.x}
+        y1={baseline}
+        y2={baseline}
+      />
+      {significant.map((index) => (
+        // MAJOR tick — full rulerH at the belt-stretch boundary (the cell's left
+        // edge, xOf(index)). These are the registration marks the axis exists for.
+        <line
+          key={`major-${index}`}
+          className="ruler-major"
+          x1={xOf(index)}
+          x2={xOf(index)}
+          y1={top}
+          y2={baseline}
+        />
+      ))}
+      {labeled.map((m) => (
+        <g key={`minor-${m.index}`} className="ruler-minor">
+          {/* MINOR tick — 4px up from the baseline at the cell CENTRE
+              (m.x + pitch/2), binding the label below to its machine cell. */}
+          <line
+            x1={m.x + pitch / 2}
+            x2={m.x + pitch / 2}
+            y1={baseline - MINOR_H}
+            y2={baseline}
+          />
+          {/* The index label, centred under the minor tick, one row below the
+              baseline (machineTop + rulerH + 12 = machineTop + 24 — inside the
+              busH band above the risen outputTop, the old +52 clearance idiom). */}
+          <text className="machine-label" x={m.x + pitch / 2} y={baseline + 12}>
+            {m.index}
+          </text>
+        </g>
+      ))}
     </g>
   );
 }
@@ -599,8 +623,11 @@ export function Schematic({
   unlocked,
   itemName,
 }: SchematicProps) {
+  // The build view draws a rulerH-tall axis, not the machineH block (P3): pass
+  // LAYOUT.rulerH so outputTop + height shrink with it. machineTop is unchanged
+  // by construction (no machineRowH term), so the feed lanes + P2 rows stay put.
   const layout = useMemo(
-    () => computeLayout(result, machineCount),
+    () => computeLayout(result, machineCount, LAYOUT.rulerH),
     [result, machineCount],
   );
 
@@ -686,38 +713,15 @@ export function Schematic({
             />
           );
         })}
-        {layout.band ? (
-          <MachineBand
-            machines={layout.machines}
-            significant={layout.significant}
-            labeledSignificant={layout.labeledSignificant}
-            pitch={layout.pitch}
-            top={machineTopY}
-          />
-        ) : (
-          layout.machines.map((m) => (
-            <g key={`m-${m.index}`} className="machine">
-              <rect
-                x={m.x}
-                y={machineTopY}
-                width={Math.max(layout.pitch - 2, 1)}
-                height={40}
-              />
-              {m.labeled && (
-                <text
-                  className="machine-label"
-                  x={m.x + layout.pitch / 2}
-                  y={machineTopY + 52}
-                >
-                  {/* Center the number UNDER the machine cell (#86): the label
-                      names the machine, not the boundary. m.x is the cell's left
-                      edge; +pitch/2 puts it mid-cell. Ticks stay on boundaries. */}
-                  {m.index}
-                </text>
-              )}
-            </g>
-          ))
-        )}
+        <Ruler
+          machines={layout.machines}
+          significant={layout.significant}
+          labeledSignificant={layout.labeledSignificant}
+          band={layout.band}
+          pitch={layout.pitch}
+          top={machineTopY}
+          rulerH={LAYOUT.rulerH}
+        />
         {result.outputs.map((lane, j) => {
           const busCap = tiers[lane.kind][unlocked[lane.kind] - 1]!;
           return (
@@ -732,7 +736,12 @@ export function Schematic({
               laneDemand={lane.totalOutput}
               tiers={tiers}
               itemName={itemName}
-              machineTopY={machineTopY + 40}
+              // The output break-out arrows' TOP endpoint is the machine row's
+              // BOTTOM edge (P3: machineTop + rulerH, not the old + 40 literal).
+              // The risen outputTop happens to EQUAL machineTop + 40, so leaving
+              // the literal would float the arrows inside the output lane,
+              // detached from the shrunken row (the r1 HIGH). = rulerH here.
+              machineTopY={machineTopY + LAYOUT.rulerH}
               laneStart={LAYOUT.marginX}
               laneEnd={layout.width - LAYOUT.marginX}
               onTip={showTip}

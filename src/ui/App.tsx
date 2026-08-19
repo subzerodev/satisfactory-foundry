@@ -22,6 +22,7 @@ import { PlansBar } from "./PlansBar.tsx";
 import { SummaryCards } from "./SummaryCards.tsx";
 import { Blueprint } from "./Blueprint.tsx";
 import { Schematic } from "./Schematic.tsx";
+import { Machines } from "./Machines.tsx";
 import { LaneOverrides } from "./LaneOverrides.tsx";
 import { FindingsPanel } from "./FindingsPanel.tsx";
 import { Legend } from "./Legend.tsx";
@@ -81,9 +82,10 @@ setBundledProvenanceProvider(async () => {
   }
 });
 
-/** The two solve-facing views (#74 — the schematic is back and first; the
- *  Combined view was removed, #75). */
-type View = "schematic" | "blueprint";
+/** The solve-facing views (#74 — the schematic is first; the Combined view was
+ *  removed, #75). The machines view (#135 / P3) is the block the build view shed
+ *  when it took the 12px ruler; it sits next to the drawing it left. */
+type View = "schematic" | "machines" | "blueprint";
 
 /** Stage-global ⊕ per-lane findings, flattened for the panel. */
 function allFindings(result: StageSolveResult): Finding[] {
@@ -456,6 +458,14 @@ export default function App() {
             </button>
             <button
               type="button"
+              className={view === "machines" ? "view-tab active" : "view-tab"}
+              aria-pressed={view === "machines"}
+              onClick={() => setView("machines")}
+            >
+              MACHINES
+            </button>
+            <button
+              type="button"
               className={view === "blueprint" ? "view-tab active" : "view-tab"}
               aria-pressed={view === "blueprint"}
               onClick={() => setView("blueprint")}
@@ -470,6 +480,11 @@ export default function App() {
               tiers={catalog.tiers}
               unlocked={selection.unlockedTiers}
               itemName={itemName}
+            />
+          ) : view === "machines" ? (
+            <Machines
+              result={solve.result}
+              machineCount={selection.machineCount}
             />
           ) : (
             <Blueprint
